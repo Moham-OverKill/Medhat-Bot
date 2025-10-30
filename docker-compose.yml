@@ -1,0 +1,10 @@
+{
+  "name": "discord-mvp-bot",
+  "services": {
+    "api": {
+      "buildCommand": "npm install",
+      "startCommand": "npm start",
+      "healthCheckPath": "/"
+    }
+  }
+}
