@@ -10,8 +10,11 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "@discordjs/rest": "^2.2.0",
-    "discord-api-types": "^0.37.83"
+    "discord-api-types": "^0.37.83",
+    "better-sqlite3": "^11.0.0",
+    "pg": "^8.11.3"
   },
+  "packageManager": "npm@9.8.1",
   "engines": {
     "node": ">=18.0.0"
   }
