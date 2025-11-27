@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Local development
+.DS_Store
+Thumbs.db
+*.log
+
+# Database files (local only)
+data/
+*.db
+*.sqlite

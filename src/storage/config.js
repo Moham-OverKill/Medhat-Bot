@@ -1,50 +1,201 @@
-import fs from 'fs/promises';
-import path from 'path';
+import { getPool, query } from './postgres.js';
+import { isValidSnowflake, sanitizeError as formatError } from '../shared.js';
 
-const CONFIG_DIR = './data';
-const CONFIG_FILE = path.join(CONFIG_DIR, 'guildConfigs.json');
+// Config schema validation
+const CONFIG_SCHEMA = {
+  mvpRoleId: { type: 'string', validate: isValidSnowflake, required: false },
+  announceChannelId: { type: 'string', validate: isValidSnowflake, required: false },
+  intervalNumber: { type: 'number', min: 1, max: 168, required: false },
+  winnersCount: { type: 'number', min: 1, max: 5, required: false },
+  intervalUnit: { type: 'string', enum: ['hours', 'weeks'], required: false },
+  enabled: { type: 'boolean', required: false },
+  nextCheckTime: { type: 'number', min: 0, required: false },
+  schedule_interval_ms: { type: 'number', min: 60000, max: 4 * 7 * 24 * 60 * 60 * 1000, required: false },
+  last_award_at: { type: 'string', required: false },
+  next_award_at: { type: 'string', required: false },
+  activated_at: { type: 'string', required: false }
+};
+
+/**
+ * Validates and sanitizes configuration object against schema
+ */
+function validateConfig(config) {
+  if (!config || typeof config !== 'object') return null;
+  
+  const sanitized = {};
+  
+  for (const [key, schema] of Object.entries(CONFIG_SCHEMA)) {
+    if (config[key] === undefined) continue;
+    
+    // Type checking
+    if (schema.type === 'number') {
+      const num = Number(config[key]);
+      if (isNaN(num)) return null;
+      if (schema.min !== undefined && num < schema.min) return null;
+      if (schema.max !== undefined && num > schema.max) return null;
+      sanitized[key] = num;
+    } 
+    else if (schema.type === 'string') {
+      if (typeof config[key] !== 'string') return null;
+      if (schema.validate && !schema.validate(config[key])) return null;
+      if (schema.enum && !schema.enum.includes(config[key])) return null;
+      sanitized[key] = config[key];
+    }
+    else if (schema.type === 'boolean') {
+      sanitized[key] = Boolean(config[key]);
+    }
+  }
+  
+  return sanitized;
+}
 
 export async function initializeGuildConfigs() {
+  // Database tables are created by initializeDatabase() in postgres.js
+  // This function is kept for backward compatibility
   try {
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
+    const pool = getPool();
+    // Test database connection
+    await pool.query('SELECT 1');
+    
+    if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'production') {
+      console.debug('Guild configs storage ready (PostgreSQL)');
+    }
+    return true;
   } catch (error) {
-    console.error('Failed to create config directory:', error);
+    console.error('Failed to initialize guild configs:', formatError(error));
+    throw error;
   }
 }
 
 export async function loadGuildConfigs() {
   try {
-    const data = await fs.readFile(CONFIG_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      console.error('Error loading guild configs:', error);
+    const result = await query('SELECT guild_id, config FROM guild_configs');
+    
+    const validConfigs = {};
+    for (const row of result.rows) {
+      const guildId = row.guild_id;
+      const config = row.config;
+      
+      if (isValidSnowflake(guildId) && config && typeof config === 'object') {
+        const validated = validateConfig(config);
+        if (validated) {
+          validConfigs[guildId] = validated;
+        }
+      }
     }
+    
+    return validConfigs;
+  } catch (error) {
+    console.error('Error loading guild configs:', formatError(error));
     return {};
   }
 }
 
 export async function saveGuildConfigs(configs) {
   try {
-    await fs.writeFile(CONFIG_FILE, JSON.stringify(configs, null, 2));
+    // Security: Validate all configs before saving
+    const validConfigs = {};
+    for (const [guildId, config] of Object.entries(configs)) {
+      if (isValidSnowflake(guildId)) {
+        const validated = validateConfig(config);
+        if (validated) {
+          validConfigs[guildId] = validated;
+        }
+      }
+    }
+    
+    // Use a transaction to ensure all-or-nothing save
+    const pool = getPool();
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      for (const [guildId, config] of Object.entries(validConfigs)) {
+        await client.query(
+          `INSERT INTO guild_configs (guild_id, config, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (guild_id)
+           DO UPDATE SET config = $2, updated_at = NOW()`,
+          [guildId, JSON.stringify(config)]
+        );
+      }
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
-    console.error('Error saving guild configs:', error);
+    const errorMessage = 'Error saving guild configs: ' + formatError(error);
+    console.error(errorMessage);
+    throw new Error('Failed to save configuration. Please try again.');
   }
 }
 
 export async function getGuildConfig(guildId) {
-  const configs = await loadGuildConfigs();
-  return configs[guildId] || null;
+  // Security: Validate guild ID
+  if (!isValidSnowflake(guildId)) {
+    console.warn('Invalid guild ID attempted:', guildId?.substring(0, 10) + '...');
+    return null;
+  }
+  
+  try {
+    const result = await query(
+      'SELECT config FROM guild_configs WHERE guild_id = $1',
+      [guildId]
+    );
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+    
+    const config = result.rows[0].config;
+    return validateConfig(config);
+  } catch (error) {
+    console.error('Error getting guild config:', formatError(error));
+    return null;
+  }
 }
 
 export async function setGuildConfig(guildId, config) {
-  const configs = await loadGuildConfigs();
-  configs[guildId] = config;
-  await saveGuildConfigs(configs);
+  // Security: Validate guild ID
+  if (!isValidSnowflake(guildId)) {
+    throw new Error('Invalid guild ID');
+  }
+  
+  // Security: Validate config
+  const sanitized = validateConfig(config);
+  if (!sanitized) {
+    throw new Error('Invalid configuration');
+  }
+  
+  try {
+    await query(
+      `INSERT INTO guild_configs (guild_id, config, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (guild_id)
+       DO UPDATE SET config = $2, updated_at = NOW()`,
+      [guildId, JSON.stringify(sanitized)]
+    );
+  } catch (error) {
+    console.error('Error setting guild config:', formatError(error));
+    throw new Error('Failed to save configuration');
+  }
 }
 
 export async function deleteGuildConfig(guildId) {
-  const configs = await loadGuildConfigs();
-  delete configs[guildId];
-  await saveGuildConfigs(configs);
+  // Security: Validate guild ID
+  if (!isValidSnowflake(guildId)) {
+    throw new Error('Invalid guild ID');
+  }
+  
+  try {
+    await query('DELETE FROM guild_configs WHERE guild_id = $1', [guildId]);
+  } catch (error) {
+    console.error('Error deleting guild config:', formatError(error));
+    throw new Error('Failed to delete configuration');
+  }
 }
