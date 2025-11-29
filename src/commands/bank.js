@@ -18,9 +18,127 @@ import {
 } from '../economy/service.js';
 import { getShopItems, purchaseItem } from '../economy/shop.js';
 import { sanitizeError } from '../shared.js';
-import { createErrorEmbed, createSuccessEmbed, createWarningEmbed, handleInteractionError } from '../utils/errors.js';
-import { createBackButton, createBankButtons } from '../utils/buttons.js';
-import { formatTimeRemaining, getNextDailyTime, getDailyCooldownInfo, formatDetailedTimeRemaining } from '../utils/time.js';
+
+// Helper functions (consolidated from old utils files)
+function createBackButton() {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('bank_back')
+        .setLabel('Back')
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+function createBankButtons() {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('bank_daily')
+        .setLabel('Daily')
+        .setEmoji('📅')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('bank_transfer')
+        .setLabel('Transfer')
+        .setEmoji('💸')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('bank_shop')
+        .setLabel('Shop')
+        .setEmoji('🏪')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('bank_history')
+        .setLabel('History')
+        .setEmoji('📜')
+        .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+function formatTimeRemaining(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) {
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  } else if (minutes > 0) {
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
+function formatDetailedTimeRemaining(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) {
+    const remainingMinutes = minutes % 60;
+    return `${hours} hour${hours !== 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+  } else if (minutes > 0) {
+    const remainingSeconds = seconds % 60;
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} and ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`;
+  } else {
+    return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+  }
+}
+
+function getNextDailyTime(lastClaimTimestamp) {
+  const lastClaim = lastClaimTimestamp ? new Date(lastClaimTimestamp) : null;
+  if (!lastClaim) return Date.now();
+  
+  const nextClaim = new Date(lastClaim);
+  nextClaim.setUTCHours(24, 0, 0, 0);
+  
+  return nextClaim.getTime();
+}
+
+function getDailyCooldownInfo(lastClaimTimestamp) {
+  const nextClaimTime = getNextDailyTime(lastClaimTimestamp);
+  const now = Date.now();
+  const timeRemaining = nextClaimTime - now;
+  
+  return {
+    canClaim: timeRemaining <= 0,
+    timeRemaining: Math.max(0, timeRemaining),
+    nextClaimTime
+  };
+}
+
+function createErrorEmbed(title, description) {
+  return new EmbedBuilder()
+    .setColor('#FF0000')
+    .setTitle(`❌ ${title}`)
+    .setDescription(description);
+}
+
+function createWarningEmbed(title, description) {
+  return new EmbedBuilder()
+    .setColor('#FFA500')
+    .setTitle(`⚠️ ${title}`)
+    .setDescription(description);
+}
+
+async function handleInteractionError(interaction, error, context) {
+  console.error(`Error in ${context}:`, sanitizeError(error));
+  const embed = createErrorEmbed('Error', 'An error occurred. Please try again later.');
+  
+  try {
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    } else if (interaction.deferred) {
+      await interaction.editReply({ embeds: [embed] });
+    }
+  } catch (err) {
+    console.error('Failed to send error message:', sanitizeError(err));
+  }
+}
 
 // Define the main bank command
 export const bankCommand = new SlashCommandBuilder()
