@@ -5,6 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeError } from '../shared.js';
 import { colorsCommand, colorCommand } from './colors.js';
+import { bankCommand } from './bank.js';
+import { shopSetupCommand } from './shop-setup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data');
@@ -32,6 +34,7 @@ async function writeHash(hash) {
 
 export async function registerSlashCommands(client) {
   const commands = [
+    bankCommand.toJSON(),
     {
       name: 'mvp',
       description: 'MVP system management',
@@ -45,6 +48,7 @@ export async function registerSlashCommands(client) {
         }
       ]
     },
+    shopSetupCommand.toJSON(),
     colorsCommand.toJSON(),
     colorCommand.toJSON()
   ];
