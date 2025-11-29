@@ -136,7 +136,7 @@ client.once(Events.ClientReady, async () => {
     
     // Initialize storage and load configs
     await initializeGuildConfigs();
-    initializeColorsDB();
+    await initializeColorsDB();
     const configs = await loadGuildConfigs();
     const configCount = Object.keys(configs).length;
     const shardsInfo = client.options.shards && client.options.shards.length
