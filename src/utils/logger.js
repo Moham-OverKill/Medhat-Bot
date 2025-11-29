@@ -64,16 +64,44 @@ export function logSystemError(message) {
 
 /**
  * Log an audit event (for compliance/tracking)
- * @param {string} action - Action performed
- * @param {Object} data - Audit data
+ * Supports two signatures:
+ * 1. logAudit(action, data) - Simple format
+ * 2. logAudit(guildId, userId, action, entityType, entityId, data) - Detailed format
  */
-export function logAudit(action, data = {}) {
-  const payload = {
-    level: 'AUDIT',
-    action,
-    timestamp: new Date().toISOString(),
-    ...data
-  };
+export function logAudit(...args) {
+  let payload;
+  
+  if (args.length === 2) {
+    // Simple format: logAudit(action, data)
+    const [action, data = {}] = args;
+    payload = {
+      level: 'AUDIT',
+      action,
+      timestamp: new Date().toISOString(),
+      ...data
+    };
+  } else if (args.length >= 3) {
+    // Detailed format: logAudit(guildId, userId, action, entityType, entityId, data)
+    const [guildId, userId, action, entityType = null, entityId = null, data = {}] = args;
+    payload = {
+      level: 'AUDIT',
+      guildId,
+      userId,
+      action,
+      entityType,
+      entityId,
+      timestamp: new Date().toISOString(),
+      ...data
+    };
+  } else {
+    // Fallback for invalid calls
+    payload = {
+      level: 'AUDIT',
+      action: 'unknown',
+      args,
+      timestamp: new Date().toISOString()
+    };
+  }
 
   console.log(JSON.stringify(payload));
 }
