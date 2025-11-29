@@ -1,6 +1,14 @@
 import { MessageFlags } from 'discord.js';
 import { handleMvpComponent } from '../commands/mvp.js';
 import { handleColorButton, handleColorsComponent, handleRoleSelection } from '../commands/colors.js';
+import { 
+  handleBackButton, 
+  handleDailyButton, 
+  handleTransferButton, 
+  handleShopButton, 
+  handleHistoryButton,
+  handleShopPurchase 
+} from '../commands/bank.js';
 import { sanitizeError } from '../shared.js';
 
 let handlersSetup = false;
@@ -89,6 +97,54 @@ export function setupComponentHandlers(client) {
         } else if (interaction.deferred) {
           await interaction.followUp({
             content: '❌ An error occurred while processing this interaction.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+      }
+    } else if (interaction.customId.startsWith('bank_')) {
+      try {
+        // Handle bank component interactions
+        if (interaction.customId === 'bank_back') {
+          await handleBackButton(interaction);
+        } else if (interaction.customId === 'bank_daily') {
+          await handleDailyButton(interaction);
+        } else if (interaction.customId === 'bank_transfer') {
+          await handleTransferButton(interaction);
+        } else if (interaction.customId === 'bank_shop') {
+          await handleShopButton(interaction);
+        } else if (interaction.customId === 'bank_history') {
+          await handleHistoryButton(interaction);
+        }
+      } catch (error) {
+        console.error('Error handling bank interaction:', sanitizeError(error));
+        
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: '❌ An error occurred while handling this interaction.',
+            flags: MessageFlags.Ephemeral
+          });
+        } else if (interaction.deferred) {
+          await interaction.followUp({
+            content: '❌ An error occurred while processing this interaction.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+      }
+    } else if (interaction.customId.startsWith('shop_purchase_')) {
+      try {
+        const itemId = parseInt(interaction.customId.split('_')[2]);
+        await handleShopPurchase(interaction, itemId);
+      } catch (error) {
+        console.error('Error handling shop purchase:', sanitizeError(error));
+        
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: '❌ An error occurred while processing your purchase.',
+            flags: MessageFlags.Ephemeral
+          });
+        } else if (interaction.deferred) {
+          await interaction.followUp({
+            content: '❌ An error occurred while processing your purchase.',
             flags: MessageFlags.Ephemeral
           });
         }
