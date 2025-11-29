@@ -107,9 +107,9 @@ export async function claimDaily(userId, guildId, username) {
   try {
     await client.query('BEGIN');
     
-    // Get user balance info
+    // Get user balance info with row lock to prevent race conditions
     const userResult = await client.query(
-      'SELECT * FROM user_balances WHERE user_id = $1 AND guild_id = $2',
+      'SELECT * FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE',
       [userId, guildId]
     );
     
@@ -131,15 +131,15 @@ export async function claimDaily(userId, guildId, username) {
     }
     
     // Check if daily was already claimed today (24 hour cooldown)
-    if (userData.last_daily) {
-      const nextClaim = getNextDailyTime(userData.last_daily);
+    if (userData.last_claim_time) {
+      const nextClaim = getNextDailyTime(userData.last_claim_time);
       const now = new Date();
       
       if (now < nextClaim) {
         await client.query('ROLLBACK');
         
         // Use consistent time formatting
-        const detailedTime = formatDetailedTimeRemaining(nextClaim);
+        const detailedTime = formatDetailedTimeRemaining(nextClaim - now.getTime());
         
         return {
           success: false,
@@ -150,7 +150,7 @@ export async function claimDaily(userId, guildId, username) {
       }
       
       // Check if streak continues (claimed within 48 hours)
-      const lastDaily = new Date(userData.last_daily);
+      const lastDaily = new Date(userData.last_claim_time);
       const hoursSinceLastDaily = (now - lastDaily) / (1000 * 60 * 60);
       
       if (hoursSinceLastDaily <= 48) {
@@ -173,7 +173,7 @@ export async function claimDaily(userId, guildId, username) {
     await client.query(
       `UPDATE user_balances 
        SET balance = $1,
-           last_daily = NOW(),
+           last_claim_time = NOW(),
            daily_streak = $2,
            total_earned = total_earned + $3,
            updated_at = NOW()
