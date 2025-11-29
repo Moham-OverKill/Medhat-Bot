@@ -145,7 +145,7 @@ export async function handleColorCommand(interaction) {
           continue;
         }
 
-        const result = addColorRole(guildId, roleId, isBooster);
+        const result = await addColorRole(guildId, roleId, isBooster);
         if (result.success) {
           added++;
           const colorType = isBooster ? 'booster color' : 'color';
@@ -154,7 +154,7 @@ export async function handleColorCommand(interaction) {
           skipped++;
         }
       } else if (subcommand === 'removemany') {
-        const result = removeColorRole(guildId, roleId, isBooster);
+        const result = await removeColorRole(guildId, roleId, isBooster);
         if (result.deleted) {
           removed++;
           const colorType = isBooster ? 'booster color' : 'color';
@@ -221,9 +221,9 @@ export async function handleColorsCommand(interaction) {
  */
 async function showColorPanel(interaction) {
   const guildId = interaction.guildId;
-  const normalColors = getColorRoles(guildId, false);
-  const boosterColors = getColorRoles(guildId, true);
-  const boosterRoleId = getBoosterRole(guildId);
+  const normalColors = await getColorRoles(guildId, false);
+  const boosterColors = await getColorRoles(guildId, true);
+  const boosterRoleId = await getBoosterRole(guildId);
   
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
@@ -311,7 +311,7 @@ async function handleColorAddCommand(interaction, guildId, isBooster) {
     return;
   }
   
-  const result = addColorRole(guildId, role.id, isBooster);
+  const result = await addColorRole(guildId, role.id, isBooster);
   const type = isBooster ? 'booster color' : 'color';
   
   if (result.success) {
@@ -399,7 +399,7 @@ async function handleColorRemoveCommand(interaction, guildId, isBooster) {
     return;
   }
   
-  const result = removeColorRole(guildId, role.id, isBooster);
+  const result = await removeColorRole(guildId, role.id, isBooster);
   const type = isBooster ? 'booster color' : 'color';
   
   if (result.deleted) {
@@ -458,7 +458,7 @@ function buildColorPanelContent(sortedColors, startIdx = 0, isBooster = false) {
 async function handleColorListCommand(interaction, guildId, isBooster) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   
-  const colors = getColorRoles(guildId, isBooster);
+  const colors = await getColorRoles(guildId, isBooster);
   
   if (colors.length === 0) {
     const type = isBooster ? 'booster color' : 'color';
@@ -515,7 +515,7 @@ async function handleColorListCommand(interaction, guildId, isBooster) {
 async function handleColorReactCommand(interaction, guildId, isBooster) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   
-  const colors = getColorRoles(guildId, isBooster);
+  const colors = await getColorRoles(guildId, isBooster);
   
   if (colors.length === 0) {
     const type = isBooster ? 'booster color' : 'color';
@@ -618,7 +618,7 @@ async function handleBoosterRoleSetCommand(interaction, guildId) {
     return;
   }
   
-  setBoosterRole(guildId, role.id);
+  await setBoosterRole(guildId, role.id);
   console.log(`🎨 | Set booster role: ${role.name} (${role.id}) | guild=${guildId} | by=${interaction.user.tag}`);
   
   await interaction.reply({ 
@@ -638,7 +638,7 @@ async function handleColorAdd(interaction, guildId, isBooster) {
     return;
   }
   
-  const result = addColorRole(guildId, role.id, isBooster);
+  const result = await addColorRole(guildId, role.id, isBooster);
   
   if (result.success) {
     const type = isBooster ? 'booster color' : 'color';
@@ -665,7 +665,7 @@ async function handleColorRemove(interaction, guildId, isBooster) {
     return;
   }
   
-  const result = removeColorRole(guildId, role.id, isBooster);
+  const result = await removeColorRole(guildId, role.id, isBooster);
   const type = isBooster ? 'booster color' : 'color';
   
   await interaction.reply({ 
@@ -680,7 +680,7 @@ async function handleColorRemove(interaction, guildId, isBooster) {
  * Handle color list
  */
 async function handleColorList(interaction, guildId, isBooster) {
-  const colors = getColorRoles(guildId, isBooster);
+  const colors = await getColorRoles(guildId, isBooster);
   
   if (colors.length === 0) {
     const type = isBooster ? 'booster color' : 'color';
@@ -787,7 +787,7 @@ async function handleColorReact(interaction, guildId, isBooster) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   }
   
-  const colors = getColorRoles(guildId, isBooster);
+  const colors = await getColorRoles(guildId, isBooster);
   
   if (colors.length === 0) {
     const type = isBooster ? 'booster color' : 'color';
@@ -946,9 +946,9 @@ async function buildRoleSelectorResponse(client, guildId, isBooster, operation) 
     .setStyle(ButtonStyle.Secondary);
   const backRow = new ActionRowBuilder().addComponents(backButton);
 
-  const currentColors = getColorRoles(guildId, isBooster);
+  const currentColors = await getColorRoles(guildId, isBooster);
   const currentColorIds = new Set(currentColors.map(c => c.roleId));
-  const otherCategoryColors = getColorRoles(guildId, !isBooster);
+  const otherCategoryColors = await getColorRoles(guildId, !isBooster);
   const otherCategoryIds = new Set(otherCategoryColors.map(c => c.roleId));
 
   let filteredRoles;
@@ -1091,7 +1091,7 @@ export async function handleRoleSelection(interaction) {
     }
 
     if (operation === 'add') {
-      const result = addColorRole(guildId, selectedRoleId, isBooster);
+      const result = await addColorRole(guildId, selectedRoleId, isBooster);
       const message = result.success
         ? `✅ Added <@&${selectedRoleId}>!`
         : `❌ ${result.error}`;
@@ -1114,7 +1114,7 @@ export async function handleRoleSelection(interaction) {
         console.log(`🎨 | Added ${type} role: ${selectedRole.name} (${selectedRoleId}) | guild=${guildId} | by=${interaction.user.tag}`);
       }
     } else if (operation === 'remove') {
-      const result = removeColorRole(guildId, selectedRoleId, isBooster);
+      const result = await removeColorRole(guildId, selectedRoleId, isBooster);
       const message = result.deleted
         ? `✅ Removed <@&${selectedRoleId}>!`
         : `❌ Failed to remove <@&${selectedRoleId}>!`;
@@ -1152,14 +1152,14 @@ export async function handleRoleSelection(interaction) {
 /**
  * Check if a member is a booster
  */
-export function isMemberBooster(member, guildId) {
+export async function isMemberBooster(member, guildId) {
   // Check if they have the premium subscriber role (native booster)
   if (member.premiumSince) {
     return true;
   }
   
   // Check custom booster role
-  const customBoosterRoleId = getBoosterRole(guildId);
+  const customBoosterRoleId = await getBoosterRole(guildId);
   if (customBoosterRoleId && member.roles.cache.has(customBoosterRoleId)) {
     return true;
   }
@@ -1170,8 +1170,8 @@ export function isMemberBooster(member, guildId) {
 /**
  * Get all booster color role IDs for a guild
  */
-export function getBoosterColorRoleIds(guildId) {
-  const boosterColors = getColorRoles(guildId, true);
+export async function getBoosterColorRoleIds(guildId) {
+  const boosterColors = await getColorRoles(guildId, true);
   return new Set(boosterColors.map(c => c.roleId));
 }
 
@@ -1179,7 +1179,7 @@ export function getBoosterColorRoleIds(guildId) {
  * Strip all booster color roles from a member
  */
 export async function stripBoosterColorsFromMember(member, guildId) {
-  const boosterColorIds = getBoosterColorRoleIds(guildId);
+  const boosterColorIds = await getBoosterColorRoleIds(guildId);
   const rolesToRemove = member.roles.cache.filter(role => boosterColorIds.has(role.id));
   
   if (rolesToRemove.size > 0) {
@@ -1258,7 +1258,7 @@ export async function handleColorButton(interaction) {
     const guildId = interaction.guildId;
     
     // Check booster status if it's a booster color
-    if (isBooster && !isMemberBooster(member, guildId)) {
+    if (isBooster && !(await isMemberBooster(member, guildId))) {
       await interaction.reply({ 
         content: '❌ Boost the server to unlock this color!', 
         flags: MessageFlags.Ephemeral 
@@ -1267,7 +1267,7 @@ export async function handleColorButton(interaction) {
     }
     
     // Get all color roles (both normal and booster)
-    const allColorRoleIds = getAllColorRoles(guildId);
+    const allColorRoleIds = await getAllColorRoles(guildId);
     
     // Check if user already has this role
     const hasRole = member.roles.cache.has(roleId);

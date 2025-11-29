@@ -240,7 +240,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     
     // Check if member lost custom booster role
     const { getBoosterRole } = await import('./storage/colors.js');
-    const customBoosterRoleId = getBoosterRole(newMember.guild.id);
+    const customBoosterRoleId = await getBoosterRole(newMember.guild.id);
     const lostBoosterRole = customBoosterRoleId && 
       oldMember.roles.cache.has(customBoosterRoleId) && 
       !newMember.roles.cache.has(customBoosterRoleId);
@@ -249,7 +249,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
       const { isMemberBooster, stripBoosterColorsFromMember } = await import('./commands/colors.js');
       
       // Double-check they're not still a booster (in case they have both native and custom role)
-      if (!isMemberBooster(newMember, newMember.guild.id)) {
+      if (!(await isMemberBooster(newMember, newMember.guild.id))) {
         await stripBoosterColorsFromMember(newMember, newMember.guild.id);
       }
     }
