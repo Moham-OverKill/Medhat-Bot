@@ -98,6 +98,127 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_mvp_awards_awarded_at ON mvp_awards(awarded_at DESC);
     `);
     
+    // Economy System Tables
+    
+    // User balances table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_balances (
+        user_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        balance INTEGER NOT NULL DEFAULT 0,
+        daily_streak INTEGER NOT NULL DEFAULT 0,
+        last_claim_time TIMESTAMP WITH TIME ZONE,
+        total_earned INTEGER NOT NULL DEFAULT 0,
+        total_spent INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, guild_id)
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_balances_guild ON user_balances(guild_id);
+    `);
+    
+    // Transactions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        balance_after INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        description TEXT,
+        reference_id TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id, guild_id, created_at DESC);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type, created_at DESC);
+    `);
+    
+    // Shop categories table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shop_categories (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        display_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_shop_categories_guild ON shop_categories(guild_id, is_active);
+    `);
+    
+    // Shop items table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shop_items (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        category_id INTEGER REFERENCES shop_categories(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        price INTEGER NOT NULL,
+        stock INTEGER,
+        is_active BOOLEAN DEFAULT true,
+        requires_booster BOOLEAN DEFAULT false,
+        booster_only BOOLEAN DEFAULT false,
+        role_id TEXT,
+        role_valid BOOLEAN DEFAULT true,
+        role_invalid_since TIMESTAMP WITH TIME ZONE,
+        item_type TEXT DEFAULT 'role',
+        duration_hours INTEGER,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_shop_items_guild ON shop_items(guild_id, is_active);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category_id);
+    `);
+    
+    // User inventory table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_inventory (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        item_id INTEGER REFERENCES shop_items(id) ON DELETE CASCADE,
+        shop_item_id INTEGER REFERENCES shop_items(id) ON DELETE CASCADE,
+        role_id TEXT,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        is_active BOOLEAN DEFAULT true,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        purchase_source TEXT DEFAULT 'shop',
+        requires_booster BOOLEAN DEFAULT false,
+        purchased_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, guild_id, item_id)
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_inventory_lookup ON user_inventory(user_id, guild_id);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_inventory_item ON user_inventory(item_id);
+    `);
+    
     console.log('✅ Database tables initialized');
   } catch (error) {
     console.error('❌ Failed to create tables:', sanitizeError(error));
