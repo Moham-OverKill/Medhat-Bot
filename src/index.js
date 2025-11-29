@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { registerSlashCommands } from './commands/register.js';
 import { handleSlashCommand } from './commands/handler.js';
 import { initializeGuildConfigs, loadGuildConfigs } from './storage/config.js';
-import { initializeColorsDB, closeColorsDB } from './storage/colors.js';
+import { initializeColorsDB } from './storage/colors.js';
 import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking } from './activity/index.js';
 import { scheduleAllMvpTimers } from './mvp/award.js';
@@ -70,14 +70,6 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
     console.error('Error during shutdown cleanup:', sanitizeError(error));
-  }
-
-  try {
-    closeColorsDB();
-    console.log('✅ Colors database closed');
-  } catch (error) {
-    resolvedExitCode = resolvedExitCode || 1;
-    console.error('Error closing colors database:', sanitizeError(error));
   }
 
   try {
