@@ -1199,7 +1199,7 @@ export async function stripBoosterColorsFromMember(member, guildId) {
 export async function auditBoosterColors(guild) {
   try {
     const guildId = guild.id;
-    const boosterColorIds = getBoosterColorRoleIds(guildId);
+    const boosterColorIds = await getBoosterColorRoleIds(guildId);
     
     if (boosterColorIds.size === 0) {
       return; // No booster colors configured
@@ -1219,7 +1219,7 @@ export async function auditBoosterColors(guild) {
         audited++;
         
         // Check if they're still a booster
-        if (!isMemberBooster(member, guildId)) {
+        if (!(await isMemberBooster(member, guildId))) {
           await stripBoosterColorsFromMember(member, guildId);
           stripped++;
         }
