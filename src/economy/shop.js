@@ -1,9 +1,9 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
 import { updateBalance } from './service.js';
-import { logAudit, createRefund, getBoosterLossPolicy } from '../storage/audit.js';
+import { createRefund, getBoosterLossPolicy } from '../storage/audit.js';
 import { isMemberBooster } from '../commands/colors.js';
-import { logServerEvent, logSystemError } from '../utils/logger.js';
+import { logServerEvent, logSystemError, logAudit } from '../utils/logger.js';
 
 /**
  * Get all shop categories for a guild
