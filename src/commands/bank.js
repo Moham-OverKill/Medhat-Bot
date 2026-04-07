@@ -1128,7 +1128,12 @@ export async function handleInventoryAction(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.reply({ embeds: [confirmEmbed], components: [row], ephemeral: true });
+      return interaction.update({ embeds: [confirmEmbed], components: [row] });
+    }
+
+    // --- 1.5. DROP CANCEL (Go back to management) ---
+    if (action === 'dropcancel') {
+      return handleInventoryItemSelect(interaction);
     }
 
     // --- 2. DROP CONFIRM (Step 2: Execution & Public Post) ---
