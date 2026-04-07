@@ -834,11 +834,11 @@ export async function handleInventoryItemSelect(interaction) {
     let categoryId, currentIndex, invId;
 
     if (interaction.values) {
-      // From select menu
+      // From select menu: value = "invId_index"
       const [itemId, idx] = interaction.values[0].split('_');
       invId = parseInt(itemId);
       currentIndex = parseInt(idx) || 0;
-      // Extract category from customId: bank_inv_item_select_categoryId
+      
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
       categoryId = catPart === 'null' ? null : parseInt(catPart);
     } else if (interaction.customId.startsWith('inv_nav_')) {
@@ -847,10 +847,14 @@ export async function handleInventoryItemSelect(interaction) {
       const catPart = parts[2];
       categoryId = catPart === 'null' ? null : parseInt(catPart);
       currentIndex = parseInt(parts[3]) || 0;
-      // Direction handled below after fetching items
-    } else {
-      // Fallback: try to get invId from customId
-      invId = parseInt(interaction.customId.split('_').pop());
+    } else if (interaction.customId.startsWith('bank_inv_')) {
+      // From action buttons: bank_inv_ACTION_invId_categoryId_currentIndex
+      const parts = interaction.customId.split('_');
+      // [0]bank [1]inv [2]action [3]invId [4]categoryId [5]currentIndex
+      invId = parseInt(parts[3]);
+      const catPart = parts[4];
+      categoryId = (catPart === 'null' || !catPart) ? null : parseInt(catPart);
+      currentIndex = parseInt(parts[5]) || 0;
     }
 
     const isOther = categoryId === null;
@@ -865,6 +869,15 @@ export async function handleInventoryItemSelect(interaction) {
 
     // Sort by role position
     items = await sortItemsByRolePosition(items, interaction.guild);
+
+    // STATE ANCHORING: If we have a specific invId (from an action or select),
+    // re-calculate the index to ensure we stay on the same item post-sync/sort.
+    if (invId) {
+      const foundIdx = items.findIndex(i => i.id === invId);
+      if (foundIdx !== -1) {
+        currentIndex = foundIdx;
+      }
+    }
 
     if (items.length === 0) {
       // All items sold/deleted - build main inventory directly with fresh data
@@ -1079,11 +1092,20 @@ export async function handleInventoryAction(interaction) {
     // --- 1. DROP (Step 1: Ephemeral Confirmation) ---
     if (action === 'drop') {
       const [item] = await query(
-        `SELECT si.name FROM user_inventory ui JOIN shop_items si ON ui.shop_item_id = si.id WHERE ui.id = $1`,
+        `SELECT si.name, si.duration_seconds, si.duration_hours, ui.expires_at 
+         FROM user_inventory ui 
+         JOIN shop_items si ON ui.shop_item_id = si.id 
+         WHERE ui.id = $1`,
         [invId]
       ).then(r => r.rows);
 
-      if (!item) return interaction.reply({ content: '❌ Item not found.', ephemeral: true });
+      if (!item) return interaction.reply({ content: '❌ Item not found.', flags: [64] });
+
+      // STRICT: Block any non-permanent item from being dropped
+      const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
+      if (isTemp) {
+        return interaction.reply({ content: '❌ This item is temporary and cannot be dropped.', flags: [64] });
+      }
 
       const confirmEmbed = new EmbedBuilder()
         .setTitle('⚠️ Confirm Drop')
@@ -1202,18 +1224,20 @@ export async function handleItemClaim(interaction) {
   try {
     const dropId = interaction.customId.replace('bank_item_claim_', '');
 
-    // 1. Instant check for self-claim to prevent timeout/failed interaction
     const [dropCheck] = await query('SELECT dropper_id FROM dropped_items WHERE id = $1', [dropId]).then(r => r.rows);
     if (dropCheck && dropCheck.dropper_id === interaction.user.id) {
-      return interaction.reply({ content: '❌ You cannot claim your own drop!', ephemeral: true });
+      return interaction.reply({ content: '❌ You cannot claim your own drop!', flags: [64] });
     }
+
+    // Purchase time: Defer immediately to prevent timeout
+    await interaction.deferReply({ flags: [64] });
 
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
     if (res.success) {
       // 1. Success Message to Claimer
-      await interaction.reply({ content: `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`, ephemeral: true });
+      await interaction.editReply({ content: `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.` });
 
       // 2. Update Public Message
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
@@ -1228,8 +1252,10 @@ export async function handleItemClaim(interaction) {
     }
   } catch (error) {
     console.error('Claim Error:', error);
-    if (!interaction.replied) {
-      await interaction.reply({ content: `❌ ${error.message}`, ephemeral: true });
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: `❌ ${error.message}` });
+    } else {
+      await interaction.reply({ content: `❌ ${error.message}`, flags: [64] });
     }
   }
 }
