@@ -719,7 +719,7 @@ export async function handleInventoryCategorySelect(interaction) {
 
     if (items.length === 0) {
       // Category is empty - build main inventory directly with fresh data
-      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
+      const activeItems = [...dbInventory, ...adminItems].filter(i => i.item_type !== 'pack' && !i.is_pack);
       const totalCount = activeItems.length;
       const userBal = await getUserBalance(interaction.guildId, interaction.user.id);
       const currentBalance = parseInt(userBal.balance);
@@ -836,7 +836,7 @@ export async function handleInventoryItemSelect(interaction) {
     if (interaction.values) {
       // From select menu: value = "invId_index"
       const [itemId, idx] = interaction.values[0].split('_');
-      invId = parseInt(itemId);
+      invId = itemId; // Can be string (admin_id) or number
       currentIndex = parseInt(idx) || 0;
       
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
@@ -851,7 +851,7 @@ export async function handleInventoryItemSelect(interaction) {
       // From action buttons: bank_inv_ACTION_invId_categoryId_currentIndex
       const parts = interaction.customId.split('_');
       // [0]bank [1]inv [2]action [3]invId [4]categoryId [5]currentIndex
-      invId = parseInt(parts[3]);
+      invId = parts[3];
       const catPart = parts[4];
       categoryId = (catPart === 'null' || !catPart) ? null : parseInt(catPart);
       currentIndex = parseInt(parts[5]) || 0;
@@ -859,10 +859,33 @@ export async function handleInventoryItemSelect(interaction) {
 
     const isOther = categoryId === null;
 
-    // Two-way sync and fetch fresh inventory
-    const inventory = await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
+    // 1. Fetch DB items (Owned/Purchased)
+    const dbInventory = await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
+    const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
 
-    let items = inventory.filter(i => {
+    // 2. Synthesize Admin-Granted items live (State C: Has Role && NOT in DB)
+    const allShopItems = await getShopItems(interaction.guildId, null, 'name', true);
+    const adminItems = [];
+
+    for (const shopItem of allShopItems) {
+      if (!shopItem.role_id) continue;
+      const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
+      
+      if (interaction.member.roles.cache.has(firstRoleId) && !dbShopIds.has(shopItem.id)) {
+        adminItems.push({
+          ...shopItem,
+          id: `admin_${shopItem.id}`, // Virtual ID to distinguish from real DB entries
+          shop_item_id: shopItem.id,
+          source: 'SYNC',
+          is_active: true, // Roles are always active in this state
+          price: 0,
+          purchased_at: new Date()
+        });
+      }
+    }
+
+    // 3. Final Merged List
+    let items = [...dbInventory, ...adminItems].filter(i => {
       if (i.item_type === 'pack' || i.is_pack) return false;
       return isOther ? i.category_id === null : i.category_id === categoryId;
     });
@@ -873,7 +896,7 @@ export async function handleInventoryItemSelect(interaction) {
     // STATE ANCHORING: If we have a specific invId (from an action or select),
     // re-calculate the index to ensure we stay on the same item post-sync/sort.
     if (invId) {
-      const foundIdx = items.findIndex(i => i.id === invId);
+      const foundIdx = items.findIndex(i => String(i.id) === String(invId));
       if (foundIdx !== -1) {
         currentIndex = foundIdx;
       }
@@ -886,7 +909,7 @@ export async function handleInventoryItemSelect(interaction) {
         getUserBalance(interaction.guildId, interaction.user.id)
       ]);
 
-      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
+      const activeItems = [...dbInventory, ...adminItems].filter(i => i.item_type !== 'pack' && !i.is_pack);
       const totalCount = activeItems.length;
       const currentBalance = parseInt(userBal.balance);
 
@@ -967,15 +990,12 @@ export async function handleInventoryItemSelect(interaction) {
     let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}\n` +
       `**Value:** ${item.price} ${COIN_EMOJI}`;
 
-    // Show acquisition info
-    if (isAdminGranted) {
-      desc += `\n🎁 **Granted by Admin**`;
-    } else {
+    // Show acquisition info (Purchased vs Admin-Granted)
+    if (!isAdminGranted) {
       desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
     }
 
-    // Show status with dynamic text based on item type
-    // Permanent: Equipped/Unequipped | Temporary: Active/Inactive
+    // Show status with dynamic text based on item type and source
     if (isAdminGranted) {
       desc += `\n**Status:** 🛡️ Admin Granted`;
     } else if (isTemp) {
@@ -1001,9 +1021,7 @@ export async function handleInventoryItemSelect(interaction) {
       .setColor(embedColor)
       .setDescription(desc);
 
-    if (isAdminGranted) {
-      embed.setFooter({ text: '🛡️ This item was granted by an Administrator and cannot be modified.' });
-    }
+    // Description set, footer removed as requested for cleaner UI
 
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
