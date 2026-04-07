@@ -14,6 +14,7 @@ import {
   handleInventoryCategorySelect,
   handleInventoryItemSelect,
   handleInventoryAction,
+  handleItemClaim,
   handleBackButton,
   handleShopConfirmBuy,
   handleShopCancelBuy
@@ -102,6 +103,11 @@ export function setupComponentHandlers(client) {
 
   client.on('interactionCreate', async (interaction) => {
     try {
+      // --- INTERACTION WATCHTOWER ---
+      if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
+        const serverPrefix = interaction.guild ? `[${interaction.guild.name}]` : '[System]';
+        console.log(`${serverPrefix} [Interaction] Start: ${interaction.customId} by ${interaction.user.tag}`);
+      }
       // --- SECURITY GUARDRAIL ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const adminPrefixes = [
@@ -222,27 +228,26 @@ export function setupComponentHandlers(client) {
         await handleEditItemDetails(interaction);
       } else if (customId.startsWith('shop_pack_edit_')) {
         await handleEditPackDetails(interaction);
-      } else if (customId.startsWith('shop_item_edit_')) {
-        // Back button from tier manager - reload item edit view
-        await handleEditItemSelect(interaction);
-      } else if (customId === 'shop_cancel_buy') {
-        await handleShopCancelBuy(interaction);
-      } else if (customId.startsWith('shop_confirm_buy_')) {
-        await handleShopConfirmBuy(interaction);
       } else if (customId.startsWith('bank_shop_buy_')) {
         await handleShopBuyButton(interaction);
-      }
-      // BANK: Inventory
-      else if (customId === 'bank_inventory' || customId.startsWith('bank_inv_page_')) {
+      } else if (customId.startsWith('bank_shop_confirm_')) {
+        await handleShopConfirmBuy(interaction);
+      } else if (customId.startsWith('bank_shop_cancel_')) {
+        await handleShopCancelBuy(interaction);
+      } else if (customId === 'bank_inventory' || customId.startsWith('bank_inv_page_')) {
         await handleInventoryButton(interaction);
       } else if (customId.startsWith('bank_inv_cat_')) {
         await handleInventoryCategorySelect(interaction);
-      } else if (customId.startsWith('bank_inv_item_select_') || customId.startsWith('inv_nav_')) {
-        // Item select from dropdown OR carousel navigation
+      } else if (customId.startsWith('bank_inv_item_')) {
         await handleInventoryItemSelect(interaction);
+      } else if (customId.startsWith('bank_item_claim_')) {
+        await handleItemClaim(interaction);
       } else if (customId.startsWith('bank_inv_equip_') || customId.startsWith('bank_inv_drop_') || customId.startsWith('bank_inv_dropconfirm_') || customId.startsWith('bank_inv_dropcancel_')) {
         await handleInventoryAction(interaction);
+      } else if (customId === 'bank_back') {
+        await handleBackButton(interaction);
       }
+
       // ADMIN SHOP SETUP - EDIT START HANDLERS
       else if (customId.startsWith('shop_cat_settings_')) {
         await handleEditCategoryRenameStart(interaction);
