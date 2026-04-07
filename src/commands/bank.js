@@ -47,21 +47,48 @@ export const bankCommand = new SlashCommandBuilder()
 
 async function getUserBalance(guildId, userId) {
   const pool = getPool();
-  let result = await pool.query(
-    'SELECT * FROM user_balances WHERE guild_id = $1 AND user_id = $2',
+  const result = await pool.query(
+    'SELECT balance, daily_streak, last_daily, last_lost_streak FROM user_balances WHERE guild_id = $1 AND user_id = $2',
     [guildId, userId]
   );
+  return result.rows[0] || { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
+}
 
-  if (result.rowCount === 0) {
-    result = await pool.query(
-      `INSERT INTO user_balances (guild_id, user_id, balance, daily_streak, last_daily)
-       VALUES ($1, $2, 0, 0, NULL)
-       RETURNING *`,
-      [guildId, userId]
-    );
+/**
+ * Unified Helper: Fetch DB inventory and synthesize live Admin-Granted items (State C)
+ * Ensures consistency between Main Menu counts, Category Lists, and Item Management.
+ */
+async function getSynthesizedInventory(userId, guildId, member) {
+  if (!member) return [];
+
+  // 1. Fetch DB Items (Owned/Purchased)
+  const dbInventory = await syncInventoryWithDiscord(userId, guildId, member);
+  const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
+
+  // 2. Fetch Shop Items to check for live Role-based items (Admin Granted)
+  const allShopItems = await getShopItems(guildId, null, 'name', true);
+  const adminItems = [];
+
+  for (const shopItem of allShopItems) {
+    if (!shopItem.role_id) continue;
+    const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
+
+    // State C: User has the role in Discord but doesn't own it in the DB
+    if (member.roles.cache.has(firstRoleId) && !dbShopIds.has(shopItem.id)) {
+      adminItems.push({
+        ...shopItem,
+        id: `admin_${shopItem.id}`, // Virtual ID for State Anchoring
+        shop_item_id: shopItem.id,
+        source: 'SYNC',
+        is_active: true, // Always active for roles
+        price: 0,
+        purchased_at: new Date()
+      });
+    }
   }
 
-  return result.rows[0];
+  // Final Merged List
+  return [...dbInventory, ...adminItems];
 }
 
 function buildBankUI(userData, member) {
@@ -532,18 +559,14 @@ export async function handleInventoryButton(interaction) {
       }
       return true;
     });
-
-    // ========== CALCULATE STATS FROM VISIBLE ITEMS ==========
-    const totalCount = visibleItems.length; // Real-time count of visible items
-    const inventoryValue = visibleItems.reduce((sum, i) => sum + (parseInt(i.price) || 0), 0);
+    const items = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
+    const totalCount = items.length;
     const currentBalance = parseInt(userBal.balance);
-    const totalWealth = currentBalance + inventoryValue;
 
-    // ========== IDENTIFY CATEGORIES WITH ITEMS ==========
+    // Count items per category (including admin-granted ones)
     const categoryCounts = {};
     let otherCount = 0;
-
-    for (const item of visibleItems) {
+    for (const item of items) {
       if (item.category_id) {
         categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + 1;
       } else {
@@ -697,9 +720,9 @@ export async function handleInventoryCategorySelect(interaction) {
     const isOther = catIdStr === 'null';
     const categoryId = isOther ? null : parseInt(catIdStr);
 
-    // Two-way sync and fetch fresh inventory
+    // Unified Fetch: Includes DB items + Live synthesis of admin roles
     const [inventory, categories] = await Promise.all([
-      syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member),
+      getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member),
       getShopCategories(interaction.guildId)
     ]);
 
@@ -719,7 +742,7 @@ export async function handleInventoryCategorySelect(interaction) {
 
     if (items.length === 0) {
       // Category is empty - build main inventory directly with fresh data
-      const activeItems = [...dbInventory, ...adminItems].filter(i => i.item_type !== 'pack' && !i.is_pack);
+      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
       const totalCount = activeItems.length;
       const userBal = await getUserBalance(interaction.guildId, interaction.user.id);
       const currentBalance = parseInt(userBal.balance);
@@ -859,33 +882,11 @@ export async function handleInventoryItemSelect(interaction) {
 
     const isOther = categoryId === null;
 
-    // 1. Fetch DB items (Owned/Purchased)
-    const dbInventory = await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
-    const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
+    // 1. Fetch Unified Inventory: Includes DB items + Live synthesis of admin roles
+    const inventory = await getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member);
 
-    // 2. Synthesize Admin-Granted items live (State C: Has Role && NOT in DB)
-    const allShopItems = await getShopItems(interaction.guildId, null, 'name', true);
-    const adminItems = [];
-
-    for (const shopItem of allShopItems) {
-      if (!shopItem.role_id) continue;
-      const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
-      
-      if (interaction.member.roles.cache.has(firstRoleId) && !dbShopIds.has(shopItem.id)) {
-        adminItems.push({
-          ...shopItem,
-          id: `admin_${shopItem.id}`, // Virtual ID to distinguish from real DB entries
-          shop_item_id: shopItem.id,
-          source: 'SYNC',
-          is_active: true, // Roles are always active in this state
-          price: 0,
-          purchased_at: new Date()
-        });
-      }
-    }
-
-    // 3. Final Merged List
-    let items = [...dbInventory, ...adminItems].filter(i => {
+    // 2. Filter Category Items
+    let items = inventory.filter(i => {
       if (i.item_type === 'pack' || i.is_pack) return false;
       return isOther ? i.category_id === null : i.category_id === categoryId;
     });
