@@ -539,26 +539,15 @@ export async function handleInventoryButton(interaction) {
     // 1. CLEANUP: Delete items where user lost the Discord role (Admin removed)
     // 2. DISCOVERY: Add items where user has Discord role but no DB entry (Admin added)
     // 3. Returns FRESH inventory after sync
-    const syncedInventory = await syncInventoryWithDiscord(userId, guildId, interaction.member);
-
-    // Fetch categories and balance (inventory already synced above)
-    const [categories, userBal] = await Promise.all([
+    // Unified Fetch: Includes DB items + Live synthesis of admin roles
+    const [inventory, categories, userBal] = await Promise.all([
+      getSynthesizedInventory(userId, guildId, interaction.member),
       getShopCategories(guildId),
       getUserBalance(guildId, userId)
     ]);
 
     // ========== FILTER VISIBLE ITEMS ==========
     // Exclude packs (hidden from inventory view)
-    // Fail-safe: Also filter out ghost items (roles that no longer exist)
-    const visibleItems = syncedInventory.filter(i => {
-      if (i.item_type === 'pack' || i.is_pack) return false;
-      // Fail-safe: Skip items with missing roles
-      if (i.role_id) {
-        const firstRoleId = i.role_id.split(/[,\s]+/)[0];
-        if (!interaction.guild.roles.cache.has(firstRoleId)) return false;
-      }
-      return true;
-    });
     const items = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
     const totalCount = items.length;
     const currentBalance = parseInt(userBal.balance);
