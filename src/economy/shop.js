@@ -1610,6 +1610,10 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     // LOGGING
     const action = newStatus ? 'Equipped' : 'Unequipped';
     const logName = `${member.displayName} (${member.user.username})`;
+    
+    // Console log with standardized Railway prefix
+    console.log(`[${member.guild.name}] [Inventory] ${logName} ${action.toLowerCase()} ${item.name}`);
+    
     sendLog(member.guild, 'inventory', 'blue', `🎒 Item ${action}`, `**${logName}** ${action.toLowerCase()} **${item.name}**.`);
 
     return { success: true, is_active: newStatus, name: item.name, action: newStatus ? 'activated' : 'deactivated' };
