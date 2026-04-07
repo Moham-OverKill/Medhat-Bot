@@ -1,0 +1,243 @@
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { getPool } from '../../storage/postgres.js';
+import { getGuildConfig } from '../../storage/config.js';
+import { COIN_EMOJI } from '../../shared.js';
+
+export async function handleEconomySettings(interaction) {
+    // Prevent "interaction failed" on slow SQL queries by deferring the button update immediately
+    if (interaction.isButton() && !interaction.deferred && !interaction.replied) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    }
+
+    const customId = interaction.customId;
+
+    let view = 'day';
+    if (customId === 'eco_week') view = 'week';
+    if (customId === 'eco_month') view = 'month';
+    if (customId === 'eco_prices') view = 'prices';
+
+    await showEconomyDashboard(interaction, view);
+}
+
+async function showEconomyDashboard(interaction, view) {
+    const guildId = interaction.guildId;
+    const guildName = interaction.guild?.name || 'Unknown Server';
+    const userName = interaction.user.displayName || interaction.user.username;
+    const userTag = interaction.user.username;
+    
+    console.log(`[${guildName}] [Economy] Opening dashboard for ${userName} (${userTag}) (View: ${view})`);
+    
+    const pool = getPool();
+
+    // 1. Total Server Wealth (always same regardless of view)
+    const wealthRes = await pool.query(
+        `SELECT COALESCE(SUM(balance), 0) as total FROM user_balances WHERE guild_id = $1`,
+        [guildId]
+    );
+    const totalWealth = parseInt(wealthRes.rows[0]?.total || 0, 10);
+
+    // 2. Active User count (has balance > 0)
+    const activeRes = await pool.query(
+        `SELECT COUNT(*) as count FROM user_balances WHERE guild_id = $1 AND balance > 0`,
+        [guildId]
+    );
+    const activeUsers = parseInt(activeRes.rows[0]?.count || 0, 10);
+    const avgWealth = activeUsers > 0 ? Math.floor(totalWealth / activeUsers) : 0;
+
+    const embed = new EmbedBuilder()
+        .setColor(0x2ECC71) // Green
+        .setTitle('📊 Economy Dashboard');
+
+    if (view === 'prices') {
+        // --- SMART PRICING VIEW ---
+        const config = await getGuildConfig(guildId) || {};
+        
+        // Settings Variables
+        const streakBonus = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
+        const mvpReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
+        const boosterMult = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2;
+        const clampedBooster = Math.min(boosterMult, 5); // Runtime cap is 5x max
+        const maxStreakDays = 10; // Hardcoded in service.js
+        const baseDaily = 25; // Hardcoded in service.js
+
+        // Fetch Average Mission Reward (from current active pool)
+        const missionRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM missions WHERE guild_id = $1`, [guildId]);
+        const avgMission = parseInt(missionRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero missions
+
+        // 1. Casual User (Base Daily + 1 Average Mission)
+        const casualIncome = baseDaily + avgMission;
+
+        // 2. Grinder User (Max Daily w/ Booster + 3 Missions + Weekly MVP / 7)
+        const grinderDailyMax = baseDaily + (streakBonus * maxStreakDays);
+        const grinderDailyBoosted = Math.floor(grinderDailyMax * clampedBooster);
+        const grinderIncome = grinderDailyBoosted + (avgMission * 3) + Math.floor(mvpReward / 7);
+
+        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your config values (MVP - Streak - Booster Multipliers - Mission Rewards).')
+        embed.addFields(
+            {
+                name: '📈 Estimated Daily Income',
+                value: `🔹 **Active User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                inline: false
+            },
+            {
+                name: '🟢 Common Items (2 Days Work)',
+                value: `🔹 **Active User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
+                inline: false
+            },
+            {
+                name: '🔵 Rare Items (1 Week Work)',
+                value: `🔹 **Active User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
+                inline: false
+            },
+            {
+                name: '🟡 Legendary Items (1 Month Work)',
+                value: `🔹 **Active User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
+                inline: false
+            }
+        );
+
+    } else {
+        // --- ANALYTICS VIEW ---
+        let intervals = {
+            'day': '1 day',
+            'week': '7 days',
+            'month': '30 days'
+        };
+        const intervalStr = intervals[view];
+
+        // Fetch earnings per user type
+        const earningsRes = await pool.query(`
+            SELECT user_id, SUM(amount) as earned 
+            FROM transactions 
+            WHERE guild_id = $1 
+              AND amount > 0 
+              AND type IN ('mvp_bonus', 'daily', 'mission_reward')
+              AND created_at >= NOW() - INTERVAL '${intervalStr}'
+            GROUP BY user_id
+            ORDER BY earned DESC
+        `, [guildId]);
+
+        let totalPrinted = 0;
+        const userEarnings = earningsRes.rows.map(r => parseInt(r.earned, 10));
+        for (const amt of userEarnings) {
+            totalPrinted += amt;
+        }
+
+        const numUsers = userEarnings.length;
+        const top1Count = Math.max(1, Math.floor(numUsers * 0.01));
+        
+        // Averages
+        let top1Avg = 0;
+        let normalAvg = 0;
+
+        if (numUsers > 0) {
+            const top1Earnings = userEarnings.slice(0, top1Count).reduce((a, b) => a + b, 0);
+            const normalEarnings = userEarnings.slice(top1Count).reduce((a, b) => a + b, 0);
+            
+            top1Avg = Math.floor(top1Earnings / top1Count);
+            if (numUsers > top1Count) {
+                normalAvg = Math.floor(normalEarnings / (numUsers - top1Count));
+            } else {
+                normalAvg = top1Avg; // Everyone is top 1% if there's only 1 user
+            }
+        }
+
+        // Fetch breakdown by type
+        const breakdownRes = await pool.query(`
+            SELECT type, SUM(amount) as total 
+            FROM transactions 
+            WHERE guild_id = $1 
+              AND amount > 0 
+              AND type IN ('mvp_bonus', 'daily', 'mission_reward')
+              AND created_at >= NOW() - INTERVAL '${intervalStr}'
+            GROUP BY type
+            ORDER BY total DESC
+        `, [guildId]);
+
+        const typesToDisplay = [
+            { id: 'mvp_bonus', label: 'Mvp Bonus' },
+            { id: 'daily', label: 'Daily' },
+            { id: 'mission_reward', label: 'Mission Reward' }
+        ];
+
+        const typeTotals = {};
+        for (const row of breakdownRes.rows) {
+            typeTotals[row.type] = parseInt(row.total, 10);
+        }
+
+        let breakdownStr = '';
+        for (const t of typesToDisplay) {
+            const amt = typeTotals[t.id] || 0;
+            const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
+            breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${COIN_EMOJI} (${percent}%)\n`;
+        }
+
+        const periodLabel = view === 'day' ? 'Daily' : view === 'week' ? 'Weekly' : 'Monthly';
+
+        embed.addFields(
+            {
+                name: '💰 Total Server Wealth',
+                value: `**${totalWealth.toLocaleString()}** ${COIN_EMOJI}\nAverage Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
+                inline: false
+            },
+            {
+                name: `🖨️ ${periodLabel} Print Overview`,
+                value: `Total Coins Added: **+${totalPrinted.toLocaleString()}** ${COIN_EMOJI}`,
+                inline: false
+            },
+            {
+                name: '👥 Average Earnings per User',
+                value: `• **Top 1% Grinders**: ${top1Avg.toLocaleString()} ${COIN_EMOJI}\n• **Normal Users**: ${normalAvg.toLocaleString()} ${COIN_EMOJI}`,
+                inline: false
+            },
+            {
+                name: '📊 Source Breakdown',
+                value: breakdownStr,
+                inline: false
+            }
+        );
+
+        // Inflation Warning (if 7-day print > 20% of total wealth)
+        if (view === 'week' && totalWealth > 0 && totalPrinted > (totalWealth * 0.2)) {
+            embed.addFields({
+                name: '⚠️ High Inflation Warning',
+                value: `The server printed coins equal to **${Math.round((totalPrinted/totalWealth)*100)}%** of the total wealth in just 7 days. Consider increasing shop prices or lowering reward limits to prevent hyperinflation.`
+            });
+        }
+    }
+
+    const navRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back to Settings')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('eco_prices')
+            .setLabel('Prices')
+            .setEmoji('🏷️')
+            .setStyle(view === 'prices' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
+
+    const timeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('eco_day')
+            .setLabel('Per Day')
+            .setStyle(view === 'day' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('eco_week')
+            .setLabel('Per Week')
+            .setStyle(view === 'week' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('eco_month')
+            .setLabel('Per Month')
+            .setStyle(view === 'month' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
+
+    // Display the timeframe buttons on top, and navigation on the bottom
+    const responseMethod = (interaction.deferred || interaction.replied) ? 'editReply' : 'update';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [timeRow, navRow]
+    });
+}

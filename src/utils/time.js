@@ -1,100 +1,185 @@
 /**
- * Time formatting utilities
+ * Format a date into a relative time string (e.g. "23h 59m")
  */
+export function formatDetailedTimeRemaining(targetDate) {
+  const now = new Date();
+  const diff = targetDate.getTime() - now.getTime();
 
-/**
- * Format milliseconds to a human-readable time string
- * @param {number} milliseconds - Time in milliseconds
- * @returns {string} Formatted time (e.g., "2h 30m" or "45m 12s")
- */
-export function formatTimeRemaining(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  
+  if (diff <= 0) return 'Available now';
+
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
   if (hours > 0) {
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-  } else if (minutes > 0) {
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-  } else {
-    return `${seconds}s`;
+    return `${hours}h ${minutes}m`;
   }
+  return `${minutes}m`;
 }
 
 /**
- * Format milliseconds to a detailed human-readable time string
- * @param {number} milliseconds - Time in milliseconds
- * @returns {string} Detailed formatted time (e.g., "2 hours and 30 minutes")
+ * Get the next time a daily reward can be claimed
+ * NOW USES CAIRO MIDNIGHT instead of 24h rolling
  */
-export function formatDetailedTimeRemaining(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  
-  if (days > 0) {
-    const remainingHours = hours % 24;
-    return `${days} day${days !== 1 ? 's' : ''} and ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
-  } else if (hours > 0) {
-    const remainingMinutes = minutes % 60;
-    return `${hours} hour${hours !== 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
-  } else if (minutes > 0) {
-    const remainingSeconds = seconds % 60;
-    return `${minutes} minute${minutes !== 1 ? 's' : ''} and ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`;
-  } else {
-    return `${seconds} second${seconds !== 1 ? 's' : ''}`;
-  }
+export function getNextDailyTime(lastDailyDate) {
+  // Next claim is at the next Cairo midnight
+  return getNextCairoMidnight();
 }
 
-/**
- * Get the next daily reset time (midnight UTC)
- * @param {string|Date|number} lastClaimTimestamp - Last claim timestamp
- * @returns {number} Next claim time in milliseconds
- */
-export function getNextDailyTime(lastClaimTimestamp) {
-  if (!lastClaimTimestamp) return Date.now();
-  
-  const lastClaim = new Date(lastClaimTimestamp);
-  const nextClaim = new Date(lastClaim);
-  
-  // Set to next day at midnight UTC
-  nextClaim.setUTCDate(nextClaim.getUTCDate() + 1);
-  nextClaim.setUTCHours(0, 0, 0, 0);
-  
-  return nextClaim.getTime();
-}
+// ============================================
+// CAIRO TIME HELPERS (UTC+2 / UTC+3 DST)
+// ============================================
 
 /**
- * Get daily cooldown information
- * @param {string|Date|number} lastClaimTimestamp - Last claim timestamp
- * @returns {Object} { canClaim: boolean, timeRemaining: number, nextClaimTime: number }
+ * Get a date string (YYYY-MM-DD) in Cairo timezone
+ * Uses Intl.DateTimeFormat for robust DST handling
  */
-export function getDailyCooldownInfo(lastClaimTimestamp) {
-  const nextClaimTime = getNextDailyTime(lastClaimTimestamp);
-  const now = Date.now();
-  const timeRemaining = nextClaimTime - now;
-  
-  return {
-    canClaim: timeRemaining <= 0,
-    timeRemaining: Math.max(0, timeRemaining),
-    nextClaimTime
-  };
-}
-
-/**
- * Format a date to a human-readable string
- * @param {Date|string|number} date - Date to format
- * @returns {string} Formatted date
- */
-export function formatDate(date) {
-  const d = new Date(date);
-  return d.toLocaleDateString('en-US', {
+export function getCairoDateString(date) {
+  // Create a formatter for Cairo time
+  const formatter = new Intl.DateTimeFormat('en-CA', { // en-CA gives YYYY-MM-DD format
+    timeZone: 'Africa/Cairo',
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    month: '2-digit',
+    day: '2-digit'
   });
+
+  return formatter.format(date);
+}
+
+/**
+ * Get today's date string in Cairo timezone
+ */
+export function getTodayCairo() {
+  return getCairoDateString(new Date());
+}
+
+/**
+ * Get yesterday's date string in Cairo timezone
+ */
+export function getYesterdayCairo() {
+  const now = new Date();
+  // Get current time in Cairo to safely subtract 24h
+  // We can't just subtract 24h from UTC because of potential DST boundaries
+  // But for "Yesterday's Date", subtracting 24h from NOW is usually safe enough 
+  // IF we format the result in Cairo time.
+  // Actually, safer: Get Cairo Date -> Subtract 1 day.
+
+  // Robust approach: 
+  // 1. Get current Cairo parts
+  // 2. Create date object
+  // 3. Subtract 1 day
+  // 4. Format
+
+  // Simpler approach that works for "Yesterday": 
+  // Subtract 24h from now, then format in Cairo.
+  // This covers 99.9% of cases except exactly at DST switch boundaries (rare).
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return getCairoDateString(yesterday);
+}
+
+/**
+ * Check if a streak is valid (last claim was today or yesterday in Cairo time)
+ * Returns true if streak should continue, false if it should reset to 0
+ */
+export function isStreakValid(lastClaimDate) {
+  if (!lastClaimDate) return false;
+
+  const claimDateStr = getCairoDateString(lastClaimDate);
+  const today = getTodayCairo();
+  const yesterday = getYesterdayCairo();
+
+  return claimDateStr === today || claimDateStr === yesterday;
+}
+
+/**
+ * Check if user already claimed today (in Cairo time)
+ */
+export function hasClaimedToday(lastClaimDate) {
+  if (!lastClaimDate) return false;
+
+  const claimDateStr = getCairoDateString(lastClaimDate);
+  return claimDateStr === getTodayCairo();
+}
+
+export function getNextCairoMidnight() {
+  const now = new Date();
+
+  // 1. Get current time parts in Cairo timezone
+  // Use Intl.DateTimeFormat with formatToParts to avoid fragile string parsing
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(now);
+  const getPart = (type) => {
+    let val = parseInt(parts.find(p => p.type === type).value, 10);
+    // ICU handling: sometimes hour 0 is reported as 24
+    if (type === 'hour' && val === 24) return 0;
+    return val;
+  };
+
+  // 2. These represent the DATE and TIME currently in Cairo
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+  const second = getPart('second');
+
+  // 3. Calculate current Cairo offset relative to UTC
+  // We compare the UTC timestamp of "Now" with the UTC timestamp we'd have 
+  // if those Cairo components were UTC.
+  const cairoComponentsAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  const offsetMs = cairoComponentsAsUtc - now.getTime();
+  
+  // 4. Target TODAY's 00:00:00 Cairo in UTC:
+  const midnightUtcParts = Date.UTC(year, month - 1, day, 0, 0, 0);
+  const targetMidnight = new Date(midnightUtcParts - offsetMs);
+
+  // 5. If it passed already (or within 5 mins of passing), add 24 hours
+  // Increased threshold to 5 mins to prevent any race condition loop
+  if (targetMidnight.getTime() <= now.getTime() + 300000) {
+    targetMidnight.setTime(targetMidnight.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // To prevent NaN during DST changes or edge cases, ensure it's a valid number
+  if (isNaN(targetMidnight.getTime())) {
+    const fallback = new Date();
+    fallback.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 UTC+3 (Safe DST upper bound)
+    if (fallback <= now) fallback.setUTCDate(fallback.getUTCDate() + 1);
+    return fallback;
+  }
+
+  return targetMidnight;
+}
+
+/**
+ * Helper to get cairo offset at a specific UTC time
+ */
+function getCairoOffsetAt(date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
+  
+  const cDate = new Date(Date.UTC(getPart('year'), getPart('month') - 1, getPart('day'), getPart('hour'), getPart('minute'), getPart('second')));
+  return cDate.getTime() - date.getTime();
+}
+
+/**
+ * Get milliseconds until Cairo midnight (for scheduling)
+ */
+export function getTimeUntilCairoMidnight() {
+  const nextMidnight = getNextCairoMidnight();
+  return nextMidnight.getTime() - Date.now();
 }

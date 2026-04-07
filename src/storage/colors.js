@@ -1,139 +1,137 @@
 import { getPool } from './postgres.js';
+import { logSystemEvent } from '../utils/logger.js';
 
-/**
- * Initialize color role tables in PostgreSQL
- */
-export async function initializeColorsDB() {
-  const pool = getPool();
-  
-  // Create colors table for normal color roles
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS color_roles (
-      id SERIAL PRIMARY KEY,
-      guild_id TEXT NOT NULL,
-      role_id TEXT NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(guild_id, role_id)
-    )
-  `);
-  
-  // Create booster_color_roles table for booster-exclusive color roles
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS booster_color_roles (
-      id SERIAL PRIMARY KEY,
-      guild_id TEXT NOT NULL,
-      role_id TEXT NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(guild_id, role_id)
-    )
-  `);
-  
-  // Create booster_role_config table to store which role represents boosters
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS booster_role_config (
-      guild_id TEXT PRIMARY KEY,
-      role_id TEXT NOT NULL
-    )
-  `);
+// No initialization needed here as tables are created in postgres.js
+export function initializeColorsDB() {
+  // Kept for backward compatibility with imports, but does nothing now
+  return true;
 }
 
 /**
- * Add a color role
+ * Add a color role (Migrated to Postgres)
  */
 export async function addColorRole(guildId, roleId, isBooster = false) {
   const pool = getPool();
-  const table = isBooster ? 'booster_color_roles' : 'color_roles';
+  const table = isBooster ? 'booster_colors' : 'colors';
   
   try {
     await pool.query(
-      `INSERT INTO ${table} (guild_id, role_id) VALUES ($1, $2)`,
+      `INSERT INTO ${table} (guild_id, role_id) VALUES ($1, $2)
+       ON CONFLICT (guild_id, role_id) DO NOTHING`,
       [guildId, roleId]
     );
+    // Postgres doesn't return "rows affected" easily for ON CONFLICT DO NOTHING unless we check,
+    // but generally if no error, it succeeded (or already existed).
+    // We can assume success for this UI.
     return { success: true };
   } catch (error) {
-    if (error.code === '23505') { // PostgreSQL unique violation
-      return { success: false, error: 'Role already exists in the color list' };
-    }
-    throw error;
+    console.error('Error adding color role:', error);
+    return { success: false, error: 'Database error' };
   }
 }
 
 /**
- * Remove a color role
+ * Remove a color role (Migrated to Postgres)
  */
 export async function removeColorRole(guildId, roleId, isBooster = false) {
   const pool = getPool();
-  const table = isBooster ? 'booster_color_roles' : 'color_roles';
+  const table = isBooster ? 'booster_colors' : 'colors';
   
-  const result = await pool.query(
-    `DELETE FROM ${table} WHERE guild_id = $1 AND role_id = $2`,
-    [guildId, roleId]
-  );
-  
-  return { success: true, deleted: result.rowCount > 0 };
+  try {
+    const result = await pool.query(
+      `DELETE FROM ${table} WHERE guild_id = $1 AND role_id = $2`,
+      [guildId, roleId]
+    );
+    return { success: true, deleted: result.rowCount > 0 };
+  } catch (error) {
+    console.error('Error removing color role:', error);
+    return { success: false, error: 'Database error' };
+  }
 }
 
 /**
- * Get all color roles for a guild
+ * Get all color roles for a guild (Migrated to Postgres)
  */
 export async function getColorRoles(guildId, isBooster = false) {
   const pool = getPool();
-  const table = isBooster ? 'booster_color_roles' : 'color_roles';
+  const table = isBooster ? 'booster_colors' : 'colors';
   
-  const result = await pool.query(
-    `SELECT role_id as "roleId", created_at as "createdAt" FROM ${table} WHERE guild_id = $1 ORDER BY created_at ASC`,
-    [guildId]
-  );
-  return result.rows;
+  try {
+    const result = await pool.query(
+      `SELECT role_id as "roleId", created_at as "createdAt" 
+       FROM ${table} 
+       WHERE guild_id = $1 
+       ORDER BY created_at ASC`,
+      [guildId]
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching color roles:', error);
+    return [];
+  }
 }
 
 /**
- * Get all color roles (both normal and booster) for a guild
+ * Get all color roles (both normal and booster) for a guild (Migrated to Postgres)
  */
 export async function getAllColorRoles(guildId) {
   const pool = getPool();
   
-  const normalResult = await pool.query(
-    `SELECT role_id FROM color_roles WHERE guild_id = $1`,
-    [guildId]
-  );
-  const boosterResult = await pool.query(
-    `SELECT role_id FROM booster_color_roles WHERE guild_id = $1`,
-    [guildId]
-  );
-  
-  const normal = normalResult.rows.map(r => r.role_id);
-  const booster = boosterResult.rows.map(r => r.role_id);
-  
-  return [...normal, ...booster];
+  try {
+    // Parallel fetch
+    const [normal, booster] = await Promise.all([
+      pool.query('SELECT role_id FROM colors WHERE guild_id = $1', [guildId]),
+      pool.query('SELECT role_id FROM booster_colors WHERE guild_id = $1', [guildId])
+    ]);
+    
+    return [...normal.rows.map(r => r.role_id), ...booster.rows.map(r => r.role_id)];
+  } catch (error) {
+    console.error('Error fetching all color roles:', error);
+    return [];
+  }
 }
 
 /**
- * Set the booster role for a guild
+ * Set the booster role for a guild (Migrated to Postgres)
  */
 export async function setBoosterRole(guildId, roleId) {
   const pool = getPool();
   
-  await pool.query(
-    `INSERT INTO booster_role_config (guild_id, role_id) 
-     VALUES ($1, $2)
-     ON CONFLICT(guild_id) DO UPDATE SET role_id = excluded.role_id`,
-    [guildId, roleId]
-  );
-  
-  return { success: true };
+  try {
+    await pool.query(
+      `INSERT INTO booster_roles (guild_id, role_id) 
+       VALUES ($1, $2)
+       ON CONFLICT(guild_id) DO UPDATE SET role_id = excluded.role_id`,
+      [guildId, roleId]
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting booster role:', error);
+    return { success: false, error: 'Database error' };
+  }
 }
 
 /**
- * Get the booster role for a guild
+ * Get the booster role for a guild (Migrated to Postgres)
  */
 export async function getBoosterRole(guildId) {
   const pool = getPool();
   
-  const result = await pool.query(
-    `SELECT role_id FROM booster_role_config WHERE guild_id = $1`,
-    [guildId]
-  );
-  
-  return result.rows.length > 0 ? result.rows[0].role_id : null;
+  try {
+    const result = await pool.query(
+      'SELECT role_id FROM booster_roles WHERE guild_id = $1',
+      [guildId]
+    );
+    return result.rows[0]?.role_id || null;
+  } catch (error) {
+    console.error('Error fetching booster role:', error);
+    return null;
+  }
+}
+
+/**
+ * Close the database connection (Deprecated)
+ */
+export function closeColorsDB() {
+  // Postgres pool is managed globally
 }
