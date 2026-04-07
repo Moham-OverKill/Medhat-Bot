@@ -703,7 +703,9 @@ async function sortItemsByRolePosition(items, guild) {
 // VIEW 2: Category Content View
 export async function handleInventoryCategorySelect(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     const catIdStr = interaction.customId.replace('bank_inv_cat_', '');
     const isOther = catIdStr === 'null';
@@ -859,7 +861,10 @@ export async function handleInventoryCategorySelect(interaction) {
 // VIEW 3: Item Management Panel with Carousel Navigation
 export async function handleInventoryItemSelect(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    // 1. Force immediate acknowledgment to prevent "Interaction Failed"
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     // Parse interaction data
     // From select menu: value = "invId_index", customId = "bank_inv_item_select_categoryId"
@@ -1119,6 +1124,11 @@ export async function handleInventoryItemSelect(interaction) {
 // ACTION HANDLER (Drop / Equip / Confirm)
 export async function handleInventoryAction(interaction) {
   try {
+    // 1. Acknowledge immediately
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+
     const parts = interaction.customId.split('_');
     const action = parts[2]; // drop, equip, dropconfirm, dropcancel
     const invId = parseInt(parts[3]);
@@ -1313,30 +1323,39 @@ export async function handleItemClaim(interaction) {
   try {
     const dropId = interaction.customId.replace('bank_item_claim_', '');
 
-    const [dropCheck] = await query('SELECT dropper_id FROM dropped_items WHERE id = $1', [dropId]).then(r => r.rows);
-    if (dropCheck && dropCheck.dropper_id === interaction.user.id) {
-      return interaction.reply({ content: '❌ You cannot claim your own drop!', flags: [64] });
-    }
-
-    // Purchase time: Defer immediately to prevent timeout
-    await interaction.deferReply({ flags: [64] });
+    // 1. Initial acknowledgment (STRICT: Re-acknowledge even if router missed it)
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
     if (res.success) {
-      // 1. Success Message to Claimer
-      await interaction.editReply({ content: `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.` });
+      const isSelfClaim = res.item.dropper_id === interaction.user.id;
+      const claimerName = getUserDisplayName(interaction.user);
 
-      // 2. Update Public Message (Row 1: Original Drop Info, Row 2: Claimer Name)
+      // 1. Success Message to Claimer (Ephemeral check handled by router)
+      const successMsg = isSelfClaim 
+        ? '✅ You have reclaimed your own dropped item!' 
+        : `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
+      
+      await interaction.followUp({ content: successMsg, ephemeral: true }).catch(() => {});
+
+      // 2. Update Public Message
       const originalDesc = interaction.message.embeds[0]?.description || '';
       const firstLine = originalDesc.split('\n')[0]; // Preserve the "User dropped Item" line
-      const newDesc = `${firstLine}\nItem Claimed by **${getUserDisplayName(interaction.user)}**`;
+      
+      const newDesc = isSelfClaim
+        ? `✅ **${claimerName}** changed their mind and claimed their own drop!`
+        : `${firstLine}\nItem Claimed by **${claimerName}**`;
 
+      const droppedAtUnix = Math.floor(new Date(res.dropped_at).getTime() / 1000);
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setColor('#2ECC71')
+        .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
         .setDescription(newDesc)
-        .setFooter({ text: 'Status: Claimed' });
+        .setFooter({ text: `Dropped at: ${new Date(res.dropped_at).toLocaleString()}` });
+
+      // Add relative timestamp in field if we want it more prominent
+      claimedEmbed.setTimestamp(new Date(res.dropped_at));
 
       // Locked Button (Secondary style + Disabled)
       const lockedRow = new ActionRowBuilder().addComponents(
@@ -1429,11 +1448,12 @@ export async function handleBankHistory(interaction) {
 
 export async function handleBackButton(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     await refreshBankUI(interaction);
   } catch (error) {
     console.error('Back button error:', error);
   }
 }
-
 

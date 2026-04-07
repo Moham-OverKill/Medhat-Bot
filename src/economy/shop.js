@@ -1074,10 +1074,7 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     const drop = dropRes.rows[0];
 
     // 2. Rules Verification
-    if (drop.dropper_id === claimerId) {
-      await client.query('ROLLBACK');
-      throw new Error('You cannot claim your own drop.');
-    }
+    // [Self-Claiming Enabled]: Droppers can now claim their own items.
 
     // Check Database Ownership
     const ownCheck = await client.query(
@@ -1116,7 +1113,11 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     );
 
     await client.query('COMMIT');
-    return { success: true, item: drop };
+    return { 
+      success: true, 
+      item: drop,
+      dropped_at: drop.created_at
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
