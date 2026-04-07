@@ -1118,11 +1118,11 @@ export async function handleInventoryAction(interaction) {
 
       if (res.success) {
         // Post PUBLIC claim message
+        const expiresUnix = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
         const publicEmbed = new EmbedBuilder()
-          .setTitle('🎁 Item Dropped!')
+          .setTitle('Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`**${getUserDisplayName(interaction.user)}** dropped **${res.item.name}**!\n\nClick the button below to claim it. First come, first served!`)
-          .setTimestamp();
+          .setDescription(`**${getUserDisplayName(interaction.user)}** dropped **${res.item.name}** (<@&${res.item.role_id}>)!\n\nExpires: <t:${expiresUnix}:R>`);
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -1201,7 +1201,13 @@ export async function handleInventoryAction(interaction) {
 export async function handleItemClaim(interaction) {
   try {
     const dropId = interaction.customId.replace('bank_item_claim_', '');
-    
+
+    // 1. Instant check for self-claim to prevent timeout/failed interaction
+    const [dropCheck] = await query('SELECT dropper_id FROM dropped_items WHERE id = $1', [dropId]).then(r => r.rows);
+    if (dropCheck && dropCheck.dropper_id === interaction.user.id) {
+      return interaction.reply({ content: '❌ You cannot claim your own drop!', ephemeral: true });
+    }
+
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
@@ -1222,7 +1228,9 @@ export async function handleItemClaim(interaction) {
     }
   } catch (error) {
     console.error('Claim Error:', error);
-    await interaction.reply({ content: `❌ ${error.message}`, ephemeral: true });
+    if (!interaction.replied) {
+      await interaction.reply({ content: `❌ ${error.message}`, ephemeral: true });
+    }
   }
 }
 
