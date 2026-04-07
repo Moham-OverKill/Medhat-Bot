@@ -1185,7 +1185,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
   if (!member) return [];
   try {
     const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.required_items
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
        FROM user_inventory ui
        LEFT JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
@@ -1216,7 +1216,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
 
     // Refresh inventory after discovery (if any)
     const refreshed = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.required_items
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
        FROM user_inventory ui
        LEFT JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
