@@ -596,6 +596,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // ========== REAL-TIME ROLE CHECK ==========
     // Check if user ALREADY HAS the role (even if admin-granted, not in DB)
     // This prevents buying items they already own via Discord role
+      // Discovery Logic Removed: We no longer write Admin-granted items to the DB.
+    // They are now synthesized live in the view layer (bank.js).
     if (item.role_id) {
       const firstRoleId = item.role_id.split(/[,\s]+/)[0];
       if (member.roles.cache.has(firstRoleId)) {
@@ -1200,6 +1202,10 @@ export async function syncInventoryRoleState(userId, guildId, member, inventory)
 export async function syncInventoryWithDiscord(userId, guildId, member) {
   if (!member) return [];
   try {
+    // ONE-TIME CLEANUP: Purge legacy 'SYNC' items once to fix existing ghosts
+    // Admin-granted items are now synthesized live at the view layer.
+    await query(`DELETE FROM user_inventory WHERE source = 'SYNC' AND guild_id = $1`, [guildId]);
+
     const inventory = await query(
       `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
        FROM user_inventory ui
@@ -1211,24 +1217,9 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     const botMember = member.guild.members.me;
     const currentInv = inventory.rows;
 
-    // Discovery: Roles the user has that ARE linked to shop items BUT not in DB
-    const shopItemsWithRoles = await getShopItems(guildId, null, 'name', true);
-    const existingShopIds = new Set(currentInv.map(i => i.shop_item_id));
-
-    for (const item of shopItemsWithRoles) {
-      if (!item.role_id) continue;
-      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-
-      // If user has the role but NO DB ENTRY, discover it
-      if (member.roles.cache.has(firstRoleId) && !existingShopIds.has(item.id)) {
-        console.log(`[Sync] Discovering item ${item.name} for ${member.user.username}`);
-        await query(
-          `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source)
-           VALUES ($1, $2, $3, $4, true, 'SYNC')`,
-          [userId, guildId, item.id, item.role_id]
-        );
-      }
-    }
+    // Discovery: Roles the user has that are linked to shop items but not in DB
+    // Logic removed: We no longer write Admin-granted roles to the database.
+    // They are now synthesized live at the view layer to prevent 'Ghost Items'.
 
     // Refresh inventory after discovery (if any)
     const refreshed = await query(
