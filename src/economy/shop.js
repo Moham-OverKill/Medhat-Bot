@@ -980,27 +980,43 @@ export async function dropItem(userId, guildId, invId, member) {
 
     const item = invRes.rows[0];
 
-    // 2. Instant Database Wipe
+    // 2. Role removal (STRICT: Try to remove Discord roles FIRST)
+    // If we can't remove the role, we MUST NOT delete the item from the DB.
+    if (item.role_id) {
+      const rIds = item.role_id.split(/[,\s]+/);
+      const botMember = member.guild.members.me;
+      
+      for (const rId of rIds) {
+        const role = member.guild.roles.cache.get(rId);
+        if (role) {
+          // Check Hierarchy
+          if (role.comparePositionTo(botMember.roles.highest) >= 0) {
+            await client.query('ROLLBACK');
+            throw new Error(`❌ Failed to drop item: I cannot remove the role "${role.name}" due to hierarchy permissions.`);
+          }
+
+          // Strict removal
+          try {
+            await member.roles.remove(role);
+          } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('[Drop Error] Role removal failed:', err.message);
+            throw new Error(`❌ Failed to drop item: Internal error removing your role.`);
+          }
+        }
+      }
+    }
+
+    // 3. Database Wipe (Only after roles are successfully confirmed gone)
     await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
 
-    // 3. Create Drop Record (Expires after 24 hours)
+    // 4. Create Drop Record (Expires after 24 hours)
     const dropRes = await client.query(
       `INSERT INTO dropped_items (guild_id, dropper_id, shop_item_id, status)
        VALUES ($1, $2, $3, 'available')
        RETURNING id`,
       [guildId, userId, item.shop_item_id]
     );
-
-    // 4. Role removal (Instant Discord Wipe)
-    if (item.role_id) {
-      const rIds = item.role_id.split(/[,\s]+/);
-      for (const rId of rIds) {
-        const role = member.guild.roles.cache.get(rId);
-        if (role && role.comparePositionTo(member.guild.members.me.roles.highest) < 0) {
-          await member.roles.remove(role).catch(() => {});
-        }
-      }
-    }
 
     // 5. Dependency Sweep (Unequip items that lost requirements)
     await runDependencySweep(userId, guildId, member, client);
@@ -1224,21 +1240,29 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     );
 
     // Rule Verification: Ensure roles match the 'is_active' state in DB
+    // Re-fetch member to get latest role cache from Discord (avoids race conditions)
+    const freshMember = await member.guild.members.fetch(userId).catch(() => member);
+
     for (const invItem of refreshed.rows) {
       if (!invItem.role_id || invItem.item_type === 'pack' || invItem.is_pack) continue;
       const firstRoleId = invItem.role_id.split(/[,\s]+/)[0];
-      const role = member.guild.roles.cache.get(firstRoleId);
+      const role = freshMember.guild.roles.cache.get(firstRoleId);
       if (!role) continue;
 
-      const hasRole = member.roles.cache.has(firstRoleId);
+      const hasRole = freshMember.roles.cache.has(firstRoleId);
       const shouldHaveRole = invItem.is_active === true;
 
       // Only perform role movement if bot is high enough
       if (role.comparePositionTo(botMember.roles.highest) < 0) {
         if (shouldHaveRole && !hasRole) {
-          await member.roles.add(role).catch(() => {});
+          // Admin likely removed the role manually - respect it and unequip in DB
+          await query(`UPDATE user_inventory SET is_active = false WHERE id = $1`, [invItem.id]);
+          invItem.is_active = false;
         } else if (!shouldHaveRole && hasRole) {
-          await member.roles.remove(role).catch(() => {});
+          // User has role but DB says unequipped (likely admin granted)
+          // If they own it, just mark it as Equipped (Auto-Sync)
+          await query(`UPDATE user_inventory SET is_active = true WHERE id = $1`, [invItem.id]);
+          invItem.is_active = true;
         }
       }
     }
