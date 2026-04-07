@@ -768,7 +768,8 @@ export async function handleInventoryCategorySelect(interaction) {
     // Build List with role mentions
     const listLines = items.map(i => {
       const nameDisplay = i.role_id ? `<@&${i.role_id.split(/[,\s]+/)[0]}>` : `**${i.name}**`;
-      const status = i.is_active ? '✅' : '⚫';
+      const isAdminIdentified = i.source === 'SYNC';
+      const status = isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜');
       return `${status} ${nameDisplay}`;
     });
 
@@ -777,24 +778,25 @@ export async function handleInventoryCategorySelect(interaction) {
       .setColor('#2ECC71')
       .setDescription(listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : ''));
 
-    // Select menu with sorted items
-    // Temp items show "Active/Inactive", Perm items show "Equipped/Unequipped"
     const select = new StringSelectMenuBuilder()
       .setCustomId(`bank_inv_item_select_${isOther ? 'null' : categoryId}`)
       .setPlaceholder('Select an Item to Manage')
       .addOptions(items.slice(0, 25).map((i, idx) => {
         // Check if item is temporary (has duration/expiry) or permanent
-        const isTemp = !!(i.expires_at ||
-          (i.duration_seconds && i.duration_seconds > 0) ||
-          (i.duration_hours && i.duration_hours > 0));
-        const statusText = isTemp
-          ? (i.is_active ? 'Active' : 'Inactive')
-          : (i.is_active ? 'Equipped' : 'Unequipped');
+        const isTemp = !!(i.expires_at || 
+                       (i.duration_seconds && i.duration_seconds > 0) || 
+                       (i.duration_hours && i.duration_hours > 0));
+        const isAdminIdentified = i.source === 'SYNC';
+        
+        const statusText = isAdminIdentified
+          ? 'Admin Granted'
+          : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped'));
+          
         return {
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
           value: `${i.id}_${idx}`,
           description: statusText,
-          emoji: i.is_active ? '✅' : '⚫'
+          emoji: isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜')
         };
       }));
 
@@ -961,8 +963,10 @@ export async function handleInventoryItemSelect(interaction) {
 
     // Show status with dynamic text based on item type
     // Permanent: Equipped/Unequipped | Temporary: Active/Inactive
-    if (isTemp) {
-      desc += `\n**Status:** ${item.is_active ? '🟢 Active' : '🔴 Inactive'}`;
+    if (isAdminGranted) {
+      desc += `\n**Status:** 🛡️ Admin Granted`;
+    } else if (isTemp) {
+      desc += `\n**Status:** ${item.is_active ? '🟢 Active' : '⚪ Inactive'}`;
     } else {
       desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⬜ Unequipped'}`;
     }
@@ -984,6 +988,10 @@ export async function handleInventoryItemSelect(interaction) {
       .setColor(embedColor)
       .setDescription(desc);
 
+    if (isAdminGranted) {
+      embed.setFooter({ text: '🛡️ This item was granted by an Administrator and cannot be modified.' });
+    }
+
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
@@ -997,7 +1005,7 @@ export async function handleInventoryItemSelect(interaction) {
         .setLabel('Drop')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(cannotSell)
+        .setDisabled(cannotSell || isAdminGranted)
     );
 
     // Dynamic button based on item type and state
@@ -1010,9 +1018,9 @@ export async function handleInventoryItemSelect(interaction) {
       new ButtonBuilder()
         .setCustomId(`bank_inv_equip_${item.id}_${catIdStr}_${currentIndex}`)
         .setLabel(toggleLabel)
-        .setEmoji(toggleEmoji)
+        .setEmoji(isAdminGranted ? '🛡️' : toggleEmoji)
         .setStyle(item.is_active ? ButtonStyle.Secondary : ButtonStyle.Success)
-        .setDisabled(cannotToggle)
+        .setDisabled(cannotToggle || isAdminGranted)
     );
 
     // ROW 2 (Bottom): Navigation [Back] [◀️] [▶️]
