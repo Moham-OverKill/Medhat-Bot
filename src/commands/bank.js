@@ -813,12 +813,17 @@ export async function handleInventoryCategorySelect(interaction) {
         const isAdminIdentified = i.source === 'SYNC';
         
         let statusEmoji = '⬜';
+        let statusText = 'Unknown';
+
         if (isAdminIdentified) {
           statusEmoji = '🛡️';
+          statusText = 'Admin Granted';
         } else if (isTemp) {
-          statusEmoji = i.is_active ? '🟢' : '⚪';
+          statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Active' : 'Inactive';
         } else {
           statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Equipped' : 'Unequipped';
         }
           
         return {
