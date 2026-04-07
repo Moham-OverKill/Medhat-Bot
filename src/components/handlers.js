@@ -238,7 +238,7 @@ export function setupComponentHandlers(client) {
         await handleInventoryButton(interaction);
       } else if (customId.startsWith('bank_inv_cat_')) {
         await handleInventoryCategorySelect(interaction);
-      } else if (customId.startsWith('bank_inv_item_')) {
+      } else if (customId.startsWith('bank_inv_item_') || customId.startsWith('inv_nav_')) {
         await handleInventoryItemSelect(interaction);
       } else if (customId.startsWith('bank_item_claim_')) {
         await handleItemClaim(interaction);
