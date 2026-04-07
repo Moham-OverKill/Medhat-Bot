@@ -122,14 +122,19 @@ export async function getGuildActivity(guildId) {
  */
 export async function resetGuildActivity(guildId) {
   const pool = getPool();
+  const now = Date.now();
   try {
     await pool.query(
       `UPDATE user_activity 
        SET message_count = 0, 
            voice_minutes = 0, 
-           voice_seconds_accumulated = 0 
+           voice_seconds_accumulated = 0,
+           voice_valid_start = CASE 
+             WHEN voice_valid_start IS NOT NULL THEN $2 
+             ELSE NULL 
+           END
        WHERE guild_id = $1`,
-      [guildId]
+      [guildId, now]
     );
     invalidateConfigCache(guildId);
   } catch (error) {
