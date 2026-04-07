@@ -1201,8 +1201,23 @@ export async function handleInventoryAction(interaction) {
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3', 
           [publicMsg.id, interaction.channelId, res.dropId]);
 
-        // Cleanup ephemeral confirmation
-        await interaction.editReply({ content: '✅ Item dropped successfully!', embeds: [], components: [] });
+        // Standardized console audit
+        console.log(`[${interaction.guild.name}] [Inventory] ${interaction.user.tag} dropped ${res.item.name}`);
+
+        // Cleanup ephemeral confirmation and add Back button
+        const backRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('bank_inventory')
+            .setLabel('Back to Inventory')
+            .setEmoji('🎒')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.editReply({ 
+          content: '✅ Item dropped successfully!', 
+          embeds: [], 
+          components: [backRow] 
+        });
 
         // Optional: Send inventory audit log
         sendLog(interaction.guild, 'inventory', 'orange', '🗑️ Item Dropped', `**${getUserLogName(interaction.member)}** dropped **${res.item.name}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
