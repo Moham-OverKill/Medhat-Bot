@@ -1003,7 +1003,10 @@ export async function handleInventoryItemSelect(interaction) {
       `**Value:** ${item.price} ${COIN_EMOJI}`;
 
     // Show acquisition info (Purchased vs Admin-Granted)
-    if (!isAdminGranted) {
+    if (isAdminGranted) {
+      const joinDate = interaction.member.joinedAt || new Date();
+      desc += `\n**Acquired:** <t:${Math.floor(joinDate.getTime() / 1000)}:D>`;
+    } else {
       desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
     }
 
