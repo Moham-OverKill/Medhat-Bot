@@ -1,8 +1,17 @@
 import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
-import { getGuildActivity, resetGuildActivity } from '../activity/tracker.js';
+import { getGuildActivity, resetGuildActivity, getTopActiveUsers } from '../activity/tracker.js';
 import { getGuildConfig, setGuildConfig, loadGuildConfigs } from '../storage/config.js';
 import { appendAwardRecord } from '../storage/mvpHistory.js';
-import { sanitizeError, formatGuildForLog, getUserDisplayName, parseIsoTimestamp } from '../shared.js';
+import { 
+  sanitizeError, 
+  formatGuildForLog, 
+  getUserDisplayName, 
+  parseIsoTimestamp,
+  getUserLogName,
+  COIN_EMOJI 
+} from '../shared.js';
+import { sendLog } from '../utils/logger.js';
+import { getPool } from '../storage/postgres.js';
 
 /**
  * Active MVP award timers per guild
@@ -41,7 +50,6 @@ function acquireGuildLock(guildId) {
     if (age < LOCK_MAX_DURATION_MS) {
       return null;
     }
-    console.warn(`[MVP][LOCK] releasing stale lock for ${formatGuildForLog(guildId)} (${Math.round(age / 1000)}s old)`);
     guildAwardLocks.delete(guildId);
   }
 
@@ -59,9 +67,6 @@ function acquireGuildLock(guildId) {
   return lock;
 }
 
-function logStep(guildId, step, message) {
-  console.log(`[MVP][${step}] ${message} | guild=${formatGuildForLog(guildId)}`);
-}
 
 function shouldRetry(error) {
   if (!error) return false;
@@ -97,7 +102,7 @@ async function executeWithRetry(promiseFactory, { label, timeoutMs = API_TIMEOUT
       if (attempt >= maxAttempts || !shouldRetry(error)) {
         throw error;
       }
-      console.warn(`[MVP] ${label} failed (attempt ${attempt}): ${sanitizeError(error)} — retrying`);
+      console.warn(`Retry ${attempt}: ${sanitizeError(error)}`);
       await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
     }
     attempt += 1;
@@ -150,28 +155,143 @@ function ensureActivatedAt(config, nowMs) {
   return false;
 }
 
-function computeNextFromAnchor(config, nowMs, intervalMs) {
-  const lastMs = parseIsoTimestamp(config.last_award_at);
-  const activatedMs = parseIsoTimestamp(config.activated_at);
-  let anchorMs = lastMs ?? activatedMs ?? nowMs;
-  if (!Number.isFinite(anchorMs)) {
-    anchorMs = nowMs;
+/**
+ * Cairo Timezone Scheduler
+ * All award times are fixed to Cairo time (Africa/Cairo, GMT+2/+3 with DST)
+ * 
+ * Schedule times:
+ * - 6h:  00:00, 06:00, 12:00, 18:00 Cairo
+ * - 12h: 00:00, 12:00 Cairo
+ * - 24h: 00:00 (midnight) Cairo
+ * - 1w:  Saturday 00:00 Cairo (end of Friday)
+ */
+
+function getCairoDate(date = new Date()) {
+  // Use Intl to get Cairo time components (handles DST automatically)
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const values = {};
+  for (const part of parts) {
+    values[part.type] = part.value;
   }
 
-  let nextMs = anchorMs + intervalMs;
-  if (nextMs <= nowMs) {
-    const steps = Math.floor((nowMs - anchorMs) / intervalMs) + 1;
-    nextMs = anchorMs + steps * intervalMs;
+  return {
+    year: parseInt(values.year, 10),
+    month: parseInt(values.month, 10) - 1, // 0-indexed
+    day: parseInt(values.day, 10),
+    hour: parseInt(values.hour, 10),
+    minute: parseInt(values.minute, 10),
+    second: parseInt(values.second, 10),
+    dayOfWeek: date.getDay() // 0 = Sunday, 6 = Saturday
+  };
+}
+
+function cairoToUtc(year, month, day, hour, minute = 0, second = 0) {
+  // Create a date string in Cairo time, then parse it as Cairo timezone
+  // This correctly handles DST transitions
+  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+
+  // Use Intl to format a reference date and calculate offset
+  const refDate = new Date();
+  const utcFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', hour: 'numeric', hour12: false });
+  const cairoFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Cairo', hour: 'numeric', hour12: false });
+
+  // Create the date assuming it's in Cairo timezone
+  // We need to find when this Cairo time occurs in UTC
+  const targetDate = new Date(`${dateStr}Z`);
+
+  // Get the Cairo offset at that approximate time
+  const testDate = new Date(targetDate);
+  const utcHour = parseInt(utcFormatter.format(testDate), 10);
+  const cairoHour = parseInt(cairoFormatter.format(testDate), 10);
+  let offset = cairoHour - utcHour;
+  if (offset < 0) offset += 24;
+
+  // Apply offset to get UTC time
+  return new Date(targetDate.getTime() - offset * MILLIS_PER_HOUR);
+}
+
+function getNextCairoTime(scheduleValue) {
+  const now = new Date();
+  const cairo = getCairoDate(now);
+  const currentMs = now.getTime();
+
+  let targetHours;
+  let isWeekly = false;
+
+  switch (scheduleValue) {
+    case '6h':
+      targetHours = [0, 6, 12, 18];
+      break;
+    case '12h':
+      targetHours = [0, 12];
+      break;
+    case '24h':
+      targetHours = [0];
+      break;
+    case '1w':
+      targetHours = [0];
+      isWeekly = true;
+      break;
+    default:
+      // Fallback: 24h at midnight
+      targetHours = [0];
   }
 
-  return nextMs;
+  if (isWeekly) {
+    // Weekly: Saturday 00:00 Cairo (end of Friday night)
+    // Cairo dayOfWeek: 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+    let daysUntilSaturday = (6 - cairo.dayOfWeek + 7) % 7;
+
+    // If it's Saturday already, check if we're past midnight
+    if (daysUntilSaturday === 0 && cairo.hour >= 0) {
+      // We're on Saturday, so next Saturday is 7 days away
+      daysUntilSaturday = 7;
+    }
+
+    const nextDate = cairoToUtc(
+      cairo.year,
+      cairo.month,
+      cairo.day + daysUntilSaturday,
+      0, 0, 0
+    );
+
+    // If calculated time is in the past, add a week
+    if (nextDate.getTime() <= currentMs) {
+      return new Date(nextDate.getTime() + MILLIS_PER_WEEK);
+    }
+    return nextDate;
+  }
+
+  // Find the next target hour
+  for (const targetHour of targetHours) {
+    if (targetHour > cairo.hour || (targetHour === cairo.hour && cairo.minute === 0 && cairo.second < 5)) {
+      // This target is in the future today
+      const nextDate = cairoToUtc(cairo.year, cairo.month, cairo.day, targetHour);
+      if (nextDate.getTime() > currentMs) {
+        return nextDate;
+      }
+    }
+  }
+
+  // All target hours today have passed, use first target hour tomorrow
+  const nextDate = cairoToUtc(cairo.year, cairo.month, cairo.day + 1, targetHours[0]);
+  return nextDate;
 }
 
 function resolveNextAward(config, { nowMs = Date.now(), force = false } = {}) {
-  const intervalMs = getScheduleIntervalMs(config);
-  if (!intervalMs) {
-    return { intervalMs: null, nextMs: null, mutated: false };
-  }
+  // MVP is now hardcoded to 24h at 00:00 Cairo daily
+  const intervalMs = MILLIS_PER_DAY; // Always 24 hours
 
   let mutated = ensureActivatedAt(config, nowMs);
 
@@ -180,21 +300,20 @@ function resolveNextAward(config, { nowMs = Date.now(), force = false } = {}) {
     mutated = true;
   }
 
-  let nextMs = force ? null : parseIsoTimestamp(config.next_award_at);
+  // Always target 00:00 Cairo (midnight)
+  const nextCairoTime = getNextCairoTime('24h');
+  const nextMs = nextCairoTime.getTime();
 
-  if (nextMs === null) {
-    nextMs = computeNextFromAnchor(config, nowMs, intervalMs);
-    config.next_award_at = new Date(nextMs).toISOString();
-    mutated = true;
-  } else if (nextMs <= nowMs) {
-    const steps = Math.floor((nowMs - nextMs) / intervalMs) + 1;
-    nextMs += steps * intervalMs;
-    config.next_award_at = new Date(nextMs).toISOString();
+  // Update config if changed
+  const storedNextMs = parseIsoTimestamp(config.next_award_at);
+  if (storedNextMs !== nextMs || force) {
+    config.next_award_at = nextCairoTime.toISOString();
     mutated = true;
   }
 
   return { intervalMs, nextMs, mutated };
 }
+
 
 export async function scheduleMvpTimer(client, guildId, forceReschedule = false) {
   const config = await getGuildConfig(guildId);
@@ -202,19 +321,17 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
 
   // Cancel existing timer for this guild
   cancelMvpTimer(guildId);
-  
-  // Only schedule if enabled
-  if (config.enabled === false) return;
-  
+
+  // Only schedule if explicitly set to Auto mode (enabled === true)
+  if (config.enabled !== true) return;
+
   const { intervalMs, nextMs, mutated } = resolveNextAward(config, { force: forceReschedule });
   if (!intervalMs || !nextMs) {
-    console.warn(`Skipping MVP schedule for ${formatGuildForLog(guildId)} — missing interval metadata`);
     return;
   }
 
   const maxHours = intervalMs / MILLIS_PER_HOUR;
   if (maxHours < MIN_INTERVAL_HOURS || maxHours > MAX_INTERVAL_HOURS) {
-    console.warn(`Invalid interval detected for guild ${formatGuildForLog(guildId)}, skipping schedule`);
     return;
   }
 
@@ -225,28 +342,44 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
   const now = Date.now();
   const delay = Math.max(0, nextMs - now);
 
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`🕒 [TIMER] Scheduled MVP check for guild ${formatGuildForLog(guildId)}`);
-    console.log(`   ├─ Interval: ${intervalMs}ms`);
-    console.log(`   └─ Next check: ${new Date(nextMs).toISOString()} (in ${Math.ceil(delay / 60000)} min)`);
-  }
 
   const timer = setTimeout(async () => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`⏰ [TIMER] Firing MVP check for guild ${formatGuildForLog(guildId)}`);
-    }
     try {
-      // Check if still enabled before running
+      // Timer has fired at 00:00 Cairo time
+      const guild = client.guilds.cache.get(guildId);
+      const guildName = guild ? guild.name : guildId;
+      console.log(`[System] MVP Timer - 00:00 Cairo - Running daily cycle for ${guildName}`);
+
+      // Check if still in Auto mode
       const currentConfig = await getGuildConfig(guildId);
-      if (currentConfig && currentConfig.enabled !== false) {
-        await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+      if (!currentConfig || currentConfig.enabled !== true) {
+        console.log(`[System] MVP Timer - ${guildName} no longer in Auto mode, skipping`);
+        await scheduleMvpTimer(client, guildId, true);
+        return;
       }
-      // Reschedule for next interval (force new calculation)
+
+      // === DAILY RESET SEQUENCE (00:00 Cairo) ===
+      
+      // 1. Reset Stale Streaks (Guild-specific)
+      await resetCairoStaleStreaks(guildId).catch(e => console.error(`[System] Streak reset error for ${guildId}:`, e));
+
+      // 2. Snapshot activity & Update Leaderboards
+      const { getTopActiveUsers } = await import('../activity/tracker.js');
+      const activitySnapshot = await getTopActiveUsers(guildId, 20);
+      const winnersCount = currentConfig.winnersCount || 1;
+      const mvpRecipients = activitySnapshot.slice(0, winnersCount).map(u => u.userId);
+
+      const { updateLeaderboards } = await import('../commands/leaderboard.js');
+      await updateLeaderboards(client, guildId, activitySnapshot, mvpRecipients);
+
+      // 4. Award MVP roles/coins
+      await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+
+      console.log(`[System] MVP Timer - Daily cycle complete for ${guildName}`);
       await scheduleMvpTimer(client, guildId, true);
     } catch (error) {
-      console.error(`❌ [TIMER] MVP award failed for guild ${formatGuildForLog(guildId)}:`, sanitizeError(error));
-      // Still reschedule even if award fails
-      await scheduleMvpTimer(client, guildId, true); // Force reschedule after error
+      console.error(`[System] MVP timer error for guild ${guildId}:`, sanitizeError(error));
+      await scheduleMvpTimer(client, guildId, true);
     }
   }, delay);
 
@@ -255,11 +388,11 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
 
 export async function scheduleAllMvpTimers(client) {
   const configs = await loadGuildConfigs();
-  
+
   for (const guildId of Object.keys(configs)) {
     const config = configs[guildId];
-    // Only schedule if enabled
-    if (config.enabled !== false) {
+    // Only schedule if explicitly set to Auto mode
+    if (config.enabled === true) {
       await scheduleMvpTimer(client, guildId);
     }
   }
@@ -328,7 +461,6 @@ function describeRemovalError(error) {
  * This handles cases where the bot just joined or roles were assigned manually
  */
 async function fetchMembersWithRoleFallback(guild, roleId) {
-  logStep(guild.id, 'ROLE-FALLBACK', `Falling back to API fetch for role ${roleId}`);
 
   const holders = new Map();
   let lastId;
@@ -349,7 +481,7 @@ async function fetchMembersWithRoleFallback(guild, roleId) {
         await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
         continue;
       }
-      console.error(`Failed fallback fetch for guild ${formatGuildForLog(guild.id)}:`, sanitizeError(error));
+      console.error(`Role fetch failed:`, sanitizeError(error));
       throw error;
     }
 
@@ -368,7 +500,6 @@ async function fetchMembersWithRoleFallback(guild, roleId) {
     hasMore = batch.size === 1000;
   }
 
-  logStep(guild.id, 'ROLE-FALLBACK', `Fetched ${holders.size} holder(s) for role ${roleId}`);
   return Array.from(holders.values());
 }
 
@@ -380,19 +511,17 @@ async function fetchMembersWithRoleFallback(guild, roleId) {
  */
 async function getMembersWithRoleFromCache(guild, roleId) {
   const role = guild.roles.cache.get(roleId);
-  
+
   if (!role) {
-    logStep(guild.id, 'ROLE-FETCH', `Role ${roleId} not found in cache, fetching from API`);
     const fetchedRole = await guild.roles.fetch(roleId).catch((error) => {
-      console.error(`Failed to fetch MVP role (${roleId}) in guild ${formatGuildForLog(guild.id)}:`, sanitizeError(error));
+      console.error(`Failed to fetch MVP role:`, sanitizeError(error));
       throw error;
     });
-    
+
     if (!fetchedRole) {
-      logStep(guild.id, 'ROLE-FETCH', `Role ${roleId} not found`);
       return [];
     }
-    
+
     const members = Array.from(fetchedRole.members.values());
     if (members.length === 0) {
       // Cache is empty, fallback to API fetch
@@ -400,10 +529,9 @@ async function getMembersWithRoleFromCache(guild, roleId) {
     }
     return members;
   }
-  
+
   const members = Array.from(role.members.values());
-  logStep(guild.id, 'ROLE-CACHE', `Found ${members.length} member(s) with role ${role.name} (${roleId}) from cache`);
-  
+
   if (members.length === 0) {
     // Cache is empty, fallback to API fetch (handles manual assignments after bot restart)
     return fetchMembersWithRoleFallback(guild, roleId);
@@ -417,27 +545,22 @@ async function removeRoleFromMembersBatch(members, role, guildId) {
 
   for (let index = 0; index < members.length; index += CLEANUP_CONCURRENCY) {
     const chunk = members.slice(index, index + CLEANUP_CONCURRENCY);
-    
+
     const chunkResults = await Promise.allSettled(
       chunk.map(async (member) => {
         try {
           await member.roles.remove(role);
           return { success: true };
         } catch (error) {
-          // Log rate limit specifically
-          if (error.status === 429 || error.code === 429) {
-            const retryAfter = error.retry_after || error.retryAfter || 'unknown';
-            console.warn(`[MVP][RATE-LIMIT] Hit rate limit removing role from ${member.user?.tag || member.id} | retry_after=${retryAfter}s | guild=${formatGuildForLog(guildId)}`);
-          }
           throw error;
         }
       })
     );
-    
+
     chunkResults.forEach((result, idx) => {
       results.push({ member: chunk[idx], result });
     });
-    
+
     // Small delay between chunks to avoid rate limits
     if (index + CLEANUP_CONCURRENCY < members.length) {
       await sleep(ROLE_CLEANUP_DELAY_MS);
@@ -448,29 +571,28 @@ async function removeRoleFromMembersBatch(members, role, guildId) {
 }
 
 /**
- * Remove MVP role from all current holders
  * Optimized: Uses role.members cache instead of fetching all guild members
  * Works efficiently even on large guilds (10k+ members)
+ * @param {Guild} guild - The Discord guild
+ * @param {Role} mvpRole - The MVP role
+ * @param {string[]} keepUserIds - IDs of users who should keep their role
  */
-export async function clear_all_current_mvp_holders(guild, mvpRole) {
+export async function clear_all_current_mvp_holders(guild, mvpRole, keepUserIds = []) {
   const start = Date.now();
   const guildId = guild.id;
-  
-  logStep(guildId, 'CLEANUP-START', `Starting MVP role cleanup for role ${mvpRole.name} (${mvpRole.id})`);
-  
+
   // Get members with the role from cache - NO full member scan
   const membersWithRole = await getMembersWithRoleFromCache(guild, mvpRole.id);
-  const totalCount = membersWithRole.length;
-  const noun = totalCount === 1 ? 'holder' : 'holders';
-
+  
+  // FILTER: Skip users who won again
+  const toProcess = membersWithRole.filter(m => !keepUserIds.includes(m.id));
+  const totalCount = toProcess.length;
+  
   if (totalCount === 0) {
-    logStep(guildId, 'CLEANUP-DONE', 'No MVP holders to remove');
     return { removedCount: 0, remainingCount: 0, failures: [] };
   }
 
-  logStep(guildId, 'CLEANUP-PROGRESS', `Removing MVP from ${totalCount} ${noun}`);
-
-  let remainingMembers = membersWithRole;
+  let remainingMembers = toProcess;
   let removedCount = 0;
   const failures = new Map();
   let rateLimitHits = 0;
@@ -478,7 +600,6 @@ export async function clear_all_current_mvp_holders(guild, mvpRole) {
   for (let attempt = 1; attempt <= ROLE_CLEANUP_MAX_ATTEMPTS; attempt += 1) {
     if (remainingMembers.length === 0) break;
     if (Date.now() - start > ROLE_CLEANUP_TIMEOUT_MS) {
-      logStep(guildId, 'CLEANUP-TIMEOUT', `Cleanup timeout reached after ${Math.round((Date.now() - start) / 1000)}s`);
       break;
     }
 
@@ -499,12 +620,12 @@ export async function clear_all_current_mvp_holders(guild, mvpRole) {
         } else {
           const reason = describeRemovalError(result.reason);
           const error = result.reason;
-          
+
           // Track rate limits
           if (error?.status === 429 || error?.code === 429) {
             rateLimitHits += 1;
           }
-          
+
           failures.set(member.id, {
             member,
             reason,
@@ -512,7 +633,7 @@ export async function clear_all_current_mvp_holders(guild, mvpRole) {
           });
 
           if (reason === 'hierarchy' || reason === 'missing permission') {
-            console.error(`❌ [MVP][CLEANUP-FATAL] Cannot remove MVP role due to ${reason} | member=${member.user?.tag ?? member.id} | guild=${formatGuildForLog(guildId)}`);
+            console.error(`Cannot manage MVP role: ${reason}`);
             return {
               removedCount,
               remainingCount: remainingMembers.length,
@@ -530,20 +651,12 @@ export async function clear_all_current_mvp_holders(guild, mvpRole) {
     if (nextAttempt.length === 0) break;
     if (attempt < ROLE_CLEANUP_MAX_ATTEMPTS) {
       const backoff = ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt;
-      logStep(guildId, 'CLEANUP-RETRY', `Retrying ${nextAttempt.length} failed removals (attempt ${attempt + 1}/${ROLE_CLEANUP_MAX_ATTEMPTS}) after ${backoff}ms`);
       await sleep(backoff);
     }
     remainingMembers = nextAttempt;
   }
 
-  failures.forEach(({ member, reason, error }) => {
-    const tag = member.user?.tag ?? member.id;
-    const details = sanitizeError(error);
-    console.warn(`⚠️ [MVP][CLEANUP-FAILED] Couldn't remove MVP role | member=${tag} | reason=${reason}${details ? ` | error=${details}` : ''} | guild=${formatGuildForLog(guildId)}`);
-  });
-  
-  const duration = Math.round((Date.now() - start) / 1000);
-  logStep(guildId, 'CLEANUP-DONE', `Removed ${removedCount}/${totalCount} holders in ${duration}s | failures=${failures.size} | rate_limits=${rateLimitHits}`);
+
 
   return {
     removedCount,
@@ -588,10 +701,14 @@ function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
-function buildMvpEmbed(winners) {
+function buildMvpEmbed(winners, rewardAmount = 0) {
   const medals = assignMedals(winners);
   const display = winners.slice(0, 6);
   const lines = ['────────────────────────'];
+
+  if (rewardAmount > 0) {
+    lines.push(`💰 **Reward:** ${formatNumber(rewardAmount)} coins deposited to bank!`, '────────────────────────');
+  }
 
   for (let index = 0; index < display.length; index += 1) {
     const winner = display[index];
@@ -634,183 +751,201 @@ export function cancelMvpTimer(guildId) {
 
 /**
  * Awards MVP to top active members in a guild
+ * OVERHAULED: Implements strict SQL selection, wipe-first cleanup, and robust assignment
  * @param {Client} client - Discord client instance
  * @param {string} guildId - ID of the guild
- * @param {boolean} isTest - Whether this is a test run (won't actually assign roles)
+ * @param {Object} options - Options including isTest, trigger, interaction
  * @returns {Promise<{winners: Array, error: string|null}>} - Result of the operation
  */
 export async function awardMvp(client, guildId, options = {}) {
   const { isTest = false, trigger = 'manual', interaction = null } = options;
+
   // Input validation
   if (!client || !client.guilds) {
-    console.error('Invalid client provided to awardMvp');
+    console.error('[System] Invalid client provided');
     return { winners: [], error: 'Invalid client' };
   }
-  // Fetch guild and configuration
+
+  // ========== STEP 1: FETCH CONFIG ==========
   const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) {
-    const message = 'Guild not found';
-    console.error(`awardMvp: ${message} for ${formatGuildForLog(guildId)}`);
-    return { winners: [], error: message };
+    console.error(`[System] Guild ${guildId} not found`);
+    return { winners: [], error: 'Guild not found' };
   }
+
+  const tag = `[${guild.name}]`;
 
   const config = await getGuildConfig(guildId);
   if (!config || !config.mvpRoleId) {
-    const message = 'MVP configuration incomplete';
-    if (!isProduction) {
-      console.warn(`awardMvp: ${message} for ${formatGuildForLog(guildId)}`);
-    }
-    return { winners: [], error: message };
+    console.error(`${tag} MVP config incomplete`);
+    return { winners: [], error: 'MVP configuration incomplete' };
   }
 
-  const maxWinners = Math.min(Math.max(1, config.winnersCount || 1), MAX_WINNERS);
-  console.info(`⚙️ Award started — guild ${formatGuildForLog(guildId)}, winners target: ${maxWinners}`);
+  // Get configured winner count (clamped to 1-5)
+  const configuredWinnerCount = Math.min(Math.max(1, config.winnersCount || 1), MAX_WINNERS);
+  console.log(`${tag} Config: Winners=${configuredWinnerCount}, Role=${config.mvpRoleId}`);
 
   const lock = acquireGuildLock(guildId);
   if (!lock) {
-    const message = 'Award already in progress';
-    console.warn(`awardMvp: ${message} for ${formatGuildForLog(guildId)}`);
-    return { winners: [], error: message };
+    console.warn(`${tag} Award already in progress`);
+    return { winners: [], error: 'Award already in progress' };
   }
 
   try {
-    // Determine winners from activity data
-    const activity = getGuildActivity(guildId);
-  const users = activity?.users ?? new Map();
+    // ========== STEP 2: SELECT WINNERS (SQL-BASED) ==========
+    const winners = await getTopActiveUsers(guildId, configuredWinnerCount, guild.name);
 
-    const userScores = Array.from(users.entries())
-    .map(([userId, data]) => {
-      const messages = Math.max(0, data.messages || 0);
-      const voiceMinutes = Math.max(0, data.voiceMinutes || 0);
-      const score = messages + voiceMinutes;
-      return {
-        userId,
-        username: data.username,
-        messages,
-        voiceMinutes,
-        score,
-        lastActive: data.lastActive
-      };
-    })
-    .filter(entry => entry.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return new Date(b.lastActive || 0) - new Date(a.lastActive || 0);
-    });
+    console.log(`${tag} Found ${winners.length} candidates (limit: ${configuredWinnerCount})`);
 
-    const winners = userScores.slice(0, maxWinners);
+    if (winners.length > 0) {
+      winners.forEach((w, i) => {
+        console.log(`${tag}   ${i + 1}. ${w.username || w.userId} - Score: ${w.score}`);
+      });
+    }
 
     if (winners.length === 0) {
-      if (!isProduction) {
-        console.log(`No activity to award MVP for guild ${formatGuildForLog(guildId)}`);
-      }
       if (!isTest) {
-        resetGuildActivity(guildId);
+        await resetGuildActivity(guildId);
+        console.log(`${tag} Activity reset (no winners)`);
       }
       return { winners: [], error: null };
     }
 
+    // ========== STEP 3: WIPE-FIRST ROLE CLEANUP ==========
     const mvpRole = await guild.roles.fetch(config.mvpRoleId);
     if (!mvpRole) {
       throw new Error('MVP role not found');
     }
 
     if (!mvpRole.editable) {
-      throw new Error('Cannot manage MVP role — adjust role hierarchy');
+      throw new Error('Cannot manage MVP role - adjust hierarchy');
     }
 
-    const cleanupResult = await clear_all_current_mvp_holders(guild, mvpRole);
+    const winnerUserIds = winners.map(w => w.userId);
+    const cleanupResult = await clear_all_current_mvp_holders(guild, mvpRole, winnerUserIds);
+
+    if (cleanupResult.removedCount > 0) {
+      console.log(`${tag} Cleared ${cleanupResult.removedCount} old MVP holder(s)`);
+    }
+
+    if (cleanupResult.failures && cleanupResult.failures.length > 0) {
+      console.warn(`${tag} Failed to clear ${cleanupResult.failures.length} member(s)`);
+    }
 
     if (cleanupResult.fatal) {
-      throw new Error('Cannot manage MVP role — adjust role hierarchy');
+      throw new Error('Cannot manage MVP role - adjust hierarchy');
     }
 
+    // ========== STEP 4: ASSIGN ROLES TO NEW WINNERS ==========
     const resultMembers = [];
-    let assignmentRateLimits = 0;
+    const assignmentFailures = [];
 
     if (!isTest) {
-      logStep(guildId, 'ASSIGN-START', `Assigning MVP role to ${winners.length} winner(s)`);
-      
       for (const winner of winners) {
         try {
-          // Fetch only the specific winner member (efficient, targeted fetch)
           const member = await executeWithRetry(
             () => guild.members.fetch(winner.userId),
-            { label: `Fetch winner ${winner.userId}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
+            { label: `Fetch ${winner.userId}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
           );
-          
+
           if (!member) {
-            logStep(guildId, 'ASSIGN-SKIP', `Member ${winner.userId} not found`);
+            assignmentFailures.push({ userId: winner.userId, reason: 'not in server' });
             continue;
           }
-          
+
           if (member.user.bot) {
-            logStep(guildId, 'ASSIGN-SKIP', `Skipping bot ${member.user.tag}`);
+            assignmentFailures.push({ userId: winner.userId, reason: 'is a bot' });
             continue;
           }
-          
-          // Assign the MVP role with retry logic
+
           await executeWithRetry(
             () => member.roles.add(mvpRole),
             { label: `Assign MVP to ${member.user.tag}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
           );
-          
+
+          console.log(`${tag} Assigned MVP -> ${member.user.tag} (Score: ${winner.score})`);
           resultMembers.push(member);
-          logStep(guildId, 'ASSIGN-SUCCESS', `Assigned MVP to ${member.user.tag} (${member.id})`);
-          
+
         } catch (error) {
-          // Track rate limits
-          if (error?.status === 429 || error?.code === 429 || error?.message?.includes('rate limit')) {
-            assignmentRateLimits += 1;
-            const retryAfter = error.retry_after || error.retryAfter || 'unknown';
-            console.error(`❌ [MVP][RATE-LIMIT] Failed to assign MVP role to ${winner.userId} | retry_after=${retryAfter}s | guild=${formatGuildForLog(guildId)}`);
-          } else {
-            console.error(`❌ [MVP][ASSIGN-FAILED] Failed to assign MVP role to ${winner.userId} | error=${sanitizeError(error)} | guild=${formatGuildForLog(guildId)}`);
+          console.error(`${tag} Failed to assign MVP to ${winner.username}:`, sanitizeError(error));
+          assignmentFailures.push({ userId: winner.userId, username: winner.username, reason: sanitizeError(error) });
+        }
+      }
+
+      if (assignmentFailures.length > 0) {
+        console.warn(`${tag} ${assignmentFailures.length} assignment(s) failed`);
+      }
+    }
+
+    // ========== STEP 5: ANNOUNCE & REWARD ==========
+    if (resultMembers.length > 0 && !isTest) {
+      const rewardAmount = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 0;
+
+      if (rewardAmount > 0) {
+        for (const member of resultMembers) {
+          try {
+            await awardCoinReward(guildId, member.id, rewardAmount, guild.name);
+          } catch (error) {
+            console.error(`${tag} Failed to award coins to ${member.id}:`, sanitizeError(error));
           }
         }
       }
 
-      if (resultMembers.length > 0) {
-        const friendlyNames = resultMembers.map((member) => {
-          const tag = member.user?.tag;
-          const display = member.displayName;
-          const fallback = member.user?.username ?? member.id;
-          return tag ?? display ?? fallback;
-        }).join(', ');
-        logStep(guildId, 'ASSIGN-DONE', `Successfully assigned MVP role to ${resultMembers.length} member(s): ${friendlyNames}`);
+      await announceWinners(guild, config, resultMembers, winners.slice(0, resultMembers.length), rewardAmount);
+
+      // ========== SAVE WINNERS TO MVP HISTORY ==========
+      const awardedAt = new Date().toISOString();
+      for (let i = 0; i < resultMembers.length; i++) {
+        const member = resultMembers[i];
+        const winnerData = winners[i];
+        await appendAwardRecord({
+          guildId: guildId,
+          userId: member.id,
+          username: member.user?.tag || member.displayName || 'Unknown',
+          awardedAt: awardedAt,
+          activityScore: winnerData?.score || 0,
+          rank: i + 1
+        });
       }
-      
-      if (assignmentRateLimits > 0) {
-        console.warn(`⚠️ [MVP][RATE-LIMIT-SUMMARY] Hit ${assignmentRateLimits} rate limit(s) during role assignment | guild=${formatGuildForLog(guildId)}`);
-      }
+      console.log(`${tag} Saved ${resultMembers.length} winner(s) to MVP history`);
+
+      const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
+      const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 0;
+
+      sendLog(guild, 'economy', 'orange', '🎁 Rewards Claimed', 
+        `**Type:** \`MVP Payout\`\n` +
+        `**Winners:** ${winnerLogList}\n` +
+        `**Reward:** \`${totalReward.toLocaleString()}\` ${COIN_EMOJI} per winner`
+      );
     }
 
-    if (resultMembers.length > 0 && !isTest) {
-      await announceWinners(guild, config, resultMembers, winners.slice(0, resultMembers.length));
-      if (!isProduction) {
-        console.log(`✅ MVP awarded to ${resultMembers.length} winner(s) in guild ${formatGuildForLog(guildId)}`);
-      }
-    }
+    // ========== STEP 6: RESET ACTIVITY FOR NEXT CYCLE ==========
+    await resetGuildActivity(guildId);
 
-    resetGuildActivity(guildId);
-    if (!isProduction) {
-      console.log(`♻️ Scores reset for guild ${formatGuildForLog(guildId)}`);
-    }
+    const logName = interaction ? getUserLogName(interaction) : 'System';
+    sendLog(guild, 'audit', 'cyan', '📊 MVP Progress Reset', 
+        `**Action:** \`Daily Reset\`\n` +
+        `**Trigger:** \`${logName}\`\n` +
+        `**Status:** Activity scores cleared for the next 24-hour cycle.`
+    );
 
+    // Update config with last award timestamp
+    // IMPORTANT: Do NOT delete next_award_at here!
+    // Manual runs (Run/Skip) should NOT affect the Cairo-based schedule.
+    // The schedule is only recalculated by the timer callback after it fires.
     const nowIso = new Date().toISOString();
     config.last_award_at = nowIso;
     delete config.nextCheckTime;
-    delete config.next_award_at;
+    // Removed: delete config.next_award_at;
+    // This preserves the scheduled time so manual runs don't cause drift
     try {
       await setGuildConfig(guildId, config);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`🗓️ Updated award timestamps for guild ${formatGuildForLog(guildId)} — last_award_at=${nowIso}`);
-      }
     } catch (error) {
-      console.error(`Failed to persist award metadata for guild ${formatGuildForLog(guildId)}:`, sanitizeError(error));
+      console.error(`${tag} Failed to save MVP metadata:`, sanitizeError(error));
     }
 
-    return { winners, winnerMembers: resultMembers };
+    console.log(`${tag} Cycle complete`);
+    return { winners, winnerMembers: resultMembers, assignmentFailures };
   } finally {
     lock.release();
   }
@@ -836,43 +971,30 @@ export async function reconcileAllMvpHolders(client) {
     if (!config?.mvpRoleId) continue;
     try {
       const result = await reconcileMvpHolders(client, guildId);
-      console.info(`🧹 Startup reconciliation for guild ${formatGuildForLog(guildId)} — removed ${result.removedCount}, remaining ${result.remainingCount}`);
     } catch (error) {
-      console.error(`Startup reconciliation failed for guild ${formatGuildForLog(guildId)}:`, sanitizeError(error));
+      console.error(`Startup reconciliation failed:`, sanitizeError(error));
     }
   }
 }
 
-async function announceWinners(guild, config, winnerMembers, winnerData) {
-  // Skip announcement if no channel is configured
+async function announceWinners(guild, config, winnerMembers, winnerData, rewardAmount = 0) {
   if (!config.announceChannelId) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`No announcement channel configured for guild ${formatGuildForLog(guild.id)}, skipping announcement`);
-    }
     return;
   }
-  
+
   const channel = await guild.channels.fetch(config.announceChannelId).catch(() => null);
   if (!channel) {
-    console.warn(`Announcement channel not found in guild ${formatGuildForLog(guild.id)}`);
     return;
   }
 
   if (!channel.isTextBased()) {
-    console.warn(`Announcement channel is not a text-based channel in guild ${formatGuildForLog(guild.id)}`);
     return;
   }
   const { periodStart, periodEnd } = resolvePeriodWindow(config);
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`🗓️ MVP period for guild ${formatGuildForLog(guild.id)}: ${periodStart} → ${periodEnd}`);
-  }
 
   const formattedWinners = winnerData.map((winner, index) => {
     const member = winnerMembers[index] ?? winnerMembers.find(m => m.id === winner.userId);
     const displayName = getUserDisplayName(member || winner, winner.username);
-    if (displayName === 'Unknown user') {
-      console.warn(`Unable to resolve display name for user ${winner.userId} in guild ${formatGuildForLog(guild.id)}`);
-    }
     return {
       userId: member ? member.id : winner.userId,
       displayName,
@@ -884,7 +1006,7 @@ async function announceWinners(guild, config, winnerMembers, winnerData) {
     };
   });
 
-  const embed = buildMvpEmbed(formattedWinners);
+  const embed = buildMvpEmbed(formattedWinners, rewardAmount);
 
   try {
     await channel.send({
@@ -892,7 +1014,135 @@ async function announceWinners(guild, config, winnerMembers, winnerData) {
       allowedMentions: { parse: [] }
     });
   } catch (error) {
-    console.error(`Failed to send MVP announcement in guild ${formatGuildForLog(guild.id)}:`, sanitizeError(error));
+    console.error(`[System] Failed to send MVP announcement:`, sanitizeError(error));
     throw error;
+  }
+}
+
+/**
+ * Award coins to a user transactionally
+ * @param {string} guildId - Guild ID
+ * @param {string} userId - User ID
+ * @param {number} amount - Coin amount
+ * @param {string} guildName - Guild name for logging
+ */
+async function awardCoinReward(guildId, userId, amount, guildName) {
+  const pool = getPool();
+  const client = await pool.connect();
+  const tag = guildName ? `[${guildName}]` : '[System]';
+  try {
+    await client.query('BEGIN');
+
+    // Atomic Upsert: Add coins safely
+    const updateResult = await client.query(
+      `INSERT INTO user_balances (guild_id, user_id, balance, total_earned)
+       VALUES ($1, $2, $3, $3)
+       ON CONFLICT (guild_id, user_id) 
+       DO UPDATE SET 
+         balance = user_balances.balance + $3,
+         total_earned = user_balances.total_earned + $3
+       RETURNING balance`,
+      [guildId, userId, amount]
+    );
+
+    const newBalance = parseInt(updateResult.rows[0].balance, 10);
+
+    // Transaction record
+    await client.query(
+      `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
+       VALUES ($1, $2, $3, $4, 'mvp_reward', $5)`,
+      [userId, guildId, amount, newBalance, 'Won MVP of the Day']
+    );
+
+    await client.query('COMMIT');
+    console.log(`${tag} Awarded ${amount} coins to user ${userId}`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Global streak reset scheduler (Relocated from index.js)
+ * Resets stale streaks globally at Cairo midnight
+ */
+export async function scheduleCairoMidnightReset(client) {
+  const { getTimeUntilCairoMidnight } = await import('../utils/time.js');
+  let msUntilMidnight = getTimeUntilCairoMidnight();
+  
+  // Safety: Prevent tight loops if math error or near-zero time
+  // Minimum 1 minute between resets to stop spam
+  if (isNaN(msUntilMidnight) || msUntilMidnight < 60000) {
+    msUntilMidnight = 60000; 
+  }
+
+  setTimeout(async () => {
+    console.log('[System] ⏰ Cairo midnight - running global reset (streaks & missions)...');
+    
+    // 1. Reset streaks globally
+    await resetCairoStaleStreaks();
+    
+    // 2. Rotate missions for all guilds
+    try {
+      const { loadGuildConfigs } = await import('../storage/config.js');
+      const { rotateGuildMission } = await import('../missions/missions.js');
+      const configs = await loadGuildConfigs();
+      
+      for (const [guildId, config] of Object.entries(configs)) {
+        if (config.missions_enabled) {
+          await rotateGuildMission(client, guildId);
+        }
+      }
+    } catch (error) {
+      console.error('[System] Global mission rotation error:', error);
+    }
+
+    scheduleCairoMidnightReset(client); // Recurse
+  }, msUntilMidnight);
+}
+
+/**
+ * Reset streaks where users haven't claimed in over 24 hours
+ * @param {string} [guildId] - Optional guild ID to reset for a specific guild only
+ */
+export async function resetCairoStaleStreaks(guildId = null) {
+  const { getYesterdayCairo } = await import('../utils/time.js');
+  const pool = getPool();
+  const yesterday = getYesterdayCairo();
+
+  const whereClause = guildId 
+    ? "AND guild_id = $2" 
+    : "";
+  const params = guildId ? [yesterday, guildId] : [yesterday];
+
+  try {
+    // 1. Archive lost streaks
+    await pool.query(`
+      UPDATE user_balances
+      SET last_lost_streak = daily_streak
+      WHERE last_daily IS NOT NULL 
+        AND date(last_daily AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Cairo') < $1::date
+        AND daily_streak > 0
+        ${whereClause}
+    `, params);
+
+    // 2. Reset to zero
+    const result = await pool.query(`
+      UPDATE user_balances 
+      SET daily_streak = 0 
+      WHERE last_daily IS NOT NULL 
+        AND date(last_daily AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Cairo') < $1::date
+        AND daily_streak > 0
+        ${whereClause}
+    `, params);
+
+    if (result.rowCount > 0) {
+      const scope = guildId ? `for guild ${guildId}` : 'globally';
+      console.log(`[System] Reset ${result.rowCount} expired streaks ${scope}`);
+    }
+  } catch (error) {
+    console.error('[System] Streak reset error:', sanitizeError(error));
   }
 }

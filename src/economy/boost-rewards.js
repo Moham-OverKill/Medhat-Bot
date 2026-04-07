@@ -1,6 +1,6 @@
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError } from '../shared.js';
-import { logServerEvent } from '../utils/logger.js';
+import { sanitizeError, getUserLogName, COIN_EMOJI } from '../shared.js';
+import { sendLog } from '../utils/logger.js';
 
 const BOOST_REWARD_AMOUNT = 500;
 const BOOST_COOLDOWN_HOURS = 23; // Prevent rapid on/off farming
@@ -100,7 +100,9 @@ export async function handleBoostAdded(userId, guild, username) {
     
     let newBalance = 0;
     
-    if (shouldReward) {
+    // DISABLED: Boosters no longer get a coin reward for boosting
+    // They get a 2x multiplier on Daily rewards instead
+    if (false && shouldReward) {
       // Get or create user balance
       const balanceResult = await client.query(
         `INSERT INTO user_balances (user_id, guild_id, balance)
@@ -135,14 +137,17 @@ export async function handleBoostAdded(userId, guild, username) {
     await client.query('COMMIT');
     
     // Log: [ServerName] Username — Boost reward +500 coins
-    if (shouldReward) {
-      logServerEvent(guild, username, `Boost reward +${BOOST_REWARD_AMOUNT} coins`);
+    if (false && shouldReward) {
+      sendLog(guild, 'economy', 'orange', '🎁 Rewards Claimed', 
+        `**User:** \`${getUserLogName(interaction || { user: { id: userId, username } })}\`\n` +
+        `**Reward:** \`${BOOST_REWARD_AMOUNT}\` ${COIN_EMOJI} (Server Boost)`
+      );
     }
     
     return {
       success: true,
-      rewarded: shouldReward,
-      amount: shouldReward ? BOOST_REWARD_AMOUNT : 0,
+      rewarded: false, // Always false now
+      amount: 0,
       balance: newBalance,
       reason
     };
@@ -168,7 +173,10 @@ export async function handleBoostRemoved(userId, guild, username) {
       [userId, guildId]
     );
     
-    logServerEvent(guild, username, 'Boost removed');
+    sendLog(guild, 'audit', 'red', '🛡️ Audit Log', 
+      `**Action:** \`Boost Removed\`\n` +
+      `**User:** \`${username}\``
+    );
     
     return { success: true };
   } catch (error) {

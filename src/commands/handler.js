@@ -1,27 +1,32 @@
 import { MessageFlags } from 'discord.js';
-import { handleMvpCommand } from './mvp.js';
-import { handleColorsCommand, handleColorCommand } from './colors.js';
-import { handleBank } from './bank.js';
-import { handleShopSetupCommand } from './shop-setup.js';
+import { handleSettingsCommand } from './settings.js';
+import { handleBankCommand } from './bank.js';
+import { handleInventoryCommand } from './inventory.js';
+import { handleItemMassCommand } from './item-mass.js';
+import { execute as handleMissionCommand } from './mission.js';
+import { handleTradeCommand } from './trade.js';
 
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
 
   switch (commandName) {
+    case 'settings':
+      await handleSettingsCommand(interaction);
+      break;
     case 'bank':
-      await handleBank(interaction);
+      await handleBankCommand(interaction);
       break;
-    case 'mvp':
-      await handleMvpCommand(interaction);
+    case 'inventory':
+      await handleInventoryCommand(interaction);
       break;
-    case 'colors':
-      await handleColorsCommand(interaction);
+    case 'mass':
+      await handleItemMassCommand(interaction);
       break;
-    case 'color':
-      await handleColorCommand(interaction);
+    case 'mission':
+      await handleMissionCommand(interaction);
       break;
-    case 'shop-setup':
-      await handleShopSetupCommand(interaction);
+    case 'trade':
+      await handleTradeCommand(interaction);
       break;
     default:
       await interaction.reply({

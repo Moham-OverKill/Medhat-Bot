@@ -13,7 +13,21 @@ const CONFIG_SCHEMA = {
   schedule_interval_ms: { type: 'number', min: 60000, max: 4 * 7 * 24 * 60 * 60 * 1000, required: false },
   last_award_at: { type: 'string', required: false },
   next_award_at: { type: 'string', required: false },
-  activated_at: { type: 'string', required: false }
+  activated_at: { type: 'string', required: false },
+  mvpRewardAmount: { type: 'number', min: 0, required: false },
+  booster_multiplier: { type: 'number', min: 0, required: false },
+  daily_streak_bonus: { type: 'number', min: 0, required: false },
+  // Missions module
+  missions_enabled: { type: 'boolean', required: false },
+  missions_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  active_mission_id: { type: 'number', min: 0, required: false },
+  active_mission_date: { type: 'string', required: false },
+  active_mission_message_id: { type: 'string', validate: isValidSnowflake, required: false },
+  // Log channels
+  log_eco_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  log_inv_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  log_shop_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  log_audit_channel_id: { type: 'string', validate: isValidSnowflake, required: false }
 };
 
 /**
@@ -27,6 +41,13 @@ function validateConfig(config) {
   for (const [key, schema] of Object.entries(CONFIG_SCHEMA)) {
     if (config[key] === undefined) continue;
     
+    // Handle null values for optional fields
+    if (config[key] === null) {
+      if (schema.required) return null;
+      sanitized[key] = null;
+      continue;
+    }
+
     // Type checking
     if (schema.type === 'number') {
       const num = Number(config[key]);
@@ -138,7 +159,7 @@ export async function saveGuildConfigs(configs) {
 export async function getGuildConfig(guildId) {
   // Security: Validate guild ID
   if (!isValidSnowflake(guildId)) {
-    console.warn('Invalid guild ID attempted:', guildId?.substring(0, 10) + '...');
+    console.warn('Invalid guild ID attempted');
     return null;
   }
   
