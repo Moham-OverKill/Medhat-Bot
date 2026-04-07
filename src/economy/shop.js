@@ -1206,6 +1206,44 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Admin-granted items are now synthesized live at the view layer.
     await query(`DELETE FROM user_inventory WHERE source = 'SYNC' AND guild_id = $1`, [guildId]);
 
+    // ========== HARD EXPIRATION SWEEP (Unconditional) ==========
+    // Identify and purge items that have passed their strict expiry timestamp
+    const expired = await query(
+      `SELECT ui.id, si.name, si.role_id 
+       FROM user_inventory ui
+       JOIN shop_items si ON ui.shop_item_id = si.id
+       WHERE ui.user_id = $1 AND ui.guild_id = $2
+         AND ui.expires_at IS NOT NULL 
+         AND ui.expires_at < NOW()`,
+      [userId, guildId]
+    );
+
+    if (expired.rows.length > 0) {
+      for (const item of expired.rows) {
+        // 1. Strip Discord Role
+        if (item.role_id) {
+          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+          const role = member.guild.roles.cache.get(firstRoleId);
+          const botMember = member.guild.members.me;
+          
+          if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
+            try {
+              await member.roles.remove(firstRoleId, 'Item Expired');
+            } catch (e) {
+              console.error(`[Sync] Failed to remove expired role ${firstRoleId}:`, e);
+            }
+          }
+        }
+
+        // 2. Delete from DB
+        await query('DELETE FROM user_inventory WHERE id = $1', [item.id]);
+        
+        // 3. Log Expiration
+        const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: () => {} }));
+        if (sendLog) sendLog(member.guild, 'inventory', 'red', '⏳ Item Expired', `**${member.user.username}**'s temporary item **${item.name}** has expired and was removed.`);
+      }
+    }
+
     const inventory = await query(
       `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
        FROM user_inventory ui

@@ -1215,19 +1215,26 @@ export async function handleInventoryAction(interaction) {
       return;
     }
 
-    // --- 4. EQUIP (Gatekeeper Logic) ---
+    // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
       await interaction.deferUpdate();
 
-      const [inv] = await query('SELECT is_active, shop_item_id FROM user_inventory WHERE id = $1', [invId]).then(r => r.rows);
-      if (!inv) return;
+      // Multi-JOIN: Fetch inventory state AND role information in one query
+      const [inv] = await query(
+        `SELECT ui.is_active, ui.shop_item_id, si.role_id, si.name, si.required_items 
+         FROM user_inventory ui
+         JOIN shop_items si ON ui.shop_item_id = si.id
+         WHERE ui.id = $1`, 
+        [invId]
+      ).then(r => r.rows);
+
+      if (!inv) return interaction.followUp({ content: '❌ Item not found records.', ephemeral: true });
 
       const isEquipping = !inv.is_active;
 
       if (isEquipping) {
         // ENFORCE PREREQUISITES ONLY ON EQUIP
-        const [shopItem] = await query('SELECT name, required_items FROM shop_items WHERE id = $1', [inv.shop_item_id]).then(r => r.rows);
-        let reqs = shopItem.required_items;
+        let reqs = inv.required_items;
         if (typeof reqs === 'string') try { reqs = JSON.parse(reqs); } catch(e) { reqs = []; }
 
         const audit = await checkPrerequisites(interaction.member, interaction.guildId, reqs);
@@ -1237,11 +1244,37 @@ export async function handleInventoryAction(interaction) {
         }
       }
 
-      // Execute toggle
-      await query('UPDATE user_inventory SET is_active = $1 WHERE id = $2', [isEquipping, invId]);
-      await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
+      // --- DISCORD ROLE ACTION ---
+      if (inv.role_id) {
+        const firstRoleId = inv.role_id.split(/[,\s]+/)[0];
+        const role = interaction.guild.roles.cache.get(firstRoleId);
+        const botMember = interaction.guild.members.me;
 
-      // Re-render the current item card
+        if (!role) {
+          return interaction.followUp({ content: `❌ This item is linked to a role that no longer exists in Discord.`, ephemeral: true });
+        }
+
+        if (role.comparePositionTo(botMember.roles.highest) >= 0) {
+          return interaction.followUp({ content: `❌ I cannot manage the **${role.name}** role. Please move my bot role higher in the server settings!`, ephemeral: true });
+        }
+
+        try {
+          if (isEquipping) {
+            await interaction.member.roles.add(firstRoleId, 'User equipped/activated item');
+          } else {
+            await interaction.member.roles.remove(firstRoleId, 'User unequipped/deactivated item');
+          }
+        } catch (e) {
+          console.error(`[Inventory] Role toggle failed for ${inv.name}:`, e);
+          return interaction.followUp({ content: `❌ Failed to update your roles: ${e.message}`, ephemeral: true });
+        }
+      }
+
+      // Execute DB toggle
+      await query('UPDATE user_inventory SET is_active = $1 WHERE id = $2', [isEquipping, invId]);
+      
+      // Atomic Sync: Verify and return updated card
+      await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
       return handleInventoryItemSelect(interaction);
     }
 
