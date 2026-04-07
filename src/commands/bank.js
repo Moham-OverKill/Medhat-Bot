@@ -1244,13 +1244,27 @@ export async function handleItemClaim(interaction) {
       // 1. Success Message to Claimer
       await interaction.editReply({ content: `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.` });
 
-      // 2. Update Public Message
+      // 2. Update Public Message (Row 1: Original Drop Info, Row 2: Claimer Name)
+      const originalDesc = interaction.message.embeds[0]?.description || '';
+      const firstLine = originalDesc.split('\n')[0]; // Preserve the "User dropped Item" line
+      const newDesc = `${firstLine}\nItem Claimed by **${getUserDisplayName(interaction.user)}**`;
+
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setColor('#2ECC71')
-        .setDescription(`**${res.item.name}** has been claimed by **${getUserDisplayName(interaction.user)}**!`)
+        .setDescription(newDesc)
         .setFooter({ text: 'Status: Claimed' });
 
-      await interaction.message.edit({ embeds: [claimedEmbed], components: [] });
+      // Locked Button (Secondary style + Disabled)
+      const lockedRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_item_claimed_locked_${dropId}`)
+          .setLabel('Claim Item')
+          .setEmoji('🎁')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      );
+
+      await interaction.message.edit({ embeds: [claimedEmbed], components: [lockedRow] });
 
       // 3. Log Audit
       sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
