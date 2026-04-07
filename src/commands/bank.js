@@ -788,12 +788,24 @@ export async function handleInventoryCategorySelect(interaction) {
       if (cat) categoryName = cat.name;
     }
 
-    // Build List with role mentions
+    // Build List with role mentions and correct emojis for temp vs perm
     const listLines = items.map(i => {
       const nameDisplay = i.role_id ? `<@&${i.role_id.split(/[,\s]+/)[0]}>` : `**${i.name}**`;
       const isAdminIdentified = i.source === 'SYNC';
-      const status = isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜');
-      return `${status} ${nameDisplay}`;
+      const isTemp = !!(i.expires_at || 
+                      (i.duration_seconds && i.duration_seconds > 0) || 
+                      (i.duration_hours && i.duration_hours > 0));
+      
+      let statusEmoji = '⬜';
+      if (isAdminIdentified) {
+        statusEmoji = '🛡️';
+      } else if (isTemp) {
+        statusEmoji = i.is_active ? '🟢' : '⚪';
+      } else {
+        statusEmoji = i.is_active ? '✅' : '⬜';
+      }
+
+      return `${statusEmoji} ${nameDisplay}`;
     });
 
     const embed = new EmbedBuilder()
@@ -811,15 +823,20 @@ export async function handleInventoryCategorySelect(interaction) {
                        (i.duration_hours && i.duration_hours > 0));
         const isAdminIdentified = i.source === 'SYNC';
         
-        const statusText = isAdminIdentified
-          ? 'Admin Granted'
-          : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped'));
+        let statusEmoji = '⬜';
+        if (isAdminIdentified) {
+          statusEmoji = '🛡️';
+        } else if (isTemp) {
+          statusEmoji = i.is_active ? '🟢' : '⚪';
+        } else {
+          statusEmoji = i.is_active ? '✅' : '⬜';
+        }
           
         return {
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
           value: `${i.id}_${idx}`,
           description: statusText,
-          emoji: isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜')
+          emoji: statusEmoji
         };
       }));
 
@@ -1000,17 +1017,17 @@ export async function handleInventoryItemSelect(interaction) {
     if (isAdminGranted) {
       desc += `\n**Status:** 🛡️ Admin Granted`;
     } else if (isTemp) {
-      desc += `\n**Status:** ${item.is_active ? '🟢 Active' : '⚪ Inactive'}`;
+      desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⬜ Inactive'}`;
     } else {
       desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⬜ Unequipped'}`;
     }
 
-    // Sell is disabled for: temp items OR admin-granted (SYNC) items
-    const cannotSell = isTemp || isAdminGranted;
-
-    // Toggle is ONLY disabled for SYNC items (admin controls these)
-    // SHOP items can always toggle, even if temporary
-    const cannotToggle = isAdminGranted;
+    // STRICT MODIFIABILITY RULES:
+    // 1. Owned Items (non-temp) = Fully Modifiable
+    // 2. Admin Granted = Not Modifiable
+    // 3. Owned Temporary Items = Half Modifiable (Toggle OK, Drop NO)
+    const cannotSell = isAdminGranted || isTemp; // Drop DISABLED for temp
+    const cannotToggle = isAdminGranted;        // Toggle ENABLED for temp
 
     if (item.expires_at) {
       desc += `\n⏳ **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
@@ -1037,22 +1054,25 @@ export async function handleInventoryItemSelect(interaction) {
         .setLabel('Drop')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(cannotSell || isAdminGranted)
+        .setDisabled(cannotSell)
     );
 
     // Dynamic button based on item type and state
     const toggleLabel = isTemp
       ? (item.is_active ? 'Deactivate' : 'Activate')
       : (item.is_active ? 'Unequip' : 'Equip');
+    
+    // Icon Logic: Use 🛡️ for Admin or 🔒 for locked Drop action
+    const lockEmoji = '🛡️'; // Used for fully locked Admin items
     const toggleEmoji = item.is_active ? '⏸️' : '✅';
-
+ 
     row1.addComponents(
       new ButtonBuilder()
         .setCustomId(`bank_inv_equip_${item.id}_${catIdStr}_${currentIndex}`)
         .setLabel(toggleLabel)
-        .setEmoji(isAdminGranted ? '🛡️' : toggleEmoji)
+        .setEmoji(cannotToggle ? lockEmoji : toggleEmoji)
         .setStyle(item.is_active ? ButtonStyle.Secondary : ButtonStyle.Success)
-        .setDisabled(cannotToggle || isAdminGranted)
+        .setDisabled(cannotToggle)
     );
 
     // ROW 2 (Bottom): Navigation [Back] [◀️] [▶️]
