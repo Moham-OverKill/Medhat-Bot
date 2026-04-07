@@ -93,6 +93,18 @@ export function getUserDisplayName(memberOrWinner, fallback = null) {
 }
 
 /**
+ * Extracts a human-readable log name (username only)
+ * @param {Object} memberOrUser - Discord member or user object
+ * @returns {string}
+ */
+export function getUserLogName(memberOrUser) {
+    if (!memberOrUser) return 'UnknownUser';
+    
+    const user = memberOrUser.user || memberOrUser;
+    return user.username || 'UnknownUser';
+}
+
+/**
  * Parses an ISO timestamp string to milliseconds
  * @param {string} value - ISO timestamp string
  * @returns {number|null} - Milliseconds since epoch, or null if invalid
@@ -102,3 +114,27 @@ export function parseIsoTimestamp(value) {
   const time = Date.parse(value);
   return Number.isNaN(time) ? null : time;
 }
+
+const ECONOMY_CEILING = 700000000000;
+
+/**
+ * Standardized economy amount validation
+ * Ensures values are positive integers within BigInt safe range (PostgreSQL BIGINT limit).
+ * Enforces a hard ceiling of 700,000,000,000 as per project sanity check rules.
+ * @param {any} value - The input to validate
+ * @param {boolean} allowZero - Whether $0 is allowed
+ * @returns {boolean}
+ */
+export function isValidEconomyAmount(value, allowZero = false) {
+  const num = parseInt(value, 10);
+  if (isNaN(num)) return false;
+  
+  // Enforce project sanity check ceiling (700B)
+  if (num > ECONOMY_CEILING) return false;
+  
+  if (allowZero) return num >= 0;
+  return num > 0;
+}
+
+// Custom Emoji Constants
+export const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';

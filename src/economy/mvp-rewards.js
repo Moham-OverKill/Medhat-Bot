@@ -1,6 +1,6 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
-import { logServerEvent } from '../utils/logger.js';
+import { sendLog } from '../utils/logger.js';
 
 const DEFAULT_MVP_REWARD = 100;
 
@@ -44,7 +44,7 @@ export async function awardMvpCoins(userId, guild, username, customAmount = null
     await client.query(
       `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
        VALUES ($1, $2, $3, $4, 'mvp_bonus', $5)`,
-      [userId, guildId, rewardAmount, newBalance, 'MVP of the Day reward']
+      [userId, guildId, rewardAmount, newBalance, 'Won the MVP award']
     );
     
     await client.query('COMMIT');

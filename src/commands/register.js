@@ -1,12 +1,15 @@
-import { REST, Routes } from 'discord.js';
+import { REST, Routes, PermissionFlagsBits } from 'discord.js';
 import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeError } from '../shared.js';
-import { colorsCommand, colorCommand } from './colors.js';
 import { bankCommand } from './bank.js';
-import { shopSetupCommand } from './shop-setup.js';
+import { inventoryCommand } from './inventory.js';
+import { itemMassCommand } from './item-mass.js';
+import { settingsCommand } from './settings.js';
+import { data as missionCommand } from './mission.js';
+import { tradeCommand } from './trade.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data');
@@ -33,24 +36,14 @@ async function writeHash(hash) {
 }
 
 export async function registerSlashCommands(client) {
+  // Unified /settings includes leaderboard config now
   const commands = [
+    settingsCommand.toJSON(),
     bankCommand.toJSON(),
-    {
-      name: 'mvp',
-      description: 'MVP system management',
-      default_member_permissions: '268435456', // MANAGE_ROLES permission
-      dm_permission: false,
-      options: [
-        {
-          name: 'setup',
-          type: 1, // SUB_COMMAND
-          description: 'Open the MVP control panel to configure and manage the MVP system'
-        }
-      ]
-    },
-    shopSetupCommand.toJSON(),
-    colorsCommand.toJSON(),
-    colorCommand.toJSON()
+    inventoryCommand.toJSON(),
+    itemMassCommand.toJSON(),
+    missionCommand.toJSON(),
+    tradeCommand.toJSON()
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -62,10 +55,7 @@ export async function registerSlashCommands(client) {
     const currentHash = createHash('sha256').update(payload).digest('hex');
     const previousHash = await readPreviousHash();
 
-    if (previousHash && previousHash === currentHash) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('⚡ Slash commands unchanged; skipping re-registration');
-      }
+    if (false && previousHash && previousHash === currentHash) {
       return { registered: false, count: commands.length };
     }
 
