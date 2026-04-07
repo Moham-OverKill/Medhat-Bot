@@ -358,28 +358,41 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
         return;
       }
 
-      // === DAILY RESET SEQUENCE (00:00 Cairo) ===
+      // === ATOMIC DAILY RESET SEQUENCE (00:00 Cairo) ===
       
-      // 1. Reset Stale Streaks (Guild-specific)
+      // 1. Finalize Day: Award any pending voice time
+      const { flushAllVoiceTime, resetGuildActivity } = await import('../activity/tracker.js');
+      await flushAllVoiceTime(guildId).catch(e => console.error(`[System] Voice flush error for ${guildId}:`, e));
+
+      // 2. Clear stale streaks
       await resetCairoStaleStreaks(guildId).catch(e => console.error(`[System] Streak reset error for ${guildId}:`, e));
 
-      // 2. Snapshot activity & Update Leaderboards
+      // 3. Perform Award Ceremony (Roles, Coins, History)
+      // awardMvp now returns actual winners who received the role
+      const awardResult = await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+      const winners = awardResult?.winners || [];
+      const winnerIds = (awardResult?.winnerMembers || []).map(m => m.id);
+
+      // 4. Update Leaderboards (Snapshot of the Day's Final Results)
       const { getTopActiveUsers } = await import('../activity/tracker.js');
-      const activitySnapshot = await getTopActiveUsers(guildId, 20);
-      const winnersCount = currentConfig.winnersCount || 1;
-      const mvpRecipients = activitySnapshot.slice(0, winnersCount).map(u => u.userId);
-
+      const finalSnapshot = await getTopActiveUsers(guildId, 15);
       const { updateLeaderboards } = await import('../commands/leaderboard.js');
-      await updateLeaderboards(client, guildId, activitySnapshot, mvpRecipients);
+      await updateLeaderboards(client, guildId, finalSnapshot, winnerIds);
 
-      // 4. Award MVP roles/coins
-      await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+      // 5. DEEP RESET: Wipe points and reset voice laps for the new day
+      await resetGuildActivity(guildId);
+      
+      sendLog(guild, 'audit', 'cyan', '📊 Daily MVP Cycle Complete', 
+        `**Action:** \`Daily Reset\`\n` +
+        `**Status:** Winners awarded, Leaderboards updated, and progress reset for the next 24h.`
+      );
 
       console.log(`[System] MVP Timer - Daily cycle complete for ${guildName}`);
       await scheduleMvpTimer(client, guildId, true);
     } catch (error) {
       console.error(`[System] MVP timer error for guild ${guildId}:`, sanitizeError(error));
-      await scheduleMvpTimer(client, guildId, true);
+      // ALWAYS reschedule to prevent the system from getting stuck forever
+      await scheduleMvpTimer(client, guildId, true).catch(() => {});
     }
   }, delay);
 
@@ -874,6 +887,12 @@ export async function awardMvp(client, guildId, options = {}) {
 
       if (assignmentFailures.length > 0) {
         console.warn(`${tag} ${assignmentFailures.length} assignment(s) failed`);
+        const failureList = assignmentFailures.map(f => `<@${f.userId}>: \`${f.reason}\``).join('\n');
+        sendLog(guild, 'audit', 'red', '❌ MVP Assignment Failed', 
+          `**Action:** \`Award Ceremony\`\n` +
+          `**Errors:**\n${failureList}\n\n` +
+          `**Tip:** Ensure the bot's role is HIGHER than the MVP role in the server settings.`
+        );
       }
     }
 
@@ -919,15 +938,8 @@ export async function awardMvp(client, guildId, options = {}) {
       );
     }
 
-    // ========== STEP 6: RESET ACTIVITY FOR NEXT CYCLE ==========
-    await resetGuildActivity(guildId);
-
-    const logName = interaction ? getUserLogName(interaction) : 'System';
-    sendLog(guild, 'audit', 'cyan', '📊 MVP Progress Reset', 
-        `**Action:** \`Daily Reset\`\n` +
-        `**Trigger:** \`${logName}\`\n` +
-        `**Status:** Activity scores cleared for the next 24-hour cycle.`
-    );
+    // Points reset is now handled by the primary daily cycle loop after successful awarding.
+    // This ensures consistency between awards and historical leaderboard display.
 
     // Update config with last award timestamp
     // IMPORTANT: Do NOT delete next_award_at here!
