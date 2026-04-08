@@ -40,7 +40,7 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = (interaction.deferred || interaction.replied) ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         embeds: [embed],
         components: [new ActionRowBuilder().addComponents(select), backRow]
@@ -125,7 +125,7 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-    const responseMethod = (interaction.deferred || interaction.replied) ? 'editReply' : 'editReply';
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     console.log(`[${guildName}] [Settings] Sending response via ${responseMethod}`);
     await interaction[responseMethod]({
         embeds: [embed],
@@ -233,7 +233,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
     const catId = isOther ? null : (categoryId ? parseInt(categoryId) : null);
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    if (!targetMember) return interaction.editReply({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
+    if (!targetMember) return interaction.reply({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
 
     // Sync and fetch inventory for target user
     const inventory = await syncInventoryWithDiscord(targetUserId, guildId, targetMember);
@@ -293,7 +293,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         if (buttons.length > 0) rows.push(new ActionRowBuilder().addComponents(buttons));
         rows.push(backRow);
 
-        const responseMethod = (interaction.deferred || interaction.replied) ? 'editReply' : 'update';
+        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
         await interaction[responseMethod]({ embeds: [embed], components: rows });
     } else {
         // Show items in specific category
@@ -332,7 +332,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        const responseMethod = (interaction.deferred || interaction.replied) ? 'editReply' : 'update';
+        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
         await interaction[responseMethod]({ embeds: [embed], components: [...rows, backRow] });
     }
 }
@@ -350,7 +350,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
         [invId]
     );
 
-    if (result.rowCount === 0) return interaction.editReply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    if (result.rowCount === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
     const item = result.rows[0];
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
@@ -384,7 +384,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
             .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [actionRow, backRow] });
+    await interaction.update({ embeds: [embed], components: [actionRow, backRow] });
 }
 
 /**
@@ -543,7 +543,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [navRow, backRow] });
+    await interaction.update({ embeds: [embed], components: [navRow, backRow] });
 }
 
 /**
@@ -551,6 +551,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const customId = interaction.customId;
 
         if (customId === 'admin_user_select') {
