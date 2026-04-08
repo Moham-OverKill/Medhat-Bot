@@ -1145,21 +1145,13 @@ export async function handleTradeFinalConfirmation(interaction) {
         }
 
         // 7b. DOMINO SWEEP (Post-Trade Cascading Unequip)
-        // Check if either party lost items that other items depend on
-        const senderUnequipped = new Set();
-        const targetUnequipped = new Set();
         try {
-            for (const shopItemId of senderLostShopItemIds || []) {
-                const names = await runDependencySweep(trade.sender_id, trade.guild_id, shopItemId, senderMember);
-                if (names && names.length > 0) names.forEach(n => senderUnequipped.add(n));
-            }
-            for (const shopItemId of targetLostShopItemIds || []) {
-                const names = await runDependencySweep(trade.target_id, trade.guild_id, shopItemId, targetMember);
-                if (names && names.length > 0) names.forEach(n => targetUnequipped.add(n));
-            }
+            if (senderMember) await runDependencySweep(trade.sender_id, trade.guild_id, senderMember);
+            if (targetMember) await runDependencySweep(trade.target_id, trade.guild_id, targetMember);
         } catch (sweepError) {
             console.error('Post-trade domino sweep error:', sweepError);
         }
+
 
         // 8. Update UI with Fee Details
         let completionDesc = `✅ Trade Completed! <@${trade.sender_id}> 🤝 <@${trade.target_id}>\n\n`;
