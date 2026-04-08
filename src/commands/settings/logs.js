@@ -106,9 +106,9 @@ export async function handleLogsSettings(interaction) {
  * Handle log channel assignment for specific categories
  */
 export async function handleLogCategorySelect(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const customId = interaction.customId; // logs_assign_CATEGORY
     const category = customId.split('_')[2]; // economy, inventory, etc
+
 
     const channelId = interaction.values[0];
     const guildId = interaction.guildId;
@@ -179,8 +179,8 @@ export async function handleLogCategorySelect(interaction) {
  * Handle disabling all logs
  */
 export async function handleLogDisable(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const guildId = interaction.guildId;
+
 
     const pool = getPool();
     const guildName = interaction.guild.name;

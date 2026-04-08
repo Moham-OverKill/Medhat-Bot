@@ -791,8 +791,8 @@ async function finalizeTradePosting(interaction, setup) {
  * Handle Public Trade Button clicks (Accept/Decline)
  */
 export async function handleTradeExecution(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const customId = interaction.customId;
+
 
     const tradeId = parseInt(customId.split('_')[2], 10);
 
@@ -860,8 +860,8 @@ export async function handleTradeExecution(interaction) {
  * ATOMIC SWAP EXECUTION (The Fortress)
  */
 export async function handleTradeFinalConfirmation(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const tradeId = parseInt(interaction.customId.split('_')[2], 10);
+
 
     const confirmText = interaction.fields.getTextInputValue('confirm');
 

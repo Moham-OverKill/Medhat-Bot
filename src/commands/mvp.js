@@ -333,7 +333,6 @@ export async function showSetupPanel(interaction, config) {
 // Handle component interactions
 export async function handleMvpComponent(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     // Security: Verify user has required permissions for component interactions
     if (!(await hasRequiredPermissions(interaction))) {

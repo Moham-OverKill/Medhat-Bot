@@ -8,7 +8,6 @@ import { sendLog } from '../utils/logger.js';
 export async function handleMissionInteraction(interaction) {
   const customId = interaction.customId;
   const { guildId, user } = interaction;
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   
   const [prefix, action, missionIdStr] = customId.split('_');
   const missionId = parseInt(missionIdStr);
