@@ -344,7 +344,7 @@ export async function showTradeSetup(interaction, setupInfo = null, activeSelect
             await interaction.reply(payload);
         }
     } catch (err) {
-        console.error('UI Refresh failed:', err);
+        // Silently catch UI errors if the interaction became stale during processing
     }
 }
 
@@ -365,7 +365,9 @@ export async function handleTradeSetupInteraction(interaction) {
     // For coins buttons, we skip deferUpdate.
     if (!customId.includes('_coins')) {
         if (interaction.isButton() || interaction.isAnySelectMenu()) {
-            await interaction.deferUpdate().catch(() => {});
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
         }
     }
 
@@ -858,11 +860,19 @@ export async function handleTradeExecution(interaction) {
  * ATOMIC SWAP EXECUTION (The Fortress)
  */
 export async function handleTradeFinalConfirmation(interaction) {
+    // 1. IMMEDIATE ACKNOWLEDGMENT: This is a heavy operation, so we defer right away.
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
     const tradeId = parseInt(interaction.customId.split('_')[2], 10);
     const confirmText = interaction.fields.getTextInputValue('confirm');
 
     if (confirmText.toUpperCase() !== 'CONFIRM') {
-        return interaction.reply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', flags: MessageFlags.Ephemeral });
+        const payload = { content: '❌ Trade confirmation failed. You must type "CONFIRM".', flags: MessageFlags.Ephemeral };
+        if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
+        else await interaction.reply(payload);
+        return;
     }
 
     // Fetch trade again to be sure
