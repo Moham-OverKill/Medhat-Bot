@@ -161,7 +161,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
     const formattedRows = data.map(item => {
         const val = Number(item[valueKey]) || 0;
         const valStr = useCompact ? formatCompactNumber(val) : String(val);
-        const fullValStr = `${valStr} ${unitLabel}`;
+        const fullValStr = `${valStr}${unitLabel}`; // Tight value+unit (e.g. 200$)
         if (fullValStr.length > maxValueWidth) maxValueWidth = fullValStr.length;
         return { ...item, fullValStr };
     });
@@ -170,8 +170,8 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
     const lines = [];
     formattedRows.forEach((row, index) => {
         const rank = index + 1;
-        // Rank format: " 1-" through "15-"
-        const rankStr = String(rank).padStart(2, ' ') + '-';
+        // Rank format: "01 |"
+        const rankStr = String(rank).padStart(2, '0');
 
         // Value format: Right-aligned to the max value width found in this set
         const valueStr = row.fullValStr.padStart(maxValueWidth, ' ');
@@ -183,7 +183,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
         }
 
         // Final line assembly
-        const baseLine = `${rankStr} ${valueStr} `;
+        const baseLine = `${rankStr} | ${valueStr} | `;
         const maxNameLen = MOBILE_MAX_LINE_LENGTH - baseLine.length;
         const finalName = truncateName(userStr, maxNameLen);
 
@@ -191,7 +191,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
 
         // Separator after Top 3
         if (index === 2 && data.length > 3) {
-            const separatorLen = Math.min(MOBILE_MAX_LINE_LENGTH, baseLine.length + 10);
+            const separatorLen = Math.min(MOBILE_MAX_LINE_LENGTH, baseLine.length + 8);
             lines.push('-'.repeat(separatorLen));
         }
     });
@@ -211,7 +211,7 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = []) {
     if (!activityData || activityData.length === 0) {
         embed.setDescription('*🌅 No MVP history yet...*\n*The first champions will appear after the next daily award cycle!*');
     } else {
-        const table = buildLeaderboardTable(activityData, 'score', 'Points', mvpRecipients, true);
+        const table = buildLeaderboardTable(activityData, 'score', ' Points', mvpRecipients, true);
         embed.setDescription(table);
     }
     return embed;
@@ -228,7 +228,7 @@ export function buildCoinsEmbed(coinsData) {
     if (!coinsData || coinsData.length === 0) {
         embed.setDescription('*💸 The vault is empty...*\n*Be the first to earn coins and claim the top spot!*');
     } else {
-        const table = buildLeaderboardTable(coinsData, 'balance', 'OK', [], true);
+        const table = buildLeaderboardTable(coinsData, 'balance', '$', [], true);
         embed.setDescription(table);
     }
     return embed;
@@ -245,7 +245,7 @@ export function buildStreakEmbed(streakData) {
     if (!streakData || streakData.length === 0) {
         embed.setDescription('*🕯️ No flames burning yet...*\n*Use `/daily` every day to ignite your streak!*');
     } else {
-        const table = buildLeaderboardTable(streakData, 'daily_streak', 'Days', [], false);
+        const table = buildLeaderboardTable(streakData, 'daily_streak', ' Days', [], false);
         embed.setDescription(table);
     }
     return embed;
