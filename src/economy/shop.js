@@ -430,18 +430,25 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       continue;
     }
 
-    // 2. Standard Item Check (Inventory Ownership)
-    if (Number.isInteger(req)) {
-      const res = await pool.query(
-        'SELECT id FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3',
-        [userId, guildId, req]
-      );
-      
-      if (res.rows.length === 0) {
-        missingItemIds.push(req);
-      }
+  // 2. Standard Item Check (Inventory Ownership)
+  if (Number.isInteger(req)) {
+    // SELF-HEALING: Verify item still exists in shop_items
+    const itemExists = await pool.query('SELECT 1 FROM shop_items WHERE id = $1', [req]);
+    if (itemExists.rowCount === 0) {
+      console.warn(`[Self-Healing] Ghost prerequisite detected: Item ${req} no longer exists. Skipping.`);
       continue;
     }
+
+    const res = await pool.query(
+      'SELECT id FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3',
+      [userId, guildId, req]
+    );
+    
+    if (res.rows.length === 0) {
+      missingItemIds.push(req);
+    }
+    continue;
+  }
   }
 
   const met = missingItemIds.length === 0 && !missingBooster;
@@ -466,27 +473,67 @@ export async function formatPrerequisiteError(prereqs, guildId) {
       'SELECT name FROM shop_items WHERE id = ANY($1)',
       [missingItemIds]
     );
-    const names = itemNamesRes.rows.map(r => `**${r.name}**`);
+    // Ignore any IDs that couldn't be found (Ghost items)
+    const names = itemNamesRes.rows
+      .filter(r => r && r.name)
+      .map(r => `**${r.name}**`);
     
-    let formattedNames = '';
-    if (names.length === 1) {
-      formattedNames = names[0];
-    } else if (names.length === 2) {
-      formattedNames = `${names[0]} and ${names[1]}`;
+    if (names.length === 0) {
+      // All missing items were ghost items
+      itemMessage = '';
     } else {
-      const last = names.pop();
-      formattedNames = `${names.join(', ')}, and ${last}`;
+      let formattedNames = '';
+      if (names.length === 1) {
+        formattedNames = names[0];
+      } else if (names.length === 2) {
+        formattedNames = `${names[0]} and ${names[1]}`;
+      } else {
+        const last = names.pop();
+        formattedNames = `${names.join(', ')}, and ${last}`;
+      }
+      
+      itemMessage = `You must own ${formattedNames} first`;
     }
-    
-    itemMessage = `You must own ${formattedNames} first`;
   }
 
-  if (missingBooster) {
-    // Scenario C: Hybrid
-    return `${itemMessage}${itemMessage ? ' AND ' : ''}be an active **Server Booster** 🚀.`;
-  } else {
-    // Scenario B: Items Only
-    return `${itemMessage}.`;
+    if (missingBooster) {
+      // Scenario C: Hybrid
+      return `${itemMessage}${itemMessage ? ' AND ' : ''}be an active **Server Booster** 🚀.`;
+    } else {
+      // Scenario B: Items Only
+      return itemMessage ? `${itemMessage}.` : 'Requirement not met.';
+    }
+}
+
+/**
+ * Self-Healing: Removes a specific item ID from the required_items JSONB array
+ * of all shop items in a guild. Used when an item is deleted or deactivated.
+ */
+export async function scrubPrerequisiteFromGuild(guildId, itemId) {
+  try {
+    const itemIntId = typeof itemId === 'string' ? parseInt(itemId) : itemId;
+    
+    // SQL: Use jsonb_agg to rebuild the array without the specified ID
+    // This works reliably for JSONB arrays of numbers
+    const res = await query(
+      `UPDATE shop_items 
+       SET required_items = (
+         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+         FROM jsonb_array_elements(required_items) elem
+         WHERE (elem::text)::int != $1
+       )
+       WHERE guild_id = $2 
+       AND required_items @> $1::text::jsonb`,
+      [itemIntId, guildId]
+    );
+
+    if (res.rowCount > 0) {
+      console.log(`[Self-Healing] Scrubbed item ${itemIntId} from ${res.rowCount} prerequisite lists in ${guildId}`);
+    }
+    return res.rowCount;
+  } catch (error) {
+    console.error(`[Self-Healing] Failed to scrub item ${itemId} from guild ${guildId}:`, error);
+    return 0;
   }
 }
 
@@ -1478,20 +1525,25 @@ export async function cleanupDeletedRole(guildId, roleId) {
       }
     }
 
-    // 2. Delete from user_inventory
+    // 2. Deactivate in user_inventory (Soft delete to preserve logs)
     const inventoryResult = await query(
-      `DELETE FROM user_inventory WHERE shop_item_id = ANY($1)`,
+      `UPDATE user_inventory SET is_active = false WHERE shop_item_id = ANY($1)`,
       [itemIds]
     );
 
-    // 3. Delete from shop_items
+    // 3. Deactivate in shop_items
     const shopResult = await query(
-      `DELETE FROM shop_items WHERE id = ANY($1)`,
+      `UPDATE shop_items SET is_active = false, updated_at = NOW() WHERE id = ANY($1)`,
       [itemIds]
     );
+
+    // 4. Scrub from other items' prerequisites
+    for (const itemId of itemIds) {
+      await scrubPrerequisiteFromGuild(guildId, itemId);
+    }
 
     for (const name of itemNames) {
-      console.log(`[System] Role deleted - Removed shop item "${name}"`);
+      console.log(`[System] Role deleted - Deactivated shop item "${name}" and scrubbed prerequisites.`);
     }
 
     // Discord Log (Bulk)
