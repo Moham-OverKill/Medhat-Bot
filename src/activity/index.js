@@ -173,8 +173,14 @@ const MIN_MESSAGE_LENGTH = 5; // Unified with XP system
 async function checkMissionProgress(message) {
   // === PERFORMANCE OPTIMIZATION: Early Cache Check ===
   // Resolve true channel ID (Parent ID if it is a thread/forum post)
-  const channelId = message.channel.id;
-  const parentId = message.channel.parentId;
+  let channelId = message.channel.id;
+  let parentId = message.channel.parentId;
+
+  // Robust check: If parentId is missing but it's a thread, try cache
+  if (!parentId && message.channel.isThread?.()) {
+    const cached = message.guild?.channels.cache.get(channelId);
+    if (cached?.parentId) parentId = cached.parentId;
+  }
 
   if (!isMissionChannel(message.guild.id, channelId, parentId)) return;
 
@@ -327,7 +333,24 @@ export async function checkReactionMission(reaction, user) {
   if (!guildId) return;
 
   // === PERFORMANCE OPTIMIZATION: Early Cache Check ===
-  const parentId = reaction.message.channel?.parentId;
+  // Resolve parentId robustly for Threads/Posts
+  let parentId = reaction.message.channel?.parentId;
+  
+  if (!parentId && reaction.message.guild) {
+    const cached = reaction.message.guild.channels.cache.get(channelId);
+    if (cached?.parentId) {
+      parentId = cached.parentId;
+    } else {
+      // Robust fallthrough: for uncached threads/forum posts, fetch the channel to resolve parent
+      try {
+        const fetchedChannel = await reaction.message.client.channels.fetch(channelId).catch(() => null);
+        if (fetchedChannel?.parentId) parentId = fetchedChannel.parentId;
+      } catch (e) {
+        // Ignore fetch errors
+      }
+    }
+  }
+
   if (!isMissionChannel(guildId, channelId, parentId)) return;
   
   if (!isUserTracking(guildId, userId) || isMissionCompleted(guildId, userId)) return;
