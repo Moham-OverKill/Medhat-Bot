@@ -1265,8 +1265,6 @@ export async function handleItemClaim(interaction) {
     const dropId = interaction.customId.replace('bank_item_claim_', '');
 
     // 1. Initial acknowledgment (STRICT: Re-acknowledge even if router missed it)
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
@@ -1274,31 +1272,29 @@ export async function handleItemClaim(interaction) {
       const isSelfClaim = res.item.dropper_id === interaction.user.id;
       const claimerName = getUserDisplayName(interaction.user);
 
-      // 1. Success Message to Claimer (Ephemeral check handled by router)
+      // 1. Success Message to Claimer
       const successMsg = isSelfClaim 
         ? '✅ You have reclaimed your own dropped item!' 
         : `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
       
-      await interaction.followUp({ content: successMsg, ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: successMsg, ephemeral: true }).catch(() => {});
 
-      // 2. Update Public Message
+      // 2. Update Public Message (using .update on the original interaction or fetching message)
+      // Since we already replied ephemerally, we must use interaction.message.edit() or followUp
       const originalDesc = interaction.message.embeds[0]?.description || '';
-      const firstLine = originalDesc.split('\n')[0]; // Preserve the "User dropped Item" line
+      const firstLine = originalDesc.split('\n')[0];
       
       const newDesc = isSelfClaim
         ? `✅ **${claimerName}** changed their mind and claimed their own drop!`
         : `${firstLine}\nItem Claimed by **${claimerName}**`;
 
-      const droppedAtUnix = Math.floor(new Date(res.dropped_at).getTime() / 1000);
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
         .setDescription(newDesc)
         .setFooter({ text: 'Dropped at' });
 
-      // Add relative timestamp in field if we want it more prominent
       claimedEmbed.setTimestamp(new Date(res.dropped_at));
 
-      // Locked Button (Secondary style + Disabled)
       const lockedRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`bank_item_claimed_locked_${dropId}`)
@@ -1315,13 +1311,16 @@ export async function handleItemClaim(interaction) {
     }
   } catch (error) {
     console.error('Claim Error:', error);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: `❌ ${error.message}` });
+    const errorMessage = `❌ ${error.message}`;
+    
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: errorMessage, ephemeral: true });
     } else {
-      await interaction.reply({ content: `❌ ${error.message}`, flags: [64] });
+      await interaction.followUp({ content: errorMessage, ephemeral: true });
     }
   }
 }
+
 
 // --- Legacy Handlers from previous file (History, Transfer) ---
 // Re-implement or copy them.
