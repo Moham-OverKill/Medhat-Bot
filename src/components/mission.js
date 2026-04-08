@@ -8,6 +8,7 @@ import { sendLog } from '../utils/logger.js';
 export async function handleMissionInteraction(interaction) {
   const customId = interaction.customId;
   const { guildId, user } = interaction;
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   
   const [prefix, action, missionIdStr] = customId.split('_');
   const missionId = parseInt(missionIdStr);
@@ -15,7 +16,7 @@ export async function handleMissionInteraction(interaction) {
   // Security: Only the user who ran the /mission command can click its buttons
   const originalUserId = interaction.message.interaction?.user?.id;
   if (originalUserId && user.id !== originalUserId) {
-    return interaction.editReply({ 
+    return interaction.reply({ 
       content: "❌ This isn't your mission page.", 
       ephemeral: true 
     });
@@ -23,7 +24,7 @@ export async function handleMissionInteraction(interaction) {
 
   try {
     const mission = await getMission(missionId);
-    if (!mission) return interaction.editReply({ content: '❌ Mission no longer exists.', components: [] });
+    if (!mission) return interaction.update({ content: '❌ Mission no longer exists.', components: [] });
 
     if (action === 'start') {
       await startUserMission(guildId, user.id, missionId);
@@ -42,14 +43,14 @@ export async function handleMissionInteraction(interaction) {
       // 1. Pre-interaction check: has the user already claimed today?
       const progressCheck = await getProgress(guildId, user.id, missionId);
       if (progressCheck?.is_claimed) {
-        return interaction.editReply({ content: '❌ You have already claimed this mission.', ephemeral: true });
+        return interaction.reply({ content: '❌ You have already claimed this mission.', ephemeral: true });
       }
 
       // 2. Perform ATOMIC claim in DB (This handles parallel clicks)
       const result = await claimUserMissionReward(guildId, user.id, missionId, mission.reward_coins);
       
       if (result.error) {
-        return interaction.editReply({ content: `❌ ${result.error}`, ephemeral: true });
+        return interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
       }
 
       // 3. Award coins only AFTER DB confirms claim was successful
@@ -78,8 +79,6 @@ export async function handleMissionInteraction(interaction) {
     console.error('[Missions] Interaction error:', sanitizeError(error));
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
-    } else {
-      await interaction.followUp({ content: '❌ An error occurred.', ephemeral: true });
     }
   }
 }
@@ -150,7 +149,7 @@ async function updateMissionEmbed(interaction, mission) {
 
   row.addComponents(claimButton);
 
-  await interaction.editReply({
+  await interaction.update({
     embeds: [embed],
     components: [row]
   });

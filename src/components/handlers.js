@@ -103,17 +103,6 @@ export function setupComponentHandlers(client) {
 
   client.on('interactionCreate', async (interaction) => {
     try {
-      // 1. GLOBAL HARDENING: Immediately acknowledge all component interactions
-      if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
-        if (!interaction.deferred && !interaction.replied) {
-          // If it's a modal, we usually can't deferUpdate before showing it,
-          // but for buttons/menus, we MUST defer immediately.
-          if (interaction.isMessageComponent()) {
-             await interaction.deferUpdate().catch(() => {});
-          }
-        }
-      }
-
       // 2. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const serverPrefix = interaction.guild ? `[${interaction.guild.name}]` : '[System]';
