@@ -195,7 +195,7 @@ export async function handleBankDaily(interaction) {
         const { embed, components } = buildBankUI(userData, member);
 
         // Update original message immediately
-        await interaction.update({ content: null, embeds: [embed], components });
+        await interaction.editReply({ content: null, embeds: [embed], components });
 
         // Optionally tell them why nothing happened
         await interaction.followUp({ content: '❌ You have already claimed your daily reward today.', flags: MessageFlags.Ephemeral });
@@ -210,7 +210,7 @@ export async function handleBankDaily(interaction) {
     const { embed, components } = buildBankUI(updatedData, member);
 
     // Update original message immediately
-    await interaction.update({ content: null, embeds: [embed], components });
+    await interaction.editReply({ content: null, embeds: [embed], components });
 
     // 2.5 Log to Discord Logs
     const logUsername = getUserLogName(member);
@@ -1124,11 +1124,6 @@ export async function handleInventoryItemSelect(interaction) {
 // ACTION HANDLER (Drop / Equip / Confirm)
 export async function handleInventoryAction(interaction) {
   try {
-    // 1. Acknowledge immediately
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
-
     const parts = interaction.customId.split('_');
     const action = parts[2]; // drop, equip, dropconfirm, dropcancel
     const invId = parseInt(parts[3]);
@@ -1174,7 +1169,7 @@ export async function handleInventoryAction(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.update({ embeds: [confirmEmbed], components: [row] });
+      return interaction.editReply({ embeds: [confirmEmbed], components: [row] });
     }
 
     // --- 1.5. DROP CANCEL (Go back to management) ---
@@ -1232,14 +1227,6 @@ export async function handleInventoryAction(interaction) {
         // Optional: Send inventory audit log
         sendLog(interaction.guild, 'inventory', 'orange', '🗑️ Item Dropped', `**${getUserLogName(interaction.member)}** dropped **${res.item.name}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
       }
-      return;
-    }
-
-    // --- 3. DROP CANCEL ---
-    if (action === 'dropcancel') {
-      await interaction.deferUpdate();
-      // Simply delete the ephemeral confirmation and return to the item management view
-      await interaction.deleteReply();
       return;
     }
 

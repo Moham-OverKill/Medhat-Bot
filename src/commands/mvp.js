@@ -395,7 +395,7 @@ async function handleRoleSelect(interaction, config) {
   const selectedRoleId = interaction.values[0];
 
   if (!isValidSnowflake(selectedRoleId)) {
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Invalid role selection.',
       embeds: [],
       components: []
@@ -405,7 +405,7 @@ async function handleRoleSelect(interaction, config) {
 
   // Rate limiting: Prevent config spam
   if (!checkRateLimit(`${guildId}-config`, CONFIG_RATE_LIMIT_MS)) {
-    await interaction.update({
+    await interaction.editReply({
       content: '⚠️ Please wait a moment before changing settings again.',
       embeds: [],
       components: []
@@ -419,7 +419,7 @@ async function handleRoleSelect(interaction, config) {
     const role = await guild.roles.fetch(selectedRoleId);
 
     if (!role) {
-      await interaction.update({
+      await interaction.editReply({
         content: '❌ Selected role not found.',
         embeds: [],
         components: []
@@ -429,7 +429,7 @@ async function handleRoleSelect(interaction, config) {
 
     // Prevent selecting @everyone
     if (role.id === guild.id) {
-      await interaction.update({
+      await interaction.editReply({
         content: '❌ Cannot use @everyone as MVP role.',
         embeds: [],
         components: []
@@ -439,7 +439,7 @@ async function handleRoleSelect(interaction, config) {
 
     // Prevent selecting managed roles (bot roles, integrations)
     if (role.managed) {
-      await interaction.update({
+      await interaction.editReply({
         content: '❌ Cannot use managed roles (bot roles, boosts, etc.) as MVP role.',
         embeds: [],
         components: []
@@ -452,7 +452,7 @@ async function handleRoleSelect(interaction, config) {
     const botHighestRole = botMember.roles.highest;
 
     if (role.position >= botHighestRole.position) {
-      await interaction.update({
+      await interaction.editReply({
         content: `❌ Cannot use this role. The bot's highest role (${botHighestRole.name}) must be above the MVP role in the role list.`,
         embeds: [],
         components: []
@@ -462,7 +462,7 @@ async function handleRoleSelect(interaction, config) {
 
     // Warn if role has dangerous permissions
     if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
-      await interaction.update({
+      await interaction.editReply({
         content: '❌ Cannot use this role. MVP role should not have Administrator, Manage Server, or Manage Roles permissions.',
         embeds: [],
         components: []
@@ -483,7 +483,7 @@ async function handleRoleSelect(interaction, config) {
 
   } catch (error) {
     console.error('Failed to validate/save role config:', sanitizeError(error));
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Failed to save configuration. Please try again.',
       embeds: [],
       components: []
@@ -499,7 +499,7 @@ async function handleScheduleSelect(interaction, config) {
 
   // Security: Validate schedule input
   if (!SCHEDULE_BY_VALUE.has(scheduleValue)) {
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Invalid schedule selection.',
       embeds: [],
       components: []
@@ -541,7 +541,7 @@ async function handleScheduleSelect(interaction, config) {
     await showSetupPanel(interaction, latestConfig);
   } catch (error) {
     console.error('Failed to save schedule config:', sanitizeError(error));
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Failed to save configuration. Please try again.',
       embeds: [],
       components: []
@@ -556,7 +556,7 @@ async function handleWinnersSelect(interaction, config) {
   // Security: Validate input
   const winnersCount = parseInt(winnersValue, 10);
   if (isNaN(winnersCount) || winnersCount < MIN_WINNERS || winnersCount > MAX_WINNERS) {
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Invalid winners count. Must be between 1 and 5.',
       embeds: [],
       components: []
@@ -578,7 +578,7 @@ async function handleWinnersSelect(interaction, config) {
     await showSetupPanel(interaction, config);
   } catch (error) {
     console.error('Failed to save winners config:', sanitizeError(error));
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Failed to save configuration. Please try again.',
       embeds: [],
       components: []
@@ -597,7 +597,7 @@ async function handleToggle(interaction, config) {
   // Validation: Cannot turn ON without role and winners (schedule is hardcoded to 24h)
   if (newState === true) {
     if (!config.mvpRoleId || !config.winnersCount) {
-      await interaction.reply({
+      await interaction.editReply({
         content: '❌ You must configure the MVP Role and Winner Count first.',
         flags: MessageFlags.Ephemeral
       });
@@ -642,7 +642,7 @@ async function handleToggle(interaction, config) {
     await showSetupPanel(interaction, latestConfig);
   } catch (error) {
     console.error('Failed to toggle MVP:', sanitizeError(error));
-    await interaction.update({
+    await interaction.editReply({
       content: '❌ Failed to toggle MVP. Please try again.',
       embeds: [],
       components: []
@@ -695,7 +695,7 @@ async function showStatsLeaderboard(interaction, config) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-  await interaction.update({
+  await interaction.editReply({
     embeds: [embed],
     components: [backButton]
   });

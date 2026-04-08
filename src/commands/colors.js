@@ -652,7 +652,7 @@ async function showRoleSelector(interaction, isBooster, operation) {
 
     const backRow = new ActionRowBuilder().addComponents(backButton);
 
-    await interaction.update({
+    await interaction.editReply({
       content: 'Select the booster role:',
       components: [selectRow, backRow],
       embeds: [],
@@ -668,7 +668,7 @@ async function showRoleSelector(interaction, isBooster, operation) {
     operation
   );
 
-  await interaction.update({
+  await interaction.editReply({
     content,
     components,
     embeds: [],
@@ -900,7 +900,7 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.reply({
+      await interaction.editReply({
         content: '❌ Boost the server to unlock this color!',
         flags: MessageFlags.Ephemeral
       });
@@ -921,7 +921,7 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Removed color role <@&${roleId}>.`
       );
-      await interaction.reply({
+      await interaction.editReply({
         content: `✅ Removed <@&${roleId}> from you.`,
         flags: MessageFlags.Ephemeral
       });
@@ -942,7 +942,7 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Picked color role <@&${roleId}>.`
       );
-      await interaction.reply({
+      await interaction.editReply({
         content: `✅ Gave you <@&${roleId}>!`,
         flags: MessageFlags.Ephemeral
       });

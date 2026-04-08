@@ -87,18 +87,16 @@ export async function handleLogsSettings(interaction) {
     const row4 = new ActionRowBuilder().addComponents(auditSelect);
     const row5 = new ActionRowBuilder().addComponents(backButton, disableButton);
 
-    const responseMethod = interaction.isCommand?.() || interaction.isModalSubmit?.() ? 'reply' : 'update';
     const msgData = {
         embeds: [embed],
         components: [row1, row2, row3, row4, row5],
         flags: MessageFlags.Ephemeral
     };
 
-    if (responseMethod === 'reply') {
-        if (interaction.deferred || interaction.replied) await interaction.editReply(msgData);
-        else await interaction.reply(msgData);
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(msgData);
     } else {
-        await interaction.update(msgData);
+        await interaction.reply(msgData);
     }
 }
 
@@ -127,7 +125,7 @@ export async function handleLogCategorySelect(interaction) {
     const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
     const permissionCheck = checkChannelPermissions(channel);
     if (!permissionCheck.valid) {
-        return interaction.reply({ 
+        return interaction.editReply({ 
             content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel** and **Send Messages** there.`,
             flags: MessageFlags.Ephemeral
         });
