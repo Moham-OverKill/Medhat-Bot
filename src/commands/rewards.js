@@ -154,9 +154,7 @@ export async function handleRewardsComponent(interaction) {
     await interaction.showModal(modal);
   }
   else if (customId === 'rewards_give_btn') {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    await interaction.deferUpdate();
     const userSelect = new UserSelectMenuBuilder()
       .setCustomId('rewards_give_select')
       .setPlaceholder('Select user to give coins to')
