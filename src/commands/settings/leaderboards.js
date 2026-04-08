@@ -231,7 +231,7 @@ export async function handleLeaderboardDisable(interaction) {
 export async function handleLeaderboardRefresh(interaction) {
     try {
         // Send immediate ephemeral feedback so admin knows it's happening
-        await interaction.reply({ 
+        await interaction.editReply({ 
             content: '🔄 **Force Refresh Triggered.** Updating all leaderboard channels...', 
             flags: MessageFlags.Ephemeral 
         });

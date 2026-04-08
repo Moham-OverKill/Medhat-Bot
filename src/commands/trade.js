@@ -356,7 +356,7 @@ export async function handleTradeSetupInteraction(interaction) {
     const setup = ACTIVE_SETUPS.get(setupId);
 
     if (!setup) {
-        return interaction.reply({ content: '❌ Trade session expired. Restart with /trade.', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ Trade session expired. Restart with /trade.', flags: MessageFlags.Ephemeral });
     }
 
     const { customId } = interaction;
@@ -510,7 +510,7 @@ export async function handleTradeSetupInteraction(interaction) {
             if (interaction.deferred || interaction.replied) {
                 return interaction.editReply({ content: errorMsg, components: [], embeds: [] });
             } else {
-                return interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral });
+                return interaction.editReply({ content: errorMsg, flags: MessageFlags.Ephemeral });
             }
         }
         
@@ -578,7 +578,7 @@ export async function handleTradeModal(interaction) {
 export async function handleTradeSelect(interaction) {
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
-    if (!setup) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+    if (!setup) return interaction.editReply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
 
     const invId = parseInt(interaction.values[0], 10);
     
@@ -591,20 +591,20 @@ export async function handleTradeSelect(interaction) {
         [invId, setup.guildId, interaction.user.id]
     );
 
-    if (result.rows.length === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    if (result.rows.length === 0) return interaction.editReply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
     const item = result.rows[0];
     const isSoulbound = item.source !== 'SHOP';
 
     // Layer 2: Selection Check (only block admin-granted items)
     if (isSoulbound) {
-        return interaction.reply({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.customId === 'trade_select_give_item') {
         // Prevent duplicates in offer
         if (setup.senderItems.find(i => i.id === invId)) {
-            return interaction.reply({ content: '❌ Item already added to offer.', flags: MessageFlags.Ephemeral });
+            return interaction.editReply({ content: '❌ Item already added to offer.', flags: MessageFlags.Ephemeral });
         }
         
         // Prevent giving permanent items the target already owns
@@ -617,14 +617,14 @@ export async function handleTradeSelect(interaction) {
             );
 
             if (dbCheck.rows.length > 0 || hasExplicit) {
-                return interaction.reply({ content: `❌ The recipient already has this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
+                return interaction.editReply({ content: `❌ The recipient already has this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
             }
 
         setup.senderItems.push(item);
     } else if (interaction.customId === 'trade_select_request_item') {
         // Prevent duplicates in request
         if (setup.targetItems.find(i => i.id === invId)) {
-            return interaction.reply({ content: '❌ Item already added to request.', flags: MessageFlags.Ephemeral });
+            return interaction.editReply({ content: '❌ Item already added to request.', flags: MessageFlags.Ephemeral });
         }
 
         // Prevent requesting permanent items you already own correctly
@@ -639,7 +639,7 @@ export async function handleTradeSelect(interaction) {
             );
 
             if (dbCheck.rows.length > 0 || hasExplicit) {
-                return interaction.reply({ content: `❌ You already possess this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
+                return interaction.editReply({ content: `❌ You already possess this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
             }
         }
 
@@ -802,18 +802,18 @@ export async function handleTradeExecution(interaction) {
 
     // Status Check
     if (trade.status !== 'pending') {
-        return interaction.reply({ content: `❌ This trade has already been ${trade.status}.`, flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: `❌ This trade has already been ${trade.status}.`, flags: MessageFlags.Ephemeral });
     }
 
     // Expiry Check
     if (new Date() > new Date(trade.expires_at)) {
         await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, interaction.guildId]);
-        return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
     }
 
     // ONLY target can accept/decline
     if (interaction.user.id !== trade.target_id) {
-        return interaction.reply({ content: '❌ Only the target user can respond to this offer.', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ Only the target user can respond to this offer.', flags: MessageFlags.Ephemeral });
     }
 
     // DECLINE
@@ -827,7 +827,7 @@ export async function handleTradeExecution(interaction) {
             TRADE_TIMEOUTS.delete(tradeId);
         }
 
-        await interaction.update({
+        await interaction.editReply({
             content: `❌ Trade was declined by <@${trade.target_id}>.`,
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
