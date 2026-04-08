@@ -361,23 +361,23 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
       // === ATOMIC DAILY RESET SEQUENCE (00:00 Cairo) ===
       
       // 1. Finalize Day: Award any pending voice time
-      const { flushAllVoiceTime, resetGuildActivity } = await import('../activity/tracker.js');
+      const { flushAllVoiceTime, resetGuildActivity, getTopActiveUsers } = await import('../activity/tracker.js');
       await flushAllVoiceTime(guildId).catch(e => console.error(`[System] Voice flush error for ${guildId}:`, e));
 
-      // 2. Clear stale streaks
+      // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
+      const { updateLeaderboards } = await import('../commands/leaderboard.js');
+      const finalSnapshotData = await getTopActiveUsers(guildId, 15);
+      const configuredWinnerCount = currentConfig.winner_count || 1;
+      const potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
+      
+      await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
+
+      // 3. Clear stale streaks
       await resetCairoStaleStreaks(guildId).catch(e => console.error(`[System] Streak reset error for ${guildId}:`, e));
 
-      // 3. Perform Award Ceremony (Roles, Coins, History)
-      // awardMvp now returns actual winners who received the role
+      // 4. Perform Award Ceremony (Roles, Coins, History)
+      // awardMvp manages the Role Sweep and new assignments
       const awardResult = await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
-      const winners = awardResult?.winners || [];
-      const winnerIds = (awardResult?.winnerMembers || []).map(m => m.id);
-
-      // 4. Update Leaderboards (Snapshot of the Day's Final Results)
-      const { getTopActiveUsers } = await import('../activity/tracker.js');
-      const finalSnapshot = await getTopActiveUsers(guildId, 15);
-      const { updateLeaderboards } = await import('../commands/leaderboard.js');
-      await updateLeaderboards(client, guildId, finalSnapshot, winnerIds);
 
       // 5. DEEP RESET: Wipe points and reset voice laps for the new day
       await resetGuildActivity(guildId);
@@ -522,35 +522,13 @@ async function fetchMembersWithRoleFallback(guild, roleId) {
  * from the gateway cache and doesn't require fetching all guild members.
  * Falls back to API fetch if cache is empty (handles manual assignments)
  */
-async function getMembersWithRoleFromCache(guild, roleId) {
-  const role = guild.roles.cache.get(roleId);
-
-  if (!role) {
-    const fetchedRole = await guild.roles.fetch(roleId).catch((error) => {
-      console.error(`Failed to fetch MVP role:`, sanitizeError(error));
-      throw error;
-    });
-
-    if (!fetchedRole) {
-      return [];
-    }
-
-    const members = Array.from(fetchedRole.members.values());
-    if (members.length === 0) {
-      // Cache is empty, fallback to API fetch
-      return fetchMembersWithRoleFallback(guild, roleId);
-    }
-    return members;
-  }
-
-  const members = Array.from(role.members.values());
-
-  if (members.length === 0) {
-    // Cache is empty, fallback to API fetch (handles manual assignments after bot restart)
-    return fetchMembersWithRoleFallback(guild, roleId);
-  }
-
-  return members;
+/**
+ * Proactive Role Sweep: Fetches all members with the role from Discord API
+ * ensures we catch manually assigned roles even if not in bot memory.
+ */
+async function getMembersWithRole(guild, roleId) {
+  // Always use the robust fallback fetch to guarantee no cache misses
+  return fetchMembersWithRoleFallback(guild, roleId);
 }
 
 async function removeRoleFromMembersBatch(members, role, guildId) {
@@ -584,8 +562,8 @@ async function removeRoleFromMembersBatch(members, role, guildId) {
 }
 
 /**
- * Optimized: Uses role.members cache instead of fetching all guild members
- * Works efficiently even on large guilds (10k+ members)
+ * Proactive Removal: Fetches every member holding the role from Discord API
+ * ensure manually assigned holders are cleared.
  * @param {Guild} guild - The Discord guild
  * @param {Role} mvpRole - The MVP role
  * @param {string[]} keepUserIds - IDs of users who should keep their role
@@ -594,8 +572,8 @@ export async function clear_all_current_mvp_holders(guild, mvpRole, keepUserIds 
   const start = Date.now();
   const guildId = guild.id;
 
-  // Get members with the role from cache - NO full member scan
-  const membersWithRole = await getMembersWithRoleFromCache(guild, mvpRole.id);
+  // Proactive Sweep: Fetch fresh from API
+  const membersWithRole = await getMembersWithRole(guild, mvpRole.id);
   
   // FILTER: Skip users who won again
   const toProcess = membersWithRole.filter(m => !keepUserIds.includes(m.id));
@@ -817,10 +795,7 @@ export async function awardMvp(client, guildId, options = {}) {
     }
 
     if (winners.length === 0) {
-      if (!isTest) {
-        await resetGuildActivity(guildId);
-        console.log(`${tag} Activity reset (no winners)`);
-      }
+      console.log(`${tag} No eligible winners found today.`);
       return { winners: [], error: null };
     }
 
