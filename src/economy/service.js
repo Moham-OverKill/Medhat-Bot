@@ -1,5 +1,5 @@
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { formatDetailedTimeRemaining, getNextCairoMidnight, hasClaimedToday, isStreakValid } from '../utils/time.js';
 import { sendLog, logServerEvent, logServerError } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
@@ -347,7 +347,7 @@ export async function transferCoins(fromUserId, toUserId, guild, amount, fromUse
 
     await client.query('COMMIT');
 
-    const logName = `${interaction.member.displayName} (${interaction.user.username})`;
+    const logName = fromUsername || fromUserId;
     sendLog(guild, 'economy', 'blue', '💸 Bank Transfer', `**${logName}** sent **${amount.toLocaleString()}** ${COIN_EMOJI} to **<@${toUserId}>**`);
 
     return {
