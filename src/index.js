@@ -440,7 +440,17 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   }
 });
 
-// Maintenance event listeners are consolidated above (lines 295-363)
+// Role delete handler - cleanup ghost items when a Discord role is deleted
+client.on('roleDelete', async (role) => {
+  try {
+    const result = await cleanupDeletedRole(role.guild.id, role.id);
+    if (result.itemsRemoved > 0) {
+      console.log(`[${role.guild.name}] Role Deleted: Purged ${result.itemsRemoved} shop items, ${result.inventoryRemoved} inventory entries, updated ${result.packsUpdated || 0} packs for role "${role.name}"`);
+    }
+  } catch (error) {
+    console.error('[System] Role delete cleanup error:', sanitizeError(error));
+  }
+});
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
