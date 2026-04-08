@@ -147,57 +147,52 @@ function truncateName(name, maxLen = 20) {
 }
 
 // ============================================
-// GLOBAL LEADERBOARD COLUMN WIDTHS
-// These ensure all three leaderboards (MVP, Richest, Streaks) have identical formatting
-// ============================================
-const GLOBAL_VALUE_WIDTH = 12;  // Fixed width for value column (fits "1000T Points")
-const GLOBAL_NAME_WIDTH = 20;   // Fixed width for name column (max name length)
-const GLOBAL_SEPARATOR_LEN = 2 + 3 + GLOBAL_VALUE_WIDTH + 3 + GLOBAL_NAME_WIDTH; // 40 chars
+// GLOBAL LEADERBOARD SETTINGS
+const MOBILE_MAX_LINE_LENGTH = 34; // Strict limit to prevent mobile wrapping
 
 /**
- * Build a perfectly aligned code block leaderboard table
- * Uses GLOBAL fixed column widths for unified appearance across all leaderboards
+ * Build a compact, mobile-optimized leaderboard table
  */
 function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], useCompact = true) {
     if (!data || data.length === 0) return null;
 
-    // 1. Format Values & Truncate Names
+    // 1. Format Values & Calculate Dynamic Widths
+    let maxValueWidth = 0;
     const formattedRows = data.map(item => {
         const val = Number(item[valueKey]) || 0;
         const valStr = useCompact ? formatCompactNumber(val) : String(val);
         const fullValStr = `${valStr} ${unitLabel}`;
-        const displayName = truncateName(item.displayName, GLOBAL_NAME_WIDTH);
-        return { ...item, valStr, fullValStr, displayName };
+        if (fullValStr.length > maxValueWidth) maxValueWidth = fullValStr.length;
+        return { ...item, fullValStr };
     });
 
-    // 2. Build Rows with GLOBAL fixed widths
+    // 2. Build rows with mobile-optimized widths
     const lines = [];
-    const medals = ['🥇', '🥈', '🥉'];
-
     formattedRows.forEach((row, index) => {
-        // Rank Column (2 chars: emoji or "04")
-        let rankStr;
-        if (index < 3) {
-            rankStr = medals[index];
-        } else {
-            rankStr = String(index + 1).padStart(2, '0');
-        }
+        const rank = index + 1;
+        // Rank format: " 1-" through "15-"
+        const rankStr = String(rank).padStart(2, ' ') + '-';
 
-        // Value Column (right-aligned to GLOBAL width)
-        const valueCol = row.fullValStr.padStart(GLOBAL_VALUE_WIDTH, ' ');
+        // Value format: Right-aligned to the max value width found in this set
+        const valueStr = row.fullValStr.padStart(maxValueWidth, ' ');
 
-        // User Column (left-aligned to GLOBAL width for consistent row length)
+        // Name format: Tightly packed, star added for winners
         let userStr = row.displayName;
         if (mvpRecipients && mvpRecipients.includes(row.userId)) {
             userStr += ' 🌟';
         }
-        userStr = userStr.padEnd(GLOBAL_NAME_WIDTH, ' ');
 
-        lines.push(`${rankStr} | ${valueCol} | ${userStr}`);
+        // Final line assembly
+        const baseLine = `${rankStr} ${valueStr} `;
+        const maxNameLen = MOBILE_MAX_LINE_LENGTH - baseLine.length;
+        const finalName = truncateName(userStr, maxNameLen);
 
-        // Separator after Top 3 - GLOBAL fixed length
+        lines.push(`${baseLine}${finalName}`);
+
+        // Separator after Top 3
         if (index === 2 && data.length > 3) {
-            lines.push('-'.repeat(GLOBAL_SEPARATOR_LEN));
+            const separatorLen = Math.min(MOBILE_MAX_LINE_LENGTH, baseLine.length + 10);
+            lines.push('-'.repeat(separatorLen));
         }
     });
 
@@ -316,31 +311,42 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
-    // 1. Daily MVP(s)
+    // --- PASS 1: Sweep (Delete all tracked messages across all channels) ---
+    const types = [
+        { key: 'daily', channelId: config.daily_channel_id, messageId: config.daily_message_id },
+        { key: 'coins', channelId: config.coins_channel_id, messageId: config.coins_message_id },
+        { key: 'streak', channelId: config.streak_channel_id, messageId: config.streak_message_id }
+    ];
+
+    for (const type of types) {
+        if (type.channelId && type.messageId) {
+            try {
+                const channel = await guild.channels.fetch(type.channelId).catch(() => null);
+                if (channel) {
+                    const msg = await channel.messages.fetch(type.messageId).catch(() => null);
+                    if (msg) await msg.delete().catch(() => { });
+                }
+            } catch (err) {
+                console.error(`Cleanup failed for ${type.key}:`, sanitizeError(err));
+            }
+        }
+    }
+
+    // --- PASS 2: Re-send in absolute order (Daily -> Richest -> Streak) ---
+    // If they share a channel, this order is guaranteed relative to each other.
+
+    // 1. Daily MVP
     if (config.daily_channel_id) {
         try {
             const channel = await guild.channels.fetch(config.daily_channel_id).catch(() => null);
             if (channel) {
-                // Fetch valid old message or ignore
-                let oldMessage = null;
-                if (config.daily_message_id) {
-                    try { oldMessage = await channel.messages.fetch(config.daily_message_id); } catch { }
-                }
-
-                if (oldMessage) await oldMessage.delete().catch(() => { });
-
-                // Fetch YESTERDAY's MVP results if not provided
                 let rawData = activityData;
                 if (!rawData || rawData.length === 0) {
-                    // Import and fetch last completed MVP cycle results
                     const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
                     const cycleData = await getLastMvpCycleResults(guildId, 15);
                     rawData = cycleData.results;
                 }
-
-                // Enrich data with usernames
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-
                 const embed = buildDailyActivityEmbed(enrichedData, mvpRecipients);
                 const newMessage = await channel.send({ embeds: [embed] });
                 config.daily_message_id = newMessage.id;
@@ -355,15 +361,8 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         try {
             const channel = await guild.channels.fetch(config.coins_channel_id).catch(() => null);
             if (channel) {
-                let oldMessage = null;
-                if (config.coins_message_id) {
-                    try { oldMessage = await channel.messages.fetch(config.coins_message_id); } catch { }
-                }
-                if (oldMessage) await oldMessage.delete().catch(() => { });
-
-                const rawData = await getTopCoinUsers(guildId); // Limit 15 implicit
+                const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-
                 const embed = buildCoinsEmbed(enrichedData);
                 const newMessage = await channel.send({ embeds: [embed] });
                 config.coins_message_id = newMessage.id;
@@ -378,15 +377,8 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         try {
             const channel = await guild.channels.fetch(config.streak_channel_id).catch(() => null);
             if (channel) {
-                let oldMessage = null;
-                if (config.streak_message_id) {
-                    try { oldMessage = await channel.messages.fetch(config.streak_message_id); } catch { }
-                }
-                if (oldMessage) await oldMessage.delete().catch(() => { });
-
-                const rawData = await getTopStreakUsers(guildId); // Limit 15 implicit
+                const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-
                 const embed = buildStreakEmbed(enrichedData);
                 const newMessage = await channel.send({ embeds: [embed] });
                 config.streak_message_id = newMessage.id;
