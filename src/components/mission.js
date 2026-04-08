@@ -15,10 +15,9 @@ export async function handleMissionInteraction(interaction) {
   // Security: Only the user who ran the /mission command can click its buttons
   const originalUserId = interaction.message.interaction?.user?.id;
   if (originalUserId && user.id !== originalUserId) {
-    return interaction.reply({ 
-      content: "❌ This isn't your mission page.", 
-      ephemeral: true 
-    });
+    const payload = { content: "❌ This isn't your mission page.", flags: 64 };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+    return interaction.reply(payload);
   }
 
   try {
@@ -42,14 +41,18 @@ export async function handleMissionInteraction(interaction) {
       // 1. Pre-interaction check: has the user already claimed today?
       const progressCheck = await getProgress(guildId, user.id, missionId);
       if (progressCheck?.is_claimed) {
-        return interaction.reply({ content: '❌ You have already claimed this mission.', ephemeral: true });
+        const payload = { content: '❌ You have already claimed this mission.', flags: 64 };
+        if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+        return interaction.reply(payload);
       }
 
       // 2. Perform ATOMIC claim in DB (This handles parallel clicks)
       const result = await claimUserMissionReward(guildId, user.id, missionId, mission.reward_coins);
       
       if (result.error) {
-        return interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+        const payload = { content: `❌ ${result.error}`, flags: 64 };
+        if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+        return interaction.reply(payload);
       }
 
       // 3. Award coins only AFTER DB confirms claim was successful
@@ -76,9 +79,9 @@ export async function handleMissionInteraction(interaction) {
 
   } catch (error) {
     console.error('[Missions] Interaction error:', sanitizeError(error));
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
-    }
+    const payload = { content: '❌ An error occurred.', flags: 64 };
+    if (interaction.replied || interaction.deferred) await interaction.followUp(payload).catch(() => {});
+    else await interaction.reply(payload).catch(() => {});
   }
 }
 

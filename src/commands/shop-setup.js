@@ -80,9 +80,9 @@ export async function handleShopSetup(interaction) {
     // Defer if not already deferred
     if (!interaction.deferred && !interaction.replied) {
       if (interaction.isMessageComponent && interaction.isMessageComponent()) {
-        await interaction.deferUpdate();
+        await interaction.deferUpdate().catch(() => {});
       } else {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
 
@@ -431,7 +431,9 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
 
 export async function handleItemModalSubmit(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     // ID Format Patterns:
     // 1. shop_item_modal_{add|edit}_{param}_{type} (Old/Legacy/Add flow)
@@ -619,7 +621,9 @@ export async function handleItemModalSubmit(interaction) {
 }
 
 export async function handleManageItemCategorySelect(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const itemId = interaction.customId.split('_').pop();
   const categoryId = interaction.values[0] === 'null' ? null : parseInt(interaction.values[0]);
   const isFromEditFlow = interaction.customId.includes('_manage_');
@@ -997,9 +1001,10 @@ export async function handleShopPostStockBtn(interaction) {
   await interaction.showModal(modal);
 }
 
-// Handle Reset Button
 export async function handleShopPostReset(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const state = pendingPosts.get(interaction.user.id);
   if (state) {
     state.itemId = null;
@@ -1037,7 +1042,9 @@ export async function handleShopPostImageBtn(interaction) {
 
 // Handle All Post Modal Submits (Image, Desc, Payout)
 export async function handleShopPostModalSubmit(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const userId = interaction.user.id;
   const customId = interaction.customId;
 
@@ -1116,8 +1123,10 @@ export async function handleShopPostModalSubmit(interaction) {
   await handleShopPostStart(interaction);
 }
 
-// Handle Publish Button - Actually post the item
 export async function handleShopPostPublish(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const userId = interaction.user.id;
   const state = pendingPosts.get(userId);
 
@@ -1334,7 +1343,9 @@ export async function handleAddTierModal(interaction) {
 }
 
 export async function handleTierModalSubmit(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const itemId = interaction.customId.split('_').pop();
 
   const level = parseInt(interaction.fields.getTextInputValue('tier_level'));
@@ -1413,7 +1424,9 @@ export async function handleDeleteItemCategorySelect(interaction) {
 }
 
 export async function handleDeleteItemSelect(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const itemId = parseInt(interaction.values[0]);
 
   // 1. Get name for feedback BEFORE deleting
@@ -1590,7 +1603,9 @@ export async function handleCreateCategory(interaction) {
 
 export async function handleCategoryModalSubmit(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const customId = interaction.customId;
     const isEdit = customId.startsWith('shop_cat_modal_edit_');
     const categoryId = isEdit ? customId.split('_').pop() : null;
@@ -1642,7 +1657,9 @@ export async function handleCategoryModalSubmit(interaction) {
 }
 
 export async function handleEditCategoryStart(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const categories = await getShopCategories(interaction.guildId);
 
   if (categories.length === 0) {
@@ -1777,7 +1794,9 @@ export async function handleEditCategoryRenameStart(interaction) {
 
 export async function handleEditCategoryAddItemsStart(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const categoryId = interaction.customId.split('_').pop();
 
     // Get items with NO category (Standalone), valid roles, not packs
@@ -1819,7 +1838,9 @@ export async function handleEditCategoryAddItemsStart(interaction) {
 
 export async function handleEditCategoryAddItemsSelect(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const categoryId = interaction.customId.split('_').pop();
     const itemId = interaction.values[0];
 
@@ -1903,7 +1924,9 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
 
 export async function handleEditCategoryRemoveItemsStart(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const categoryId = interaction.customId.split('_').pop();
 
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
@@ -1937,7 +1960,9 @@ export async function handleEditCategoryRemoveItemsStart(interaction) {
 
 export async function handleEditCategoryRemoveItemsSelect(interaction) {
   try {
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const categoryId = interaction.customId.split('_').pop();
     const itemId = parseInt(interaction.values[0]);
 
@@ -1997,7 +2022,9 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
 }
 
 export async function handleEditCategoryModalSubmit(interaction) {
-  await interaction.deferUpdate();
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const categoryId = interaction.customId.split('_').pop();
   const name = interaction.fields.getTextInputValue('cat_name');
   const typeRaw = interaction.fields.getTextInputValue('cat_type');
@@ -2009,9 +2036,6 @@ export async function handleEditCategoryModalSubmit(interaction) {
 
   const categories = await getShopCategories(interaction.guildId);
   const oldCat = categories.find(c => c.id.toString() === categoryId);
-  const oldName = oldCat ? oldCat.name : 'Unknown';
-  const oldType = oldCat ? (oldCat.category_type === 1 ? 'Single' : 'Multi') : 'Unknown';
-
 
   await updateShopCategory(categoryId, { name, category_type: type });
 
@@ -2021,13 +2045,12 @@ export async function handleEditCategoryModalSubmit(interaction) {
     sendLog(interaction.guild, 'shop', 'blue', '📂 Category Updated', `Admin **<@${interaction.user.id}>** updated shop category **${name}**\n${diff}`);
   }
 
-
   await interaction.followUp({ content: `✅ Category updated to **${name}**`, flags: MessageFlags.Ephemeral });
 
   // Reload Category Management View
   const mock = {
     deferred: true, replied: false, deferUpdate: async () => { }, editReply: interaction.editReply.bind(interaction), followUp: interaction.followUp.bind(interaction),
-    customId: `shop_cat_manage_${categoryId}`, // Updated to use consistent management ID
+    customId: `shop_cat_manage_${categoryId}`,
     values: [categoryId],
     isAnySelectMenu: () => true,
     guildId: interaction.guildId
@@ -2035,8 +2058,11 @@ export async function handleEditCategoryModalSubmit(interaction) {
   await handleEditCategorySelect(mock);
 }
 
-export async function handleDeleteCategoryStart(interaction) {
-  await interaction.deferUpdate();
+export async function handleShopAdminDelete(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+  const embed = new EmbedBuilder()
   const categories = await getShopCategories(interaction.guildId);
 
   const rowBack = new ActionRowBuilder().addComponents(
@@ -2134,8 +2160,9 @@ export async function handleDeleteCategoryConfirm(interaction) {
 // --- Edit Item Handlers ---
 
 export async function handleEditItemStart(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const items = await getShopItems(interaction.guildId, null, 'name', true);
 
   // Filter OUT packs AND items with invalid/missing roles
@@ -2423,16 +2450,13 @@ export async function handleEditPackStart(interaction) {
 }
 
 export async function handleEditPackSelect(interaction, successHeader = null) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+  const itemId = interaction.isAnySelectMenu() ? interaction.values[0] : interaction.customId.split('_').pop();
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
     // Determine packId from select menu or customId
-    let packId;
-    if (interaction.isAnySelectMenu()) {
-      packId = interaction.values[0];
-    } else {
-      packId = interaction.customId.split('_').pop();
-    }
+    let packId = itemId;
 
     const item = await getShopItem(packId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Pack not found.', flags: MessageFlags.Ephemeral });
@@ -2510,9 +2534,11 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
   }
 }
 
-export async function handlePackAddContentStart(interaction) {
+export async function handleEditPackContentsStart(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   try {
-    await interaction.deferUpdate();
     const packId = interaction.customId.split('_').pop();
     const pack = await getShopItem(packId, interaction.guildId);
 
