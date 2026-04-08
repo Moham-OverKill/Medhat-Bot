@@ -24,6 +24,7 @@ import {
   purchaseItem,
   getUserInventory,
   syncInventoryWithDiscord,
+  toggleEquipItem,
   calculatePackPrice,
   checkPrerequisites,
   formatPrerequisiteError,
