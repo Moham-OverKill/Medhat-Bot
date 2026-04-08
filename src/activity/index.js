@@ -172,11 +172,11 @@ const MIN_MESSAGE_LENGTH = 5; // Unified with XP system
  */
 async function checkMissionProgress(message) {
   // === PERFORMANCE OPTIMIZATION: Early Cache Check ===
-  // Strict Watch-Mode: Exit immediately if this isn't a mission channel
-  // Support threads/posts by checking parentId too
+  // Resolve true channel ID (Parent ID if it is a thread/forum post)
   const channelId = message.channel.id;
   const parentId = message.channel.parentId;
-  if (!isMissionChannel(message.guild.id, channelId) && (!parentId || !isMissionChannel(message.guild.id, parentId))) return;
+
+  if (!isMissionChannel(message.guild.id, channelId, parentId)) return;
 
   const cachedTracking = isUserTracking(message.guild.id, message.author.id);
   const cachedCompleted = isMissionCompleted(message.guild.id, message.author.id);
@@ -202,10 +202,7 @@ async function checkMissionProgress(message) {
   if (!mission) return;
 
   const content = (message.content || '').trim();
-  const hasImage = message.attachments.some(att => {
-    const ct = att.contentType || '';
-    return ct.startsWith('image/');
-  });
+  const hasAttachment = message.attachments.size > 0;
 
   // Determine if this message qualifies
   let qualifies = false;
@@ -214,8 +211,8 @@ async function checkMissionProgress(message) {
     // Text missions follow XP rules: min length 5
     if (content.length >= MIN_MESSAGE_LENGTH) qualifies = true;
   } else if (mission.action_type === 'upload_images') {
-    // Image missions count regardless of text length if an image is present
-    if (hasImage) qualifies = true;
+    // Accepts any file attachment (as per user request)
+    if (hasAttachment) qualifies = true;
   }
 
   if (!qualifies) return;
@@ -330,13 +327,10 @@ export async function checkReactionMission(reaction, user) {
   if (!guildId) return;
 
   // === PERFORMANCE OPTIMIZATION: Early Cache Check ===
-  const data = missionCache.get(guildId);
-  if (!data) return;
-  
   const parentId = reaction.message.channel?.parentId;
   if (!isMissionChannel(guildId, channelId, parentId)) return;
   
-  if (!data.trackingUsers.has(userId) || data.completedUsers.has(userId)) return;
+  if (!isUserTracking(guildId, userId) || isMissionCompleted(guildId, userId)) return;
 
   const { getGuildConfig } = await import('../storage/config.js');
   const config = await getGuildConfig(guildId);
@@ -358,8 +352,8 @@ export async function checkReactionMission(reaction, user) {
     data.channelId = mission.channel_id;
   }
 
-  // Final check: only handle 'react_images' type in the specific channel (including threads)
-  if (mission.action_type !== 'react_images' || !isMissionChannel(guildId, channelId, parentId)) return;
+  // Final check: only handle 'react_images' type
+  if (mission.action_type !== 'react_images') return;
 
   const result = await incrementProgress(
     message.guild.id,
