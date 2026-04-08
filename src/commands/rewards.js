@@ -80,8 +80,8 @@ async function getRewardsPayload(guildId) {
 
 export async function handleRewardsSetup(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const payload = await getRewardsPayload(interaction.guildId);
+
 
 
     // Handle different interaction states
@@ -101,9 +101,9 @@ export async function handleRewardsSetup(interaction) {
 }
 
 export async function handleRewardsComponent(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   const customId = interaction.customId;
   const guildId = interaction.guildId;
+
 
 
   if (customId === 'rewards_home') {

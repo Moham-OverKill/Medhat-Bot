@@ -521,7 +521,6 @@ async function handleColorReact(interaction, guildId, isBooster) {
  */
 export async function handleColorsComponent(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     const [, category, action] = interaction.customId.split('_');
     const selectedAction = interaction.values[0];

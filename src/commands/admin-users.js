@@ -551,7 +551,6 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const customId = interaction.customId;
 
         if (customId === 'admin_user_select') {
