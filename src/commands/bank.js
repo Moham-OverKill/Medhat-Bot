@@ -1293,7 +1293,7 @@ export async function handleItemClaim(interaction) {
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
         .setDescription(newDesc)
-        .setFooter({ text: `Dropped at: ${new Date(res.dropped_at).toLocaleString()}` });
+        .setFooter({ text: 'Dropped at' });
 
       // Add relative timestamp in field if we want it more prominent
       claimedEmbed.setTimestamp(new Date(res.dropped_at));
