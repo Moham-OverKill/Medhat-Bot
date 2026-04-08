@@ -327,7 +327,7 @@ export function formatCompactMission(mission) {
 export function formatActionType(actionType) {
   const map = {
     'send_messages': 'Send Messages',
-    'upload_images': 'Upload Images',
+    'upload_images': 'Upload Files',
     'react_images': 'React to Posts',
     'voice_minutes': 'Voice Minutes',
   };
@@ -344,7 +344,7 @@ export function getActionsForChannelType(channelType) {
     case 'media':
       return [
         { value: 'send_messages', label: '💬 Send Messages' },
-        { value: 'upload_images', label: '🖼️ Upload Images' },
+        { value: 'upload_images', label: '🖼️ Upload Files' },
         { value: 'react_images', label: '👍 React to Posts' }
       ];
     case 'text':
