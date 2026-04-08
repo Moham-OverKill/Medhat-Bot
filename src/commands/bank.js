@@ -1162,15 +1162,15 @@ export async function handleInventoryAction(interaction) {
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`bank_inv_dropconfirm_${invId}_${catIdStr}_${currentIndex}`)
-          .setLabel('Yes, Drop it')
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
           .setCustomId(`bank_inv_dropcancel_${invId}_${catIdStr}_${currentIndex}`)
           .setLabel('No, Cancel')
           .setEmoji('❌')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_dropconfirm_${invId}_${catIdStr}_${currentIndex}`)
+          .setLabel('Yes, Drop it')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Danger)
       );
 
       return interaction.update({ embeds: [confirmEmbed], components: [row] });
