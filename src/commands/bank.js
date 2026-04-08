@@ -181,10 +181,16 @@ export async function handleBankCommand(interaction) {
 }
 
 export async function handleBankDaily(interaction) {
+  // FORCE REFRESH: Ensuring interaction is deferred immediately to prevent 'InteractionNotReplied' errors.
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => {});
     }
+  } catch (err) {
+    console.log('[System] DeferUpdate failed (ignoring):', err.message);
+  }
+
+  try {
     const guildId = interaction.guildId;
 
     const userId = interaction.user.id;
