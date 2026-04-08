@@ -1172,7 +1172,7 @@ export async function handleInventoryAction(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.editReply({ embeds: [confirmEmbed], components: [row] });
+      return interaction.update({ embeds: [confirmEmbed], components: [row] });
     }
 
     // --- 1.5. DROP CANCEL (Go back to management) ---
@@ -1182,7 +1182,7 @@ export async function handleInventoryAction(interaction) {
 
     // --- 2. DROP CONFIRM (Step 2: Execution & Public Post) ---
     if (action === 'dropconfirm') {
-      await interaction.deferUpdate();
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
       // Execute the drop logic (Atomically deletes from DB and removes role)
       const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member);
@@ -1235,64 +1235,14 @@ export async function handleInventoryAction(interaction) {
 
     // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
-      await interaction.deferUpdate();
-
-      // Multi-JOIN: Fetch inventory state AND role information in one query
-      const [inv] = await query(
-        `SELECT ui.is_active, ui.shop_item_id, si.role_id, si.name, si.required_items 
-         FROM user_inventory ui
-         JOIN shop_items si ON ui.shop_item_id = si.id
-         WHERE ui.id = $1`, 
-        [invId]
-      ).then(r => r.rows);
-
-      if (!inv) return interaction.followUp({ content: '❌ Item not found records.', ephemeral: true });
-
-      const isEquipping = !inv.is_active;
-
-      if (isEquipping) {
-        // ENFORCE PREREQUISITES ONLY ON EQUIP
-        let reqs = inv.required_items;
-        if (typeof reqs === 'string') try { reqs = JSON.parse(reqs); } catch(e) { reqs = []; }
-
-        const audit = await checkPrerequisites(interaction.member, interaction.guildId, reqs);
-        if (!audit.met) {
-          const errorMsg = await formatPrerequisiteError(audit, interaction.guildId);
-          return interaction.followUp({ content: `❌ ${errorMsg}`, ephemeral: true });
-        }
-      }
-
-      // --- DISCORD ROLE ACTION ---
-      if (inv.role_id) {
-        const firstRoleId = inv.role_id.split(/[,\s]+/)[0];
-        const role = interaction.guild.roles.cache.get(firstRoleId);
-        const botMember = interaction.guild.members.me;
-
-        if (!role) {
-          return interaction.followUp({ content: `❌ This item is linked to a role that no longer exists in Discord.`, ephemeral: true });
-        }
-
-        if (role.comparePositionTo(botMember.roles.highest) >= 0) {
-          return interaction.followUp({ content: `❌ I cannot manage the **${role.name}** role. Please move my bot role higher in the server settings!`, ephemeral: true });
-        }
-
-        try {
-          if (isEquipping) {
-            await interaction.member.roles.add(firstRoleId, 'User equipped/activated item');
-          } else {
-            await interaction.member.roles.remove(firstRoleId, 'User unequipped/deactivated item');
-          }
-        } catch (e) {
-          console.error(`[Inventory] Role toggle failed for ${inv.name}:`, e);
-          return interaction.followUp({ content: `❌ Failed to update your roles: ${e.message}`, ephemeral: true });
-        }
-      }
-
-      // Execute DB toggle
-      await query('UPDATE user_inventory SET is_active = $1 WHERE id = $2', [isEquipping, invId]);
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
       
-      // Atomic Sync: Verify and return updated card
-      await syncInventoryWithDiscord(interaction.user.id, interaction.guildId, interaction.member);
+      if (!result.success) {
+        return interaction.followUp({ content: `❌ ${result.error}`, flags: [64] });
+      }
+
+      // Refresh the inventory view to show updated status
       return handleInventoryItemSelect(interaction);
     }
 
