@@ -915,6 +915,17 @@ export async function handleColorButton(interaction) {
     const hasRole = member.roles.cache.has(roleId);
 
     if (hasRole) {
+      // Check hierarchy before removing
+      const botMember = interaction.guild.members.me;
+      const targetRole = interaction.guild.roles.cache.get(roleId);
+      
+      if (targetRole && targetRole.position >= botMember.roles.highest.position) {
+        return interaction.reply({
+          content: '❌ I cannot remove this role because it is positioned above me in the hierarchy.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
       // Remove the role
       await member.roles.remove(roleId);
       const logName = getUserLogName(member);
@@ -927,16 +938,27 @@ export async function handleColorButton(interaction) {
         flags: MessageFlags.Ephemeral
       });
     } else {
-      // Remove all other color roles first
+      // Remove all other color roles first (ONLY if manageable)
+      const botMember = interaction.guild.members.me;
       const rolesToRemove = member.roles.cache
-        .filter(role => allColorRoleIds.includes(role.id))
+        .filter(role => allColorRoleIds.includes(role.id) && role.position < botMember.roles.highest.position)
         .map(role => role.id);
 
       if (rolesToRemove.length > 0) {
-        await member.roles.remove(rolesToRemove);
+        await member.roles.remove(rolesToRemove).catch(err => {
+          console.warn('[Colors] Non-fatal error removing old color roles:', err.message);
+        });
       }
 
-      // Add the new color role
+      // Add the new color role (Check hierarchy first)
+      const targetRole = interaction.guild.roles.cache.get(roleId);
+      if (targetRole && targetRole.position >= botMember.roles.highest.position) {
+        return interaction.reply({
+          content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
       await member.roles.add(roleId);
       const logName = getUserLogName(member);
       sendLog(interaction.guild, 'inventory', 'green', '🎨 Color Role Selected', 
