@@ -130,7 +130,7 @@ export async function resetGuildActivity(guildId) {
            voice_minutes = 0, 
            voice_seconds_accumulated = 0,
            voice_valid_start = CASE 
-             WHEN voice_valid_start IS NOT NULL THEN $2 
+             WHEN voice_valid_start IS NOT NULL THEN $2::bigint 
              ELSE NULL 
            END
        WHERE guild_id = $1`,
