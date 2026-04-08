@@ -1514,14 +1514,16 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
   try {
     await client.query('BEGIN');
 
-    // Get item details including source
+    // Get item details including source and category type
     const result = await client.query(
-      `SELECT i.*, s.role_id as source_roles, s.category_id, s.name, s.item_type
+      `SELECT i.*, s.role_id as source_roles, s.category_id, s.name, s.item_type, s.required_items, sc.category_type
        FROM user_inventory i
        JOIN shop_items s ON i.shop_item_id = s.id
+       LEFT JOIN shop_categories sc ON s.category_id = sc.id
        WHERE i.id = $1 AND i.user_id = $2`,
       [inventoryId, userId]
     );
+
 
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -1561,32 +1563,33 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
       return { success: false, error: 'Admin-granted items cannot be manually activated/deactivated.' };
     }
 
-    // === CLEAN SLATE LOGIC ===
-    // Any interaction (Equip OR Unequip) on a categorized item triggers a full category wipe first
-    if (item.category_id) {
-      // Get ALL active items in this category (including the clicked one)
+    // === CLEAN SLATE LOGIC (ONLY FOR SWAP/SINGLE CATEGORIES) ===
+    // If the category is set to 'Single' (category_type = 1), we unequip everything else first.
+    if (item.category_id && item.category_type === 1 && newStatus) {
+      // Get ALL active items in this category (excluding the clicked one)
       const allCategoryItems = await client.query(
         `SELECT i.id, s.role_id
              FROM user_inventory i
              JOIN shop_items s ON i.shop_item_id = s.id
              WHERE i.user_id = $1 AND i.guild_id = $2 
              AND s.category_id = $3 AND i.is_active = true
-             AND i.expires_at IS NULL`,
-        [userId, guildId, item.category_id]
+             AND i.id != $4`,
+        [userId, guildId, item.category_id, inventoryId]
       );
 
-      // Wipe ALL - remove all roles and mark as unequipped
+      // Wipe others belonging to the same category
       for (const catItem of allCategoryItems.rows) {
         await client.query('UPDATE user_inventory SET is_active = false WHERE id = $1', [catItem.id]);
 
         if (catItem.role_id) {
           const catRoles = catItem.role_id.split(/[,\s]+/);
           for (const rid of catRoles) {
-            try { await member.roles.remove(rid); } catch (e) { }
+            try { await member.roles.remove(rid, 'Automatic unequip due to category swap'); } catch (e) { }
           }
         }
       }
     }
+
 
     // === APPLY ACTION ===
     if (newStatus) {
