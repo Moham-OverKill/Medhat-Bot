@@ -173,16 +173,23 @@ const MIN_MESSAGE_LENGTH = 5; // Unified with XP system
 async function checkMissionProgress(message) {
   // === PERFORMANCE OPTIMIZATION: Early Cache Check ===
   // Resolve true channel ID (Parent ID if it is a thread/forum post)
-  let channelId = message.channel.id;
-  let parentId = message.channel.parentId;
+  let actualChannelId = message.channel.id;
+  let actualParentId = message.channel.parentId;
 
   // Robust check: If parentId is missing but it's a thread, try cache
-  if (!parentId && message.channel.isThread?.()) {
-    const cached = message.guild?.channels.cache.get(channelId);
-    if (cached?.parentId) parentId = cached.parentId;
+  if (!actualParentId && message.channel.isThread?.()) {
+    const cached = message.guild?.channels.cache.get(actualChannelId);
+    if (cached?.parentId) actualParentId = cached.parentId;
+    else {
+      // Final attempt: Fetch if not in cache (messageCreate is frequent, but only for threads)
+      try {
+        const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
+        if (fetched?.parentId) actualParentId = fetched.parentId;
+      } catch {}
+    }
   }
 
-  if (!isMissionChannel(message.guild.id, channelId, parentId)) return;
+  if (!await isMissionChannel(message.guild.id, actualChannelId, actualParentId)) return;
 
   const cachedTracking = isUserTracking(message.guild.id, message.author.id);
   const cachedCompleted = isMissionCompleted(message.guild.id, message.author.id);
@@ -251,9 +258,30 @@ async function checkMissionProgress(message) {
 
 /**
  * Check if a channel is the current active mission channel for the guild.
+ * Fallback to DB if cache miss.
  */
-export function isMissionChannel(guildId, channelId, parentId = null) {
-  const data = missionCache.get(guildId);
+export async function isMissionChannel(guildId, channelId, parentId = null) {
+  let data = missionCache.get(guildId);
+  
+  // Cache miss: Try to recover from DB
+  if (!data) {
+    try {
+      const { getGuildConfig } = await import('../storage/config.js');
+      const { getMission } = await import('../missions/missions.js');
+      const config = await getGuildConfig(guildId);
+      
+      if (config?.missions_enabled && config?.active_mission_id) {
+        const mission = await getMission(config.active_mission_id);
+        if (mission) {
+          syncMissionChannelCache(guildId, mission.channel_id);
+          data = missionCache.get(guildId);
+        }
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
   if (!data) return false;
   return data.channelId === channelId || (parentId && data.channelId === parentId);
 }
@@ -351,8 +379,11 @@ export async function checkReactionMission(reaction, user) {
     }
   }
 
-  if (!isMissionChannel(guildId, channelId, parentId)) return;
+  if (!await isMissionChannel(guildId, channelId, parentId)) return;
   
+  const data = missionCache.get(guildId);
+  if (!data) return; // Should have been populated by isMissionChannel
+
   if (!isUserTracking(guildId, userId) || isMissionCompleted(guildId, userId)) return;
 
   const { getGuildConfig } = await import('../storage/config.js');
@@ -370,8 +401,8 @@ export async function checkReactionMission(reaction, user) {
     return;
   }
 
-  // Update cache if it was missing or outdated
-  if (data.channelId !== mission.channel_id) {
+  // Update cache if outdated
+  if (data && data.channelId !== mission.channel_id) {
     data.channelId = mission.channel_id;
   }
 
