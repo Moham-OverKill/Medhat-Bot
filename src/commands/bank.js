@@ -181,6 +181,8 @@ export async function handleBankCommand(interaction) {
 
 export async function handleBankDaily(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
     const member = interaction.member;
@@ -1124,7 +1126,9 @@ export async function handleInventoryItemSelect(interaction) {
 // ACTION HANDLER (Drop / Equip / Confirm)
 export async function handleInventoryAction(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const parts = interaction.customId.split('_');
+
     const action = parts[2]; // drop, equip, dropconfirm, dropcancel
     const invId = parseInt(parts[3]);
     const catIdStr = parts[4] || 'null';

@@ -80,11 +80,15 @@ async function getRewardsPayload(guildId) {
 
 export async function handleRewardsSetup(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const payload = await getRewardsPayload(interaction.guildId);
+
 
     // Handle different interaction states
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(payload);
+    } else if (interaction.isButton() || interaction.isAnySelectMenu()) {
+      await interaction.update(payload);
     } else {
       await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
     }
@@ -97,13 +101,15 @@ export async function handleRewardsSetup(interaction) {
 }
 
 export async function handleRewardsComponent(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   const customId = interaction.customId;
   const guildId = interaction.guildId;
+
 
   if (customId === 'rewards_home') {
     const payload = await getRewardsPayload(guildId);
     // Ensure we clear any previous content (like "Select user...")
-    await interaction.editReply({
+    await interaction.update({
       content: null,
       embeds: payload.embeds,
       components: payload.components

@@ -87,16 +87,18 @@ export async function handleLogsSettings(interaction) {
     const row4 = new ActionRowBuilder().addComponents(auditSelect);
     const row5 = new ActionRowBuilder().addComponents(backButton, disableButton);
 
+    const responseMethod = interaction.isCommand?.() || interaction.isModalSubmit?.() ? 'reply' : 'update';
     const msgData = {
         embeds: [embed],
         components: [row1, row2, row3, row4, row5],
         flags: MessageFlags.Ephemeral
     };
 
-    if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(msgData);
+    if (responseMethod === 'reply') {
+        if (interaction.deferred || interaction.replied) await interaction.editReply(msgData);
+        else await interaction.reply(msgData);
     } else {
-        await interaction.reply(msgData);
+        await interaction.update(msgData);
     }
 }
 
@@ -104,8 +106,10 @@ export async function handleLogsSettings(interaction) {
  * Handle log channel assignment for specific categories
  */
 export async function handleLogCategorySelect(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const customId = interaction.customId; // logs_assign_CATEGORY
     const category = customId.split('_')[2]; // economy, inventory, etc
+
     const channelId = interaction.values[0];
     const guildId = interaction.guildId;
     const pool = getPool();
@@ -125,7 +129,7 @@ export async function handleLogCategorySelect(interaction) {
     const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
     const permissionCheck = checkChannelPermissions(channel);
     if (!permissionCheck.valid) {
-        return interaction.editReply({ 
+        return interaction.reply({ 
             content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel** and **Send Messages** there.`,
             flags: MessageFlags.Ephemeral
         });
@@ -175,7 +179,9 @@ export async function handleLogCategorySelect(interaction) {
  * Handle disabling all logs
  */
 export async function handleLogDisable(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const guildId = interaction.guildId;
+
     const pool = getPool();
     const guildName = interaction.guild.name;
     const logName = getUserLogName(interaction);

@@ -521,6 +521,8 @@ async function handleColorReact(interaction, guildId, isBooster) {
  */
 export async function handleColorsComponent(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
     const [, category, action] = interaction.customId.split('_');
     const selectedAction = interaction.values[0];
     const guildId = interaction.guildId;
@@ -652,7 +654,7 @@ async function showRoleSelector(interaction, isBooster, operation) {
 
     const backRow = new ActionRowBuilder().addComponents(backButton);
 
-    await interaction.editReply({
+    await interaction.update({
       content: 'Select the booster role:',
       components: [selectRow, backRow],
       embeds: [],
@@ -668,7 +670,7 @@ async function showRoleSelector(interaction, isBooster, operation) {
     operation
   );
 
-  await interaction.editReply({
+  await interaction.update({
     content,
     components,
     embeds: [],
@@ -900,7 +902,7 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.editReply({
+      await interaction.reply({
         content: '❌ Boost the server to unlock this color!',
         flags: MessageFlags.Ephemeral
       });
@@ -921,7 +923,7 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Removed color role <@&${roleId}>.`
       );
-      await interaction.editReply({
+      await interaction.reply({
         content: `✅ Removed <@&${roleId}> from you.`,
         flags: MessageFlags.Ephemeral
       });
@@ -942,7 +944,7 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Picked color role <@&${roleId}>.`
       );
-      await interaction.editReply({
+      await interaction.reply({
         content: `✅ Gave you <@&${roleId}>!`,
         flags: MessageFlags.Ephemeral
       });
