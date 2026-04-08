@@ -1,4 +1,5 @@
 import { cleanupExpiredItems } from '../economy/shop.js';
+import { cleanupExpiredDrops } from '../commands/bank.js';
 import { logSystemEvent, logSystemError } from '../utils/logger.js';
 import { sanitizeError } from '../shared.js';
 
@@ -18,7 +19,11 @@ export function startExpiryJob(client) {
 
 async function runCleanup(client) {
   try {
+    // 1. Cleanup expired inventory items
     await cleanupExpiredItems(client);
+    
+    // 2. Cleanup expired public drops
+    await cleanupExpiredDrops(client);
   } catch (error) {
     logSystemError(`Expiration job error: ${sanitizeError(error)}`);
   }
