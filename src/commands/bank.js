@@ -1184,9 +1184,7 @@ export async function handleInventoryAction(interaction) {
 
     // --- 2. DROP CONFIRM (Step 2: Execution & Public Post) ---
     if (action === 'dropconfirm') {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
+      await interaction.deferUpdate();
 
       // Execute the drop logic (Atomically deletes from DB and removes role)
       const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member);
@@ -1239,9 +1237,7 @@ export async function handleInventoryAction(interaction) {
 
     // --- 3. DROP CANCEL ---
     if (action === 'dropcancel') {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
+      await interaction.deferUpdate();
       // Simply delete the ephemeral confirmation and return to the item management view
       await interaction.deleteReply();
       return;
@@ -1249,9 +1245,7 @@ export async function handleInventoryAction(interaction) {
 
     // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
+      await interaction.deferUpdate();
 
       // Multi-JOIN: Fetch inventory state AND role information in one query
       const [inv] = await query(
@@ -1393,9 +1387,7 @@ export async function handleItemClaim(interaction) {
 
 export async function handleBankHistory(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    await interaction.deferUpdate();
     let page = 0;
     if (interaction.customId.startsWith('history_page_')) {
       page = parseInt(interaction.customId.replace('history_page_', ''));

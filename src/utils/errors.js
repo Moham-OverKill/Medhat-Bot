@@ -34,21 +34,15 @@ export async function handleInteractionError(interaction, error, context) {
     if (!interaction) return;
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.editReply({ 
+      await interaction.followUp({ 
         content: `❌ ${message}`, 
         flags: MessageFlags.Ephemeral 
-      }).catch(async () => {
-         // If editReply fails (e.g. interaction was a modal), try followUp
-         await interaction.followUp({
-            content: `❌ ${message}`,
-            flags: MessageFlags.Ephemeral
-         }).catch(() => {});
       });
     } else {
       await interaction.reply({ 
         content: `❌ ${message}`, 
         flags: MessageFlags.Ephemeral 
-      }).catch(() => {});
+      });
     }
   } catch (e) {
     console.error('Failed to send error response:', sanitizeError(e));
