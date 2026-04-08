@@ -491,6 +491,62 @@ export async function formatPrerequisiteError(prereqs, guildId) {
 }
 
 /**
+ * Strict Dependency Sweep:
+ * Checks ALL active items for a user and uneclips anything that no longer meets prerequisites.
+ * Triggered after drops, trades, or losing booster status.
+ */
+export async function runDependencySweep(userId, guildId, member, client = null) {
+  const pool = client || getPool();
+  const unequippedNames = [];
+
+  try {
+    // 1. Fetch all currently active items
+    const activeItems = await pool.query(
+      `SELECT ui.id, si.id as shop_item_id, si.name, si.role_id, si.required_items 
+       FROM user_inventory ui
+       JOIN shop_items si ON ui.shop_item_id = si.id
+       WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.is_active = true`,
+      [userId, guildId]
+    );
+
+    if (activeItems.rows.length === 0) return [];
+
+    // 2. Re-verify each active item
+    for (const item of activeItems.rows) {
+      const prereqs = await checkPrerequisites(member, guildId, item.required_items, pool);
+      
+      if (!prereqs.met) {
+        // Requirement lost -> Unequip
+        await pool.query('UPDATE user_inventory SET is_active = false WHERE id = $1', [item.id]);
+
+        if (item.role_id) {
+          const roles = item.role_id.split(/[,\s]+/);
+          for (const rid of roles) {
+            try { await member.roles.remove(rid, 'Requirement no longer met (Dependency Sweep)'); } catch (e) { }
+          }
+        }
+        unequippedNames.push(item.name);
+        console.log(`[Sweep] Unequipped ${item.name} from ${member.user.username} (Prereqs not met)`);
+      }
+    }
+
+    // 3. Log Results
+    if (unequippedNames.length > 0) {
+      sendLog(member.guild, 'inventory', 'orange', '⛓️ Dependency Cascade', 
+        `**${member.user.username}** had items unequipped because requirements were no longer met:\n` +
+        `• Items: ${unequippedNames.map(n => `**${n}**`).join(', ')}`
+      );
+    }
+
+    return unequippedNames;
+  } catch (error) {
+    console.error(`[System] runDependencySweep error for ${userId}:`, error);
+    return [];
+  }
+}
+
+
+/**
  * Purchase an item from the shop
  * @param {string} userId - The buyer's user ID
  * @param {string} guildId - The guild ID
@@ -1297,6 +1353,9 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       }
     }
 
+    // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
+    await runDependencySweep(userId, guildId, freshMember);
+
     return refreshed.rows;
   } catch (error) {
     console.error('Inventory Sync Error:', error);
@@ -1595,19 +1654,18 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     if (newStatus) {
       // User clicked ACTIVATE -> After wipe, add this item's role
       for (const rid of roles) {
-        try { await member.roles.add(rid); } catch (e) { }
+        try { await member.roles.add(rid, `Equipped item: ${item.name}`); } catch (e) { }
       }
       await client.query('UPDATE user_inventory SET is_active = true WHERE id = $1', [inventoryId]);
     } else {
-      // User clicked DEACTIVATE -> After wipe, user is left with nothing (already wiped above)
-      // For standalone items (no category), just remove the role
-      if (!item.category_id) {
-        for (const rid of roles) {
-          try { await member.roles.remove(rid); } catch (e) { }
-        }
+      // User clicked DEACTIVATE
+      // REMOVE ROLES: Always remove roles for the specific item being deactivated
+      for (const rid of roles) {
+        try { await member.roles.remove(rid, `Unequipped item: ${item.name}`); } catch (e) { }
       }
       await client.query('UPDATE user_inventory SET is_active = false WHERE id = $1', [inventoryId]);
     }
+
 
     await client.query('COMMIT');
 
