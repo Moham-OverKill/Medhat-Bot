@@ -1279,14 +1279,16 @@ export async function handleItemClaim(interaction) {
       
       await interaction.reply({ content: successMsg, ephemeral: true }).catch(() => {});
 
-      // 2. Update Public Message (using .update on the original interaction or fetching message)
-      // Since we already replied ephemerally, we must use interaction.message.edit() or followUp
+      // 2. Update Public Message
+      // Format: [Original First Line]\n\n[Resolution Line]
       const originalDesc = interaction.message.embeds[0]?.description || '';
       const firstLine = originalDesc.split('\n')[0];
       
-      const newDesc = isSelfClaim
+      const resolutionLine = isSelfClaim
         ? `✅ **${claimerName}** changed their mind and claimed their own drop!`
-        : `${firstLine}\nItem Claimed by **${claimerName}**`;
+        : `✅ **${claimerName}** claimed the item!`;
+
+      const newDesc = `${firstLine}\n\n${resolutionLine}`;
 
       const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
@@ -1394,6 +1396,72 @@ export async function handleBackButton(interaction) {
     await refreshBankUI(interaction);
   } catch (error) {
     console.error('Back button error:', error);
+  }
+}
+
+/**
+ * Background Expiration Sweeper for Dropped Items
+ * Mark items as expired after 24 hours and update Discord messages.
+ * Rate-limited to 5 per run to avoid spikes.
+ */
+export async function cleanupExpiredDrops(client) {
+  try {
+    const pool = getPool();
+    // 1. Fetch expired available drops (older than 24h)
+    const expiredRes = await pool.query(
+      `SELECT d.*, si.name 
+       FROM dropped_items d
+       JOIN shop_items si ON d.shop_item_id = si.id
+       WHERE d.status = 'available'
+         AND d.created_at < NOW() - INTERVAL '24 hours'
+       LIMIT 5`
+    );
+
+    if (expiredRes.rows.length === 0) return;
+
+    for (const drop of expiredRes.rows) {
+      try {
+        // 2. Fetch Channel & Message to update UI
+        if (drop.channel_id && drop.message_id) {
+          const channel = await client.channels.fetch(drop.channel_id).catch(() => null);
+          if (channel && channel.isTextBased()) {
+            const message = await channel.messages.fetch(drop.message_id).catch(() => null);
+            if (message && message.embeds.length > 0) {
+              const oldEmbed = message.embeds[0];
+              const firstLine = oldEmbed.description?.split('\n')[0] || `An item was dropped.`;
+              
+              const expiredEmbed = EmbedBuilder.from(oldEmbed)
+                .setColor('#2C2F33') // Dark Grey
+                .setDescription(`${firstLine}\n\n⏰ This item has expired and the drop was lost.`)
+                .setFooter({ text: 'Expired' });
+
+              // Disable the claim button
+              const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`bank_item_expired_${drop.id}`)
+                  .setLabel('Expired')
+                  .setEmoji('⏰')
+                  .setStyle(ButtonStyle.Secondary)
+                  .setDisabled(true)
+              );
+
+              await message.edit({ embeds: [expiredEmbed], components: [disabledRow] }).catch(() => {});
+            }
+          }
+        }
+
+        // 3. Mark as expired in DB
+        await pool.query("UPDATE dropped_items SET status = 'expired' WHERE id = $1", [drop.id]);
+        console.log(`[System] [Cleanup] Drop ${drop.id} (${drop.name}) marked as expired.`);
+
+      } catch (err) {
+        console.error(`[System] [Cleanup] Failed to expire drop ${drop.id}:`, err);
+        // Mark as error so it doesn't loop forever if message is deleted/unreachable
+        await pool.query("UPDATE dropped_items SET status = 'expired_error' WHERE id = $1", [drop.id]);
+      }
+    }
+  } catch (error) {
+    console.error('[System] cleanupExpiredDrops error:', error);
   }
 }
 
