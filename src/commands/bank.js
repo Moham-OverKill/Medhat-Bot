@@ -182,6 +182,9 @@ export async function handleBankCommand(interaction) {
 
 export async function handleBankDaily(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
     const guildId = interaction.guildId;
 
     const userId = interaction.user.id;
