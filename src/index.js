@@ -15,7 +15,7 @@ import { startExpiryJob } from './cron/expiry.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
 import { logSystemEvent } from './utils/logger.js';
-import { cleanupGhostItems, cleanupDeletedRole } from './economy/shop.js';
+import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -433,7 +433,11 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
       // Double-check they're not still a booster (in case they have both native and custom role)
       if (!await isMemberBooster(newMember, newMember.guild.id)) {
         await stripBoosterColorsFromMember(newMember, newMember.guild.id);
+        
+        // Trigger Strict Dependency Sweep for booster-only items
+        await runDependencySweep(newMember.user.id, newMember.guild.id, newMember);
       }
+
     }
   } catch (error) {
     console.error('[System] Member update error:', sanitizeError(error));
