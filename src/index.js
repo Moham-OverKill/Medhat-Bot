@@ -310,9 +310,9 @@ client.on(Events.GuildRoleDelete, async (role) => {
     if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted) {
       sendLog(guild, 'audit', 'crimson', '🛡️ Real-Time Ghost Cleanup', 
         `Role **@${role.name}** was deleted from the server. Maintenance initiated:\n` +
-        `• **Shop Items Purged:** ${stats.itemsRemoved}\n` +
-        `• **Inventory Entries Removed:** ${stats.inventoryRemoved}\n` +
-        `• **Packs Updated:** ${stats.packsUpdated}\n` +
+        `• **Shop Items Deactivated:** ${stats.itemsRemoved}\n` +
+        `• **History Preserved:** ${stats.inventoryRemoved} inventory entries updated\n` +
+        `• **Prerequisites Healed:** YES (Scrubbed deleted item IDs)\n` +
         `• **Color Roles Removed:** ${(normalCleanup.deleted || boosterCleanup.deleted) ? 'Yes' : 'No'}`
       );
     }
