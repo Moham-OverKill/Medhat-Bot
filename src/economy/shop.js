@@ -970,47 +970,6 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
   }
 }
 
-/**
- * Audit and unequip items that no longer meet requirements
- */
-export async function runDependencySweep(userId, guildId, member, client = null) {
-  const pool = client || getPool();
-  try {
-    // Fetch all currently EQUIPPED items
-    const equippedRes = await pool.query(
-      `SELECT ui.id, ui.shop_item_id, si.name, si.required_items 
-       FROM user_inventory ui
-       JOIN shop_items si ON ui.shop_item_id = si.id
-       WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.is_active = true`,
-      [userId, guildId]
-    );
-
-    const lostItems = [];
-    for (const invItem of equippedRes.rows) {
-      let reqItems = invItem.required_items;
-      if (typeof reqItems === 'string') {
-        try { reqItems = JSON.parse(reqItems); } catch (e) { reqItems = []; }
-      }
-
-      const audit = await checkPrerequisites(member, guildId, reqItems, pool);
-      if (!audit.met) {
-        // Requirement lost -> Unequip
-        await pool.query('UPDATE user_inventory SET is_active = false WHERE id = $1', [invItem.id]);
-        lostItems.push(invItem.name);
-      }
-    }
-
-    // Trigger role sync to remove Discord roles for the unequipped items
-    if (lostItems.length > 0) {
-      await syncInventoryWithDiscord(userId, guildId, member);
-    }
-
-    return lostItems;
-  } catch (err) {
-    console.error('Dependency Sweep failed:', err);
-    return [];
-  }
-}
 
 /**
  * Drop an item from inventory (Multiplayer System)
