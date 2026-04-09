@@ -114,6 +114,7 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
             } catch {
                 name = 'Unknown User';
             }
+        }
         // Sanitize name: collapse multiple spaces into one and trim
         const sanitizedName = name.replace(/\s\s+/g, ' ').trim();
         return { ...item, displayName: sanitizedName, userId: uid };
