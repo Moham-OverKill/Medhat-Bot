@@ -153,22 +153,30 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     }
     // else: Streak continues from current value
 
-    // --- 2. Calculate Reward (BEFORE Increment) ---
+    // --- 2. Calculate Reward (DYNAMIC ORDER OF OPERATIONS) ---
+    // This calculation is performed dynamically at the moment of claim to account 
+    // for real-time changes in server configuration (Base, Bonus, Cap, Multiplier).
+    //
+    // Formula: (Base + (Min(Streak, Cap) * Bonus)) * (Is_Booster ? Multiplier : 1)
+    
     const config = await getGuildConfig(guildId) || {};
+    
+    // 1. Fetch values with hardcoded fallbacks for safety
     const baseReward = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
     const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 20;
-
-    // Use configured values.
     const streakBonusPerDay = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
     const boosterMultiplier = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2;
 
-    // Calculate rewards
+    // 2. Apply Dynamic Cap (Protects against mid-stream config changes)
     const streakMultiplier = Math.min(currentStreak, streakCap);
+    
+    // 3. Calculate Bonus Component (Handles zero-bonus settings gracefully)
     const streakBonus = streakMultiplier * streakBonusPerDay;
 
+    // 4. Calculate Subtotal (Base + Bonus)
     const subtotal = baseReward + streakBonus;
 
-    // Use isBooster from bank.js caller
+    // 5. Apply Real-Time Booster Multiplier
     const effectiveMultiplier = (isBooster && boosterMultiplier > 1) ? boosterMultiplier : 1;
     
     const totalReward = Math.floor(subtotal * effectiveMultiplier);
