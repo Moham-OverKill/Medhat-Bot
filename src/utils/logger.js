@@ -71,7 +71,12 @@ export async function sendLog(guild, category, colorKey, title, description) {
         };
 
         const configKey = categoryMap[category.toLowerCase()];
-        const channelId = config[configKey];
+        let channelId = config[configKey];
+
+        // Fallback: If specific channel is missing, try the main Audit channel
+        if (!channelId && configKey !== 'log_audit_channel_id') {
+            channelId = config['log_audit_channel_id'];
+        }
 
         if (channelId) {
             const colors = {
