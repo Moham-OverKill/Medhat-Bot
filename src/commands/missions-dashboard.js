@@ -82,7 +82,7 @@ export async function showMissionsDashboard(interaction) {
     // Row 2: Back button
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('missions_back_rewards')
+        .setCustomId('settings_back')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
@@ -511,9 +511,6 @@ export async function handleMissionsComponent(interaction) {
     await handleAddActionSelect(interaction);
   } else if (customId === 'missions_channel_select') {
     await handleMissionChannelSelect(interaction);
-  } else if (customId === 'missions_back_rewards') {
-    const { handleRewardsSetup } = await import('./rewards.js');
-    await handleRewardsSetup(interaction);
   } else if (customId.startsWith('missions_select_')) {
     const missionId = parseInt(customId.split('_').pop(), 10);
     await showMissionDetail(interaction, missionId);

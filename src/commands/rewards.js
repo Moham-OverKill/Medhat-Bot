@@ -70,24 +70,19 @@ async function getRewardsPayload(guildId) {
     new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆')
   );
 
-  // Row 2: Bottom 2 (Bonus, Cap)
+  // Row 2: Bottom 3 (Bonus, Cap, Give)
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥'),
-    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️')
-  );
-
-  // Row 3: Admin Actions
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('missions_dashboard').setLabel('Missions').setStyle(ButtonStyle.Secondary).setEmoji('🎯'),
+    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️'),
     new ButtonBuilder().setCustomId('rewards_give_btn').setLabel('Give Coins').setStyle(ButtonStyle.Success).setEmoji('💸')
   );
 
-  // Row 4: Navigation
-  const rowBack = new ActionRowBuilder().addComponents(
+  // Row 3: Admin Actions (Missions moved to main menu)
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('settings_back').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [row1, row2, row3, rowBack] };
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
 export async function handleRewardsSetup(interaction) {
