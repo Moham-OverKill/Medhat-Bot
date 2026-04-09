@@ -40,49 +40,49 @@ async function getRewardsPayload(guildId) {
   const config = await getGuildConfig(guildId) || {};
 
   const mvpReward = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
-  const boosterMult = config.booster_multiplier !== undefined ? config.booster_multiplier : 2;
+  const boosterMultiplier = config.booster_multiplier !== undefined ? config.booster_multiplier : 2;
   const streakBonus = config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5;
   const baseDaily = config.daily_base_reward !== undefined ? config.daily_base_reward : 25;
   const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
-  const mvpText = mvpReward > 0 ? `${mvpReward} coins` : 'Disabled (0 coins)';
-  const boosterText = boosterMult > 1 ? `${boosterMult}x` : 'Disabled (1x)';
-  const streakText = streakBonus > 0 ? `${streakBonus} coins/day` : 'Disabled (0 coins/day)';
-  const baseText = `${baseDaily} coins`;
-  const capText = `${streakCap} days`;
+  const mvpText = mvpReward > 0 ? `\`${mvpReward} coins\`` : '`Disabled`';
+  const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x\`` : '`Disabled`';
+  const streakText = streakBonus > 0 ? `\`${streakBonus} coins/day\`` : '`Disabled`';
+  const baseText = `\`${baseDaily} coins\``;
+  const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
     .setTitle('💰 Rewards Configuration')
     .setColor('#F1C40F')
     .setDescription('Configure the automated rewards for your server.')
     .addFields(
-      { name: '🏆 MVP Reward', value: mvpText, inline: true },
-      { name: '🚀 Boost Mult', value: boosterText, inline: true },
-      { name: '🔥 Streak Bonus', value: streakText, inline: true },
-      { name: '💰 Base Daily', value: baseText, inline: true },
-      { name: '♾️ Streak Cap', value: capText, inline: true }
+      { name: 'Base Daily', value: baseText, inline: true },
+      { name: 'Boost Multiplier', value: boosterText, inline: true },
+      { name: 'MVP Reward', value: mvpText, inline: true },
+      { name: 'Streak Bonus', value: streakText, inline: true },
+      { name: 'Streak Cap', value: capText, inline: true }
     );
 
-  // Row 1: MVP & Booster
+  // Row 1: Top 3 (Base, Booster, MVP)
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆'),
-    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀')
+    new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀'),
+    new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆')
   );
 
-  // Row 2: Daily Coins (Base, Bonus, Cap)
+  // Row 2: Bottom 2 (Bonus, Cap)
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
     new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥'),
     new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️')
   );
 
-  // Row 3: Missions & Give
+  // Row 3: Admin Actions
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('missions_dashboard').setLabel('Missions').setStyle(ButtonStyle.Secondary).setEmoji('🎯'),
     new ButtonBuilder().setCustomId('rewards_give_btn').setLabel('Give Coins').setStyle(ButtonStyle.Success).setEmoji('💸')
   );
 
-  // Row 4: Back Button
+  // Row 4: Navigation
   const rowBack = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('settings_back').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
