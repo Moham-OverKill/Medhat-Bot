@@ -202,17 +202,15 @@ export async function handleBalanceModal(interaction) {
         
         if (delta > 0) {
             sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed',
-                `**Type:** \`Admin Grant\`\n` +
                 `**Target:** \`${targetLogName}\`\n` +
-                `**Admin:** \`${adminLogName}\`\n` +
-                `**Balance:** \`${oldBalance.toLocaleString()}\` ➡️ \`${newBalance.toLocaleString()}\` (+${delta.toLocaleString()} ${COIN_EMOJI})`
+                `**Amount:** \`+${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
+                `**Admin:** \`${adminLogName}\` (via User Settings)`
             );
         } else {
             sendLog(interaction.guild, 'audit', 'red', '⚖️ Balance Adjusted',
-                `**Action:** \`Force Reduction\`\n` +
                 `**Target:** \`${targetLogName}\`\n` +
-                `**Admin:** \`${adminLogName}\`\n` +
-                `**Balance:** \`${oldBalance.toLocaleString()}\` ➡️ \`${newBalance.toLocaleString()}\` (${delta.toLocaleString()} ${COIN_EMOJI})`
+                `**Reduction:** \`${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
+                `**Admin:** \`${adminLogName}\` (via User Settings)`
             );
         }
 
