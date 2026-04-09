@@ -228,7 +228,7 @@ export function buildCoinsEmbed(coinsData) {
     if (!coinsData || coinsData.length === 0) {
         embed.setDescription('*💸 The vault is empty...*\n*Be the first to earn coins and claim the top spot!*');
     } else {
-        const table = buildLeaderboardTable(coinsData, 'balance', '$', [], true);
+        const table = buildLeaderboardTable(coinsData, 'balance', '', [], true);
         embed.setDescription(table);
     }
     return embed;
