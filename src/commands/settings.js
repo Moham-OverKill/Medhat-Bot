@@ -77,7 +77,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Shop, Leaderboard
+    // Row 2: Shop, Leaderboard, Missions
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_shop')
@@ -88,6 +88,11 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_leaderboards')
             .setLabel('Leaderboard')
             .setEmoji('📊')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('missions_dashboard')
+            .setLabel('Missions')
+            .setEmoji('🎯')
             .setStyle(ButtonStyle.Secondary)
     );
 
