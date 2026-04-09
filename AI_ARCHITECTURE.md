@@ -96,6 +96,7 @@ All slash commands and component interactions (buttons, selects, modals) must ro
 ### B. Time Handling
 *   **Official Timezone:** `Africa/Cairo` (GMT+2/+3).
 *   **Midnight Reset:** All "Daily" logic triggers at **00:00 Cairo Time**.
+*   **Presence Rotation:** Bot status rotates at **minute 0 of every hour** (Cairo Time).
 
 ### C. Constants
 *   **Coin Emoji:** `<:OK_COIN:1490666813501997076>` (Stored as `COIN_EMOJI` in `shared.js`).
