@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getMission, getProgress, startUserMission, claimUserMissionReward, generateProgressBar, formatMissionTask, formatCompactMission } from '../missions/missions.js';
 import { updateBalance } from '../economy/service.js';
 import { addUserToMissionsTracking, isMissionCompleted } from '../activity/index.js';
@@ -17,7 +17,7 @@ export async function handleMissionInteraction(interaction) {
   if (originalUserId && user.id !== originalUserId) {
     return interaction.reply({ 
       content: "❌ This isn't your mission page.", 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
   }
 
@@ -42,14 +42,14 @@ export async function handleMissionInteraction(interaction) {
       // 1. Pre-interaction check: has the user already claimed today?
       const progressCheck = await getProgress(guildId, user.id, missionId);
       if (progressCheck?.is_claimed) {
-        return interaction.reply({ content: '❌ You have already claimed this mission.', ephemeral: true });
+        return interaction.reply({ content: '❌ You have already claimed this mission.', flags: MessageFlags.Ephemeral });
       }
 
       // 2. Perform ATOMIC claim in DB (This handles parallel clicks)
       const result = await claimUserMissionReward(guildId, user.id, missionId, mission.reward_coins);
       
       if (result.error) {
-        return interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+        return interaction.reply({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
       }
 
       // 3. Award coins only AFTER DB confirms claim was successful
@@ -77,7 +77,7 @@ export async function handleMissionInteraction(interaction) {
   } catch (error) {
     console.error('[Missions] Interaction error:', sanitizeError(error));
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
+      await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
     }
   }
 }
