@@ -1637,13 +1637,15 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     // If the category is set to 'Single' (category_type = 1), we unequip everything else first.
     if (item.category_id && item.category_type === 1 && newStatus) {
       // Get ALL active items in this category (excluding the clicked one)
+      // ADMIN IMMUNITY: We explicitly exclude 'SYNC' items so Admin-granted roles stay active
       const allCategoryItems = await client.query(
         `SELECT i.id, s.role_id
              FROM user_inventory i
              JOIN shop_items s ON i.shop_item_id = s.id
              WHERE i.user_id = $1 AND i.guild_id = $2 
              AND s.category_id = $3 AND i.is_active = true
-             AND i.id != $4`,
+             AND i.id != $4
+             AND i.source != 'SYNC'`,
         [userId, guildId, item.category_id, inventoryId]
       );
 
