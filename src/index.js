@@ -15,6 +15,7 @@ import { startExpiryJob } from './cron/expiry.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
 import { logSystemEvent } from './utils/logger.js';
+import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
 import pkg from '../package.json' with { type: 'json' };
 
@@ -201,15 +202,10 @@ client.once(Events.ClientReady, async () => {
 
     emitPhase('discord', `Logged in as ${client.user.tag}`);
     
-    // Set Presence and Activity to show as "Online"
-    client.user.setPresence({
-      status: 'online',
-      activities: [{
-        name: `${client.guilds.cache.size} servers | Medhat Economy`,
-        type: 3 // Watching
-      }]
-    });
-    logSystemEvent(`Presence set: Online | Watching ${client.guilds.cache.size} servers`);
+    // Initialize Presence Rotation
+    updateBotPresence(client);
+    startPresenceRotation(client);
+    logSystemEvent('Presence rotation active (Hourly)');
 
     // Clear stale voice tracking data before starting activity tracking
     // Prevents point spam from timestamps saved before bot restart
