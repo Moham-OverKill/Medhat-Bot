@@ -94,8 +94,8 @@ export async function setLeaderboardConfig(guildId, config) {
 async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
     if (!data || data.length === 0) return [];
 
-    // Safety check: slice to 15 just in case query returned more
-    const slicedData = data.slice(0, 15);
+    // Safety check: slice to 50 just in case query returned more
+    const slicedData = data.slice(0, 50);
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return slicedData.map(d => ({ ...d, displayName: 'Unknown' }));
 
@@ -254,13 +254,13 @@ export function buildStreakEmbed(streakData) {
 /**
  * Get top users by coins (Strict Limit 15)
  */
-export async function getTopCoinUsers(guildId, limit = 15) {
+export async function getTopCoinUsers(guildId, limit = 50) {
     const pool = getPool();
     const result = await pool.query(`
     SELECT user_id, balance
     FROM user_balances
     WHERE guild_id = $1 AND balance > 0
-    ORDER BY balance DESC
+    ORDER BY balance DESC, user_id ASC
     LIMIT $2
   `, [guildId, limit]);
     return result.rows;
@@ -270,7 +270,7 @@ export async function getTopCoinUsers(guildId, limit = 15) {
  * Get top users by streak (Strict Limit 15)
  * VALIDATES STREAKS: Users with stale last_daily (older than yesterday) show as 0 Days
  */
-export async function getTopStreakUsers(guildId, limit = 15) {
+export async function getTopStreakUsers(guildId, limit = 50) {
     const pool = getPool();
 
     // Import Cairo time helpers
@@ -281,7 +281,7 @@ export async function getTopStreakUsers(guildId, limit = 15) {
         SELECT user_id, daily_streak, last_daily
         FROM user_balances
         WHERE guild_id = $1
-        ORDER BY daily_streak DESC
+        ORDER BY daily_streak DESC, user_id ASC
         LIMIT $2
     `, [guildId, limit]);
 
@@ -343,7 +343,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 let rawData = activityData;
                 if (!rawData || rawData.length === 0) {
                     const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-                    const cycleData = await getLastMvpCycleResults(guildId, 15);
+                    const cycleData = await getLastMvpCycleResults(guildId, 50);
                     rawData = cycleData.results;
                 }
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
@@ -405,7 +405,7 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     if (type === 'activity') {
         // Fetch YESTERDAY's MVP results from DB
         const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-        const cycleData = await getLastMvpCycleResults(guildId, 15);
+        const cycleData = await getLastMvpCycleResults(guildId, 50);
         const enrichedData = await enrichUserData(client, guildId, cycleData.results, 'userId');
         embed = buildDailyActivityEmbed(enrichedData, []);
     } else if (type === 'coins') {
@@ -448,7 +448,7 @@ async function handleSetup(interaction) {
         // Post initial embeds with historical data
         // Daily - Fetch yesterday's MVP results
         const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-        const cycleData = await getLastMvpCycleResults(guildId, 15);
+        const cycleData = await getLastMvpCycleResults(guildId, 50);
         const enrichedActivity = await enrichUserData(interaction.client, guildId, cycleData.results, 'userId');
         const dailyEmbed = buildDailyActivityEmbed(enrichedActivity, []);
         const dailyMsg = await dailyChannel.send({ embeds: [dailyEmbed] });
