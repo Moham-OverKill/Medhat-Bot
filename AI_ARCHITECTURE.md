@@ -64,6 +64,11 @@ Condition checks (Balance, Ownership, PREREQUISITES) must be re-validated at the
 *   All Admin-Granted (State C) items are Soulbound.
 *   **Soulbound items cannot be Traded or Dropped.**
 
+### RULE 4: Admin Immunity
+*   Admin-Granted (State C) items are completely immune to category limits and auto-unequip swapping.
+*   They act as permanent, static buffs/roles that cannot be removed by normal user inventory actions.
+*   **Purpose:** Allows staff to grant unique perma-roles (like Tier 3) that won't be accidentally removed when a user equips a standard shop item.
+
 ---
 
 ## 4. UI/UX & Interaction Patterns
