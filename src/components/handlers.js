@@ -97,7 +97,7 @@ let handlersSetup = false;
 
 export function setupComponentHandlers(client) {
   if (handlersSetup) {
-    console.warn('⚠️ Component handlers already set up');
+    console.warn('[System] Component handlers already set up');
     return;
   }
 
@@ -106,7 +106,7 @@ export function setupComponentHandlers(client) {
       // 2. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const serverPrefix = interaction.guild ? `[${interaction.guild.name}]` : '[System]';
-        console.log(`${serverPrefix} [Interaction] Start: ${interaction.customId} by ${interaction.user.tag}`);
+        console.log(`${serverPrefix} [Interaction] ${interaction.customId} by ${interaction.user.tag}`);
       }
       // --- SECURITY GUARDRAIL ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
@@ -383,7 +383,7 @@ export function setupComponentHandlers(client) {
       } else {
         // --- SAFETY NET: LOG UNHANDLED ---
         if (customId && !customId.startsWith('shop_main') && !customId.startsWith('bank_')) {
-            console.warn(`[System] ⚠️ Unhandled Interaction ID: "${customId}" (Type: ${interaction.type})`);
+            console.warn(`[System] Unhandled Interaction ID: "${customId}" (Type: ${interaction.type})`);
         }
       }
 
