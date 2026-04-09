@@ -1461,7 +1461,7 @@ export async function cleanupExpiredDrops(client) {
 
         // 3. Mark as expired in DB
         await pool.query("UPDATE dropped_items SET status = 'expired' WHERE id = $1", [drop.id]);
-        console.log(`[System] [Cleanup] Drop ${drop.id} (${drop.name}) marked as expired.`);
+        console.log(`[System] [Cleanup] Drop ${drop.id} (${drop.name}) expired.`);
 
       } catch (err) {
         console.error(`[System] [Cleanup] Failed to expire drop ${drop.id}:`, err);

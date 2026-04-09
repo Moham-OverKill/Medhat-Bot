@@ -1,5 +1,6 @@
 import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
+import { stripLog } from '../shared.js';
 
 // Cache log channel IDs to avoid DB hits on every log (1 min cache)
 const logChannelCache = new Map();
@@ -46,8 +47,10 @@ export function checkChannelPermissions(channel) {
 export async function sendLog(guild, category, colorKey, title, description) {
     if (!guild || !guild.id) return;
     
-    // Console logging with server prefix for reliability
-    console.log(`[${guild.name}] [${category.toUpperCase()}] ${title}: ${description.replace(/\n/g, ' ')}`);
+    // Console logging with server prefix for reliability (Cleaned of emojis/markdown)
+    const cleanTitle = stripLog(title);
+    const cleanDescription = stripLog(description);
+    console.log(`[${guild.name}] [${category.toUpperCase()}] ${cleanTitle}${cleanDescription ? `: ${cleanDescription}` : ''}`);
 
     try {
         const pool = getPool();
@@ -143,7 +146,7 @@ export function logServerError(guild, username, error) {
 }
 
 export function logSystemEvent(event) {
-    console.log(`[System] ${event}`);
+    console.log(`[System] ${stripLog(event)}`);
 }
 
 export function logSystemError(error) {
