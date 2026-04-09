@@ -189,7 +189,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
         const maxNameLen = MOBILE_MAX_LINE_LENGTH - baseLine.length;
         const finalName = truncateName(userStr, maxNameLen);
 
-        lines.push(`${baseLine}${finalName}`);
+        lines.push(`\u200e${baseLine}${finalName}`);
 
         // Separator after Top 3
         if (index === 2 && data.length > 3) {
