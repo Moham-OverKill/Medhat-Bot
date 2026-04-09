@@ -201,7 +201,7 @@ export async function handleBalanceModal(interaction) {
         const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
         
         if (delta > 0) {
-            sendLog(interaction.guild, 'economy', 'orange', '🎁 Rewards Claimed',
+            sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed',
                 `**Type:** \`Admin Grant\`\n` +
                 `**Target:** \`${targetLogName}\`\n` +
                 `**Admin:** \`${adminLogName}\`\n` +
