@@ -72,7 +72,7 @@ export async function getRecentAwards(guildId = null, limit = 25) {
  * Get the most recent completed MVP cycle results (top 15)
  * Groups by the latest awarded_at timestamp to get one cycle's results
  */
-export async function getLastMvpCycleResults(guildId, limit = 15) {
+export async function getLastMvpCycleResults(guildId, limit = 50) {
   try {
     // Get the most recent awarded_at timestamp for this guild
     const latestResult = await query(
@@ -90,11 +90,12 @@ export async function getLastMvpCycleResults(guildId, limit = 15) {
     const latestAwardedAt = latestResult.rows[0].awarded_at;
 
     // Fetch all winners from that cycle (same awarded_at timestamp)
+    // Deterministic sorting for ties using user_id ASC
     const result = await query(
       `SELECT user_id, username, activity_score, rank, awarded_at
        FROM mvp_awards
        WHERE guild_id = $1 AND awarded_at = $2
-       ORDER BY rank ASC
+       ORDER BY rank ASC, user_id ASC
        LIMIT $3`,
       [guildId, latestAwardedAt, limit]
     );
