@@ -279,16 +279,16 @@ export async function handleRewardsModal(interaction) {
 
       // Standard Rewards Log
       sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed', 
-        `**User:** \`${recipientLogName}\`\n` +
+        `**Target:** \`${recipientLogName}\`\n` +
         `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
-        `**Source:** Admin Grant (By \`${logName}\`)\n` +
+        `**Admin:** \`${logName}\`\n` +
         `**Reason:** ${reason}`
       );
 
       // Return to rewards menu and send success message
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.update(payload);
-      await interaction.followUp({ content: `✅ Gave **${amount} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
+      await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
     } catch (error) {
       console.error('Give coins error:', error);
       await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
