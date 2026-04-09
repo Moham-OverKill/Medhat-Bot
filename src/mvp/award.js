@@ -873,7 +873,7 @@ export async function awardMvp(client, guildId, options = {}) {
 
     // ========== STEP 5: ANNOUNCE & REWARD ==========
     if (resultMembers.length > 0 && !isTest) {
-      const rewardAmount = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 0;
+      const rewardAmount = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
 
       if (rewardAmount > 0) {
         for (const member of resultMembers) {

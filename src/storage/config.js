@@ -17,6 +17,8 @@ const CONFIG_SCHEMA = {
   mvpRewardAmount: { type: 'number', min: 0, required: false },
   booster_multiplier: { type: 'number', min: 0, required: false },
   daily_streak_bonus: { type: 'number', min: 0, required: false },
+  daily_base_reward: { type: 'number', min: 0, required: false },
+  daily_streak_cap: { type: 'number', min: 1, required: false },
   // Missions module
   missions_enabled: { type: 'boolean', required: false },
   missions_channel_id: { type: 'string', validate: isValidSnowflake, required: false },

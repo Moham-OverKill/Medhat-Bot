@@ -155,24 +155,23 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
 
     // --- 2. Calculate Reward (BEFORE Increment) ---
     const config = await getGuildConfig(guildId) || {};
-    const baseReward = 25;
+    const baseReward = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
+    const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 20;
 
     // Use configured values.
     const streakBonusPerDay = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
     const boosterMultiplier = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2;
 
-    // Streak Bonus = Current Streak * Bonus Per Day
-    // Example: Day 1 (Streak 0) -> 0 * 5 = 0
-    // Example: Day 2 (Streak 1) -> 1 * 5 = 5
-    const streakBonus = currentStreak * streakBonusPerDay;
+    // Calculate rewards
+    const streakMultiplier = Math.min(currentStreak, streakCap);
+    const streakBonus = streakMultiplier * streakBonusPerDay;
 
     const subtotal = baseReward + streakBonus;
 
-    // Apply Booster Multiplier to Subtotal
+    // Use isBooster from bank.js caller
     const effectiveMultiplier = (isBooster && boosterMultiplier > 1) ? boosterMultiplier : 1;
+    
     const totalReward = Math.floor(subtotal * effectiveMultiplier);
-
-    // Calculate Boost Bonus (for display only)
     const boostBonus = totalReward - subtotal;
 
     // --- 3. Increment Streak (AFTER Calculation) ---
