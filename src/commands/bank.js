@@ -1259,9 +1259,9 @@ export async function handleInventoryAction(interaction) {
   } catch (error) {
     console.error('Inventory Action Error:', error);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true });
+      await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.followUp({ content: `❌ Error: ${error.message}`, ephemeral: true });
+      await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
     }
   }
 }
@@ -1286,7 +1286,7 @@ export async function handleItemClaim(interaction) {
         ? '✅ You have reclaimed your own dropped item!' 
         : `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
       
-      await interaction.reply({ content: successMsg, ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
 
       // 2. Update Public Message
       // Format: [Original First Line]\n\n[Resolution Line]
@@ -1325,9 +1325,9 @@ export async function handleItemClaim(interaction) {
     const errorMessage = `❌ ${error.message}`;
     
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, ephemeral: true });
+      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.followUp({ content: errorMessage, ephemeral: true });
+      await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
     }
   }
 }
