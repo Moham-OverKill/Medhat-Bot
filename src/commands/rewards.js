@@ -42,10 +42,14 @@ async function getRewardsPayload(guildId) {
   const mvpReward = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
   const boosterMult = config.booster_multiplier !== undefined ? config.booster_multiplier : 2;
   const streakBonus = config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5;
+  const baseDaily = config.daily_base_reward !== undefined ? config.daily_base_reward : 25;
+  const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
   const mvpText = mvpReward > 0 ? `${mvpReward} coins` : 'Disabled (0 coins)';
   const boosterText = boosterMult > 1 ? `${boosterMult}x` : 'Disabled (1x)';
   const streakText = streakBonus > 0 ? `${streakBonus} coins/day` : 'Disabled (0 coins/day)';
+  const baseText = `${baseDaily} coins`;
+  const capText = `${streakCap} days`;
 
   const embed = new EmbedBuilder()
     .setTitle('💰 Rewards Configuration')
@@ -53,29 +57,37 @@ async function getRewardsPayload(guildId) {
     .setDescription('Configure the automated rewards for your server.')
     .addFields(
       { name: '🏆 MVP Reward', value: mvpText, inline: true },
-      { name: '🚀 Boost Multiplier', value: boosterText, inline: true },
-      { name: '🔥 Streak Bonus', value: streakText, inline: true }
+      { name: '🚀 Boost Mult', value: boosterText, inline: true },
+      { name: '🔥 Streak Bonus', value: streakText, inline: true },
+      { name: '💰 Base Daily', value: baseText, inline: true },
+      { name: '♾️ Streak Cap', value: capText, inline: true }
     );
 
-  // Row 1: MVP, Booster, Streak
+  // Row 1: MVP & Booster
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆'),
-    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀'),
-    new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥')
+    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀')
   );
 
-  // Row 2: Missions, Give Coins
+  // Row 2: Daily Coins (Base, Bonus, Cap)
   const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+    new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥'),
+    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️')
+  );
+
+  // Row 3: Missions & Give
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('missions_dashboard').setLabel('Missions').setStyle(ButtonStyle.Secondary).setEmoji('🎯'),
     new ButtonBuilder().setCustomId('rewards_give_btn').setLabel('Give Coins').setStyle(ButtonStyle.Success).setEmoji('💸')
   );
 
-  // Row 3: Back Button
+  // Row 4: Back Button
   const rowBack = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('settings_back').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [row1, row2, rowBack] };
+  return { embeds: [embed], components: [row1, row2, row3, rowBack] };
 }
 
 export async function handleRewardsSetup(interaction) {
@@ -149,10 +161,36 @@ export async function handleRewardsComponent(interaction) {
     const modal = new ModalBuilder().setCustomId('rewards_streak_modal').setTitle('Daily Streak Bonus');
     const input = new TextInputBuilder()
       .setCustomId('amount')
-      .setLabel('Amount')
+      .setLabel('Coins per streak day')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('5')
-      .setValue(String(config.daily_streak_bonus || 0))
+      .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
+      .setRequired(false);
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+  }
+  else if (customId === 'rewards_daily_base_btn') {
+    const config = await getGuildConfig(guildId) || {};
+    const modal = new ModalBuilder().setCustomId('rewards_daily_base_modal').setTitle('Base Daily Reward');
+    const input = new TextInputBuilder()
+      .setCustomId('amount')
+      .setLabel('Base Coins (Day 1)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('25')
+      .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
+      .setRequired(false);
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+  }
+  else if (customId === 'rewards_streak_cap_btn') {
+    const config = await getGuildConfig(guildId) || {};
+    const modal = new ModalBuilder().setCustomId('rewards_streak_cap_modal').setTitle('Max Streak Bonus Cap');
+    const input = new TextInputBuilder()
+      .setCustomId('cap')
+      .setLabel('Maximum bonus multiplier')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('20')
+      .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
       .setRequired(false);
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     await interaction.showModal(modal);
@@ -256,6 +294,46 @@ export async function handleRewardsModal(interaction) {
         `**Admin:** \`${logName}\`\n` +
         `**Setting:** Daily Streak Bonus\n` +
         `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
+    );
+
+    const payload = await getRewardsPayload(interaction.guildId);
+    await interaction.update(payload);
+  }
+  else if (customId === 'rewards_daily_base_modal') {
+    const inputVal = interaction.fields.getTextInputValue('amount');
+    const amount = inputVal ? parseInt(inputVal, 10) : 0;
+
+    if (inputVal && (isNaN(amount) || amount < 0)) {
+      return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+    }
+    config.daily_base_reward = amount;
+    await setGuildConfig(guildId, config);
+
+    const logName = getUserLogName(interaction);
+    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
+        `**Admin:** \`${logName}\`\n` +
+        `**Setting:** Base Daily Reward\n` +
+        `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
+    );
+
+    const payload = await getRewardsPayload(interaction.guildId);
+    await interaction.update(payload);
+  }
+  else if (customId === 'rewards_streak_cap_modal') {
+    const inputVal = interaction.fields.getTextInputValue('cap');
+    const cap = inputVal ? parseInt(inputVal, 10) : 20;
+
+    if (inputVal && (isNaN(cap) || cap < 1)) {
+      return interaction.reply({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
+    }
+    config.daily_streak_cap = cap;
+    await setGuildConfig(guildId, config);
+
+    const logName = getUserLogName(interaction);
+    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
+        `**Admin:** \`${logName}\`\n` +
+        `**Setting:** Daily Streak Cap\n` +
+        `**New Value:** \`${cap} days\``
     );
 
     const payload = await getRewardsPayload(interaction.guildId);
