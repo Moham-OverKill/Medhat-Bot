@@ -26,12 +26,12 @@ const isProduction = process.env.NODE_ENV === 'production';
 // GLOBAL ERROR HANDLERS (CRASH PREVENTION)
 // ============================================
 process.on('unhandledRejection', (reason, promise) => {
-  console.warn('⚠️ [System] Unhandled Promise Rejection:', reason);
+  console.warn('[System] Unhandled Promise Rejection:', reason);
   // Do NOT exit the process. Let it keep running.
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('🔥 [System] Uncaught Exception:', sanitizeError(error));
+  console.error('[System] Uncaught Exception:', sanitizeError(error));
   // Keep the bot alive despite synchronous errors
 });
 
@@ -259,7 +259,7 @@ client.once(Events.ClientReady, async () => {
 
 // Handle Discord API errors silently (prevents WebSocket crash)
 client.on(Events.Error, (error) => {
-  console.error('🌐 [System] Discord Client Error:', sanitizeError(error));
+  console.error('[System] Discord Client Error:', sanitizeError(error));
 });
 
 // Handle reactions for mission tracking (Optmized Watch-mode)
@@ -295,7 +295,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 client.on(Events.GuildRoleDelete, async (role) => {
   try {
     const guild = role.guild;
-    console.log(`[System] 🛡️ Role Deleted: @${role.name} (${role.id}) in ${guild.name}. Cleaning up...`);
+    console.log(`[System] Role Deleted: @${role.name} (${role.id}) in ${guild.name}. Cleaning up...`);
 
     // 1. Cleanup Shop Items & Inventory (standard logic)
     const { cleanupDeletedRole } = await import('./economy/shop.js');
@@ -352,7 +352,7 @@ client.on(Events.GuildChannelDelete, async (channel) => {
 
     if (updated) {
       await setGuildConfig(guild.id, config);
-      console.warn(`[System] 🛡️ Configuration Updated: Deleted channel #${channel.name} was a linked resource in ${guild.name}.`);
+      console.warn(`[System] Configuration Updated: Deleted channel #${channel.name} was a linked resource in ${guild.name}.`);
       
       // Attempt to log to console and any remaining log channels
       logSystemEvent(`[${guild.name}] Channel #${channel.name} deleted. Cleaned up resource links.`);

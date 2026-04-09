@@ -138,3 +138,20 @@ export function isValidEconomyAmount(value, allowZero = false) {
 
 // Custom Emoji Constants
 export const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+
+/**
+ * Strips emojis, markdown, and extra whitespace for clean console logging.
+ * @param {string} text - The text to clean
+ * @returns {string} cleaned text
+ */
+export function stripLog(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/<a?:\w+:\d+>/g, '') // Remove Discord custom emojis
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}]/gu, '') // Remove standard emojis
+    .replace(/\*\*/g, '') // Remove bold markdown
+    .replace(/`/g, '') // Remove code markdown
+    .replace(/\n/g, ' ') // Flatten newlines
+    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .trim();
+}
