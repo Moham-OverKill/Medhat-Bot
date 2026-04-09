@@ -278,7 +278,7 @@ export async function handleRewardsModal(interaction) {
       const recipientLogName = recipientUser ? getUserLogName(recipientUser) : targetUserId;
 
       // Standard Rewards Log
-      sendLog(interaction.guild, 'economy', 'orange', '🎁 Rewards Claimed', 
+      sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed', 
         `**User:** \`${recipientLogName}\`\n` +
         `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
         `**Source:** Admin Grant (By \`${logName}\`)\n` +
