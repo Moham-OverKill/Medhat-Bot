@@ -61,7 +61,7 @@ export async function showQuestsDashboard(interaction) {
       .setTitle('🎯 Quests Control Panel')
       .setColor(enabled ? '#2ECC71' : '#95A5A6')
       .setDescription(
-        `**Current Pool (${quests.length}/10):**\n${questListText}`
+        `**Status:** ${enabled ? '✅ Enabled' : '❌ Disabled'}\n\n${questListText}`
       );
 
     // Row 1: Buttons 1-5
