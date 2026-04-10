@@ -15,7 +15,7 @@ import {
   formatCompactQuest,
   getQuests
 } from '../quests/quests.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { getNextQuestRefresh } from '../utils/time.js';
 import { syncQuestChannelCache } from '../activity/index.js';
 
@@ -99,14 +99,15 @@ export async function renderQuests(interaction, page = 0) {
         const questInfo = formatQuestTask(quest);
         const progressBar = generateProgressBar(currentCount, quest.required_count);
         
-        // Exact formatting as requested:
-        // [Description]
-        // [Bar] [Percentage]
-        // Progress: [X] / [Y] [Unit]
+        // If completed, replace progress line with Claimed status
+        const progressLine = isCompleted 
+          ? `✅ Claimed **${quest.reward_coins}** ${COIN_EMOJI}`
+          : `Progress: \`${currentCount}\` / \`${quest.required_count}\` ${questInfo.unit}`;
+
         questEntries.push(
           `${formatCompactQuest(quest)}\n` +
           `${progressBar}\n` +
-          `Progress: \`${currentCount}\` / \`${quest.required_count}\` ${questInfo.unit}`
+          progressLine
         );
       }
     }

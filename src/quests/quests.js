@@ -229,7 +229,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
  */
 async function autoPayout(guildId, userId, quest) {
   try {
-    await updateBalance(userId, guildId, quest.reward_coins, 'quest_reward', `Completed quest #${quest.id}`);
+    await updateBalance(userId, guildId, quest.reward_coins, 'quest_reward', `Completed quest`);
     
     // Log silently to eco logs
     const { client } = await import('../index.js');
