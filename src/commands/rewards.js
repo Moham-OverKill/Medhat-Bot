@@ -110,118 +110,128 @@ export async function handleRewardsComponent(interaction) {
   const customId = interaction.customId;
   const guildId = interaction.guildId;
 
+  try {
+    if (customId === 'rewards_home') {
+      const payload = await getRewardsPayload(guildId);
+      await interaction.update({
+        content: null,
+        embeds: payload.embeds,
+        components: payload.components
+      });
+      return;
+    }
 
+    // MODALS
+    if (customId === 'rewards_mvp_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
+      const input = new TextInputBuilder()
+        .setCustomId('amount')
+        .setLabel('Amount')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('100')
+        .setValue(String(config.mvpRewardAmount || 0))
+        .setRequired(false);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+    }
+    else if (customId === 'rewards_booster_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const modal = new ModalBuilder().setCustomId('rewards_booster_modal').setTitle('Booster Multiplier');
+      const input = new TextInputBuilder()
+        .setCustomId('multiplier')
+        .setLabel('Amount')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('2')
+        .setValue(String(config.booster_multiplier || 0))
+        .setRequired(false);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+    }
+    else if (customId === 'rewards_streak_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const modal = new ModalBuilder().setCustomId('rewards_streak_modal').setTitle('Daily Streak Bonus');
+      const input = new TextInputBuilder()
+        .setCustomId('amount')
+        .setLabel('Coins per streak day')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('5')
+        .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
+        .setRequired(false);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+    }
+    else if (customId === 'rewards_daily_base_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const modal = new ModalBuilder().setCustomId('rewards_daily_base_modal').setTitle('Base Daily Reward');
+      const input = new TextInputBuilder()
+        .setCustomId('amount')
+        .setLabel('Base Coins (Day 1)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('25')
+        .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
+        .setRequired(false);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+    }
+    else if (customId === 'rewards_streak_cap_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const modal = new ModalBuilder().setCustomId('rewards_streak_cap_modal').setTitle('Max Streak Bonus Cap');
+      const input = new TextInputBuilder()
+        .setCustomId('cap')
+        .setLabel('Maximum bonus multiplier')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('20')
+        .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
+        .setRequired(false);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+    }
+    else if (customId === 'rewards_give_btn') {
+      await interaction.deferUpdate();
+      const userSelect = new UserSelectMenuBuilder()
+        .setCustomId('rewards_give_select')
+        .setPlaceholder('Select user to give coins to')
+        .setMinValues(1)
+        .setMaxValues(1);
 
-  if (customId === 'rewards_home') {
-    const payload = await getRewardsPayload(guildId);
-    // Ensure we clear any previous content (like "Select user...")
-    await interaction.update({
-      content: null,
-      embeds: payload.embeds,
-      components: payload.components
-    });
-    return;
-  }
+      const row = new ActionRowBuilder().addComponents(userSelect);
+      const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('rewards_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+      );
 
-  // MODALS
-  if (customId === 'rewards_mvp_btn') {
-    const config = await getGuildConfig(guildId) || {};
-    const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
-    const input = new TextInputBuilder()
-      .setCustomId('amount')
-      .setLabel('Amount')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('100')
-      .setValue(String(config.mvpRewardAmount || 0))
-      .setRequired(false);
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'rewards_booster_btn') {
-    const config = await getGuildConfig(guildId) || {};
-    const modal = new ModalBuilder().setCustomId('rewards_booster_modal').setTitle('Booster Multiplier');
-    const input = new TextInputBuilder()
-      .setCustomId('multiplier')
-      .setLabel('Amount')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('2')
-      .setValue(String(config.booster_multiplier || 0))
-      .setRequired(false);
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'rewards_streak_btn') {
-    const config = await getGuildConfig(guildId) || {};
-    const modal = new ModalBuilder().setCustomId('rewards_streak_modal').setTitle('Daily Streak Bonus');
-    const input = new TextInputBuilder()
-      .setCustomId('amount')
-      .setLabel('Coins per streak day')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('5')
-      .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
-      .setRequired(false);
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'rewards_daily_base_btn') {
-    const config = await getGuildConfig(guildId) || {};
-    const modal = new ModalBuilder().setCustomId('rewards_daily_base_modal').setTitle('Base Daily Reward');
-    const input = new TextInputBuilder()
-      .setCustomId('amount')
-      .setLabel('Base Coins (Day 1)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('25')
-      .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
-      .setRequired(false);
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'rewards_streak_cap_btn') {
-    const config = await getGuildConfig(guildId) || {};
-    const modal = new ModalBuilder().setCustomId('rewards_streak_cap_modal').setTitle('Max Streak Bonus Cap');
-    const input = new TextInputBuilder()
-      .setCustomId('cap')
-      .setLabel('Maximum bonus multiplier')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('20')
-      .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
-      .setRequired(false);
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'rewards_give_btn') {
-    await interaction.deferUpdate();
-    const userSelect = new UserSelectMenuBuilder()
-      .setCustomId('rewards_give_select')
-      .setPlaceholder('Select user to give coins to')
-      .setMinValues(1)
-      .setMaxValues(1);
+      await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
+    }
+    else if (customId === 'rewards_give_select') {
+      // Harden ID extraction for UserSelectMenu
+      const targetUserId = interaction.users?.first()?.id || (interaction.values ? interaction.values[0] : null);
+      
+      if (!targetUserId) {
+        return interaction.reply({ content: '❌ Could not determine selected user.', flags: MessageFlags.Ephemeral });
+      }
 
-    const row = new ActionRowBuilder().addComponents(userSelect);
-    const backRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('rewards_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
+      const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle('Give Coins');
+      const input = new TextInputBuilder()
+        .setCustomId('amount')
+        .setLabel('Amount')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('1-9999')
+        .setRequired(true);
+      const reasonInput = new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel('Reason (Optional)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('for winning the event')
+        .setRequired(false);
 
-    await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
-  }
-  else if (customId === 'rewards_give_select') {
-    const targetUserId = interaction.values[0];
-    const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle('Give Coins');
-    const input = new TextInputBuilder()
-      .setCustomId('amount')
-      .setLabel('Amount')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('1-9999')
-      .setRequired(true);
-    const reasonInput = new TextInputBuilder()
-      .setCustomId('reason')
-      .setLabel('Reason (Optional)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('for winning the event')
-      .setRequired(false);
-
-    modal.addComponents(new ActionRowBuilder().addComponents(input), new ActionRowBuilder().addComponents(reasonInput));
-    await interaction.showModal(modal);
+      modal.addComponents(new ActionRowBuilder().addComponents(input), new ActionRowBuilder().addComponents(reasonInput));
+      await interaction.showModal(modal);
+    }
+  } catch (error) {
+     console.error('[Rewards] Interaction Error:', error);
+     const reply = { content: '❌ An error occurred processing this interaction.', flags: MessageFlags.Ephemeral };
+     if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
+     else await interaction.reply(reply);
   }
 }
 
