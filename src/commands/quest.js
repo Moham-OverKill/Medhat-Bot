@@ -112,11 +112,7 @@ export async function renderQuests(interaction, page = 0) {
     const embed = new EmbedBuilder()
       .setTitle(`🎯 Quests Progress ( ${completedCount} / ${totalQuests} )`)
       .setColor('#F1C40F')
-      .setDescription(questEntries.join('\n\n'))
-      .setFooter({ 
-        text: `Next refresh in `, 
-        // Discord Relative Timestamp: <t:TIMESTAMP:R>
-      });
+      .setDescription(questEntries.join('\n\n'));
       
     // Calculate next refresh
     const nextRefresh = getNextQuestRefresh(config.quests_refreshes_per_day || 1);
