@@ -271,8 +271,15 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     const channelId = reaction.message.channelId;
     if (!guildId || !channelId) return;
 
+    // Get parent ID for threads/posts
+    let parentId = reaction.message.channel?.parentId;
+    if (!parentId && reaction.message.guild) {
+        const cached = reaction.message.guild.channels.cache.get(channelId);
+        if (cached?.parentId) parentId = cached.parentId;
+    }
+
     const { isQuestChannel } = await import('./activity/index.js');
-    if (!isQuestChannel(guildId, channelId)) return;
+    if (!isQuestChannel(guildId, channelId, parentId)) return;
 
     // This IS a quest channel -> proceed with fetches and tracking
     if (reaction.partial) await reaction.fetch().catch(() => null);
