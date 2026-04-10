@@ -178,21 +178,21 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     // Atomic Upsert: Will only mark completed=true ONCE
     const result = await pool.query(
       `INSERT INTO quest_progress (guild_id, user_id, quest_id, quest_date, progress, completed, active_tracking, is_claimed, completed_at)
-       VALUES ($1, $2, $3, $4, $5::integer, ($5::integer >= $6::integer), TRUE, ($5::integer >= $6::integer), CASE WHEN $5::integer >= $6::integer THEN NOW() ELSE NULL END)
+       VALUES ($1::varchar, $2::varchar, $3::integer, $4::date, $5::integer, ($5::integer >= $6::integer), TRUE, ($5::integer >= $6::integer), CASE WHEN $5::integer >= $6::integer THEN NOW() ELSE NULL END)
        ON CONFLICT (guild_id, user_id, quest_id, quest_date)
        DO UPDATE SET 
-         progress = quest_progress.progress + $5::integer,
+         progress = quest_progress.progress + EXCLUDED.progress,
          completed_at = CASE 
-           WHEN NOT quest_progress.completed AND (quest_progress.progress + $5::integer) >= $6::integer THEN NOW() 
+           WHEN NOT quest_progress.completed AND (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN NOW() 
            ELSE quest_progress.completed_at 
          END,
          is_claimed = CASE
-           WHEN NOT quest_progress.completed AND (quest_progress.progress + $5::integer) >= $6::integer THEN TRUE
+           WHEN NOT quest_progress.completed AND (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN TRUE
            ELSE quest_progress.is_claimed
          END,
          completed = CASE 
            WHEN quest_progress.completed THEN TRUE 
-           WHEN (quest_progress.progress + $5::integer) >= $6::integer THEN TRUE 
+           WHEN (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN TRUE 
            ELSE FALSE 
          END
        RETURNING *`,
@@ -200,9 +200,13 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     );
 
     const row = result.rows[0];
-    const newProgress = row.progress;
+    const newProgress = parseInt(row.progress);
     const oldProgress = newProgress - amount;
     const justCompleted = oldProgress < quest.required_count && newProgress >= quest.required_count;
+
+    if (amount > 0) {
+        console.log(`[SQL Debug] Guild [${guildId}] User [${userId}] Quest [${quest.id}] Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})`);
+    }
 
     // Execute Auto-Payout silently in background
     if (justCompleted) {

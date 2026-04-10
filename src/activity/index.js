@@ -154,10 +154,10 @@ export function invalidateConfigCache(guildId) {
 /**
  * Fast-check if a channel is active for quests
  */
-export function isQuestChannel(guildId, channelId) {
+export function isQuestChannel(guildId, channelId, parentId = null) {
   const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return false;
-  return quests.some(q => q.channel_id === channelId);
+  return quests.some(q => q.channel_id === channelId || (parentId && q.channel_id === parentId));
 }
 
 // ============================================
