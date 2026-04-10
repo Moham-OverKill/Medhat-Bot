@@ -186,7 +186,7 @@ async function checkQuestProgress(message) {
   const hasAttachment = message.attachments.size > 0;
   
   const userId = message.author.id;
-  const cooldownKey = \`\${guildId}:\${userId}\`;
+  const cooldownKey = `${guildId}:${userId}`;
   let processedCooldown = false;
 
   for (const quest of quests) {

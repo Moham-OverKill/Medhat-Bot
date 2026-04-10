@@ -22,7 +22,7 @@ async function checkQuests(client, forceCheck = false) {
   if (!forceCheck && now.getMinutes() !== 0) return;
 
   // Make sure we only run once per hour unless forced
-  const hourKey = \`\${now.getUTCFullYear()}-\${now.getUTCMonth()}-\${now.getUTCDate()}-\${now.getUTCHours()}\`;
+  const hourKey = `${now.getUTCFullYear()}-${now.getUTCMonth()}-${now.getUTCDate()}-${now.getUTCHours()}`;
   if (!forceCheck && checkQuests.lastRun === hourKey) return;
   if (!forceCheck) checkQuests.lastRun = hourKey;
 
@@ -57,7 +57,7 @@ async function checkQuests(client, forceCheck = false) {
     try {
       await refreshGuildQuests(guildId, config, pool);
     } catch (err) {
-      console.error(\`[Quests] Auto-refresh failed for \${guildId}:\`, err);
+      console.error(`[Quests] Auto-refresh failed for ${guildId}:`, err);
     }
   }
 }
@@ -107,5 +107,5 @@ export async function refreshGuildQuests(guildId, config, pool) {
     // Sync memory cache for tracking engine
     await syncQuestChannelCache(guildId);
 
-    console.log(\`[Quests] Rotated \${selectedIds.length} quests for guild \${guildId}\`);
+    console.log(`[Quests] Rotated ${selectedIds.length} quests for guild ${guildId}`);
 }
