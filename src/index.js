@@ -260,26 +260,26 @@ client.on(Events.Error, (error) => {
   console.error('[System] Discord Client Error:', sanitizeError(error));
 });
 
-// Handle reactions for mission tracking (Optmized Watch-mode)
+// Handle reactions for quest tracking (Optimized Watch-mode)
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   try {
     if (user.bot) return;
 
-    // Direct check on partial message data to avoid API calls for non-mission channels
+    // Direct check on partial message data to avoid API calls for non-quest channels
     // reaction.message.channelId and guildId are available without fetching
     const guildId = reaction.message.guildId;
     const channelId = reaction.message.channelId;
     if (!guildId || !channelId) return;
 
-    const { isMissionChannel } = await import('./activity/index.js');
-    if (!isMissionChannel(guildId, channelId)) return;
+    const { isQuestChannel } = await import('./activity/index.js');
+    if (!isQuestChannel(guildId, channelId)) return;
 
-    // This IS the mission channel -> proceed with fetches and tracking
+    // This IS a quest channel -> proceed with fetches and tracking
     if (reaction.partial) await reaction.fetch().catch(() => null);
     if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
 
-    const { checkReactionMission } = await import('./activity/index.js');
-    await checkReactionMission(reaction, user);
+    const { checkReactionQuest } = await import('./activity/index.js');
+    await checkReactionQuest(reaction, user);
   } catch (error) {
     // Silent fail
   }
@@ -337,7 +337,7 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       { key: 'log_shop_channel_id', name: 'Shop Log' },
       { key: 'log_audit_channel_id', name: 'Audit Log' },
       { key: 'announceChannelId', name: 'MVP Announcement' },
-      { key: 'missions_channel_id', name: 'Missions' }
+      { key: 'missions_channel_id', name: 'Quests (Legacy)' }
     ];
 
     for (const field of channelKeys) {

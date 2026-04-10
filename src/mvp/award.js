@@ -1066,25 +1066,14 @@ export async function scheduleCairoMidnightReset(client) {
   }
 
   setTimeout(async () => {
-    console.log('[System] ⏰ Cairo midnight - running global reset (streaks & missions)...');
+    console.log('[System] ⏰ Cairo midnight - running global reset (streaks & quests)...');
     
     // 1. Reset streaks globally
     await resetCairoStaleStreaks();
     
-    // 2. Rotate missions for all guilds
-    try {
-      const { loadGuildConfigs } = await import('../storage/config.js');
-
-      const configs = await loadGuildConfigs();
-      
-      for (const [guildId, config] of Object.entries(configs)) {
-        if (config.missions_enabled) {
-
-        }
-      }
-    } catch (error) {
-      console.error('[System] Global mission rotation error:', error);
-    }
+    // 2. Quest rotations are now handled by src/cron/quests.js
+    // which supports multi-refresh schedules (1x, 2x, 3x, 4x per day)
+    // No action needed here for the new passive quest system.
 
     scheduleCairoMidnightReset(client); // Recurse
   }, msUntilMidnight);

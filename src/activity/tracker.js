@@ -601,15 +601,15 @@ export async function voicePointsTick(client) {
           [row.guild_id, row.user_id, now, remainingBuffer, voiceMinutes, new Date(now)]
         );
 
-        // Check voice mission progress
+        // Check voice quest progress
         try {
-          const { checkVoiceMission } = await import('./index.js');
+          const { checkVoiceQuest } = await import('./index.js');
           const voiceChannelId = voiceState?.channel?.id;
           if (voiceChannelId) {
-            await checkVoiceMission(row.guild_id, row.user_id, voiceChannelId, pointsToAward, voiceState);
+            await checkVoiceQuest(row.guild_id, row.user_id, voiceChannelId, pointsToAward, voiceState);
           }
         } catch {
-          // Silent fail — never crash core voice tracking for missions
+          // Silent fail — never crash core voice tracking for quests
         }
       }
     }
