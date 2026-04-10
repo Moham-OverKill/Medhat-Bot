@@ -3,13 +3,13 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
   StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  MessageFlags
+  MessageFlags,
+  ChannelSelectMenuBuilder,
+  ChannelType
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import {
@@ -20,7 +20,8 @@ import {
   deleteQuest,
   formatActionType,
   getActionsForChannelType,
-  formatQuestTask
+  formatQuestTask,
+  formatCompactQuest
 } from '../quests/quests.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
@@ -31,7 +32,7 @@ const pendingQuestAdd = new Map();
 // ============================================
 
 /**
- * Show the Quests Dashboard
+ * Show the Quests Dashboard (Main Page)
  */
 export async function showQuestsDashboard(interaction) {
   try {
@@ -47,15 +48,13 @@ export async function showQuestsDashboard(interaction) {
     let config = await getGuildConfig(guildId) || {};
     const quests = await getQuests(guildId);
 
-    // Migration / Standardized keys
     const enabled = config.quests_enabled ?? config.missions_enabled ?? false;
-    const channelId = config.quests_channel_id ?? config.missions_channel_id;
     const refreshes = config.quests_refreshes_per_day || 1;
     const perRefresh = config.quests_per_refresh || 3;
 
     // Build Quest list display
     let questListText = quests.length === 0 
-      ? '*No quests created yet. Click "Add Quest" to get started.*'
+      ? '*No quests created yet.*'
       : quests.map((m, i) => `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** coins`).join('\n');
 
     const embed = new EmbedBuilder()
@@ -63,127 +62,159 @@ export async function showQuestsDashboard(interaction) {
       .setColor(enabled ? '#2ECC71' : '#95A5A6')
       .setDescription(
         `**Status:** ${enabled ? '✅ Passive Tracking Active' : '❌ Disabled'}\n` +
-        `**Announcement Channel:** ${channelId ? `<#${channelId}>` : '*Not Set*'}\n` +
         `**Refreshes:** \`${refreshes}x\` daily (Cairo Time)\n` +
         `**Difficulty:** Pick \`${perRefresh}\` random quests from the pool each refresh.\n\n` +
         `**Current Pool (${quests.length}/10):**\n${questListText}`
       );
 
-    // Row 1: Global Config (Enable/Disable + Refresh Settings)
-    const row1 = new ActionRowBuilder().addComponents(
+    // Row 1: Buttons 1-5
+    const row1 = new ActionRowBuilder();
+    for (let i = 1; i <= 5; i++) {
+        const quest = quests[i-1];
+        row1.addComponents(
+            new ButtonBuilder()
+                .setCustomId(quest ? `quests_select_${quest.id}` : `quests_empty_${i}`)
+                .setLabel(`${i}`)
+                .setStyle(quest ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+                .setDisabled(!quest)
+        );
+    }
+
+    // Row 2: Buttons 6-10
+    const row2 = new ActionRowBuilder();
+    for (let i = 6; i <= 10; i++) {
+        const quest = quests[i-1];
+        row2.addComponents(
+            new ButtonBuilder()
+                .setCustomId(quest ? `quests_select_${quest.id}` : `quests_empty_${i}`)
+                .setLabel(`${i}`)
+                .setStyle(quest ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+                .setDisabled(!quest)
+        );
+    }
+
+    // Row 3: Disable/Enable, Add Quest, Schedule
+    const row3 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('quests_toggle')
         .setLabel(enabled ? 'Disable' : 'Enable')
         .setEmoji(enabled ? '✖️' : '✅')
         .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
       new ButtonBuilder()
-          .setCustomId('quests_settings_refreshes')
-          .setLabel(`Cycle: ${refreshes}x`)
-          .setEmoji('🕒')
-          .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-          .setCustomId('quests_settings_count')
-          .setLabel(`Pool size: ${perRefresh}`)
-          .setEmoji('🎲')
-          .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Add Quest + Force Rotation
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
         .setCustomId('quests_add_start')
-        .setLabel('Add to Pool')
+        .setLabel('Add Quest')
         .setEmoji('➕')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(quests.length >= 10),
       new ButtonBuilder()
-          .setCustomId('quests_force_rotate')
-          .setLabel('Rotate Now')
-          .setEmoji('🔄')
+          .setCustomId('quests_schedule_view')
+          .setLabel('Schedule')
+          .setEmoji('🕒')
           .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Numbered buttons for Quest selection (Edit/Delete)
-    const questButtons = [];
-    for (let i = 0; i < quests.length; i++) {
-        questButtons.push(
-            new ButtonBuilder()
-                .setCustomId(`quests_select_${quests[i].id}`)
-                .setLabel(`${i + 1}`)
-                .setStyle(ButtonStyle.Secondary)
-        );
-    }
-
-    // Navigation Row
-    const backRow = new ActionRowBuilder().addComponents(
+    // Row 4: Back
+    const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('settings_home')
-        .setLabel('Main Menu')
-        .setEmoji('🏠')
+        .setLabel('Back')
+        .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
 
-    const components = [];
-    
-    // Announcement Channel Select
-    const channelSelect = new ChannelSelectMenuBuilder()
-      .setCustomId('quests_channel_select')
-      .setPlaceholder('Select Announcement Channel...')
-      .addChannelTypes(ChannelType.GuildText);
-    if (channelId) channelSelect.setDefaultChannels([channelId]);
-    components.push(new ActionRowBuilder().addComponents(channelSelect));
-
-    components.push(row1, row2);
-    
-    // Group quest buttons in rows of 5
-    if (questButtons.length > 0) {
-        for (let i = 0; i < questButtons.length; i += 5) {
-            components.push(new ActionRowBuilder().addComponents(...questButtons.slice(i, i + 5)));
-        }
-    }
-
-    components.push(backRow);
-
-    await interaction.editReply({ embeds: [embed], components, content: null });
+    await interaction.editReply({ 
+        embeds: [embed], 
+        components: [row1, row2, row3, row4], 
+        content: null 
+    });
   } catch (error) {
     console.error('[Quests] Dashboard error:', error);
   }
 }
 
 // ============================================
-// SETTINGS HANDLERS (Cycle/Count)
+// SCHEDULE SUB-MENU
 // ============================================
 
-export async function handleQuestsSettingsUpdate(interaction) {
-    const customId = interaction.customId;
+/**
+ * Show the Schedule Configuration Page
+ */
+export async function showQuestsSchedule(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
+    
+    const refreshes = config.quests_refreshes_per_day || 1;
+    const perRefresh = config.quests_per_refresh || 3;
 
-    if (customId === 'quests_settings_refreshes') {
-        // Cycle 1, 2, 3, 4
-        let current = config.quests_refreshes_per_day || 1;
-        config.quests_refreshes_per_day = (current % 4) + 1;
-    } else if (customId === 'quests_settings_count') {
-        // Pool size 1-5
-        let current = config.quests_per_refresh || 3;
-        config.quests_per_refresh = (current % 5) + 1;
+    const embed = new EmbedBuilder()
+        .setTitle('📅 Quest Rotation Schedule')
+        .setColor('#3498DB')
+        .setDescription(
+            `Configure how often quests rotate and how many are active at once.\n\n` +
+            `**Current Settings:**\n` +
+            `• Quests per Refresh: \`${perRefresh}\`\n` +
+            `• Refreshes per Day: \`${refreshes}x\``
+        );
+
+    // Dropdown for Quests Per Refresh (1-10)
+    const perRefreshMenu = new StringSelectMenuBuilder()
+        .setCustomId('quests_setting_per_refresh')
+        .setPlaceholder('Quests per Refresh...')
+        .addOptions(
+            Array.from({ length: 10 }, (_, i) => ({
+                label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
+                value: `${i + 1}`,
+                default: perRefresh === (i + 1)
+            }))
+        );
+
+    // Dropdown for Refreshes Per Day (1x-4x)
+    const refreshesMenu = new StringSelectMenuBuilder()
+        .setCustomId('quests_setting_refreshes')
+        .setPlaceholder('Refreshes per Day...')
+        .addOptions([
+            { label: '1x Daily (12 AM)', value: '1', default: refreshes === 1 },
+            { label: '2x Daily (12 AM, 12 PM)', value: '2', default: refreshes === 2 },
+            { label: '3x Daily (12 AM, 8 AM, 4 PM)', value: '3', default: refreshes === 3 },
+            { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', default: refreshes === 4 }
+        ]);
+
+    const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('quests_dashboard')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+        embeds: [embed],
+        components: [
+            new ActionRowBuilder().addComponents(perRefreshMenu),
+            new ActionRowBuilder().addComponents(refreshesMenu),
+            backRow
+        ]
+    });
+}
+
+/**
+ * Handle schedule dropdown updates
+ */
+export async function handleQuestsScheduleUpdate(interaction) {
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+    const value = parseInt(interaction.values[0]);
+
+    if (interaction.customId === 'quests_setting_per_refresh') {
+        config.quests_per_refresh = value;
+    } else if (interaction.customId === 'quests_setting_refreshes') {
+        config.quests_refreshes_per_day = value;
     }
 
     await setGuildConfig(guildId, config);
-    await showQuestsDashboard(interaction);
-}
-
-export async function handleForceRotate(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    
-    const { rotateGuildQuests } = await import('../cron/quests.js');
-    const guildId = interaction.guildId;
-    const config = await getGuildConfig(guildId);
-    
-    await rotateGuildQuests(guildId, config, null); // passing null as pool will make it use getPool internally
-    
-    await interaction.followUp({ content: '✅ Quests rotated successfully!', flags: MessageFlags.Ephemeral });
-    await showQuestsDashboard(interaction);
+    await showQuestsSchedule(interaction);
 }
 
 // ============================================
@@ -494,7 +525,7 @@ export async function handleDeleteQuest(interaction, questId) {
 }
 
 // ============================================
-// TOGGLE & CHANNEL
+// TOGGLE
 // ============================================
 
 export async function handleToggleQuests(interaction) {
@@ -503,18 +534,6 @@ export async function handleToggleQuests(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId) || {};
   config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
-  await setGuildConfig(guildId, config);
-
-  await showQuestsDashboard(interaction);
-}
-
-export async function handleQuestChannelSelect(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const channelId = interaction.values[0];
-  const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId) || {};
-  config.quests_channel_id = channelId;
   await setGuildConfig(guildId, config);
 
   await showQuestsDashboard(interaction);
@@ -537,12 +556,10 @@ export async function handleQuestsComponent(interaction) {
     await handleAddChannelSelect(interaction);
   } else if (customId === 'quests_add_action') {
     await handleAddActionSelect(interaction);
-  } else if (customId === 'quests_channel_select') {
-    await handleQuestChannelSelect(interaction);
-  } else if (customId === 'quests_settings_refreshes' || customId === 'quests_settings_count') {
-    await handleQuestsSettingsUpdate(interaction);
-  } else if (customId === 'quests_force_rotate') {
-    await handleForceRotate(interaction);
+  } else if (customId === 'quests_schedule_view') {
+    await showQuestsSchedule(interaction);
+  } else if (customId === 'quests_setting_per_refresh' || customId === 'quests_setting_refreshes') {
+    await handleQuestsScheduleUpdate(interaction);
   } else if (customId.startsWith('quests_select_')) {
     const questId = parseInt(customId.split('_').pop(), 10);
     await showQuestDetail(interaction, questId);
