@@ -46,18 +46,17 @@ async function getRewardsPayload(guildId) {
   const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
   const mvpText = mvpReward > 0 ? `\`${mvpReward} coins\`` : '`Disabled`';
-  const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x\`` : '`Disabled`';
-  const streakText = streakBonus > 0 ? `\`${streakBonus} coins/day\`` : '`Disabled`';
+  const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x mult\`` : '`Disabled`';
+  const streakText = streakBonus > 0 ? `\`${streakBonus} coins\`` : '`Disabled`';
   const baseText = `\`${baseDaily} coins\``;
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
     .setTitle('💰 Rewards Configuration')
     .setColor('#F1C40F')
-    .setDescription('Configure the automated rewards for your server.')
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
-      { name: 'Boost Multiplier', value: boosterText, inline: true },
+      { name: 'Boost Mult', value: boosterText, inline: true },
       { name: 'MVP Reward', value: mvpText, inline: true },
       { name: 'Streak Bonus', value: streakText, inline: true },
       { name: 'Streak Cap', value: capText, inline: true }
