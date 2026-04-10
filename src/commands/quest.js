@@ -17,6 +17,7 @@ import {
 } from '../quests/quests.js';
 import { sanitizeError } from '../shared.js';
 import { getNextQuestRefresh } from '../utils/time.js';
+import { syncQuestChannelCache } from '../activity/index.js';
 
 export const data = new SlashCommandBuilder()
   .setName('quest')
@@ -60,6 +61,7 @@ export async function renderQuests(interaction, page = 0) {
       if (poolQuests.length > 0) {
         const { rotateGuildQuests } = await import('../cron/quests.js');
         await rotateGuildQuests(guildId, config, null);
+        await syncQuestChannelCache(guildId);
         activeQuestIds = config.active_quest_ids || [];
       }
     }
