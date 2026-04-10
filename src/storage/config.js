@@ -72,6 +72,10 @@ function validateConfig(config) {
     else if (schema.type === 'boolean') {
       sanitized[key] = Boolean(config[key]);
     }
+    else if (schema.type === 'object') {
+      if (typeof config[key] !== 'object') return null;
+      sanitized[key] = config[key];
+    }
   }
   
   return sanitized;

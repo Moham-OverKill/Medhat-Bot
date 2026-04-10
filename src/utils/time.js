@@ -57,21 +57,6 @@ export function getTodayCairo() {
  */
 export function getYesterdayCairo() {
   const now = new Date();
-  // Get current time in Cairo to safely subtract 24h
-  // We can't just subtract 24h from UTC because of potential DST boundaries
-  // But for "Yesterday's Date", subtracting 24h from NOW is usually safe enough 
-  // IF we format the result in Cairo time.
-  // Actually, safer: Get Cairo Date -> Subtract 1 day.
-
-  // Robust approach: 
-  // 1. Get current Cairo parts
-  // 2. Create date object
-  // 3. Subtract 1 day
-  // 4. Format
-
-  // Simpler approach that works for "Yesterday": 
-  // Subtract 24h from now, then format in Cairo.
-  // This covers 99.9% of cases except exactly at DST switch boundaries (rare).
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   return getCairoDateString(yesterday);
 }
@@ -100,58 +85,106 @@ export function hasClaimedToday(lastClaimDate) {
   return claimDateStr === getTodayCairo();
 }
 
+/**
+ * Get the current hour in Cairo (0-23)
+ */
+export function getCairoHour() {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Africa/Cairo',
+        hour: 'numeric',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(new Date());
+    let hour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    return hour % 24;
+}
+
+/**
+ * Calculate the next quest refresh timestamp based on frequency
+ * @param {number} refreshesPerDay 1, 2, or 4
+ * @returns {Date}
+ */
+export function getNextQuestRefresh(refreshesPerDay = 1) {
+    const now = new Date();
+    
+    // 1. Get Cairo time parts
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo',
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric',
+      hour12: false
+    });
+  
+    const parts = formatter.formatToParts(now);
+    const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
+  
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    const hour = getPart('hour') % 24;
+    const minute = getPart('minute');
+    const second = getPart('second');
+  
+    // 2. Determine target refresh hours based on frequency
+    // Logic from cron/quests.js:
+    // 1x: 0
+    // 2x: 0, 12
+    // 4x: 0, 6, 12, 18
+    let schedule = [0];
+    if (refreshesPerDay === 2) schedule = [0, 12];
+    if (refreshesPerDay === 4) schedule = [0, 6, 12, 18];
+  
+    // 3. Find the next hour in the schedule
+    let targetHour = schedule.find(h => h > hour);
+    let targetDay = day;
+    
+    if (targetHour === undefined) {
+      targetHour = schedule[0];
+      targetDay++; // Move to tomorrow
+    }
+  
+    // 4. Calculate UTC timestamp
+    // Get offset between Cairo and UTC
+    const cairoComponentsAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+    const offsetMs = cairoComponentsAsUtc - now.getTime();
+  
+    const targetUtcParts = Date.UTC(year, month - 1, targetDay, targetHour, 0, 0);
+    return new Date(targetUtcParts - offsetMs);
+}
+
 export function getNextCairoMidnight() {
   const now = new Date();
 
-  // 1. Get current time parts in Cairo timezone
-  // Use Intl.DateTimeFormat with formatToParts to avoid fragile string parsing
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Cairo',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
     hour12: false
   });
 
   const parts = formatter.formatToParts(now);
-  const getPart = (type) => {
-    let val = parseInt(parts.find(p => p.type === type).value, 10);
-    // ICU handling: sometimes hour 0 is reported as 24
-    if (type === 'hour' && val === 24) return 0;
-    return val;
-  };
+  const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
 
-  // 2. These represent the DATE and TIME currently in Cairo
   const year = getPart('year');
   const month = getPart('month');
   const day = getPart('day');
-  const hour = getPart('hour');
+  const hour = getPart('hour') % 24;
   const minute = getPart('minute');
   const second = getPart('second');
 
-  // 3. Calculate current Cairo offset relative to UTC
-  // We compare the UTC timestamp of "Now" with the UTC timestamp we'd have 
-  // if those Cairo components were UTC.
   const cairoComponentsAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
   const offsetMs = cairoComponentsAsUtc - now.getTime();
   
-  // 4. Target TODAY's 00:00:00 Cairo in UTC:
   const midnightUtcParts = Date.UTC(year, month - 1, day, 0, 0, 0);
   const targetMidnight = new Date(midnightUtcParts - offsetMs);
 
-  // 5. If it passed already (or within 5 mins of passing), add 24 hours
-  // Increased threshold to 5 mins to prevent any race condition loop
   if (targetMidnight.getTime() <= now.getTime() + 300000) {
     targetMidnight.setTime(targetMidnight.getTime() + 24 * 60 * 60 * 1000);
   }
 
-  // To prevent NaN during DST changes or edge cases, ensure it's a valid number
   if (isNaN(targetMidnight.getTime())) {
     const fallback = new Date();
-    fallback.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 UTC+3 (Safe DST upper bound)
+    fallback.setUTCHours(21, 0, 0, 0); 
     if (fallback <= now) fallback.setUTCDate(fallback.getUTCDate() + 1);
     return fallback;
   }
@@ -159,26 +192,6 @@ export function getNextCairoMidnight() {
   return targetMidnight;
 }
 
-/**
- * Helper to get cairo offset at a specific UTC time
- */
-function getCairoOffsetAt(date) {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Cairo',
-    year: 'numeric', month: 'numeric', day: 'numeric',
-    hour: 'numeric', minute: 'numeric', second: 'numeric',
-    hour12: false
-  });
-  const parts = formatter.formatToParts(date);
-  const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
-  
-  const cDate = new Date(Date.UTC(getPart('year'), getPart('month') - 1, getPart('day'), getPart('hour'), getPart('minute'), getPart('second')));
-  return cDate.getTime() - date.getTime();
-}
-
-/**
- * Get milliseconds until Cairo midnight (for scheduling)
- */
 export function getTimeUntilCairoMidnight() {
   const nextMidnight = getNextCairoMidnight();
   return nextMidnight.getTime() - Date.now();
