@@ -19,12 +19,17 @@ const CONFIG_SCHEMA = {
   daily_streak_bonus: { type: 'number', min: 0, required: false },
   daily_base_reward: { type: 'number', min: 0, required: false },
   daily_streak_cap: { type: 'number', min: 1, required: false },
-  // Missions module
+  // Quests module (Passive system)
+  quests_enabled: { type: 'boolean', required: false },
+  quests_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  quests_refreshes_per_day: { type: 'number', min: 1, max: 4, required: false },
+  quests_per_refresh: { type: 'number', min: 1, max: 5, required: false },
+  active_quest_ids: { type: 'object', required: false }, // Store as array
+  // Legacy Missions module (for migration)
   missions_enabled: { type: 'boolean', required: false },
   missions_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
   active_mission_id: { type: 'number', min: 0, required: false },
   active_mission_date: { type: 'string', required: false },
-  active_mission_message_id: { type: 'string', validate: isValidSnowflake, required: false },
   // Log channels
   log_eco_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
   log_inv_channel_id: { type: 'string', validate: isValidSnowflake, required: false },

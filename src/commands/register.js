@@ -8,7 +8,7 @@ import { bankCommand } from './bank.js';
 import { inventoryCommand } from './inventory.js';
 import { itemMassCommand } from './item-mass.js';
 import { settingsCommand } from './settings.js';
-import { data as missionCommand } from './mission.js';
+import { data as questCommand } from './quest.js';
 import { tradeCommand } from './trade.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,7 @@ export async function registerSlashCommands(client) {
     bankCommand.toJSON(),
     inventoryCommand.toJSON(),
     itemMassCommand.toJSON(),
-    missionCommand.toJSON(),
+    questCommand.toJSON(),
     tradeCommand.toJSON()
   ];
 

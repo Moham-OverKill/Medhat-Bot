@@ -74,7 +74,7 @@ import {
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
-import { handleMissionsComponent, handleMissionsModal } from '../commands/missions-dashboard.js';
+import { handleQuestsComponent, handleQuestsModal } from '../commands/quests-dashboard.js';
 import {
   handleMassSelect,
   handleMassCreateStart,
@@ -82,7 +82,6 @@ import {
   handleMassSave,
   handleMassCreateStandalone
 } from '../commands/item-mass.js';
-import { handleMissionInteraction } from './mission.js';
 import { 
   handleTradeSetupInteraction, 
   handleTradeModal, 
@@ -114,7 +113,7 @@ export function setupComponentHandlers(client) {
           'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_',
           'shop_admin_', 'shop_setup_', 'shop_pack_', 'shop_add_', 'shop_edit_',
           'shop_delete_', 'shop_post_', 'shop_cat_', 'shop_assign_', 'shop_select_cat_delete',
-          'shop_select_item_delete', 'mass_', 'missions_', 'admin_user_', 'lb_'
+          'shop_select_item_delete', 'mass_', 'quests_', 'admin_user_', 'lb_'
         ];
 
         // Check if interaction ID starts with any admin prefix
@@ -134,8 +133,8 @@ export function setupComponentHandlers(client) {
 
       // --- MODALS ---
       if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'missions_add_modal' || interaction.customId.startsWith('missions_edit_modal_')) {
-          await handleMissionsModal(interaction);
+        if (interaction.customId === 'quests_add_modal' || interaction.customId.startsWith('quests_edit_modal_')) {
+          await handleQuestsModal(interaction);
         } else if (interaction.customId.startsWith('rewards_')) {
           await handleRewardsModal(interaction);
         } else if (interaction.customId === 'shop_category_modal') {
@@ -354,9 +353,9 @@ export function setupComponentHandlers(client) {
       else if (customId.startsWith('rewards_')) {
         await handleRewardsComponent(interaction);
       }
-      // Missions Components
-      else if (customId.startsWith('missions_')) {
-        await handleMissionsComponent(interaction);
+      // Quests Components
+      else if (customId.startsWith('quests_')) {
+        await handleQuestsComponent(interaction);
       }
       // Colors Components
       else if (customId === 'colors:back' || customId === 'boosters:back') {
@@ -378,8 +377,6 @@ export function setupComponentHandlers(client) {
         } else if (customId.startsWith('trade_accept_') || customId.startsWith('trade_decline_')) {
           await handleTradeExecution(interaction);
         }
-      } else if (interaction.customId.startsWith('mission_')) {
-        await handleMissionInteraction(interaction);
       } else {
         // --- SAFETY NET: LOG UNHANDLED ---
         if (customId && !customId.startsWith('shop_main') && !customId.startsWith('bank_')) {

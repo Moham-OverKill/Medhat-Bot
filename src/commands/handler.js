@@ -3,7 +3,7 @@ import { handleSettingsCommand } from './settings.js';
 import { handleBankCommand } from './bank.js';
 import { handleInventoryCommand } from './inventory.js';
 import { handleItemMassCommand } from './item-mass.js';
-import { execute as handleMissionCommand } from './mission.js';
+import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
 
 export async function handleSlashCommand(interaction) {
@@ -22,8 +22,8 @@ export async function handleSlashCommand(interaction) {
     case 'mass':
       await handleItemMassCommand(interaction);
       break;
-    case 'mission':
-      await handleMissionCommand(interaction);
+    case 'quest':
+      await handleQuestCommand(interaction);
       break;
     case 'trade':
       await handleTradeCommand(interaction);
