@@ -59,6 +59,13 @@ async function checkQuests(client, forceCheck = false) {
       const { getPool } = await import('../storage/postgres.js');
       await rotateGuildQuests(guildId, config, getPool());
       
+      // TRIGGER VOICE SWEEP (Fix for ghosting on rotation)
+      const guild = client.guilds.cache.get(guildId);
+      if (guild) {
+        const { syncVoicePresence } = await import('../activity/tracker.js');
+        await syncVoicePresence(guild);
+      }
+
       // Mark as run for THIS guild at THIS hour
       if (!forceCheck) checkQuests.lastRunMap.set(guildHourKey, true);
       
@@ -84,24 +91,42 @@ export async function rotateGuildQuests(guildId, config, pool) {
     
     if (allQuests.length === 0) return;
     
-    // Shuffle logic with duplication prevention (don't repeat immediately previous quest IDs)
-    const lastIds = config.last_quest_ids || [];
-    let available = allQuests.filter(q => !lastIds.includes(q.id));
+    const lastIds = config.active_quest_ids || [];
+    let unusedPool = allQuests.filter(q => !lastIds.includes(q.id));
     
-    if (available.length < amount) {
-        available = allQuests;
-    }
-
-    // Fisher-Yates shuffle
-    for (let i = available.length - 1; i > 0; i--) {
+    // Shuffle the unused pool
+    for (let i = unusedPool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [available[i], available[j]] = [available[j], available[i]];
+        [unusedPool[i], unusedPool[j]] = [unusedPool[j], unusedPool[i]];
     }
 
-    const selectedIds = available.slice(0, amount).map(q => q.id);
+    let selectedIds = [];
+
+    // 1. Pick as many as possible from unused ones
+    selectedIds = unusedPool.slice(0, amount).map(q => q.id);
+
+    // 2. If we need more, pick from the previous ones (excluding what we just picked if somehow duplicated)
+    if (selectedIds.length < amount) {
+        let previousPool = allQuests.filter(q => lastIds.includes(q.id));
+        // Shuffle the previous pool too for variety
+        for (let i = previousPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [previousPool[i], previousPool[j]] = [previousPool[j], previousPool[i]];
+        }
+
+        const needed = amount - selectedIds.length;
+        const additional = previousPool.slice(0, needed).map(q => q.id);
+        selectedIds = [...selectedIds, ...additional];
+    }
     
+    // Final shuffle of the selected batch for UI variety
+    for (let i = selectedIds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [selectedIds[i], selectedIds[j]] = [selectedIds[j], selectedIds[i]];
+    }
+
     // Atomic Update to Guild Configuration
-    config.last_quest_ids = config.active_quest_ids || [];
+    config.last_quest_ids = lastIds;
     config.active_quest_ids = selectedIds;
     await setGuildConfig(guildId, config);
 
