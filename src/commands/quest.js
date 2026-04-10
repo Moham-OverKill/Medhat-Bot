@@ -45,9 +45,8 @@ export async function execute(interaction) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('🎯 Your Daily Quests')
-      .setColor('#F1C40F') // Gold
-      .setDescription('Track your progress below. Quests are tracked completely in the background!\n\n');
+      .setTitle('🎯 Current Quests')
+      .setColor('#F1C40F'); // Gold
 
     for (const questId of activeQuestIds) {
       const quest = await getQuest(questId);
