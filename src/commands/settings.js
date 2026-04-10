@@ -90,8 +90,8 @@ export async function showMainMenu(interaction) {
             .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('missions_dashboard')
-            .setLabel('Missions')
+            .setCustomId('quests_dashboard')
+            .setLabel('Quests')
             .setEmoji('🎯')
             .setStyle(ButtonStyle.Secondary)
     );
