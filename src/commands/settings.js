@@ -233,6 +233,12 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
+        if (customId.startsWith('rewards_')) {
+            const { handleRewardsComponent } = await import('./rewards.js');
+            await handleRewardsComponent(interaction);
+            return;
+        }
+
         if (customId.startsWith('colors_') || customId.startsWith('color_')) {
             await handleColorsComponent(interaction);
             return;
