@@ -176,7 +176,10 @@ export async function handleQuestInteraction(interaction) {
     const customId = interaction.customId;
     
     if (customId === 'quest_refresh') {
-        await renderQuests(interaction, 0); // Reset to first page on refresh? Or keep current?
+        // The Refresh button triggers a total re-render.
+        // renderQuests() always calls getGuildConfig(guildId) which performs a fresh DB query.
+        // This ensures the user sees new quests immediately after a rotation cycle.
+        await renderQuests(interaction, 0);
         return;
     }
     

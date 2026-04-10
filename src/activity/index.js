@@ -104,6 +104,13 @@ export async function initializeActivityTracking(discordClient) {
 
     const logPrefix = client.guilds.cache.first()?.name || 'System';
     console.log(`[${logPrefix}] Quests: Watch-mode active tracking ready (${activeQuestsCache.size} guilds warmed up).`);
+
+    // PERFORM INITIAL VOICE SWEEP (Fix for ghosting on startup)
+    const { syncVoicePresence } = await import('./tracker.js');
+    console.log('[System] [Presence Sweep] Performing initial voice sync for all guilds...');
+    for (const [id, guild] of client.guilds.cache) {
+      await syncVoicePresence(guild);
+    }
   } catch (err) {
     console.error('[Quests] Cache warmup failed:', err);
   }

@@ -157,8 +157,8 @@ export async function resetGuildQuestProgress(guildId) {
   const date = getTodayCairo();
   try {
     await pool.query(
-      'DELETE FROM quest_progress WHERE guild_id = $1 AND quest_date = $2',
-      [guildId, date]
+      'DELETE FROM quest_progress WHERE guild_id = $1',
+      [guildId]
     );
     return true;
   } catch (error) {
