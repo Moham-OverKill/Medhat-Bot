@@ -9,7 +9,6 @@ import {
 } from './tracker.js';
 import { cleanupExpiredItems } from '../economy/shop.js';
 import { sanitizeError } from '../shared.js';
-import { incrementProgressAndPayout, getQuests } from '../quests/quests.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getTodayCairo } from '../utils/time.js';
 
@@ -77,7 +76,7 @@ export async function initializeActivityTracking(discordClient) {
     allQuests.rows.forEach(q => questsById.set(q.id, q));
 
     // Map active quests per guild
-    const configResult = await pool.query(`SELECT guild_id, config FROM guild_configs WHERE (config->>'quests_enabled')::boolean = true AND config->>'active_quest_ids' IS NOT NULL`);
+    const configResult = await pool.query(`SELECT guild_id, config FROM guild_configs WHERE (config->>'quests_enabled')::boolean = true`);
     
     for (const row of configResult.rows) {
       const activeIds = row.config.active_quest_ids || [];
@@ -104,7 +103,7 @@ export async function initializeActivityTracking(discordClient) {
     }
 
     const logPrefix = client.guilds.cache.first()?.name || 'System';
-    console.log(`[${logPrefix}] Quests: Watch-mode active tracking ready.`);
+    console.log(`[${logPrefix}] Quests: Watch-mode active tracking ready (${activeQuestsCache.size} guilds warmed up).`);
   } catch (err) {
     console.error('[Quests] Cache warmup failed:', err);
   }
@@ -158,9 +157,6 @@ export function invalidateConfigCache(guildId) {
 export function isQuestChannel(guildId, channelId) {
   const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return false;
-  
-  // Note: This doesn't check parent IDs for threads to keep it extremely fast
-  // The main checkReactionQuest will handle formal parent validation if this passes
   return quests.some(q => q.channel_id === channelId);
 }
 
@@ -178,44 +174,49 @@ const MIN_MESSAGE_LENGTH = 5;
 async function checkQuestProgress(message) {
   const guildId = message.guild.id;
   const quests = activeQuestsCache.get(guildId);
+  
   if (!quests || quests.length === 0) return;
 
-  let actualChannelId = message.channel.id;
+  const actualChannelId = message.channel.id;
   let actualParentId = message.channel.parentId;
 
+  // Robust Parent ID fetching for threads
   if (!actualParentId && message.channel.isThread?.()) {
-    const cached = message.guild?.channels.cache.get(actualChannelId);
-    if (cached?.parentId) actualParentId = cached.parentId;
-    else {
-      try {
-        const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
-        if (fetched?.parentId) actualParentId = fetched.parentId;
-      } catch {}
+    actualParentId = message.channel.parentId; // Double check
+    if (!actualParentId) {
+       try {
+         const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
+         if (fetched?.parentId) actualParentId = fetched.parentId;
+       } catch {}
     }
   }
 
   const content = (message.content || '').trim();
   const hasAttachment = message.attachments.size > 0;
-  
   const userId = message.author.id;
   const cooldownKey = `${guildId}:${userId}`;
   let processedCooldown = false;
 
   for (const quest of quests) {
-    // Check channel match
-    if (quest.channel_id !== actualChannelId && quest.channel_id !== actualParentId) continue;
+    // 1. Channel Isolation & Container Matching (Threads/Posts/Normal)
+    const isChannelMatch = (quest.channel_id === actualChannelId || quest.channel_id === actualParentId);
+    if (!isChannelMatch) continue;
     
-    // Check completion cache
+    // 2. Completion Check
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
 
+    // 3. Action Type Check
     let qualifies = false;
-    if (quest.action_type === 'send_messages' && content.length >= MIN_MESSAGE_LENGTH) qualifies = true;
-    else if (quest.action_type === 'upload_images' && hasAttachment) qualifies = true;
+    if (quest.action_type === 'send_messages' && content.length >= MIN_MESSAGE_LENGTH) {
+        qualifies = true;
+    } else if (quest.action_type === 'upload_images' && hasAttachment) {
+        qualifies = true;
+    }
 
     if (!qualifies) continue;
 
-    // Apply anti-spam
+    // 4. Anti-Spam Cooldown
     if (!processedCooldown) {
       const now = Date.now();
       const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
@@ -224,13 +225,21 @@ async function checkQuestProgress(message) {
       processedCooldown = true;
     }
 
-    // Increment and Auto-Payout
-    const result = await incrementProgressAndPayout(guildId, userId, quest);
-    if (result.justCompleted) {
-      if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
-      const map = completedQuestsCache.get(guildId);
-      if (!map.has(quest.id)) map.set(quest.id, new Set());
-      map.get(quest.id).add(userId);
+    // 5. Atomic Update
+    try {
+        const { incrementProgressAndPayout } = await import('../quests/quests.js');
+        const result = await incrementProgressAndPayout(guildId, userId, quest);
+        
+        console.log(`[Quests Debug] Guild [${guildId}] User [${userId}] progressed quest [${quest.id}] (${quest.action_type})`);
+
+        if (result.justCompleted) {
+          if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
+          const map = completedQuestsCache.get(guildId);
+          if (!map.has(quest.id)) map.set(quest.id, new Set());
+          map.get(quest.id).add(userId);
+        }
+    } catch (e) {
+        console.error('[Quests Debug] Increment failed:', e);
     }
   }
 }
@@ -244,15 +253,21 @@ export async function syncQuestChannelCache(guildId) {
     if (!config?.quests_enabled || !config?.active_quest_ids) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
+      console.log(`[Quests Debug] Cleared cache for guild ${guildId} (Quests disabled or empty pool)`);
       return;
     }
 
     const { getQuests } = await import('../quests/quests.js');
     const allQuests = await getQuests(guildId);
     
+    // Strict Guild-Isolated ID Matching
     const activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
     activeQuestsCache.set(guildId, activeQuests);
-    completedQuestsCache.set(guildId, new Map()); // Wipe completions on new sync for the day
+    
+    // Reset completed state for today (or partial reload)
+    if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
+    
+    console.log(`[Quests Debug] Cache Sync: Guild ${guildId} now tracking ${activeQuests.length} quests.`);
   } catch (e) {
     console.error('[Quests] Cache sync failed:', e);
   }
@@ -268,7 +283,7 @@ export async function checkReactionQuest(reaction, user) {
   const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return;
 
-  let channelId = reaction.message.channelId;
+  const channelId = reaction.message.channelId;
   let parentId = reaction.message.channel?.parentId;
   
   if (!parentId && reaction.message.guild) {
@@ -291,12 +306,20 @@ export async function checkReactionQuest(reaction, user) {
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
 
-    const result = await incrementProgressAndPayout(guildId, userId, quest);
-    if (result.justCompleted) {
-      if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
-      const map = completedQuestsCache.get(guildId);
-      if (!map.has(quest.id)) map.set(quest.id, new Set());
-      map.get(quest.id).add(userId);
+    try {
+        const { incrementProgressAndPayout } = await import('../quests/quests.js');
+        const result = await incrementProgressAndPayout(guildId, userId, quest);
+        
+        console.log(`[Quests Debug] Guild [${guildId}] User [${userId}] reacted in [${channelId}] for quest [${quest.id}]`);
+
+        if (result.justCompleted) {
+          if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
+          const map = completedQuestsCache.get(guildId);
+          if (!map.has(quest.id)) map.set(quest.id, new Set());
+          map.get(quest.id).add(userId);
+        }
+    } catch (e) {
+        console.error('[Quests Debug] Reaction increment failed:', e);
     }
   }
 }
@@ -316,7 +339,9 @@ export async function checkVoiceQuest(guildId, userId, channelId, minutesAdded, 
       const guildCompletions = completedQuestsCache.get(guildId);
       if (guildCompletions?.get(quest.id)?.has(userId)) continue;
 
+      const { incrementProgressAndPayout } = await import('../quests/quests.js');
       const result = await incrementProgressAndPayout(guildId, userId, quest, minutesAdded);
+      
       if (result.justCompleted) {
         if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
         const map = completedQuestsCache.get(guildId);

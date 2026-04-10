@@ -23,6 +23,7 @@ import {
   formatQuestTask,
   formatCompactQuest
 } from '../quests/quests.js';
+import { syncQuestChannelCache } from '../activity/index.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
 const pendingQuestAdd = new Map();
@@ -504,6 +505,7 @@ export async function handleDeleteQuest(interaction, questId) {
   if (config.active_quest_ids && config.active_quest_ids.includes(questId)) {
     config.active_quest_ids = config.active_quest_ids.filter(id => id !== questId);
     await setGuildConfig(interaction.guildId, config);
+    await syncQuestChannelCache(interaction.guildId);
   }
 
   const success = await deleteQuest(questId);
@@ -525,6 +527,7 @@ export async function handleToggleQuests(interaction) {
   const config = await getGuildConfig(guildId) || {};
   config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
   await setGuildConfig(guildId, config);
+  await syncQuestChannelCache(guildId);
 
   await showQuestsDashboard(interaction);
 }
@@ -553,6 +556,7 @@ export async function handleQuestsComponent(interaction) {
   } else if (customId.startsWith('quests_select_')) {
     const questId = parseInt(customId.split('_').pop(), 10);
     await showQuestDetail(interaction, questId);
+    await syncQuestChannelCache(interaction.guildId);
   } else if (customId.startsWith('quests_edit_') && !customId.includes('modal')) {
     const questId = parseInt(customId.split('_').pop(), 10);
     await handleEditQuest(interaction, questId);
