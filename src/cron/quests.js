@@ -55,7 +55,7 @@ async function checkQuests(client, forceCheck = false) {
     if (!shouldRefresh) continue;
 
     try {
-      await refreshGuildQuests(guildId, config, pool);
+      await rotateGuildQuests(guildId, config, pool);
     } catch (err) {
       console.error(`[Quests] Auto-refresh failed for ${guildId}:`, err);
     }
@@ -72,7 +72,7 @@ function getCairoHour() {
     return parseInt(formatter.format(new Date()), 10) % 24;
 }
 
-export async function refreshGuildQuests(guildId, config, pool) {
+export async function rotateGuildQuests(guildId, config, pool) {
     const amount = parseInt(config.quests_per_refresh) || 1;
     const allQuests = await getQuests(guildId);
     
