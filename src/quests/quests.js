@@ -150,6 +150,24 @@ export async function getAllActiveProgress(guildId, userId, activeQuestIds) {
 }
 
 /**
+ * Reset all quest progress for a guild (used during rotation)
+ */
+export async function resetGuildQuestProgress(guildId) {
+  const pool = getPool();
+  const date = getTodayCairo();
+  try {
+    await pool.query(
+      'DELETE FROM quest_progress WHERE guild_id = $1 AND quest_date = $2',
+      [guildId, date]
+    );
+    return true;
+  } catch (error) {
+    console.error('[Quests] Failed to reset guild progress:', sanitizeError(error));
+    return false;
+  }
+}
+
+/**
  * Increment progress and securely auto-payout if completed.
  * active_tracking is always TRUE.
  */
