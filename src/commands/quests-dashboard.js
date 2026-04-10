@@ -58,12 +58,9 @@ export async function showQuestsDashboard(interaction) {
       : quests.map((m, i) => `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** coins`).join('\n');
 
     const embed = new EmbedBuilder()
-      .setTitle('🎯 Passive Quests Control Panel')
+      .setTitle('🎯 Quests Control Panel')
       .setColor(enabled ? '#2ECC71' : '#95A5A6')
       .setDescription(
-        `**Status:** ${enabled ? '✅ Passive Tracking Active' : '❌ Disabled'}\n` +
-        `**Refreshes:** \`${refreshes}x\` daily (Cairo Time)\n` +
-        `**Difficulty:** Pick \`${perRefresh}\` random quests from the pool each refresh.\n\n` +
         `**Current Pool (${quests.length}/10):**\n${questListText}`
       );
 
@@ -150,13 +147,7 @@ export async function showQuestsSchedule(interaction) {
 
     const embed = new EmbedBuilder()
         .setTitle('📅 Quest Rotation Schedule')
-        .setColor('#3498DB')
-        .setDescription(
-            `Configure how often quests rotate and how many are active at once.\n\n` +
-            `**Current Settings:**\n` +
-            `• Quests per Refresh: \`${perRefresh}\`\n` +
-            `• Refreshes per Day: \`${refreshes}x\``
-        );
+        .setColor('#3498DB');
 
     // Dropdown for Quests Per Refresh (1-10)
     const perRefreshMenu = new StringSelectMenuBuilder()
@@ -170,14 +161,13 @@ export async function showQuestsSchedule(interaction) {
             }))
         );
 
-    // Dropdown for Refreshes Per Day (1x-4x)
+    // Dropdown for Refreshes Per Day (1x, 2x, 4x)
     const refreshesMenu = new StringSelectMenuBuilder()
         .setCustomId('quests_setting_refreshes')
         .setPlaceholder('Refreshes per Day...')
         .addOptions([
             { label: '1x Daily (12 AM)', value: '1', default: refreshes === 1 },
             { label: '2x Daily (12 AM, 12 PM)', value: '2', default: refreshes === 2 },
-            { label: '3x Daily (12 AM, 8 AM, 4 PM)', value: '3', default: refreshes === 3 },
             { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', default: refreshes === 4 }
         ]);
 
