@@ -1074,12 +1074,12 @@ export async function scheduleCairoMidnightReset(client) {
     // 2. Rotate missions for all guilds
     try {
       const { loadGuildConfigs } = await import('../storage/config.js');
-      const { rotateGuildMission } = await import('../missions/missions.js');
+
       const configs = await loadGuildConfigs();
       
       for (const [guildId, config] of Object.entries(configs)) {
         if (config.missions_enabled) {
-          await rotateGuildMission(client, guildId);
+
         }
       }
     } catch (error) {

@@ -459,11 +459,24 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_audit_logs_guild_user ON audit_logs(guild_id, user_id);
     `);
 
-    // --- MISSIONS MODULE TABLES ---
+    // --- QUESTS MODULE TABLES (Formerly Missions) ---
 
-    // Table for mission pool (admin-configured, max 7 per guild)
+    // Migration for tracking table rename (done before CREATE TABLE)
+    try {
+      await pool.query(`ALTER TABLE IF EXISTS missions RENAME TO quests;`);
+      await pool.query(`ALTER INDEX IF EXISTS idx_missions_guild_id RENAME TO idx_quests_guild_id;`);
+      
+      await pool.query(`ALTER TABLE IF EXISTS mission_progress RENAME TO quest_progress;`);
+      await pool.query(`ALTER TABLE IF EXISTS quest_progress RENAME COLUMN mission_id TO quest_id;`);
+      await pool.query(`ALTER TABLE IF EXISTS quest_progress RENAME COLUMN mission_date TO quest_date;`);
+      await pool.query(`ALTER INDEX IF EXISTS idx_mission_progress_lookup RENAME TO idx_quest_progress_lookup;`);
+    } catch(e) {
+      // Ignored if already renamed or doesn't exist
+    }
+
+    // Table for quest pool (admin-configured, max 10 per guild)
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS missions (
+      CREATE TABLE IF NOT EXISTS quests (
         id SERIAL PRIMARY KEY,
         guild_id TEXT NOT NULL,
         channel_id TEXT NOT NULL,
@@ -476,36 +489,30 @@ async function createTables() {
     `);
 
     await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_missions_guild_id ON missions(guild_id);
+      CREATE INDEX IF NOT EXISTS idx_quests_guild_id ON quests(guild_id);
     `);
 
-    // Table for daily mission progress per user
+    // Table for daily quest progress per user
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS mission_progress (
+      CREATE TABLE IF NOT EXISTS quest_progress (
         id SERIAL PRIMARY KEY,
         guild_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
-        mission_id INTEGER REFERENCES missions(id) ON DELETE CASCADE,
-        mission_date DATE NOT NULL,
+        quest_id INTEGER REFERENCES quests(id) ON DELETE CASCADE,
+        quest_date DATE NOT NULL,
         progress INTEGER NOT NULL DEFAULT 0,
         completed BOOLEAN NOT NULL DEFAULT FALSE,
-        active_tracking BOOLEAN NOT NULL DEFAULT FALSE,
-        is_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+        active_tracking BOOLEAN NOT NULL DEFAULT TRUE,  -- Default to true, all are tracking passively
+        is_claimed BOOLEAN NOT NULL DEFAULT FALSE,    -- Still kept for safety but should be set to true at auto-claim
         completed_at TIMESTAMP WITH TIME ZONE,
-        UNIQUE(guild_id, user_id, mission_id, mission_date)
+        UNIQUE(guild_id, user_id, quest_id, quest_date)
       );
     `);
 
-    // Migration for existing tables
     await pool.query(`
-      ALTER TABLE mission_progress 
-      ADD COLUMN IF NOT EXISTS active_tracking BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS is_claimed BOOLEAN NOT NULL DEFAULT FALSE;
+      CREATE INDEX IF NOT EXISTS idx_quest_progress_lookup ON quest_progress(guild_id, user_id, quest_id, quest_date);
     `);
 
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_mission_progress_lookup ON mission_progress(guild_id, user_id, mission_id, mission_date);
-    `);
 
     // --- COLORS MODULE TABLES (Migrated from SQLite) ---
 

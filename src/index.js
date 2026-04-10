@@ -12,6 +12,7 @@ import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking, clearStaleVoiceTracking } from './activity/index.js';
 import { scheduleAllMvpTimers } from './mvp/award.js';
 import { startExpiryJob } from './cron/expiry.js';
+import { startQuestScheduler } from './cron/quests.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
 import { logSystemEvent } from './utils/logger.js';
@@ -222,6 +223,7 @@ client.once(Events.ClientReady, async () => {
 
     // Start background jobs
     startExpiryJob(client);
+    startQuestScheduler(client);
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
