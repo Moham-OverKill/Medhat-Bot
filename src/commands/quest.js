@@ -90,7 +90,7 @@ export async function renderQuests(interaction, page = 0) {
 
       const progress = await getProgress(guildId, user.id, quest.id);
       const currentCount = progress?.progress || 0;
-      const isCompleted = progress?.completed || false;
+      const isCompleted = progress?.completed || currentCount >= quest.required_count;
       
       if (isCompleted) completedCount++;
 
