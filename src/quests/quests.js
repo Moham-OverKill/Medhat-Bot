@@ -285,12 +285,26 @@ export function formatQuestTask(quest) {
   const count = quest.required_count;
   const type = quest.action_type;
 
-  if (type === 'send_messages') return { text: `Send **${count}** messages`, unit: 'Messages' };
-  if (type === 'voice_minutes') return { text: `Join for **${count}** minutes`, unit: 'Minutes' };
-  if (type === 'react_images') return { text: `React on **${count}** posts`, unit: 'Reactions' };
-  if (type === 'upload_images') return { text: `Upload **${count}** files`, unit: 'Uploads' };
+  if (type === 'send_messages') {
+    const unit = count === 1 ? 'Message' : 'Messages';
+    return { text: `Send **${count}** ${unit.toLowerCase()}`, unit };
+  }
+  if (type === 'voice_minutes') {
+    const unit = count === 1 ? 'Minute' : 'Minutes';
+    return { text: `Join for **${count}** ${unit.toLowerCase()}`, unit };
+  }
+  if (type === 'react_images') {
+    const unit = count === 1 ? 'Reaction' : 'Reactions';
+    const container = count === 1 ? 'post' : 'posts';
+    return { text: `React on **${count}** ${container}`, unit };
+  }
+  if (type === 'upload_images') {
+    const unit = count === 1 ? 'Upload' : 'Uploads';
+    const container = count === 1 ? 'file' : 'files';
+    return { text: `Upload **${count}** ${container}`, unit };
+  }
   
-  return { text: `${formatActionType(type)} × **${count}**`, unit: 'Actions' };
+  return { text: `${formatActionType(type)} × **${count}**`, unit: count === 1 ? 'Action' : 'Actions' };
 }
 
 /**
@@ -301,10 +315,22 @@ export function formatCompactQuest(quest) {
   const type = quest.action_type;
   const channel = `<#${quest.channel_id}>`;
 
-  if (type === 'send_messages') return `**Send ${count} messages in** ${channel}`;
-  if (type === 'voice_minutes') return `**Join** ${channel} **for ${count} minutes**`;
-  if (type === 'react_images') return `**React to ${count} posts in** ${channel}`;
-  if (type === 'upload_images') return `**Upload ${count} files in** ${channel}`;
+  if (type === 'send_messages') {
+    const unit = count === 1 ? 'message' : 'messages';
+    return `**Send ${count} ${unit} in** ${channel}`;
+  }
+  if (type === 'voice_minutes') {
+    const unit = count === 1 ? 'minute' : 'minutes';
+    return `**Join** ${channel} **for ${count} ${unit}**`;
+  }
+  if (type === 'react_images') {
+    const unit = count === 1 ? 'post' : 'posts';
+    return `**React to ${count} ${unit} in** ${channel}`;
+  }
+  if (type === 'upload_images') {
+    const unit = count === 1 ? 'file' : 'files';
+    return `**Upload ${count} ${unit} in** ${channel}`;
+  }
   
   return `**Complete ${formatActionType(type)} x${count} in** ${channel}`;
 }
