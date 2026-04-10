@@ -152,6 +152,18 @@ export function invalidateConfigCache(guildId) {
   invalidateTrackerCache(guildId);
 }
 
+/**
+ * Fast-check if a channel is active for quests
+ */
+export function isQuestChannel(guildId, channelId) {
+  const quests = activeQuestsCache.get(guildId);
+  if (!quests || quests.length === 0) return false;
+  
+  // Note: This doesn't check parent IDs for threads to keep it extremely fast
+  // The main checkReactionQuest will handle formal parent validation if this passes
+  return quests.some(q => q.channel_id === channelId);
+}
+
 // ============================================
 // QUEST PROGRESS TRACKING ENGINE
 // ============================================

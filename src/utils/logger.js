@@ -86,7 +86,7 @@ export async function sendLog(guild, category, colorKey, title, description) {
                 green: 0x2ECC71,    // Success / Purchase
                 red: 0xE74C3C,      // Failure / Delete
                 blue: 0x3498DB,     // Info / Move
-                gold: 0xF1C40F,     // MVP / Mission
+                gold: 0xF1C40F,     // MVP / Quest
                 orange: 0xE67E22,   // Rewards / Claims
                 purple: 0x9B59B6,   // Trades / P2P
                 cyan: 0x1ABC9C,     // Config / Settings
