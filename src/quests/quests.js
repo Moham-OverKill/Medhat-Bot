@@ -217,7 +217,7 @@ async function autoPayout(guildId, userId, quest) {
              const user = await client.users.fetch(userId).catch(()=>null);
              const tag = user ? user.tag : userId;
              sendLog(guild, 'economy', 'green', '✅ Quest Auto-Payout', 
-                `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` Coins`);
+                `**User:** `${tag}`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** `${quest.reward_coins}` Coins`);
         }
     }
   } catch (err) {
@@ -234,7 +234,7 @@ export function generateProgressBar(current, total, length = 10) {
   const filledCount = Math.min(length, Math.floor((current / total) * length));
   const emptyCount = length - filledCount;
   
-  return '▰'.repeat(filledCount) + '▱'.repeat(emptyCount) + \` \${percentage}%\`;
+  return '▰'.repeat(filledCount) + '▱'.repeat(emptyCount) + ` ${percentage}%`;
 }
 
 /**
@@ -244,7 +244,7 @@ export async function cleanupOldProgress() {
   const pool = getPool();
   try {
     await pool.query(
-      \`DELETE FROM quest_progress WHERE quest_date < CURRENT_DATE - INTERVAL '7 days'\`
+      `DELETE FROM quest_progress WHERE quest_date < CURRENT_DATE - INTERVAL '7 days'`
     );
   } catch (error) {
     console.error('[Quests] Progress cleanup error:', sanitizeError(error));
@@ -263,12 +263,12 @@ export function formatQuestTask(quest) {
   const count = quest.required_count;
   const type = quest.action_type;
 
-  if (type === 'send_messages') return { text: \`Send **\${count}** messages\`, unit: 'Messages' };
-  if (type === 'voice_minutes') return { text: \`Join for **\${count}** minutes\`, unit: 'Minutes' };
-  if (type === 'react_images') return { text: \`React on **\${count}** posts\`, unit: 'Reactions' };
-  if (type === 'upload_images') return { text: \`Upload **\${count}** files\`, unit: 'Uploads' };
+  if (type === 'send_messages') return { text: `Send **${count}** messages`, unit: 'Messages' };
+  if (type === 'voice_minutes') return { text: `Join for **${count}** minutes`, unit: 'Minutes' };
+  if (type === 'react_images') return { text: `React on **${count}** posts`, unit: 'Reactions' };
+  if (type === 'upload_images') return { text: `Upload **${count}** files`, unit: 'Uploads' };
   
-  return { text: \`\${formatActionType(type)} × **\${count}**\`, unit: 'Actions' };
+  return { text: `${formatActionType(type)} × **${count}**`, unit: 'Actions' };
 }
 
 /**
@@ -277,14 +277,14 @@ export function formatQuestTask(quest) {
 export function formatCompactQuest(quest) {
   const count = quest.required_count;
   const type = quest.action_type;
-  const channel = \`<#\${quest.channel_id}>\`;
+  const channel = `<#${quest.channel_id}>`;
 
-  if (type === 'send_messages') return \`**Send \${count} messages in** \${channel}\`;
-  if (type === 'voice_minutes') return \`**Join** \${channel} **for \${count} minutes**\`;
-  if (type === 'react_images') return \`**React to \${count} posts in** \${channel}\`;
-  if (type === 'upload_images') return \`**Upload \${count} files in** \${channel}\`;
+  if (type === 'send_messages') return `**Send ${count} messages in** ${channel}`;
+  if (type === 'voice_minutes') return `**Join** ${channel} **for ${count} minutes**`;
+  if (type === 'react_images') return `**React to ${count} posts in** ${channel}`;
+  if (type === 'upload_images') return `**Upload ${count} files in** ${channel}`;
   
-  return \`**Complete \${formatActionType(type)} x\${count} in** \${channel}\`;
+  return `**Complete ${formatActionType(type)} x${count} in** ${channel}`;
 }
 
 /**
