@@ -638,6 +638,37 @@ async function stopTrackingUser(pool, guildId, userId, guild, reason) {
 }
 
 /**
+ * Sync all voice users for a guild (Presence Sweep)
+ * Iterates all voice channels and initializes tracking for valid human members.
+ * Used on startup and after quest rotation to prevent 'ghosting'.
+ */
+export async function syncVoicePresence(guild) {
+  if (!guild) return;
+
+  try {
+    const channels = guild.channels.cache.filter(c => c.isVoiceBased());
+    let syncedCount = 0;
+
+    for (const [id, channel] of channels) {
+      const humanMembers = channel.members.filter(m => !m.user.bot);
+      
+      for (const [memberId, member] of humanMembers) {
+        if (isVoiceStateValid(member.voice)) {
+          await startVoiceTracking(guild, memberId, member.user.username);
+          syncedCount++;
+        }
+      }
+    }
+
+    if (syncedCount > 0) {
+        console.log(`[${guild.name}] [Presence Sweep] Initialized tracking for ${syncedCount} active voice users.`);
+    }
+  } catch (error) {
+    console.error(`[${guild.name}] [Presence Sweep] Failed:`, error);
+  }
+}
+
+/**
  * Flush all voice time for a guild (used before MVP award or when stopping)
  * Awards any pending points and saves remaining buffer
  */
