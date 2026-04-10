@@ -39,7 +39,6 @@ async function checkQuests(client, forceCheck = false) {
     
     let shouldRefresh = false;
     if (refreshes === 4 && [0, 6, 12, 18].includes(cairoHour)) shouldRefresh = true;
-    else if (refreshes === 3 && [0, 8, 16].includes(cairoHour)) shouldRefresh = true;
     else if (refreshes === 2 && [0, 12].includes(cairoHour)) shouldRefresh = true;
     else if (refreshes === 1 && cairoHour === 0) shouldRefresh = true;
 

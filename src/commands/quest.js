@@ -22,7 +22,21 @@ export async function execute(interaction) {
       });
     }
 
-    const activeQuestIds = config.active_quest_ids || [];
+    let activeQuestIds = config.active_quest_ids || [];
+    
+    // BUG FIX: If pool has quests but active list is empty (e.g. brand new setup),
+    // immediately trigger a rotation so users don't see an empty list.
+    if (activeQuestIds.length === 0) {
+      const { getQuests } = await import('../quests/quests.js');
+      const poolQuests = await getQuests(guildId);
+      
+      if (poolQuests.length > 0) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        await rotateGuildQuests(guildId, config, null);
+        activeQuestIds = config.active_quest_ids || [];
+      }
+    }
+
     if (activeQuestIds.length === 0) {
       return interaction.reply({
         content: '📝 There are currently no active quests. Please check back later!',
