@@ -75,6 +75,7 @@ import {
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
 import { handleQuestsComponent, handleQuestsModal } from '../commands/quests-dashboard.js';
+import { handleQuestInteraction } from '../commands/quest.js';
 import {
   handleMassSelect,
   handleMassCreateStart,
@@ -369,6 +370,8 @@ export function setupComponentHandlers(client) {
         }
       } else if (customId.startsWith('color_')) {
         await handleColorButton(interaction);
+      } else if (customId.startsWith('quest_')) {
+        await handleQuestInteraction(interaction);
       } else if (interaction.customId.startsWith('trade_')) {
         if (customId.startsWith('trade_setup_')) {
           await handleTradeSetupInteraction(interaction);
