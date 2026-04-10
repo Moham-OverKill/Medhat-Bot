@@ -217,7 +217,7 @@ async function autoPayout(guildId, userId, quest) {
              const user = await client.users.fetch(userId).catch(()=>null);
              const tag = user ? user.tag : userId;
              sendLog(guild, 'economy', 'green', '✅ Quest Auto-Payout', 
-                `**User:** `${tag}`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** `${quest.reward_coins}` Coins`);
+                `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` Coins`);
         }
     }
   } catch (err) {
