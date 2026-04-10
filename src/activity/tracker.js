@@ -1,5 +1,6 @@
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
+import { logServerError } from '../utils/logger.js';
 
 // ============================================
 // TEXT CHAT: ANTI-SPAM CONFIGURATION
