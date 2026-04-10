@@ -27,9 +27,9 @@ function getDatabaseConfig() {
       ssl: isInternal ? false : {
         rejectUnauthorized: false
       },
-      connectionTimeoutMillis: 30000, // 30s is more than enough
-      idleTimeoutMillis: 15000,       // Release idle clients much faster
-      max: 20,                        // Expand pool to handle high activity
+      connectionTimeoutMillis: 30000,
+      idleTimeoutMillis: 15000,
+      max: 20,
       min: 2,
       application_name: 'mvp-bot-railway',
       keepAlive: true,
