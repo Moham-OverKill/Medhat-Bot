@@ -150,7 +150,7 @@ export async function showRewardsSubMenu(interaction) {
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
-            .setLabel('Back')
+            .setLabel('Back to Settings')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );

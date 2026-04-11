@@ -77,7 +77,7 @@ async function getRewardsPayload(guildId) {
 
   // Row 3: Navigation
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('settings_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('settings_home').setLabel('Back to Settings').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };
