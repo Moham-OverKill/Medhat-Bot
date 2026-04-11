@@ -12,7 +12,7 @@ import {
   TextInputBuilder,
   TextInputStyle
 } from 'discord.js';
-import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
+import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { scheduleMvpTimer, cancelMvpTimer, getScheduleIntervalMs } from '../mvp/award.js';
 import { invalidateConfigCache } from '../activity/index.js';
@@ -234,22 +234,21 @@ export async function showSetupPanel(interaction, config) {
   const canEnableAuto = canRun; // Same requirement now
   const isConfigured = canRun;
 
-  // Build status line
+  // Build status overview
   const statusEmoji = config.enabled ? '🟢' : '🔴';
-  const statusText = config.enabled ? 'Auto' : 'Manual';
-  const nextCheckValue = config.enabled ? `in ${nextCheckText.replace('<t:', '').split(':R>')[0]}` : '—'; // Extract relative time if possible or keep simple
-
-  // Cleaner description with single-line status
-  const description = [
-    'Manage the daily MVP selection and automation.',
-    '',
-    `${statusEmoji} **Status:** ${statusText} • ⏳ **Next Award:** ${nextCheckText}`
-  ].join('\n');
+  const statusText = config.enabled ? 'Auto / Enabled' : 'Manual / Disabled';
+  const rewardAmount = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
+  const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
   const embed = new EmbedBuilder()
     .setTitle('🏆 MVP System Status')
-    .setDescription(description)
-    .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000));
+    .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
+    .addFields(
+        { name: 'Status', value: `${statusEmoji} ${statusText}`, inline: true },
+        { name: 'Next Award', value: `⏳ ${nextCheckText}`, inline: true },
+        { name: 'Role', value: `👤 ${roleMention}`, inline: true },
+        { name: 'Reward', value: `${COIN_EMOJI} **${rewardAmount.toLocaleString()}** coins`, inline: true }
+    );
 
   // If not configured, show warning message
   if (!canRun) {
@@ -297,13 +296,20 @@ export async function showSetupPanel(interaction, config) {
     .addComponents(
       new ButtonBuilder()
         .setCustomId('mvp_stats_leaderboard')
-        .setLabel('📊 Progress')
+        .setLabel('Progress')
+        .setEmoji('📊')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('rewards_mvp_btn')
+        .setLabel('Reward')
+        .setEmoji('<:OK_COIN:1490666813501997076>')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('mvp_toggle')
-        .setLabel(config.enabled ? '⏹️ Turn Off' : '▶️ Turn On')
+        .setLabel(config.enabled ? 'Turn Off' : 'Turn On')
+        .setEmoji(config.enabled ? '⏹️' : '▶️')
         .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-        .setDisabled(!canEnableAuto && !config.enabled) // Can always turn OFF, need config to turn ON
+        .setDisabled(!canEnableAuto && !config.enabled)
     );
 
   const backRow = new ActionRowBuilder()
@@ -366,6 +372,19 @@ export async function handleMvpComponent(interaction) {
 
       case 'mvp_toggle':
         await handleToggle(interaction, config);
+        break;
+
+      case 'rewards_mvp_btn':
+        const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
+        const input = new TextInputBuilder()
+          .setCustomId('amount')
+          .setLabel('Amount')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('100')
+          .setValue(String(config.mvpRewardAmount || 100))
+          .setRequired(false);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await interaction.showModal(modal);
         break;
 
       case 'mvp_back':
