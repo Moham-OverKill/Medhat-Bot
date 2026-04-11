@@ -1042,9 +1042,10 @@ async function awardCoinReward(guildId, userId, amount, guildName) {
     );
 
     await client.query('COMMIT');
-    console.log(`${tag} Awarded ${amount} coins to user ${userId}`);
+    console.log(`${tag} [Reward Success] Awarded ${amount} coins to ${userId} (New Balance: ${newBalance.toLocaleString()})`);
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK');
+    console.error(`${tag} [Reward Failure] Failed to payout MVP coins to ${userId}:`, sanitizeError(error));
     throw error;
   } finally {
     client.release();

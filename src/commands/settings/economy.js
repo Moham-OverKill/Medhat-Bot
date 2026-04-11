@@ -110,7 +110,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'daily', 'quest_reward', 'admin_grant')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY user_id
             ORDER BY earned DESC
@@ -147,27 +147,37 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'daily', 'quest_reward', 'admin_grant')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY type
             ORDER BY total DESC
         `, [guildId]);
 
         const typesToDisplay = [
-            { id: 'mvp_reward', label: 'MVP Rewards' },
-            { id: 'daily', label: 'Daily Claims' },
-            { id: 'quest_reward', label: 'Quest Rewards' },
-            { id: 'admin_grant', label: 'Admin Grants' }
+            { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
+            { id: 'daily', aliases: [], label: 'Daily Claims' },
+            { id: 'quest_reward', aliases: ['mission_reward'], label: 'Quest Rewards' },
+            { id: 'admin_grant', aliases: [], label: 'Admin Grants' }
         ];
 
-        const typeTotals = {};
+        const rawTotals = {};
         for (const row of breakdownRes.rows) {
-            typeTotals[row.type] = parseInt(row.total, 10);
+            rawTotals[row.type] = parseInt(row.total, 10);
+        }
+
+        // Aggregate aliases (e.g. mission_reward + quest_reward)
+        const aggregatedTotals = {};
+        for (const t of typesToDisplay) {
+            let sum = rawTotals[t.id] || 0;
+            for (const alias of t.aliases) {
+                sum += rawTotals[alias] || 0;
+            }
+            aggregatedTotals[t.id] = sum;
         }
 
         let breakdownStr = '';
         for (const t of typesToDisplay) {
-            const amt = typeTotals[t.id] || 0;
+            const amt = aggregatedTotals[t.id] || 0;
             const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
             breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${COIN_EMOJI} (${percent}%)\n`;
         }
