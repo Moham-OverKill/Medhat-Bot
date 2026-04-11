@@ -113,7 +113,7 @@ export async function showQuestsDashboard(interaction) {
     // Row 4: Back
     const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('settings_home')
+        .setCustomId('settings_rewards_menu')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)

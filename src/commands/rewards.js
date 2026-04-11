@@ -52,7 +52,7 @@ async function getRewardsPayload(guildId) {
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
-    .setTitle('💰 Rewards Configuration')
+    .setTitle('🪙 Coins Configuration')
     .setColor('#F1C40F')
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
@@ -69,16 +69,15 @@ async function getRewardsPayload(guildId) {
     new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆')
   );
 
-  // Row 2: Bottom 3 (Bonus, Cap, Give)
+  // Row 2: Bottom 2 (Bonus, Cap) - Removed Give Coins (moved to Rewards menu)
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥'),
-    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️'),
-    new ButtonBuilder().setCustomId('rewards_give_btn').setLabel('Give Coins').setStyle(ButtonStyle.Success).setEmoji('💸')
+    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️')
   );
 
-  // Row 3: Admin Actions (Missions moved to main menu)
+  // Row 3: Navigation
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('settings_back').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('settings_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };
@@ -87,8 +86,6 @@ async function getRewardsPayload(guildId) {
 export async function handleRewardsSetup(interaction) {
   try {
     const payload = await getRewardsPayload(interaction.guildId);
-
-
 
     // Handle different interaction states
     if (interaction.deferred || interaction.replied) {
@@ -197,7 +194,7 @@ export async function handleRewardsComponent(interaction) {
 
       const row = new ActionRowBuilder().addComponents(userSelect);
       const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('rewards_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('settings_rewards_menu').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
 
       await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
