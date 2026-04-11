@@ -78,7 +78,7 @@ export async function handleLogsSettings(interaction) {
     const disableButton = new ButtonBuilder()
         .setCustomId('logs_disable_all')
         .setLabel('Disable All Logs')
-        .setEmoji('🚫')
+        .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger);
 
     const row1 = new ActionRowBuilder().addComponents(ecoSelect);
