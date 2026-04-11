@@ -52,21 +52,19 @@ async function getRewardsPayload(guildId) {
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
-    .setTitle('🪙 Coins Configuration')
+    .setTitle(`${COIN_EMOJI} Coins Configuration`)
     .setColor('#F1C40F')
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
       { name: 'Boost Mult', value: boosterText, inline: true },
-      { name: 'MVP Reward', value: mvpText, inline: true },
       { name: 'Streak Bonus', value: streakText, inline: true },
       { name: 'Streak Cap', value: capText, inline: true }
     );
 
-  // Row 1: Top 3 (Base, Booster, MVP)
+  // Row 1: Config Buttons
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
-    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀'),
-    new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆')
+    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀')
   );
 
   // Row 2: Bottom 2 (Bonus, Cap) - Removed Give Coins (moved to Rewards menu)
@@ -255,8 +253,8 @@ export async function handleRewardsModal(interaction) {
         `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
     );
 
-    const payload = await getRewardsPayload(interaction.guildId);
-    await interaction.update(payload);
+    const { showSetupPanel: showMvpPanel } = await import('./mvp.js');
+    await showMvpPanel(interaction, config);
   }
   else if (customId === 'rewards_booster_modal') {
     const inputVal = interaction.fields.getTextInputValue('multiplier');
