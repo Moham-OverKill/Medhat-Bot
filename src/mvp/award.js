@@ -1099,7 +1099,7 @@ export async function resetCairoStaleStreaks(guildId = null) {
       UPDATE user_balances
       SET last_lost_streak = daily_streak
       WHERE last_daily IS NOT NULL 
-        AND date(last_daily AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Cairo') < $1::date
+        AND (last_daily AT TIME ZONE 'Africa/Cairo')::date < $1::date
         AND daily_streak > 0
         ${whereClause}
     `, params);
@@ -1109,14 +1109,16 @@ export async function resetCairoStaleStreaks(guildId = null) {
       UPDATE user_balances 
       SET daily_streak = 0 
       WHERE last_daily IS NOT NULL 
-        AND date(last_daily AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Cairo') < $1::date
+        AND (last_daily AT TIME ZONE 'Africa/Cairo')::date < $1::date
         AND daily_streak > 0
         ${whereClause}
     `, params);
 
     if (result.rowCount > 0) {
       const scope = guildId ? `for guild ${guildId}` : 'globally';
-      console.log(`[System] Reset ${result.rowCount} expired streaks ${scope}`);
+      console.log(`[System] Reset ${result.rowCount} expired streaks ${scope} (Last claim before Cairo Date: ${yesterday})`);
+    } else {
+      console.log(`[System] Streak check complete ${guildId ? `for ${guildId}` : 'globally'} - No expired streaks found.`);
     }
   } catch (error) {
     console.error('[System] Streak reset error:', sanitizeError(error));

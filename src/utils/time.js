@@ -54,11 +54,30 @@ export function getTodayCairo() {
 
 /**
  * Get yesterday's date string in Cairo timezone
+ * Hardened: Uses component-based subtraction to handle DST transitions
  */
 export function getYesterdayCairo() {
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  return getCairoDateString(yesterday);
+  
+  // Get Cairo components for "now"
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric', month: 'numeric', day: 'numeric'
+  });
+  const parts = formatter.formatToParts(now);
+  const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
+  
+  // Create a UTC date that HAS the same Y/M/D as Cairo Today
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  
+  const cairoTodayAsUtc = new Date(Date.UTC(year, month - 1, day));
+  // Subtract 1 day from the UTC instance
+  const cairoYesterdayAsUtc = new Date(cairoTodayAsUtc.getTime() - 24 * 60 * 60 * 1000);
+  
+  // Format that UTC date (which now has Cairo's yesterday Y/M/D)
+  return `${cairoYesterdayAsUtc.getUTCFullYear()}-${String(cairoYesterdayAsUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(cairoYesterdayAsUtc.getUTCDate()).padStart(2, '0')}`;
 }
 
 /**
