@@ -242,9 +242,9 @@ export async function handleRewardsModal(interaction) {
 
   if (customId === 'rewards_mvp_modal') {
     const inputVal = interaction.fields.getTextInputValue('amount');
-    const amount = inputVal ? parseInt(inputVal, 10) : 0;
+    const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 100;
 
-    if (inputVal && (isNaN(amount) || amount < 0)) {
+    if (inputVal && isNaN(amount)) {
       return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
     }
     config.mvpRewardAmount = amount;
@@ -263,10 +263,10 @@ export async function handleRewardsModal(interaction) {
   }
   else if (customId === 'rewards_booster_modal') {
     const inputVal = interaction.fields.getTextInputValue('multiplier');
-    const mult = inputVal ? parseFloat(inputVal) : 0;
+    const mult = inputVal ? Math.max(0, parseFloat(inputVal)) : 2.0;
 
-    if (inputVal && (isNaN(mult) || mult < 0)) {
-      return interaction.reply({ content: '❌ Invalid multiplier. Must be >= 0.', flags: MessageFlags.Ephemeral });
+    if (inputVal && isNaN(mult)) {
+      return interaction.reply({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
     }
     config.booster_multiplier = mult;
     await setGuildConfig(guildId, config);
@@ -284,9 +284,9 @@ export async function handleRewardsModal(interaction) {
   }
   else if (customId === 'rewards_streak_modal') {
     const inputVal = interaction.fields.getTextInputValue('amount');
-    const amount = inputVal ? parseInt(inputVal, 10) : 0;
+    const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 5;
 
-    if (inputVal && (isNaN(amount) || amount < 0)) {
+    if (inputVal && isNaN(amount)) {
       return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
     }
     config.daily_streak_bonus = amount;
@@ -305,9 +305,9 @@ export async function handleRewardsModal(interaction) {
   }
   else if (customId === 'rewards_daily_base_modal') {
     const inputVal = interaction.fields.getTextInputValue('amount');
-    const amount = inputVal ? parseInt(inputVal, 10) : 0;
+    const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 25;
 
-    if (inputVal && (isNaN(amount) || amount < 0)) {
+    if (inputVal && isNaN(amount)) {
       return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
     }
     config.daily_base_reward = amount;
@@ -325,7 +325,7 @@ export async function handleRewardsModal(interaction) {
   }
   else if (customId === 'rewards_streak_cap_modal') {
     const inputVal = interaction.fields.getTextInputValue('cap');
-    const cap = inputVal ? parseInt(inputVal, 10) : 20;
+    const cap = inputVal ? Math.max(1, parseInt(inputVal, 10)) : 30;
 
     if (inputVal && (isNaN(cap) || cap < 1)) {
       return interaction.reply({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
