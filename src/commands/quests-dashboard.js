@@ -95,7 +95,7 @@ export async function showQuestsDashboard(interaction) {
       new ButtonBuilder()
         .setCustomId('quests_toggle')
         .setLabel(enabled ? 'Disable' : 'Enable')
-        .setEmoji(enabled ? '✖️' : '✅')
+        .setEmoji(enabled ? '✖️' : '▶️')
         .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId('quests_add_start')

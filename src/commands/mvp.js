@@ -306,7 +306,7 @@ export async function showSetupPanel(interaction, config) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('mvp_toggle')
-        .setLabel(config.enabled ? 'Turn Off' : 'Turn On')
+        .setLabel(config.enabled ? 'Disable' : 'Enable')
         .setEmoji(config.enabled ? '✖️' : '▶️')
         .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
         .setDisabled(!canEnableAuto && !config.enabled)
