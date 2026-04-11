@@ -248,7 +248,7 @@ function buildControlPanelComponents() {
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
-      .setLabel('Back')
+      .setLabel('Back to Settings')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );

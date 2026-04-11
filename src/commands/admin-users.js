@@ -35,7 +35,7 @@ export async function showUserSelector(interaction) {
     const backRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_back')
-            .setLabel('Back')
+            .setLabel('Back to Settings')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -120,7 +120,7 @@ export async function showUserDashboard(interaction, targetUserId) {
         const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('settings_back')
-                .setLabel('Back')
+                .setLabel('Back to Settings')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary)
         );

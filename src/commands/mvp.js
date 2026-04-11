@@ -300,7 +300,7 @@ export async function showSetupPanel(interaction, config) {
         .setEmoji('📊')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId('rewards_mvp_btn')
+        .setCustomId('mvp_reward_config_btn')
         .setLabel('Reward')
         .setEmoji('<:OK_COIN:1490666813501997076>')
         .setStyle(ButtonStyle.Secondary),
@@ -374,7 +374,7 @@ export async function handleMvpComponent(interaction) {
         await handleToggle(interaction, config);
         break;
 
-      case 'rewards_mvp_btn':
+      case 'mvp_reward_config_btn':
         const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
         const input = new TextInputBuilder()
           .setCustomId('amount')
