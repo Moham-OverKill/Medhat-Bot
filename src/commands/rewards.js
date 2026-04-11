@@ -57,8 +57,10 @@ async function getRewardsPayload(guildId) {
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
       { name: 'Boost Mult', value: boosterText, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true }, // Spacer to force 2x2 grid
       { name: 'Streak Bonus', value: streakText, inline: true },
-      { name: 'Streak Cap', value: capText, inline: true }
+      { name: 'Streak Cap', value: capText, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true }  // Spacer
     );
 
   // Row 1: Config Buttons
