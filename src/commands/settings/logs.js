@@ -73,6 +73,7 @@ export async function handleLogsSettings(interaction) {
     const backButton = new ButtonBuilder()
         .setCustomId('settings_home')
         .setLabel('Back to Settings')
+        .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary);
 
     const disableButton = new ButtonBuilder()
