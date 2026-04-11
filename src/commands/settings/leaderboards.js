@@ -78,7 +78,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null) 
             const disableButton = new ButtonBuilder()
                 .setCustomId(`lb_disable_${active.id}`)
                 .setLabel(`Disable ${active.name.split(' ').pop()}`)
-                .setEmoji('🚫')
+                .setEmoji('✖️')
                 .setStyle(ButtonStyle.Danger)
                 .setDisabled(!chan);
 
