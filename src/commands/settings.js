@@ -58,7 +58,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors, Rewards, MVP
+    // Row 1: Colors, Coins, Rewards (NEW Layout)
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -66,18 +66,18 @@ export async function showMainMenu(interaction) {
             .setEmoji('🎨')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_rewards')
-            .setLabel('Rewards')
-            .setEmoji('🎁')
+            .setCustomId('settings_coins')
+            .setLabel('Coins')
+            .setEmoji('🪙')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_mvp')
-            .setLabel('MVP')
-            .setEmoji('🏆')
+            .setCustomId('settings_rewards_menu')
+            .setLabel('Rewards')
+            .setEmoji('🎁')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Shop, Leaderboard, Missions
+    // Row 2: Shop, Leaderboard, Users
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_shop')
@@ -90,19 +90,14 @@ export async function showMainMenu(interaction) {
             .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('quests_dashboard')
-            .setLabel('Quests')
-            .setEmoji('🎯')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Users, Logs, Economy
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
             .setCustomId('settings_users')
             .setLabel('Users')
             .setEmoji('👥')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Logs, Economy
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_logs')
             .setLabel('Logs')
@@ -126,6 +121,48 @@ export async function showMainMenu(interaction) {
 }
 
 /**
+ * Show the special Rewards Sub-Menu (Nested Hierarchy)
+ */
+export async function showRewardsSubMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🎁 Rewards Modules')
+        .setDescription('Manage your server\'s reward systems and events.')
+        .setColor(0x2F3136);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_mvp')
+            .setLabel('MVP')
+            .setEmoji('🏆')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('quests_dashboard')
+            .setLabel('Quests')
+            .setEmoji('🎯')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('rewards_give_btn')
+            .setLabel('Give Coins')
+            .setEmoji('💸')
+            .setStyle(ButtonStyle.Success)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
  * Handle settings component interactions (navigation)
  */
 export async function handleSettingsComponent(interaction) {
@@ -138,7 +175,17 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        // Navigation to modules
+        // Navigation to main modules
+        if (customId === 'settings_rewards_menu') {
+            await showRewardsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_coins') {
+            await showRewardsPanel(interaction);
+            return;
+        }
+
         if (customId === 'settings_mvp') {
             const guildId = interaction.guildId;
             let config = await getGuildConfig(guildId);
@@ -152,11 +199,6 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_shop') {
             await showShopPanel(interaction);
-            return;
-        }
-
-        if (customId === 'settings_rewards') {
-            await showRewardsPanel(interaction);
             return;
         }
 
@@ -185,6 +227,12 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_economy' || customId.startsWith('economy_')) {
             const { handleEconomySettings } = await import('./settings/economy.js');
             await handleEconomySettings(interaction);
+            return;
+        }
+
+        if (customId === 'quests_dashboard' || customId.startsWith('quests_')) {
+            const { handleQuestsComponent } = await import('./quests-dashboard.js');
+            await handleQuestsComponent(interaction);
             return;
         }
 
@@ -233,7 +281,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('rewards_')) {
+        if (customId === 'rewards_give_btn' || customId.startsWith('rewards_')) {
             const { handleRewardsComponent } = await import('./rewards.js');
             await handleRewardsComponent(interaction);
             return;
