@@ -68,7 +68,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_coins')
             .setLabel('Coins')
-            .setEmoji('🪙')
+            .setEmoji('<:OK_COIN:1490666813501997076>')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_rewards_menu')
@@ -77,7 +77,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Shop, Leaderboard, Users
+    // Row 2: Shop, Leaderboard, Logs
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_shop')
@@ -90,18 +90,18 @@ export async function showMainMenu(interaction) {
             .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_users')
-            .setLabel('Users')
-            .setEmoji('👥')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Logs, Economy
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
             .setCustomId('settings_logs')
             .setLabel('Logs')
             .setEmoji('📜')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Users, Economy
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_users')
+            .setLabel('Users')
+            .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_economy')
