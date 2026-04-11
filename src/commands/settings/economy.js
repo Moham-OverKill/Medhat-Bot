@@ -52,46 +52,45 @@ async function showEconomyDashboard(interaction, view) {
         // --- SMART PRICING VIEW ---
         const config = await getGuildConfig(guildId) || {};
         
-        // Settings Variables
+        // Settings Variables - Synced with Rewards Dashboard
         const streakBonus = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
         const mvpReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
-        const boosterMult = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2;
-        const clampedBooster = Math.min(boosterMult, 5); // Runtime cap is 5x max
-        const maxStreakDays = 10; // Hardcoded in service.js
-        const baseDaily = 25; // Hardcoded in service.js
+        const boosterMult = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2.0;
+        const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 30;
+        const baseDaily = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
 
-        // Fetch Average Mission Reward (from current active pool)
-        const missionRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM missions WHERE guild_id = $1`, [guildId]);
-        const avgMission = parseInt(missionRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero missions
+        // Fetch Average Quest Reward (from current active pool)
+        const questRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM quests WHERE guild_id = $1`, [guildId]);
+        const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
 
-        // 1. Casual User (Base Daily + 1 Average Mission)
-        const casualIncome = baseDaily + avgMission;
+        // 1. Casual User (Base Daily + 1 Average Quest)
+        const casualIncome = baseDaily + avgQuest;
 
-        // 2. Grinder User (Max Daily w/ Booster + 3 Missions + Weekly MVP / 7)
-        const grinderDailyMax = baseDaily + (streakBonus * maxStreakDays);
-        const grinderDailyBoosted = Math.floor(grinderDailyMax * clampedBooster);
-        const grinderIncome = grinderDailyBoosted + (avgMission * 3) + Math.floor(mvpReward / 7);
+        // 2. Grinder User (Max Daily w/ Booster + 2 Quests [Common for 2-4 refreshes] + Weekly MVP share)
+        const grinderDailyMax = baseDaily + (streakBonus * streakCap);
+        const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
+        const grinderIncome = grinderDailyBoosted + (avgQuest * 2) + Math.floor(mvpReward / 7);
 
-        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your config values (MVP - Streak - Booster Multipliers - Mission Rewards).')
+        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your live config values (MVP - Streak - Booster Multipliers - Quest Rewards).')
         embed.addFields(
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Active User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
                 inline: false
             },
             {
                 name: '🟢 Common Items (2 Days Work)',
-                value: `🔹 **Active User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
                 name: '🔵 Rare Items (1 Week Work)',
-                value: `🔹 **Active User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
                 name: '🟡 Legendary Items (1 Month Work)',
-                value: `🔹 **Active User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             }
         );
@@ -111,7 +110,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_bonus', 'daily', 'mission_reward')
+              AND type IN ('mvp_reward', 'daily', 'quest_reward', 'admin_grant')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY user_id
             ORDER BY earned DESC
@@ -148,16 +147,17 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_bonus', 'daily', 'mission_reward')
+              AND type IN ('mvp_reward', 'daily', 'quest_reward', 'admin_grant')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY type
             ORDER BY total DESC
         `, [guildId]);
 
         const typesToDisplay = [
-            { id: 'mvp_bonus', label: 'Mvp Bonus' },
-            { id: 'daily', label: 'Daily' },
-            { id: 'mission_reward', label: 'Mission Reward' }
+            { id: 'mvp_reward', label: 'MVP Rewards' },
+            { id: 'daily', label: 'Daily Claims' },
+            { id: 'quest_reward', label: 'Quest Rewards' },
+            { id: 'admin_grant', label: 'Admin Grants' }
         ];
 
         const typeTotals = {};
@@ -171,6 +171,7 @@ async function showEconomyDashboard(interaction, view) {
             const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
             breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${COIN_EMOJI} (${percent}%)\n`;
         }
+
 
         const periodLabel = view === 'day' ? 'Daily' : view === 'week' ? 'Weekly' : 'Monthly';
 
