@@ -438,11 +438,18 @@ async function createTables() {
       // Prerequisite System: Store array of shop item IDs that must be owned before purchase/equip
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS required_items JSONB DEFAULT '[]'::jsonb`);
       
-      // Data Integrity: Add unique constraint to prevent duplicate roles
-      await pool.query(`ALTER TABLE shop_items ADD CONSTRAINT unique_shop_item_role UNIQUE(guild_id, role_id)`);
+      // Data Integrity: Add unique constraint to prevent duplicate roles (Idempotent check)
+      await pool.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_shop_item_role') THEN 
+            ALTER TABLE shop_items ADD CONSTRAINT unique_shop_item_role UNIQUE(guild_id, role_id);
+          END IF; 
+        END $$;
+      `);
 
     } catch (e) {
-      console.error('Migration error (harmless if columns exist):', e.message);
+      console.warn('[System] Migration status (harmless if already exists):', e.message);
     }
 
     // Table for audit logs
