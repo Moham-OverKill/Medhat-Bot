@@ -2255,9 +2255,12 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       const allItems = await getShopItems(interaction.guildId, null, 'name', true);
       const reqDisplays = reqItems
         .map(id => {
-            // Check for Booster Marker
+            // Check for Booster & MVP Markers
             if (typeof id === 'string' && id.startsWith('booster:')) {
               return '🚀 **Server Booster**';
+            }
+            if (typeof id === 'string' && id.startsWith('mvp:')) {
+              return '🏆 **Active Server MVP**';
             }
             const match = allItems.find(i => i.id === id);
             if (!match || !match.role_id) return null;
@@ -2356,7 +2359,7 @@ export async function handleEditItemDetails(interaction) {
     if (reqItems && Array.isArray(reqItems) && reqItems.length > 0) {
       const allItems = await getShopItems(interaction.guildId, null, 'name', true);
       reqPreFill = reqItems.map(id => {
-        if (typeof id === 'string' && id.startsWith('booster:')) {
+        if (typeof id === 'string' && (id.startsWith('booster:') || id.startsWith('mvp:'))) {
           return id.split(':')[1];
         }
         const match = allItems.find(i => i.id === id);
