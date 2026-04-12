@@ -954,7 +954,7 @@ export async function handleShopPostDescBtn(interaction) {
     .setLabel('Description')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder('Leave empty to use default description...')
-    .setValue(state.description || '')
+    .setValue(state.description ?? '')
     .setRequired(false)
     .setMaxLength(1000);
 
@@ -981,7 +981,7 @@ export async function handleShopPostPriceBtn(interaction) {
     .setLabel('Override Default Price')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder(`Original: ${originalPrice}`)
-    .setValue(state.overridePrice !== null ? state.overridePrice.toString() : '')
+    .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
     .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(priceInput));
@@ -1010,7 +1010,7 @@ export async function handleShopPostPayoutBtn(interaction) {
     .setLabel('Amount')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder(suggestedCut > 0 ? `Max/Suggested cut: ${suggestedCut}` : 'Max 50% of original price')
-    .setValue(state.payout !== null && state.payout > 0 ? state.payout.toString() : '')
+    .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
     .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(payoutInput));
@@ -1030,7 +1030,7 @@ export async function handleShopPostStockBtn(interaction) {
     .setLabel('Total Supply')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('Leave empty for unlimited')
-    .setValue(state.stock !== null ? String(state.stock) : '')
+    .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
     .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(stockInput));
@@ -1274,10 +1274,9 @@ export async function handleShopPostPublish(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'blue', '📢 Shop Post Created', `Admin **<@${interaction.user.id}>** posted **${item.name}** to <#${channelId}>`);
 
-
-    // Clear image but keep item/channel for quick re-post
-    state.imageUrl = null;
-    pendingPosts.set(userId, state);
+    // Reset session state for this user (except channelId/sellerId for convenience)
+    pendingPosts.delete(userId);
+    pendingPosts.set(userId, { channelId, sellerId });
 
     // Feedback - Only if posting to a DIFFERENT channel
     if (interaction.channelId !== channelId) {
