@@ -409,7 +409,7 @@ export async function handleShopBuyButton(interaction) {
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
         
         // Update Stock field
-        let stockHeader = '🛒 Stock';
+        let stockHeader = '♾️ Stock';
         let stockValue = 'Unlimited';
         if (updatedItem.stock !== null) {
           if (updatedItem.stock <= 0) {
@@ -417,7 +417,7 @@ export async function handleShopBuyButton(interaction) {
             stockValue = 'Sold Out';
             embed.setColor('#808080'); // Dark Grey for Sold Out
           } else {
-            stockHeader = '🛒 Stock';
+            stockHeader = '🟢 Stock';
             stockValue = `**${updatedItem.stock}** Left`;
           }
         }
