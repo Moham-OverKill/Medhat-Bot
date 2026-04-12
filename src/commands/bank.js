@@ -437,9 +437,6 @@ export async function handleShopBuyButton(interaction) {
         const buyBtn = ButtonBuilder.from(row.components[0]);
         
         buyBtn.setDisabled(isSoldOut);
-        if (isSoldOut) {
-          buyBtn.setLabel('SOLD OUT').setStyle(ButtonStyle.Secondary).setEmoji('📦');
-        }
 
         await interaction.message.edit({ 
           embeds: [embed], 
