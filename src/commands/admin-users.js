@@ -337,16 +337,28 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
  */
 export async function showItemRevokePanel(interaction, targetUserId, invId, categoryId) {
     const pool = getPool();
-    const result = await pool.query(
-        `SELECT i.*, s.name, s.role_id 
-         FROM user_inventory i 
-         JOIN shop_items s ON i.shop_item_id = s.id 
-         WHERE i.id = $1`, 
-        [invId]
-    );
+    const isAdminGranted = invId.toString().startsWith('admin_');
 
-    if (result.rowCount === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
-    const item = result.rows[0];
+    let item;
+    if (isAdminGranted) {
+        // Synthesized item: fetch directly from shop_items
+        const shopItemId = invId.replace('admin_', '');
+        const res = await pool.query('SELECT * FROM shop_items WHERE id = $1', [shopItemId]);
+        if (res.rowCount === 0) return interaction.reply({ content: '❌ Shop item not found.', flags: MessageFlags.Ephemeral });
+        item = res.rows[0];
+    } else {
+        // Standard item: fetch from inventory
+        const result = await pool.query(
+            `SELECT i.*, s.name, s.role_id 
+             FROM user_inventory i 
+             JOIN shop_items s ON i.shop_item_id = s.id 
+             WHERE i.id = $1`, 
+            [invId]
+        );
+
+        if (result.rowCount === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+        item = result.rows[0];
+    }
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     const displayName = targetMember ? targetMember.displayName : targetUserId;
@@ -354,14 +366,18 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
     const embed = new EmbedBuilder()
         .setTitle(`Revoke Item: ${item.name}`)
         .setDescription(
-            `Are you sure you want to permanently revoke this item from **${displayName}**?\n\n` +
-            `⚠️ **This will:**\n` +
-            `• Delete the item from their database inventory\n` +
-            `• Remove the Discord role(s) from the user\n` +
-            `• NOT provide a refund\n\n` +
-            `The user must buy it again to get it back.`
+            isAdminGranted 
+            ? `This is an **Admin-Granted** item (Discord Role).\n\n` +
+              `The bot cannot "Revoke" this because it was not purchased through the economy system. It is a direct Discord role granted by an administrator.\n\n` +
+              `To remove it, you must remove the role from the user manually in their Discord profile.`
+            : `Are you sure you want to permanently revoke this item from **${displayName}**?\n\n` +
+              `⚠️ **This will:**\n` +
+              `• Delete the item from their database inventory\n` +
+              `• Remove the Discord role(s) from the user\n` +
+              `• NOT provide a refund\n\n` +
+              `The user must buy it again to get it back.`
         )
-        .setColor(0xED4245);
+        .setColor(isAdminGranted ? 0x808080 : 0xED4245);
 
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -369,6 +385,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
             .setLabel('Permanently Revoke')
             .setEmoji('🗑️')
             .setStyle(ButtonStyle.Danger)
+            .setDisabled(isAdminGranted)
     );
 
     const backRow = new ActionRowBuilder().addComponents(
@@ -386,6 +403,10 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
  * Permanently revoke an item
  */
 export async function handleRevokeItem(interaction, targetUserId, invId, categoryId) {
+    if (invId.toString().startsWith('admin_')) {
+        return interaction.reply({ content: '❌ Admin-granted items cannot be revoked via the economy system.', flags: MessageFlags.Ephemeral });
+    }
+
     // 1. Defer immediately to avoid timeout and allow followUp
     if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
