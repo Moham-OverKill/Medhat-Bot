@@ -749,7 +749,7 @@ export async function handleShopPostStart(interaction) {
   // Determine payout display (just the amount, no percentage)
   let payoutDisplay = 'N/A';
   if (!isPack && state.sellerId) {
-    const payoutAmount = state.payout !== null ? state.payout : (selectedItem ? Math.floor(selectedItem.price * 0.5) : 0);
+    const payoutAmount = (state.payout !== null && state.payout !== undefined) ? state.payout : (selectedItem ? Math.floor(selectedItem.price * 0.5) : 0);
     payoutDisplay = payoutAmount.toString();
   }
 
@@ -1274,9 +1274,17 @@ export async function handleShopPostPublish(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'blue', '📢 Shop Post Created', `Admin **<@${interaction.user.id}>** posted **${item.name}** to <#${channelId}>`);
 
-    // Reset session state for this user (except channelId/sellerId for convenience)
-    pendingPosts.delete(userId);
-    pendingPosts.set(userId, { channelId, sellerId });
+    // Reset session state for this user (Keep channelId/sellerId for convenience)
+    pendingPosts.set(userId, { 
+      channelId, 
+      sellerId,
+      itemId: null,
+      imageUrl: null,
+      description: null,
+      payout: null,
+      stock: null,
+      overridePrice: null
+    });
 
     // Feedback - Only if posting to a DIFFERENT channel
     if (interaction.channelId !== channelId) {
