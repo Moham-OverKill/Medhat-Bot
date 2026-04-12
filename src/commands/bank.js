@@ -436,7 +436,9 @@ export async function handleShopBuyButton(interaction) {
         const row = ActionRowBuilder.from(interaction.message.components[0]);
         const buyBtn = ButtonBuilder.from(row.components[0]);
         
-        buyBtn.setDisabled(isSoldOut);
+        // Force Secondary (Grey) style and update disabled state
+        buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
+        row.setComponents(buyBtn);
 
         await interaction.message.edit({ 
           embeds: [embed], 
