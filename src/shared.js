@@ -98,10 +98,81 @@ export function getUserDisplayName(memberOrWinner, fallback = null) {
  * @returns {string}
  */
 export function getUserLogName(memberOrUser) {
-    if (!memberOrUser) return 'UnknownUser';
-    
+    if (!memberOrUser) return 'Unknown User';
     const user = memberOrUser.user || memberOrUser;
-    return user.username || 'UnknownUser';
+    return `@${user.username}`;
+}
+
+/**
+ * Helper: Sort inventory items by Discord role position (highest first)
+ * Falls back to name sort for non-role items
+ */
+export async function sortItemsByRolePosition(items, guild) {
+  if (!guild || !items) return items || [];
+  
+  // Fetch all roles from cache
+  const roleCache = guild.roles.cache;
+
+  // Map items with their role position
+  const itemsWithPosition = items.map(item => {
+    let position = -1; // Default for non-role items
+    if (item.role_id) {
+      // Handle multi-role items (take first role's position)
+      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+      const role = roleCache.get(firstRoleId);
+      if (role) {
+        position = role.position;
+      }
+    }
+    return { ...item, _rolePosition: position };
+  });
+
+  // Sort: highest role position first, then by name for non-roles
+  itemsWithPosition.sort((a, b) => {
+    // Both have roles - sort by position (higher first)
+    if (a._rolePosition >= 0 && b._rolePosition >= 0) {
+      return b._rolePosition - a._rolePosition;
+    }
+    // Only one has role - role items first
+    if (a._rolePosition >= 0) return -1;
+    if (b._rolePosition >= 0) return 1;
+    // Neither has role - sort by name
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  // Filter out items with deleted roles (ghost roles)
+  return itemsWithPosition.filter(item => {
+    if (!item.role_id) return true; // Keep non-role items
+    const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+    return roleCache.get(firstRoleId) !== undefined; // Only keep if role exists
+  });
+}
+
+/**
+ * Standardized inventory line formatting for both User and Admin views.
+ * Ensures perfectly aligned emojis and mentions.
+ * @param {Object} item - Synthesized inventory item
+ * @returns {string} - Formatted string (e.g. "✅ @Premium")
+ */
+export function formatInventoryItemLine(item) {
+  const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
+  const nameDisplay = firstRoleId ? `<@&${firstRoleId}>` : `**${item.name}**`;
+  
+  const isAdminIdentified = item.source === 'SYNC';
+  const isTemp = !!(item.expires_at || 
+                  (item.duration_seconds && item.duration_seconds > 0) || 
+                  (item.duration_hours && item.duration_hours > 0));
+  
+  let statusEmoji = '⬜';
+  if (isAdminIdentified) {
+    statusEmoji = '🛡️';
+  } else if (isTemp) {
+    statusEmoji = item.is_active ? '🟢' : '⚪';
+  } else {
+    statusEmoji = item.is_active ? '✅' : '⬜';
+  }
+
+  return `${statusEmoji} ${nameDisplay}`;
 }
 
 /**

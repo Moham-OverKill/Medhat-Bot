@@ -11,7 +11,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
 import { sendLog } from '../utils/logger.js';
 
@@ -292,38 +292,25 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         await interaction[responseMethod]({ embeds: [embed], components: rows });
     } else {
         // Show items in specific category
-        const items = visibleItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
+        let items = visibleItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
         
+        // Standardize: Sort by role position (match user view)
+        items = await sortItemsByRolePosition(items, interaction.guild);
+
         let catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
         const embed = new EmbedBuilder()
             .setTitle(`📂 ${catName}: ${targetMember.displayName}`)
             .setColor(0x2ECC71);
 
-        const listLines = items.map(i => {
-            const roleMention = i.role_id ? `<@&${i.role_id.split(/[,\s]+/)[0]}>` : i.name;
-            const isAdminIdentified = i.source === 'SYNC';
-            const isTemp = !!(i.expires_at || 
-                            (i.duration_seconds && i.duration_seconds > 0) || 
-                            (i.duration_hours && i.duration_hours > 0));
-            
-            let statusEmoji = '🔳';
-            if (isAdminIdentified) {
-                statusEmoji = '🛡️';
-            } else if (isTemp) {
-                statusEmoji = i.is_active ? '✅' : '🔳';
-            } else {
-                statusEmoji = i.is_active ? '✅' : '🔳';
-            }
-
-            return `• ${statusEmoji} ${roleMention}`;
-        });
+        // Standardize: Use shared formatting (removes bullets, matches emojis)
+        const listLines = items.map(i => formatInventoryItemLine(i));
         embed.setDescription(listLines.length > 0 ? listLines.join('\n') : 'No items found in this category.');
 
         const rows = [];
         if (items.length > 0) {
             const select = new StringSelectMenuBuilder()
                 .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
-                .setPlaceholder('Select an item to manage...')
+                .setPlaceholder('Select an Item to Manage')
                 .addOptions(items.slice(0, 25).map((i, idx) => {
                     const isAdminIdentified = i.source === 'SYNC';
                     const isTemp = !!(i.expires_at || 
