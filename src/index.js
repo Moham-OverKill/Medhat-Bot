@@ -11,7 +11,7 @@ import { initializeColorsDB, closeColorsDB } from './storage/colors.js';
 import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking, clearStaleVoiceTracking } from './activity/index.js';
 import { scheduleAllMvpTimers } from './mvp/award.js';
-import { startExpiryJob } from './cron/expiry.js';
+// import { startExpiryJob } from './cron/expiry.js'; // REMOVED: Switching to Event-Driven Purge
 import { startQuestScheduler } from './cron/quests.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
@@ -222,7 +222,7 @@ client.once(Events.ClientReady, async () => {
     await scheduleAllMvpTimers(client);
 
     // Start background jobs
-    startExpiryJob(client);
+    // startExpiryJob(client); // REMOVED: Switching to Event-Driven Purge
     startQuestScheduler(client);
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);

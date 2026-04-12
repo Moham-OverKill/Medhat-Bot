@@ -428,6 +428,9 @@ export async function handleShopBuyButton(interaction) {
     // ===========================================
     // STEP 2: Call purchaseItem (handles ALL validation + item granting + payout)
     // ===========================================
+    const { purgeUserInventory } = await import('../economy/shop.js');
+    await purgeUserInventory(userId, guildId, member);
+
     const result = await purchaseItem(userId, guildId, itemId, member, { 
       sellerId, 
       payoutAmount 
@@ -546,10 +549,11 @@ export async function handleInventoryButton(interaction) {
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
 
-    // ========== TWO-WAY SYNC (Admin Actions) ==========
-    // 1. CLEANUP: Delete items where user lost the Discord role (Admin removed)
-    // 2. DISCOVERY: Add items where user has Discord role but no DB entry (Admin added)
-    // 3. Returns FRESH inventory after sync
+    // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
+    // We execute the FULL purge here (DB + Discord Roles)
+    const { purgeUserInventory } = await import('../economy/shop.js');
+    await purgeUserInventory(userId, guildId, interaction.member);
+
     // Unified Fetch: Includes DB items + Live synthesis of admin roles
     const [inventory, categories, userBal] = await Promise.all([
       getSynthesizedInventory(userId, guildId, interaction.member),
@@ -1030,7 +1034,11 @@ export async function handleInventoryItemSelect(interaction) {
     if (isAdminGranted) {
       desc += `\n**Status:** 🛡️ Admin Granted`;
     } else if (isTemp) {
-      desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⬜ Inactive'}`;
+      if (!item.expires_at) {
+        desc += `\n**Status:** ⌛ Ready to Activate`;
+      } else {
+        desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⏸️ Inactive (Counting)'}`;
+      }
     } else {
       desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⬜ Unequipped'}`;
     }
@@ -1071,13 +1079,21 @@ export async function handleInventoryItemSelect(interaction) {
     );
 
     // Dynamic button based on item type and state
-    const toggleLabel = isTemp
-      ? (item.is_active ? 'Deactivate' : 'Activate')
-      : (item.is_active ? 'Unequip' : 'Equip');
-    
-    // Icon Logic: Use 🛡️ for Admin or 🔒 for locked Drop action
-    const lockEmoji = '🛡️'; // Used for fully locked Admin items
-    const toggleEmoji = item.is_active ? '⏸️' : '✅';
+    let toggleLabel = 'Equip';
+    let toggleEmoji = '✅';
+
+    if (isTemp) {
+      if (!item.expires_at) {
+        toggleLabel = 'Activate';
+        toggleEmoji = '⚡';
+      } else {
+        toggleLabel = item.is_active ? 'Deactivate' : 'Reactivate';
+        toggleEmoji = item.is_active ? '⏸️' : '▶️';
+      }
+    } else {
+      toggleLabel = item.is_active ? 'Unequip' : 'Equip';
+      toggleEmoji = item.is_active ? '⏸️' : '✅';
+    }
  
     row1.addComponents(
       new ButtonBuilder()

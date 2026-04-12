@@ -10,8 +10,8 @@ import {
   getUserLogName,
   COIN_EMOJI 
 } from '../shared.js';
-import { sendLog } from '../utils/logger.js';
 import { getPool } from '../storage/postgres.js';
+import { updateBalance } from '../economy/service.js';
 
 /**
  * Active MVP award timers per guild
@@ -367,7 +367,7 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
       // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
       const { updateLeaderboards } = await import('../commands/leaderboard.js');
       const finalSnapshotData = await getTopActiveUsers(guildId, 15);
-      const configuredWinnerCount = currentConfig.winner_count || 1;
+      const configuredWinnerCount = currentConfig.winnersCount || 1;
       const potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
       
       await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
@@ -904,7 +904,7 @@ export async function awardMvp(client, guildId, options = {}) {
       console.log(`${tag} Saved ${resultMembers.length} winner(s) to MVP history`);
 
       const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
-      const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 0;
+      const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
 
       sendLog(guild, 'economy', 'orange', '🎁 Rewards Claimed', 
         `**Type:** \`MVP Payout\`\n` +
@@ -1014,41 +1014,19 @@ async function announceWinners(guild, config, winnerMembers, winnerData, rewardA
  * @param {string} guildName - Guild name for logging
  */
 async function awardCoinReward(guildId, userId, amount, guildName) {
-  const pool = getPool();
-  const client = await pool.connect();
   const tag = guildName ? `[${guildName}]` : '[System]';
   try {
-    await client.query('BEGIN');
-
-    // Atomic Upsert: Add coins safely
-    const updateResult = await client.query(
-      `INSERT INTO user_balances (guild_id, user_id, balance, total_earned)
-       VALUES ($1, $2, $3, $3)
-       ON CONFLICT (guild_id, user_id) 
-       DO UPDATE SET 
-         balance = user_balances.balance + $3,
-         total_earned = user_balances.total_earned + $3
-       RETURNING balance`,
-      [guildId, userId, amount]
-    );
-
-    const newBalance = parseInt(updateResult.rows[0].balance, 10);
-
-    // Transaction record
-    await client.query(
-      `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
-       VALUES ($1, $2, $3, $4, 'mvp_reward', $5)`,
-      [userId, guildId, amount, newBalance, 'Won MVP of the Day']
-    );
-
-    await client.query('COMMIT');
-    console.log(`${tag} [Reward Success] Awarded ${amount} coins to ${userId} (New Balance: ${newBalance.toLocaleString()})`);
+    const result = await updateBalance(userId, guildId, amount, 'mvp_reward', 'Won MVP of the Day');
+    
+    if (result.success) {
+      console.log(`${tag} [Reward Success] Awarded ${amount} coins to ${userId} (New Balance: ${result.balance.toLocaleString()})`);
+      return true;
+    } else {
+      throw new Error(result.error || 'Failed to update balance');
+    }
   } catch (error) {
-    if (client) await client.query('ROLLBACK');
     console.error(`${tag} [Reward Failure] Failed to payout MVP coins to ${userId}:`, sanitizeError(error));
     throw error;
-  } finally {
-    client.release();
   }
 }
 

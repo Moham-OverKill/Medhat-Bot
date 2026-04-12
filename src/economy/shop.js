@@ -611,6 +611,9 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
   try {
     await client.query('BEGIN');
 
+    // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
+    await purgeUserInventory(userId, guildId, member);
+
     // ========== STEP 1: Validate Shop Item ==========
     // FOR UPDATE locks this row until transaction commits - prevents race condition on stock
     const itemResult = await client.query(
@@ -803,17 +806,11 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     // ========== STEP 4: Handle Inventory & Contents (Add FIRST) ==========
 
-    // Define helper to add item to inventory
+    // Define helper to add item to inventory (Consumable Mode: Deactivated by default, no timer)
     const addToInventory = async (targetItem, purchaseSource = 'shop') => {
-      const durationSeconds = targetItem.duration_seconds || (targetItem.duration_hours ? targetItem.duration_hours * 3600 : null);
-      const expiresAt = durationSeconds
-        ? new Date(Date.now() + durationSeconds * 1000)
-        : null;
-
-      // AUTO-EQUIP for Temporary Items ONLY
-      // Check if THIS specific target item is temp
-      const isTargetTemp = (targetItem.duration_seconds && targetItem.duration_seconds > 0) || (targetItem.duration_hours && targetItem.duration_hours > 0);
-      const isActive = isTargetTemp ? true : false; // Ensure boolean, never null 
+      // RULE: All new acquisitions enter DEACTIVATED with NO expires_at (Stasis)
+      const isActive = false;
+      const expiresAt = null;
 
       const res = await client.query(
         `INSERT INTO user_inventory (
@@ -1110,6 +1107,9 @@ export async function claimItem(claimerId, guildId, dropId, member) {
   try {
     await client.query('BEGIN');
 
+    // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
+    await purgeUserInventory(claimerId, guildId, member);
+
     // 1. Atomic Lock on Drop
     const dropRes = await client.query(
       `SELECT d.*, si.name, si.role_id 
@@ -1269,43 +1269,16 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Admin-granted items are now synthesized live at the view layer.
     await query(`DELETE FROM user_inventory WHERE source = 'SYNC' AND guild_id = $1`, [guildId]);
 
-    // ========== HARD EXPIRATION SWEEP (Unconditional) ==========
-    // Identify and purge items that have passed their strict expiry timestamp
-    const expired = await query(
-      `SELECT ui.id, si.name, si.role_id 
+    // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
+    await purgeUserInventory(userId, guildId, member);
+
+    const inventory = await query(
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
        FROM user_inventory ui
-       JOIN shop_items si ON ui.shop_item_id = si.id
-       WHERE ui.user_id = $1 AND ui.guild_id = $2
-         AND ui.expires_at IS NOT NULL 
-         AND ui.expires_at < NOW()`,
+       LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+       WHERE ui.user_id = $1 AND ui.guild_id = $2`,
       [userId, guildId]
     );
-
-    if (expired.rows.length > 0) {
-      for (const item of expired.rows) {
-        // 1. Strip Discord Role
-        if (item.role_id) {
-          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-          const role = member.guild.roles.cache.get(firstRoleId);
-          const botMember = member.guild.members.me;
-          
-          if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
-            try {
-              await member.roles.remove(firstRoleId, 'Item Expired');
-            } catch (e) {
-              console.error(`[Sync] Failed to remove expired role ${firstRoleId}:`, e);
-            }
-          }
-        }
-
-        // 2. Delete from DB
-        await query('DELETE FROM user_inventory WHERE id = $1', [item.id]);
-        
-        // 3. Log Expiration
-        const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: () => {} }));
-        if (sendLog) sendLog(member.guild, 'inventory', 'red', '⏳ Item Expired', `**${member.user.username}**'s temporary item **${item.name}** has expired and was removed.`);
-      }
-    }
 
     const inventory = await query(
       `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
@@ -1615,17 +1588,40 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     const roles = item.source_roles ? item.source_roles.split(/[,\s]+/) : [];
 
-    // Check if trying to ACTIVATE an expired item
-    if (newStatus && item.expires_at) {
-      const now = new Date();
-      const expiresAt = new Date(item.expires_at);
-      if (expiresAt < now) {
-        // Item has expired - delete it and return error
-        await client.query('DELETE FROM user_inventory WHERE id = $1', [inventoryId]);
-        await client.query('COMMIT');
-        return { success: false, error: 'This item has expired and has been removed.' };
+    // ========== CONSUMABLE TIMER LOGIC ==========
+    // Check if this is a temporary item
+    const durationSeconds = item.duration_seconds || (item.duration_hours ? item.duration_hours * 3600 : null);
+    const isTemp = !!durationSeconds;
+
+    if (newStatus && isTemp) {
+      // Trying to ACTIVATE a temporary item
+      if (!item.expires_at) {
+        // FIRST ACTIVATION: Start the timer now
+        const expiresAt = new Date(Date.now() + durationSeconds * 1000);
+        await client.query('UPDATE user_inventory SET expires_at = $1 WHERE id = $2', [expiresAt, inventoryId]);
+        console.log(`[Shop] Timer started for consumable ${item.name} (User: ${userId}, Duration: ${durationSeconds}s)`);
+      } else {
+        // RE-ACTIVATION (Timer already running)
+        // Check if actually expired
+        const expiresAt = new Date(item.expires_at);
+        if (expiresAt < new Date()) {
+          // Item has expired since last interaction - purge it
+          await client.query('DELETE FROM user_inventory WHERE id = $1', [inventoryId]);
+          // Clean roles just in case
+          if (item.source_roles) {
+             const rIds = item.source_roles.split(/[,\s]+/);
+             for (const rId of rIds) {
+               try { await member.roles.remove(rId, 'Item Expired'); } catch (e) {}
+             }
+          }
+          await client.query('COMMIT');
+          return { success: false, error: 'This item has expired and has been removed.' };
+        }
       }
     }
+
+    // Unstoppable Timer Rule: If newStatus is false (UNEQUIP), 
+    // we remove the roles but LEAVE expires_at alone. The clock keeps ticking.
 
     // Check if SYNC item (admin-granted) - these can't be toggled by user
     if (item.source === 'SYNC') {
@@ -1730,62 +1726,71 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 }
 
 /**
- * Check and remove expired items
+ * EVENT-DRIVEN PURGE (Lazy Evaluation)
+ * Executes exactly when needed to ensure zero background overhead.
+ * 
+ * @param {string} userId - The user ID
+ * @param {string} guildId - The guild ID 
+ * @param {GuildMember|null} member - Discord member object (if provided, roles are stripped)
  */
-export async function cleanupExpiredItems(client) {
+export async function purgeUserInventory(userId, guildId, member = null) {
   try {
-    // Get all expired items
-    const expiredResult = await query(
-      `SELECT i.*, m.role_id as item_role_id
-       FROM user_inventory i
-       LEFT JOIN shop_items m ON i.shop_item_id = m.id
-       WHERE i.expires_at IS NOT NULL 
-       AND i.expires_at < NOW()`,
-      []
+    // 1. Delete all items belonging to this user that have passed their expiration
+    const result = await query(
+      `DELETE FROM user_inventory 
+       WHERE user_id = $1 AND guild_id = $2
+       AND expires_at IS NOT NULL 
+       AND expires_at < NOW()
+       RETURNING id, shop_item_id, role_id`,
+      [userId, guildId]
     );
 
-    if (expiredResult.rows.length === 0) return [];
+    if (result.rows.length === 0) return 0;
 
-    let cleaned = 0;
+    // 2. Fetch Item Names for logging accurately
+    const expiredItems = result.rows;
+    const itemIds = expiredItems.map(i => i.shop_item_id);
+    const shopItems = await query(`SELECT id, name FROM shop_items WHERE id = ANY($1)`, [itemIds]);
+    const nameMap = Object.fromEntries(shopItems.rows.map(s => [s.id, s.name]));
 
-    for (const item of expiredResult.rows) {
-      // 1. Remove role from Discord FIRST (so we don't lose track of it if DB fails, though unlikely)
-      try {
-        const guild = await client.guilds.fetch(item.guild_id).catch(() => null);
-        if (guild) {
-          const member = await guild.members.fetch(item.user_id).catch(() => null);
-          if (member) {
-            const roleIdToRemove = item.role_id || item.item_role_id;
-            if (roleIdToRemove) {
-              await member.roles.remove(roleIdToRemove);
+    for (const item of expiredItems) {
+      const itemName = nameMap[item.shop_item_id] || 'Unknown Item';
+
+      // 3. Strip Discord Role (Only if member is provided)
+      if (member && item.role_id) {
+        const roles = item.role_id.split(/[,\s]+/);
+        const botMember = member.guild.members.me;
+
+        for (const rid of roles) {
+          try {
+            const role = member.guild.roles.cache.get(rid);
+            if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
+              await member.roles.remove(rid, 'Item Expired (Lazy Purge)');
             }
+          } catch (e) {
+            console.error(`[Purge] Failed to remove expired role ${rid}:`, e.message);
           }
         }
-      } catch (e) {
-        // Log but continue to delete from DB so we don't loop forever on a missing user/role
-        logSystemError(`Failed to remove expired role for user ${item.user_id}: ${e.message}`);
       }
 
-      // 2. Delete from DB
-      await query(
-        'DELETE FROM user_inventory WHERE id = $1',
-        [item.id]
-      );
-
-      // Log with guild name and username if available
-      const guildName = guild?.name || item.guild_id;
-      const username = member?.user?.username || item.user_id;
-      logSystemEvent(`[${guildName}] ${username} — Expired item removed`);
-      cleaned++;
+      // 4. Log to Audit
+      console.log(`[${guildId}] [Purge] ${member?.user?.tag || userId}'s item "${itemName}" expired and was removed.`);
+      
+      const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: () => {} }));
+      if (sendLog) {
+        sendLog(
+          { id: guildId, name: member?.guild?.name || 'Server' }, 
+          'inventory', 
+          'red', 
+          '⏳ Item Expired', 
+          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
+        );
+      }
     }
 
-    if (cleaned > 0) {
-      logSystemEvent(`Cleaned up ${cleaned} expired inventory items`);
-    }
-
-    return expiredResult.rows;
+    return expiredItems.length;
   } catch (error) {
-    logSystemError(`Failed to clean up expired items: ${sanitizeError(error)}`);
-    return [];
+    logSystemError(`Failed to purge user inventory for ${userId}: ${sanitizeError(error)}`);
+    return 0;
   }
 }
