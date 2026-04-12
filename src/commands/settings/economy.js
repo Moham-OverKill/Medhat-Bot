@@ -76,7 +76,6 @@ async function showEconomyDashboard(interaction, view) {
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
         const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + Math.floor(mvpReward / 7);
 
-        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your live configuration.')
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
