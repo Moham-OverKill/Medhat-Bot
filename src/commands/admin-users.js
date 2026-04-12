@@ -301,7 +301,21 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
         const listLines = items.map(i => {
             const roleMention = i.role_id ? `<@&${i.role_id.split(/[,\s]+/)[0]}>` : i.name;
-            return `• ${roleMention}`;
+            const isAdminIdentified = i.source === 'SYNC';
+            const isTemp = !!(i.expires_at || 
+                            (i.duration_seconds && i.duration_seconds > 0) || 
+                            (i.duration_hours && i.duration_hours > 0));
+            
+            let statusEmoji = '🔳';
+            if (isAdminIdentified) {
+                statusEmoji = '🛡️';
+            } else if (isTemp) {
+                statusEmoji = i.is_active ? '✅' : '🔳';
+            } else {
+                statusEmoji = i.is_active ? '✅' : '🔳';
+            }
+
+            return `• ${statusEmoji} ${roleMention}`;
         });
         embed.setDescription(listLines.length > 0 ? listLines.join('\n') : 'No items found in this category.');
 
@@ -309,13 +323,34 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         if (items.length > 0) {
             const select = new StringSelectMenuBuilder()
                 .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
-                .setPlaceholder('Select an item to revoke...')
-                .addOptions(items.slice(0, 25).map(i => ({
-                    label: i.name,
-                    value: i.id.toString(),
-                    description: i.is_active ? 'Equipped' : 'Unequipped',
-                    emoji: '🗑️'
-                })));
+                .setPlaceholder('Select an item to manage...')
+                .addOptions(items.slice(0, 25).map((i, idx) => {
+                    const isAdminIdentified = i.source === 'SYNC';
+                    const isTemp = !!(i.expires_at || 
+                                   (i.duration_seconds && i.duration_seconds > 0) || 
+                                   (i.duration_hours && i.duration_hours > 0));
+                    
+                    let statusEmoji = '🔳';
+                    let statusText = 'Unknown';
+
+                    if (isAdminIdentified) {
+                        statusEmoji = '🛡️';
+                        statusText = 'Granted by admin';
+                    } else if (isTemp) {
+                        statusEmoji = i.is_active ? '✅' : '🔳';
+                        statusText = i.is_active ? 'Active' : 'Inactive';
+                    } else {
+                        statusEmoji = i.is_active ? '✅' : '🔳';
+                        statusText = i.is_active ? 'Equipped' : 'Unequipped';
+                    }
+
+                    return {
+                        label: i.name,
+                        value: `${i.id}_${idx}`,
+                        description: statusText,
+                        emoji: statusEmoji
+                    };
+                }));
             rows.push(new ActionRowBuilder().addComponents(select));
         }
 
@@ -598,7 +633,11 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             }
             case 'isel': {
-                const [invId] = interaction.values[0].split('_');
+                const partsValue = interaction.values[0].split('_');
+                // Handle cases where ID contains underscores (like admin_123)
+                // The last part is the index (from getSynthesizedInventory indexing in display)
+                partsValue.pop(); 
+                const invId = partsValue.join('_');
                 const catId = parts[4];
                 await showItemRevokePanel(interaction, targetUserId, invId, catId);
                 break;
