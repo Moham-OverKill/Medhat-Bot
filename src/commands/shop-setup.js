@@ -489,14 +489,14 @@ export async function handleItemModalSubmit(interaction) {
         // Block Booster Role as main Item Role
         const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
         if (boosterRoleId && roleId === boosterRoleId) {
-          return interaction.followUp({ content: '❌ The **Server Booster Role** cannot be a shop item (Discord manages it). Enter it in the **Required Items** field instead to gate this item.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Required Items field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
         }
 
         // Block MVP Role as main Item Role
         const { getGuildConfig } = await import('../storage/config.js');
         const guildConfig = await getGuildConfig(interaction.guildId);
         if (guildConfig && guildConfig.mvpRoleId === roleId) {
-          return interaction.followUp({ content: '❌ The **MVP Role** cannot be a shop item (System manages it). Enter it in the **Required Items** field instead to gate this item.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Required Items field to make MVP only items.", flags: MessageFlags.Ephemeral });
         }
 
         if (!interaction.guild.roles.cache.has(roleId)) return interaction.followUp({ content: '❌ Role not found in server.', flags: MessageFlags.Ephemeral });
@@ -574,14 +574,14 @@ export async function handleItemModalSubmit(interaction) {
           // Block Booster Role as main Item Role
           const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
           if (boosterRoleId && roleId === boosterRoleId) {
-            return interaction.followUp({ content: '❌ The **Server Booster Role** cannot be a shop item (Discord manages it). Enter it in the **Required Items** field instead to gate this item.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Required Items field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
           }
 
           // Block MVP Role as main Item Role
           const { getGuildConfig } = await import('../storage/config.js');
           const guildConfig = await getGuildConfig(interaction.guildId);
           if (guildConfig && guildConfig.mvpRoleId === roleId) {
-            return interaction.followUp({ content: '❌ The **MVP Role** cannot be a shop item (System manages it). Enter it in the **Required Items** field instead to gate this item.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Required Items field to make MVP only items.", flags: MessageFlags.Ephemeral });
           }
 
           if (!interaction.guild.roles.cache.has(roleId.split(/[,\s]+/)[0])) {
