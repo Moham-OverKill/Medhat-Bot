@@ -1234,18 +1234,18 @@ export async function handleShopPostPublish(interaction) {
   }
 
   // Stock Field (Visual)
-  let stockHeader = '🛒 Stock';
+  let stockHeader = '♾️ Stock';
   let stockValue = 'Unlimited';
 
   if (item.stock === null || item.stock === undefined) {
-    stockHeader = '🛒 Stock';
+    stockHeader = '♾️ Stock';
     stockValue = 'Unlimited';
   } else if (item.stock <= 0) {
     stockHeader = '🔴 Stock';
     stockValue = 'Sold Out';
     embed.setColor('#3498DB'); // Always Blue (even if Sold Out)
   } else {
-    stockHeader = '🛒 Stock';
+    stockHeader = '🟢 Stock';
     stockValue = `**${item.stock}** Left`;
   }
   
