@@ -164,6 +164,12 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   const key = `${guildId}:${userId}`;
   const content = (messageContent || '').trim();
 
+  // === EVENT-DRIVEN PURGE (Lazy Evaluation) ===
+  // We only purge the DATABASE here to save rate limits. 
+  // Roles will be stripped when they open /inventory or /shop.
+  const { purgeUserInventory } = await import('../economy/shop.js');
+  await purgeUserInventory(userId, guildId, null);
+
   // === ANTI-SPAM CHECKS ===
 
   // Check 1: Minimum length (5 characters)
@@ -527,6 +533,10 @@ export async function voicePointsTick(client) {
     );
 
     for (const row of result.rows) {
+      // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
+      const { purgeUserInventory } = await import('../economy/shop.js');
+      await purgeUserInventory(row.user_id, row.guild_id, null);
+
       const validStart = parseInt(row.voice_valid_start);
       if (!validStart || validStart <= 0) continue;
 
