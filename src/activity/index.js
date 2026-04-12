@@ -7,7 +7,6 @@ import {
   voicePointsTick,
   clearStaleVoiceTracking
 } from './tracker.js';
-import { cleanupExpiredItems } from '../economy/shop.js';
 import { sanitizeError } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getTodayCairo } from '../utils/time.js';
@@ -55,15 +54,6 @@ export async function initializeActivityTracking(discordClient) {
       console.error('[System] Voice points tick error:', sanitizeError(error));
     }
   }, 30000);
-
-  // Shop cleanup tick every 60 seconds (separate interval)
-  setInterval(async () => {
-    try {
-      await cleanupExpiredItems(client);
-    } catch (error) {
-      console.error('[System] Shop cleanup error:', sanitizeError(error));
-    }
-  }, 60000);
 
   // Pre-populate quest cache on startup
   try {
