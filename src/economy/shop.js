@@ -1280,35 +1280,13 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       [userId, guildId]
     );
 
-    const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
-       FROM user_inventory ui
-       LEFT JOIN shop_items si ON ui.shop_item_id = si.id
-       WHERE ui.user_id = $1 AND ui.guild_id = $2`,
-      [userId, guildId]
-    );
-
     const botMember = member.guild.members.me;
-    const currentInv = inventory.rows;
-
-    // Discovery: Roles the user has that are linked to shop items but not in DB
-    // Logic removed: We no longer write Admin-granted roles to the database.
-    // They are now synthesized live at the view layer to prevent 'Ghost Items'.
-
-    // Refresh inventory after discovery (if any)
-    const refreshed = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
-       FROM user_inventory ui
-       LEFT JOIN shop_items si ON ui.shop_item_id = si.id
-       WHERE ui.user_id = $1 AND ui.guild_id = $2`,
-      [userId, guildId]
-    );
 
     // Rule Verification: Ensure roles match the 'is_active' state in DB
     // Re-fetch member to get latest role cache from Discord (avoids race conditions)
     const freshMember = await member.guild.members.fetch(userId).catch(() => member);
 
-    for (const invItem of refreshed.rows) {
+    for (const invItem of inventory.rows) {
       if (!invItem.role_id || invItem.item_type === 'pack' || invItem.is_pack) continue;
       const firstRoleId = invItem.role_id.split(/[,\s]+/)[0];
       const role = freshMember.guild.roles.cache.get(firstRoleId);
