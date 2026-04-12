@@ -1,50 +1,32 @@
-# 🏆 OverKill Bot: Complete Guide
+# 🏆 OverKill Bot
 
-A powerful Discord bot for economy, engagement, and automated management.
-
----
-
-## 🏦 Member Hub: `/bank`
-Manage your currency and profile.
-*   **[ 🎁 Daily ]**: Claim your daily reward and build your **Streak Bonus**.
-*   **[ 🎒 Inventory ]**: View, **Equip**, **Unequip**, or **Sell** your owned items.
-*   **[ 💸 Transfer ]**: Send coins securely to other members.
-*   **[ 📜 History ]**: View a detailed log of your earnings and spending.
+OverKill is an all-in-one engagement bot featuring a dynamic economy, automated reward systems, and community leaderboards.
 
 ---
 
-## 🛒 Economy & Shop
-*   **Buy Buttons**: Click **[ 💰 Buy ]** in shop channels to instantly purchase items.
-*   **Missions**: Complete tasks in the missions channel to earn active rewards.
+## 👤 Member Commands
+*   **/bank**: Your personal profile. Claim daily rewards, manage your inventory, transfer coins, and view your history.
+*   **Shop Buying**: Use the **[ Buy ]** buttons in shop channels to purchase roles, name colors, and items.
+*   **Missions**: Complete real-time tasks to earn coins and badges in the missions channel.
 
 ---
 
-## ⚙️ Admin Control Panel: `/settings`
-The centralized hub for all bot configurations.
-
-### 🎮 The Modules
-The panel is organized into a clean grid for fast access:
-*   **Coins Configuration**: Set Reward rates and Booster multipliers.
-*   **Rewards Settings**: Manage global currency settings.
-*   **Users Manager**: View and manage balances or inventories of any member.
-*   **Logs Monitor**: Configure where events are logged for Audit, Economy, and more.
-*   **MVP System**: Automate daily top-member awards.
-*   **Shop Setup**: Create, edit, and post items for sale.
-*   **Economy Stats**: Overview of the server's financial health.
-*   **Leaderboard**: Setup channels for Activity, Coins, and Streak leaderboards.
+## 🛠️ Admin Commands
+*   **/settings**: The master control panel. Configure reward rates, MVP automation, leaderboards, and logging channels from one centralized grid.
+*   **/shop setup**: Create and manage items, packs, and categories in the shop.
+*   **/colors**: Manage the role-based name colors available in your server's collection.
 
 ---
 
-### 🕹️ Standard Controls
-Navigation is standardized across all menus for a flawless experience:
+## 🔋 Systems Overview
+*   **MVP Award**: Automatically awards the top active users daily with custom roles and coin rewards.
+*   **Leaderboards**: Live tracking for the richest, most active, and highest-streak members.
+*   **Audit Logging**: Detailed channels for tracking financial transactions, staff actions, and server events.
 
-*   **[ ⬅️ Back to Settings ]**: Returns you instantly to the main ⚙️ Control Panel root.
-*   **[ ▶️ Enable ]**: Green button that activates a feature or automation.
-*   **[ ✖️ Disable ]**: Red button that turns off a feature or clears a configuration.
+---
 
-### 🏆 MVP Specifics
-*   **[ 📊 Progress ]**: Shows the current activity leaderboard for the upcoming award.
-*   **[ <:OK_COIN:1490666813501997076> Reward ]**: Quickly set the amount of coins winners receive.
+### 🕹️ Unified Controls
+All configuration menus are standardized with simple **Enable/Disable** buttons and instant "Back to Settings" navigation for a smooth management experience.
 
 ---
 
