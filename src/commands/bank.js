@@ -16,7 +16,7 @@ import { logServerEvent, sendLog } from '../utils/logger.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
 import {
   getShopCategories,
   getShopItems,
@@ -635,48 +635,7 @@ export async function handleInventoryButton(interaction) {
   }
 }
 
-/**
- * Helper: Sort inventory items by Discord role position (highest first)
- * Falls back to name sort for non-role items
- */
-async function sortItemsByRolePosition(items, guild) {
-  // Fetch all roles from cache
-  const roleCache = guild.roles.cache;
 
-  // Map items with their role position
-  const itemsWithPosition = items.map(item => {
-    let position = -1; // Default for non-role items
-    if (item.role_id) {
-      // Handle multi-role items (take first role's position)
-      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-      const role = roleCache.get(firstRoleId);
-      if (role) {
-        position = role.position;
-      }
-    }
-    return { ...item, _rolePosition: position };
-  });
-
-  // Sort: highest role position first, then by name for non-roles
-  itemsWithPosition.sort((a, b) => {
-    // Both have roles - sort by position (higher first)
-    if (a._rolePosition >= 0 && b._rolePosition >= 0) {
-      return b._rolePosition - a._rolePosition;
-    }
-    // Only one has role - role items first
-    if (a._rolePosition >= 0) return -1;
-    if (b._rolePosition >= 0) return 1;
-    // Neither has role - sort by name
-    return (a.name || '').localeCompare(b.name || '');
-  });
-
-  // Filter out items with deleted roles (ghost roles)
-  return itemsWithPosition.filter(item => {
-    if (!item.role_id) return true; // Keep non-role items
-    const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-    return roleCache.has(firstRoleId); // Only keep if role exists
-  });
-}
 
 // VIEW 2: Category Content View
 export async function handleInventoryCategorySelect(interaction) {
@@ -758,24 +717,7 @@ export async function handleInventoryCategorySelect(interaction) {
     }
 
     // Build List with role mentions and correct emojis for temp vs perm
-    const listLines = items.map(i => {
-      const nameDisplay = i.role_id ? `<@&${i.role_id.split(/[,\s]+/)[0]}>` : `**${i.name}**`;
-      const isAdminIdentified = i.source === 'SYNC';
-      const isTemp = !!(i.expires_at || 
-                      (i.duration_seconds && i.duration_seconds > 0) || 
-                      (i.duration_hours && i.duration_hours > 0));
-      
-      let statusEmoji = '⬜';
-      if (isAdminIdentified) {
-        statusEmoji = '🛡️';
-      } else if (isTemp) {
-        statusEmoji = i.is_active ? '🟢' : '⚪';
-      } else {
-        statusEmoji = i.is_active ? '✅' : '⬜';
-      }
-
-      return `${statusEmoji} ${nameDisplay}`;
-    });
+    const listLines = items.map(i => formatInventoryItemLine(i));
 
     const embed = new EmbedBuilder()
       .setTitle(`📂 Category: ${categoryName}`)
