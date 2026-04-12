@@ -1203,16 +1203,10 @@ export async function handleShopPostPublish(interaction) {
     embed.setDescription(finalDescription);
   }
 
-  // Pack vs Single Item Info
+  // Pack Contents Field
   if (item.item_type === 'pack') {
     const count = item.contents ? item.contents.length : 0;
-    const packInfo = `:package: Contains **${count}** Items`;
-
-    if (embed.data.description) {
-      embed.setDescription(`${embed.data.description}\n\n${packInfo}`);
-    } else {
-      embed.setDescription(packInfo);
-    }
+    embed.addFields({ name: '📦 Contents', value: `**${count}** Items`, inline: true });
   } else {
     // Single Item
     if (item.role_id) {
@@ -1239,19 +1233,19 @@ export async function handleShopPostPublish(interaction) {
     embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
   }
 
-  // Stock Field (Visual) - New Aesthetic
-  let stockHeader = '📦 Stock';
+  // Stock Field (Visual)
+  let stockHeader = '🛒 Stock';
   let stockValue = 'Unlimited';
 
   if (item.stock === null || item.stock === undefined) {
-    stockHeader = '♾️ Stock';
+    stockHeader = '🛒 Stock';
     stockValue = 'Unlimited';
   } else if (item.stock <= 0) {
     stockHeader = '🔴 Stock';
     stockValue = 'Sold Out';
     embed.setColor('#3498DB'); // Always Blue (even if Sold Out)
   } else {
-    stockHeader = '🟢 Stock';
+    stockHeader = '🛒 Stock';
     stockValue = `**${item.stock}** Left`;
   }
   
