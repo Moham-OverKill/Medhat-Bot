@@ -437,6 +437,9 @@ async function createTables() {
 
       // Prerequisite System: Store array of shop item IDs that must be owned before purchase/equip
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS required_items JSONB DEFAULT '[]'::jsonb`);
+      
+      // Data Integrity: Add unique constraint to prevent duplicate roles
+      await pool.query(`ALTER TABLE shop_items ADD CONSTRAINT unique_shop_item_role UNIQUE(guild_id, role_id)`);
 
     } catch (e) {
       console.error('Migration error (harmless if columns exist):', e.message);
