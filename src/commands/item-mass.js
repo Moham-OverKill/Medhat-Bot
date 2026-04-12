@@ -323,11 +323,29 @@ export async function handleMassSave(interaction) {
         
         const skipped = [];
         
+        // Pre-fetch configs for blocking system roles
+        const boosterRoleId = guild.roles.premiumSubscriberRole?.id;
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guild.id);
+        const mvpRoleId = guildConfig?.mvpRoleId;
+
         for (const roleId of ids) {
             try {
                 // Check 1: Role must exist in guild (anti-zombie)
                 if (!guild.roles.cache.has(roleId)) {
                     skipped.push(`${roleId} (not found)`);
+                    errors++;
+                    continue;
+                }
+                
+                // Block System Managed Roles (Booster & MVP)
+                if (boosterRoleId && roleId === boosterRoleId) {
+                    skipped.push(`Booster Role (Discord managed)`);
+                    errors++;
+                    continue;
+                }
+                if (mvpRoleId && roleId === mvpRoleId) {
+                    skipped.push(`MVP Role (System managed)`);
                     errors++;
                     continue;
                 }
@@ -398,7 +416,7 @@ export async function handleMassSave(interaction) {
             `🔄 Items Updated: ${updated}`,
             packId ? `📦 Added to Pack: ${addedToPack}` : null,
             categoryId ? `🏷️ Added to Category: ${addedToCategory}` : null,
-            errors > 0 ? `⚠️ Errors: ${errors}` : null
+            errors > 0 ? `⚠️ Errors/Skipped: ${errors} (${skipped.join(', ')})` : null
         ].filter(Boolean).join('\n');
         
         await interaction.editReply({ content: summary, components: [], embeds: [] });
