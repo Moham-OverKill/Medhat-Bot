@@ -90,7 +90,8 @@ async function handleMassItemSubcommand(interaction) {
     
     // Validate input (basic check)
     // Allow generic separators
-    const ids = input.split(/[\s,]+/).filter(id => /^\d{17,20}$/.test(id));
+    const rawIds = input.split(/[\s,]+/).filter(id => /^\d{17,20}$/.test(id));
+    const ids = [...new Set(rawIds)];
     
     if (ids.length === 0) {
       return interaction.reply({ content: '❌ No valid Role IDs found in input.', flags: MessageFlags.Ephemeral });
@@ -310,6 +311,7 @@ export async function handleMassSave(interaction) {
         let created = 0;
         let updated = 0;
         let addedToPack = 0;
+        let addedToCategory = 0;
         let errors = 0;
         const processedItemIds = [];
         const processedRoleIds = [];
@@ -337,6 +339,9 @@ export async function handleMassSave(interaction) {
                     if (categoryId && item.category_id != categoryId) {
                         await updateShopItem(item.id, { category_id: categoryId });
                         updated++;
+                        addedToCategory++;
+                    } else if (categoryId && item.category_id == categoryId) {
+                        addedToCategory++;
                     }
                     processedItemIds.push(item.id);
                 } else {
@@ -352,6 +357,7 @@ export async function handleMassSave(interaction) {
                     const name = role ? role.name : `Role ${roleId}`;
                     const newItem = await addShopItem(guild.id, categoryId, roleId, name, '', price, null, null, 'role');
                     created++;
+                    if (categoryId) addedToCategory++;
                     processedItemIds.push(newItem.id);
                 }
                 processedRoleIds.push(roleId);
@@ -376,12 +382,13 @@ export async function handleMassSave(interaction) {
                 if (!Array.isArray(currentContents)) currentContents = [];
                 
                 const newContents = [...new Set([...currentContents, ...processedItemIds])];
+                const itemsActuallyAdded = newContents.length - currentContents.length;
 
                 await updateShopItem(packId, { 
                     role_id: newRoles.join(' '),
                     contents: newContents
                 });
-                addedToPack = processedItemIds.length;
+                addedToPack = itemsActuallyAdded;
             }
         }
         
@@ -389,7 +396,8 @@ export async function handleMassSave(interaction) {
             `✅ **Operation Complete**`,
             `🆕 Items Created: ${created}`,
             `🔄 Items Updated: ${updated}`,
-            `📦 Added to Pack: ${addedToPack}`,
+            packId ? `📦 Added to Pack: ${addedToPack}` : null,
+            categoryId ? `🏷️ Added to Category: ${addedToCategory}` : null,
             errors > 0 ? `⚠️ Errors: ${errors}` : null
         ].filter(Boolean).join('\n');
         
@@ -404,6 +412,7 @@ export async function handleMassSave(interaction) {
                 created > 0 ? `• **New Items Created:** \`${created}\`` : null,
                 updated > 0 ? `• **Items Updated:** \`${updated}\`` : null,
                 addedToPack > 0 ? `• **Added to Pack:** \`${addedToPack}\`` : null,
+                addedToCategory > 0 ? `• **Added to Category:** \`${addedToCategory}\`` : null,
                 categoryId ? `• **CategoryID:** \`${categoryId}\`` : null
             ].filter(Boolean).join('\n');
             
@@ -427,10 +436,12 @@ async function handleMassColorSubcommand(interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         // Parse role IDs (flexible separators: space, comma, hyphen)
-        const roleIds = rolesInput
+        const rawRoleIds = rolesInput
           .trim()
           .split(/[\s,\-]+/)
           .filter(id => /^\d{17,20}$/.test(id));
+          
+        const roleIds = [...new Set(rawRoleIds)];
 
         if (roleIds.length === 0) {
           await interaction.editReply('❌ No valid role IDs found. Separate IDs with spaces, commas, or hyphens.');
