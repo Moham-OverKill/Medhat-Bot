@@ -1,32 +1,37 @@
 # 🏆 OverKill Bot
 
-OverKill is an all-in-one engagement bot featuring a dynamic economy, automated reward systems, and community leaderboards.
+OverKill is a premium engagement system for Discord, combining a dynamic economy, automated rewards, and streamlined server management.
 
 ---
 
 ## 👤 Member Commands
-*   **/bank**: Your personal profile. Claim daily rewards, manage your inventory, transfer coins, and view your history.
-*   **Shop Buying**: Use the **[ Buy ]** buttons in shop channels to purchase roles, name colors, and items.
-*   **Missions**: Complete real-time tasks to earn coins and badges in the missions channel.
+The tools for every community member to participate:
+*   **/bank**: Your profile dashboard. Claim your **Daily Rewards**, build your 🔥 **Streak**, and track your detailed **History**.
+*   **/inventory**: Access and equip your collection of items and name colors.
+*   **/trade**: Securely trade items with other server members.
+*   **/leaderboard**: View the top performers in Activity, Wealth, and Streaks.
 
 ---
 
-## 🛠️ Admin Commands
-*   **/settings**: The master control panel. Configure reward rates, MVP automation, leaderboards, and logging channels from one centralized grid.
-*   **/shop setup**: Create and manage items, packs, and categories in the shop.
-*   **/colors**: Manage the role-based name colors available in your server's collection.
+## 🛠️ Manager Control Panel: `/settings`
+The centralized hub for server administration. Admins can configure everything from a single grid:
+*   **Economy**: Set reward rates, booster multipliers, and manage the global bank.
+*   **MVP System**: Automate the daily award of roles and coins to top users.
+*   **Shop Manager**: Setup, edit, and post items for sale.
+*   **User Management**: Directly audit and manage any member's balance or inventory.
+*   **Audit Logs**: Assign dedicated channels to track server, financial, and staff events.
+*   **Missions**: Manage the real-time Quests system from the Rewards menu.
 
 ---
 
-## 🔋 Systems Overview
-*   **MVP Award**: Automatically awards the top active users daily with custom roles and coin rewards.
-*   **Leaderboards**: Live tracking for the richest, most active, and highest-streak members.
-*   **Audit Logging**: Detailed channels for tracking financial transactions, staff actions, and server events.
+## 🔋 Advanced Tools
+*   **/item-mass**: Powerful batch management for high-volume item creation and updates.
+*   **/quest**: Direct control over mission generation and rewards.
 
 ---
 
-### 🕹️ Unified Controls
-All configuration menus are standardized with simple **Enable/Disable** buttons and instant "Back to Settings" navigation for a smooth management experience.
+### 🕹️ Seamless Experience
+OverKill features a standardized UI with simple **Enable/Disable** buttons and instant navigation, ensuring a clean and predictable experience for both admins and members.
 
 ---
 
