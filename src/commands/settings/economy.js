@@ -44,15 +44,6 @@ async function showEconomyDashboard(interaction, view) {
     const activeUsers = parseInt(activeRes.rows[0]?.count || 0, 10);
     const avgWealth = activeUsers > 0 ? Math.floor(totalWealth / activeUsers) : 0;
 
-    // 3. Streak Analytics (Avg/Max streaks)
-    const streakRes = await pool.query(
-        `SELECT COALESCE(ROUND(AVG(daily_streak), 1), 0) as avg_streak, COALESCE(MAX(daily_streak), 0) as max_streak 
-         FROM user_balances WHERE guild_id = $1 AND daily_streak > 0`,
-        [guildId]
-    );
-    const avgStreak = streakRes.rows[0]?.avg_streak || 0;
-    const maxStreak = streakRes.rows[0]?.max_streak || 0;
-
     const embed = new EmbedBuilder()
         .setColor(0x2ECC71) // Green
         .setTitle('📊 Economy Dashboard');
@@ -88,18 +79,13 @@ async function showEconomyDashboard(interaction, view) {
         embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your live configuration.')
         embed.addFields(
             {
-                name: '⛓️ Streak Mechanics',
-                value: `• **Reset:** 00:00 Cairo Time\n• **Logic:** Must claim daily to persist\n• **Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Cap:** ${streakCap} days`,
-                inline: true
-            },
-            {
-                name: '📜 Quest Policy',
-                value: `• **Refreshes:** ${questRefreshes}/day\n• ** missions:** ${questsPerRefresh} per refresh\n• **Total:** ${totalQuestsPerDay}/day`,
-                inline: true
+                name: '💰 Reward Configuration',
+                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day (Max: +${streakBonus * streakCap})\n• **Quests:** ~${avgQuest} ${COIN_EMOJI} per mission (${totalQuestsPerDay} available/day)\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}`,
+                inline: false
             },
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day (1 quest)\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day (All quests)`,
+                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
                 inline: false
             },
             {
@@ -213,12 +199,7 @@ async function showEconomyDashboard(interaction, view) {
             {
                 name: '💰 Total Server Wealth',
                 value: `**${totalWealth.toLocaleString()}** ${COIN_EMOJI}\nAverage Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
-                inline: true
-            },
-            {
-                name: '🔥 Streak Vitality',
-                value: `Average: **${avgStreak}** days\nTop Streak: **${maxStreak}** days`,
-                inline: true
+                inline: false
             },
             {
                 name: `🖨️ ${periodLabel} Print Overview`,
