@@ -357,8 +357,12 @@ export async function handleAddTypeSelect(interaction) {
  */
 async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
   if (!rawInput || rawInput.trim().toLowerCase() === 'none' || rawInput.trim() === '') {
-    return { resolved: [], errors: [], hasBooster: false };
+    return { resolved: [], errors: [], hasBooster: false, hasMvp: false };
   }
+
+  const { getGuildConfig } = await import('../storage/config.js');
+  const guildConfig = await getGuildConfig(guild.id);
+  const mvpRoleId = guildConfig?.mvpRoleId;
 
   const segments = rawInput.split(/[,\s-]+/).filter(s => s.trim().length > 0);
   const allItems = await getShopItems(guild.id, null, 'name', true);
@@ -367,6 +371,7 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
   const resolvedIds = new Set();
   const errors = [];
   let hasBooster = false;
+  let hasMvp = false;
 
   for (const seg of segments) {
     // 1. Check for existing "booster:ID" marker (from re-saves)
@@ -377,6 +382,13 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
         hasBooster = true;
         continue;
       }
+    }
+
+    // 1.5 Check for existing "mvp:ID" marker
+    if (seg.startsWith('mvp:')) {
+      resolvedIds.add(seg);
+      hasMvp = true;
+      continue;
     }
 
     // Extract Snowflake or Numeric ID
@@ -391,6 +403,13 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
     if (boosterRoleId && cleanId === boosterRoleId) {
       resolvedIds.add(`booster:${cleanId}`);
       hasBooster = true;
+      continue;
+    }
+
+    // 2.5 Check if it's the MVP Role ID
+    if (mvpRoleId && cleanId === mvpRoleId) {
+      resolvedIds.add(`mvp:${cleanId}`);
+      hasMvp = true;
       continue;
     }
 
@@ -425,7 +444,8 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
   return { 
     resolved: [...resolvedIds], 
     errors, 
-    hasBooster 
+    hasBooster,
+    hasMvp
   };
 }
 
@@ -486,7 +506,7 @@ export async function handleItemModalSubmit(interaction) {
         }
 
         let requiredItems = [];
-        let reqValidation = { resolved: [], errors: [], hasBooster: false };
+        let reqValidation = { resolved: [], errors: [], hasBooster: false, hasMvp: false };
         try {
           const reqRaw = interaction.fields.getTextInputValue('item_required');
           reqValidation = await resolvePrerequisiteIds(interaction.guild, reqRaw);
@@ -506,7 +526,10 @@ export async function handleItemModalSubmit(interaction) {
         
         let successMsg = `✅ Item **${name}** added!`;
         if (reqValidation.hasBooster) {
-          successMsg = `✅ Item **${name}** added!\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+          successMsg += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+        }
+        if (reqValidation.hasMvp) {
+          successMsg += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
         }
         sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: ${price})`);
 
@@ -533,7 +556,7 @@ export async function handleItemModalSubmit(interaction) {
       if (!oldItem) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
       let updates = { name, price };
-      let reqValidation = { resolved: [], errors: [], hasBooster: false };
+      let reqValidation = { resolved: [], errors: [], hasBooster: false, hasMvp: false };
 
       if (type === 'item') {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
@@ -606,7 +629,10 @@ export async function handleItemModalSubmit(interaction) {
       
       let successMsg = `✅ Item **${name}** updated!`;
       if (reqValidation.hasBooster) {
-        successMsg = `✅ Item **${name}** updated!\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+        successMsg += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+      }
+      if (reqValidation.hasMvp) {
+        successMsg += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
       }
       
       if (type === 'pack') await handleEditPackSelect(mock, `✅ Pack **${name}** updated!`);
