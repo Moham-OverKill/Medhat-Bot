@@ -412,13 +412,14 @@ export async function deleteItemTier(tierId) {
  */
 export async function checkPrerequisites(member, guildId, requiredItems, client = null) {
   if (!requiredItems || !Array.isArray(requiredItems) || requiredItems.length === 0) {
-    return { met: true, missingItemIds: [], missingBooster: false };
+    return { met: true, missingItemIds: [], missingBooster: false, missingMvp: false };
   }
 
   const pool = client || getPool();
   const userId = member.user.id;
   const missingItemIds = [];
   let missingBooster = false;
+  let missingMvp = false;
 
   for (const req of requiredItems) {
     // 1. Booster Role Check (Live Status)
@@ -426,6 +427,35 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       const roleId = req.split(':')[1];
       if (!member.roles.cache.has(roleId)) {
         missingBooster = true;
+      }
+      continue;
+    }
+
+    // 1.5. MVP Role Exemption Check (True Database Source-of-Truth)
+    if (typeof req === 'string' && req.startsWith('mvp:')) {
+      const reqRoleId = req.split(':')[1];
+      
+      try {
+        const { getGuildConfig } = await import('../storage/config.js');
+        const config = await getGuildConfig(guildId);
+        
+        // Failsafe Auto-Unlinking: If the MVP requirement on the item doesn't match the current Guild setting, 
+        // it means the admin changed/deleted the MVP role. We bypass the requirement (auto-unlock).
+        if (!config || config.mvpRoleId !== reqRoleId) {
+          continue; 
+        }
+
+        // True Database Source-of-Truth
+        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
+        const { results } = await getLastMvpCycleResults(guildId, 5); // Fetch top 5 recent winners
+        const isUserMvp = results.some(r => r.userId === userId);
+        
+        if (!isUserMvp) {
+          missingMvp = true;
+        }
+      } catch (error) {
+        console.error('Error checking MVP prerequisite:', error);
+        missingMvp = true; 
       }
       continue;
     }
@@ -451,16 +481,21 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
   }
   }
 
-  const met = missingItemIds.length === 0 && !missingBooster;
-  return { met, missingItemIds, missingBooster };
+  const met = missingItemIds.length === 0 && !missingBooster && !missingMvp;
+  return { met, missingItemIds, missingBooster, missingMvp };
 }
 
 /**
  * Helper: Format comprehensive prerequisite error messages
  */
 export async function formatPrerequisiteError(prereqs, guildId) {
-  const { missingItemIds, missingBooster } = prereqs;
+  const { missingItemIds, missingBooster, missingMvp } = prereqs;
   
+  if (missingMvp) {
+    if (missingBooster && missingItemIds.length === 0) return 'This item requires you to be the Active Server MVP and a Server Booster. 🏆🚀';
+    if (missingItemIds.length === 0) return 'This item requires you to be the Active Server MVP. 🏆';
+  }
+
   // Scenario A: Booster Only
   if (missingItemIds.length === 0 && missingBooster) {
     return 'This item is for Server Boosters only. 🚀';
