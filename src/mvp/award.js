@@ -829,6 +829,16 @@ export async function awardMvp(client, guildId, options = {}) {
     const assignmentFailures = [];
 
     if (!isTest) {
+      // ========== CAPTURE OLD MVPS FOR DEPENDENCY SWEEP ==========
+      let oldMvpUserIds = [];
+      try {
+        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
+        const oldCycle = await getLastMvpCycleResults(guildId, 5);
+        oldMvpUserIds = oldCycle.results.map(r => r.userId);
+      } catch (e) {
+        console.error(`${tag} Failed to capture old MVPs for sweep:`, e);
+      }
+
       for (const winner of winners) {
         try {
           const member = await executeWithRetry(
@@ -911,6 +921,24 @@ export async function awardMvp(client, guildId, options = {}) {
         `**Winners:** ${winnerLogList}\n` +
         `**Reward:** \`${totalReward.toLocaleString()}\` ${COIN_EMOJI} per winner`
       );
+
+      // ========== SWEEP EXPIRATION EFFECTS FOR OLD MVPS ==========
+      try {
+        const { runDependencySweep } = await import('../economy/shop.js');
+        const currentWinnerIds = resultMembers.map(m => m.id);
+        
+        for (const oldMvpId of oldMvpUserIds) {
+          if (!currentWinnerIds.includes(oldMvpId)) {
+            const oldMember = await guild.members.fetch(oldMvpId).catch(() => null);
+            if (oldMember) {
+              console.log(`${tag} Running dependency sweep for dethroned MVP ${oldMember.user.tag}`);
+              await runDependencySweep(oldMvpId, guildId, oldMember);
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`${tag} Failed to run dependency sweep for old MVPs:`, e);
+      }
     }
 
     // Points reset is now handled by the primary daily cycle loop after successful awarding.
