@@ -57,16 +57,17 @@ async function getRewardsPayload(guildId) {
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
       { name: 'Boost Mult', value: boosterText, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true }, // Spacer to force 2x2 grid
+      { name: 'MVP Reward', value: mvpText, inline: true },
       { name: 'Streak Bonus', value: streakText, inline: true },
       { name: 'Streak Cap', value: capText, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true }  // Spacer
+      { name: '\u200B', value: '\u200B', inline: true }
     );
 
   // Row 1: Config Buttons
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
-    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀')
+    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀'),
+    new ButtonBuilder().setCustomId('rewards_mvp_btn').setLabel('MVP Reward').setStyle(ButtonStyle.Primary).setEmoji('🏆')
   );
 
   // Row 2: Bottom 2 (Bonus, Cap) - Removed Give Coins (moved to Rewards menu)
@@ -235,7 +236,9 @@ export async function handleRewardsComponent(interaction) {
 export async function handleRewardsModal(interaction) {
   const customId = interaction.customId;
   const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId) || {};
+
+  try {
+    const config = await getGuildConfig(guildId) || {};
 
   if (customId === 'rewards_mvp_modal') {
     const inputVal = interaction.fields.getTextInputValue('amount');
@@ -372,5 +375,11 @@ export async function handleRewardsModal(interaction) {
       console.error('Give coins error:', error);
       await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
     }
+  }
+  } catch (error) {
+    console.error('[Rewards] Modal Error:', error);
+    const reply = { content: '❌ An error occurred processing this configuration.', flags: MessageFlags.Ephemeral };
+    if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
+    else await interaction.reply(reply);
   }
 }

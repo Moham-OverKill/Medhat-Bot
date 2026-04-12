@@ -326,7 +326,7 @@ export async function showSetupPanel(interaction, config) {
   // Use editReply() if already acknowledged, otherwise update() for component interactions
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
-    : (interaction.isAnySelectMenu() || interaction.isButton()
+    : (interaction.isAnySelectMenu() || interaction.isButton() || interaction.isModalSubmit()
       ? 'update'
       : 'editReply');
 
