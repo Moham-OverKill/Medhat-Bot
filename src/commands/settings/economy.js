@@ -44,6 +44,15 @@ async function showEconomyDashboard(interaction, view) {
     const activeUsers = parseInt(activeRes.rows[0]?.count || 0, 10);
     const avgWealth = activeUsers > 0 ? Math.floor(totalWealth / activeUsers) : 0;
 
+    // 3. Streak Analytics (Avg/Max streaks)
+    const streakRes = await pool.query(
+        `SELECT COALESCE(ROUND(AVG(daily_streak), 1), 0) as avg_streak, COALESCE(MAX(daily_streak), 0) as max_streak 
+         FROM user_balances WHERE guild_id = $1 AND daily_streak > 0`,
+        [guildId]
+    );
+    const avgStreak = streakRes.rows[0]?.avg_streak || 0;
+    const maxStreak = streakRes.rows[0]?.max_streak || 0;
+
     const embed = new EmbedBuilder()
         .setColor(0x2ECC71) // Green
         .setTitle('📊 Economy Dashboard');
@@ -59,6 +68,11 @@ async function showEconomyDashboard(interaction, view) {
         const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 30;
         const baseDaily = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
 
+        // Fetch Quest Configuration
+        const questRefreshes = config.quests_refreshes_per_day || 1;
+        const questsPerRefresh = config.quests_per_refresh || 1;
+        const totalQuestsPerDay = questRefreshes * questsPerRefresh;
+
         // Fetch Average Quest Reward (from current active pool)
         const questRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM quests WHERE guild_id = $1`, [guildId]);
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
@@ -66,16 +80,26 @@ async function showEconomyDashboard(interaction, view) {
         // 1. Casual User (Base Daily + 1 Average Quest)
         const casualIncome = baseDaily + avgQuest;
 
-        // 2. Grinder User (Max Daily w/ Booster + 2 Quests [Common for 2-4 refreshes] + Weekly MVP share)
+        // 2. Grinder User (Max Daily w/ Booster + ALL configured quests + Weekly MVP share)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
-        const grinderIncome = grinderDailyBoosted + (avgQuest * 2) + Math.floor(mvpReward / 7);
+        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + Math.floor(mvpReward / 7);
 
-        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your live config values (MVP - Streak - Booster Multipliers - Quest Rewards).')
+        embed.setDescription('💡 **Smart Pricing Recommendations**\nThese prices are calculated mathematically using your live configuration.')
         embed.addFields(
             {
+                name: '⛓️ Streak Mechanics',
+                value: `• **Reset:** 00:00 Cairo Time\n• **Logic:** Must claim daily to persist\n• **Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Cap:** ${streakCap} days`,
+                inline: true
+            },
+            {
+                name: '📜 Quest Policy',
+                value: `• **Refreshes:** ${questRefreshes}/day\n• ** missions:** ${questsPerRefresh} per refresh\n• **Total:** ${totalQuestsPerDay}/day`,
+                inline: true
+            },
+            {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day (1 quest)\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day (All quests)`,
                 inline: false
             },
             {
@@ -189,7 +213,12 @@ async function showEconomyDashboard(interaction, view) {
             {
                 name: '💰 Total Server Wealth',
                 value: `**${totalWealth.toLocaleString()}** ${COIN_EMOJI}\nAverage Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
-                inline: false
+                inline: true
+            },
+            {
+                name: '🔥 Streak Vitality',
+                value: `Average: **${avgStreak}** days\nTop Streak: **${maxStreak}** days`,
+                inline: true
             },
             {
                 name: `🖨️ ${periodLabel} Print Overview`,
@@ -207,14 +236,6 @@ async function showEconomyDashboard(interaction, view) {
                 inline: false
             }
         );
-
-        // Inflation Warning (if 7-day print > 20% of total wealth)
-        if (view === 'week' && totalWealth > 0 && totalPrinted > (totalWealth * 0.2)) {
-            embed.addFields({
-                name: '⚠️ High Inflation Warning',
-                value: `The server printed coins equal to **${Math.round((totalPrinted/totalWealth)*100)}%** of the total wealth in just 7 days. Consider increasing shop prices or lowering reward limits to prevent hyperinflation.`
-            });
-        }
     }
 
     const navRow = new ActionRowBuilder().addComponents(
