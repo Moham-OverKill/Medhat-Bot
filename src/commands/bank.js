@@ -1300,13 +1300,26 @@ export async function handleItemClaim(interaction) {
       sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
-    console.error('Claim Error:', error);
     const errorMessage = `❌ ${error.message}`;
+    const errorMsgStr = error.message || '';
+
+    // DISTINGUISH: Validation Errors (User fault) vs System Errors (Bot fault)
+    const isValidationError = errorMsgStr.includes('server for at least') || 
+                               errorMsgStr.includes('already been claimed') || 
+                               errorMsgStr.includes('already own');
+
+    if (isValidationError) {
+      // Log as moderate warning/info to avoid "Red" logs on Railway for normal user behavior
+      console.log(`[${interaction.guild.name}] [Claim Denied] User ${interaction.user.tag}: ${errorMsgStr}`);
+    } else {
+      // TRUE System Error: Log as error for investigation
+      console.error('[System] Critical Claim Error:', error);
+    }
     
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
-      await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
+      await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 }

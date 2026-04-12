@@ -136,7 +136,7 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
 };
 
 const appVersion = pkg.version ?? 'dev';
-const shortCommit = process.env.GIT_COMMIT?.slice(0, 7) || 'unknown';
+const shortCommit = (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT)?.slice(0, 7) || 'unknown';
 emitPhase('boot', 'Starting bot', {
   ver: appVersion,
   commit: shortCommit
