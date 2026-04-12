@@ -666,12 +666,16 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     const item = itemResult.rows[0];
 
-    // ========== NEW: Prerequisite Check ==========
+    // ========== PREREQUISITE CHECK (Informational Only) ==========
+    // We NO LONGER block purchases based on prerequisites.
+    // Why? Because all items are added as UNEQUIPPED/DEACTIVATED.
+    // Requirements are strictly enforced when the user tries to ACTIVATE/EQUIP the item in their inventory.
+    // This allows users to buy packs or "stock up" on items they plan to use later.
+    // However, we still log a warning if they don't meet them yet.
     const audit = await checkPrerequisites(member, guildId, item.required_items, client);
     if (!audit.met) {
-      await client.query('ROLLBACK');
       const errorMsg = await formatPrerequisiteError(audit, guildId);
-      return { success: false, error: errorMsg };
+      console.log(`[Shop] User ${userId} bought ${item.name} without meeting prerequisites: ${errorMsg}`);
     }
 
     // Check if item is active
