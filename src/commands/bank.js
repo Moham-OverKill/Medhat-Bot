@@ -24,6 +24,7 @@ import {
   purchaseItem,
   getUserInventory,
   syncInventoryWithDiscord,
+  getSynthesizedInventory,
   toggleEquipItem,
   calculatePackPrice,
   checkPrerequisites,
@@ -53,43 +54,6 @@ async function getUserBalance(guildId, userId) {
     [guildId, userId]
   );
   return result.rows[0] || { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
-}
-
-/**
- * Unified Helper: Fetch DB inventory and synthesize live Admin-Granted items (State C)
- * Ensures consistency between Main Menu counts, Category Lists, and Item Management.
- */
-async function getSynthesizedInventory(userId, guildId, member) {
-  if (!member) return [];
-
-  // 1. Fetch DB Items (Owned/Purchased)
-  const dbInventory = await syncInventoryWithDiscord(userId, guildId, member);
-  const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
-
-  // 2. Fetch Shop Items to check for live Role-based items (Admin Granted)
-  const allShopItems = await getShopItems(guildId, null, 'name', true);
-  const adminItems = [];
-
-  for (const shopItem of allShopItems) {
-    if (!shopItem.role_id) continue;
-    const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
-
-    // State C: User has the role in Discord but doesn't own it in the DB
-    if (member.roles.cache.has(firstRoleId) && !dbShopIds.has(shopItem.id)) {
-      adminItems.push({
-        ...shopItem,
-        id: `admin_${shopItem.id}`, // Virtual ID for State Anchoring
-        shop_item_id: shopItem.id,
-        source: 'SYNC',
-        is_active: true, // Always active for roles
-        price: 0,
-        purchased_at: new Date()
-      });
-    }
-  }
-
-  // Final Merged List
-  return [...dbInventory, ...adminItems];
 }
 
 function buildBankUI(userData, member) {

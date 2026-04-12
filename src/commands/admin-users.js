@@ -12,7 +12,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
-import { getShopCategories, getUserInventory, syncInventoryWithDiscord } from '../economy/shop.js';
+import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
 import { sendLog } from '../utils/logger.js';
 
 const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
@@ -84,12 +84,9 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const balance = parseInt(userResult.rows[0].balance);
 
-        // Fetch item count
-        const invCountRes = await pool.query(
-            'SELECT COUNT(*) FROM user_inventory WHERE guild_id = $1 AND user_id = $2',
-            [guildId, targetUserId]
-        );
-        const itemCount = parseInt(invCountRes.rows[0].count);
+        // Fetch synthesized inventory to get accurate item count
+        const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
+        const itemCount = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack)).length;
 
         console.log(`[${guildName}] [Economy] Fetched data for ${displayName}: balance=${balance.toLocaleString()}, items=${itemCount}`);
         console.log(`[${guildName}] [Settings] Building UI for ${displayName} (${userTag})`);
@@ -233,8 +230,8 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     if (!targetMember) return interaction.reply({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
 
-    // Sync and fetch inventory for target user
-    const inventory = await syncInventoryWithDiscord(targetUserId, guildId, targetMember);
+    // Sync and fetch inventory for target user (including synthesized admin items)
+    const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
     const categories = await getShopCategories(guildId);
 
     // List of visible items (no packs)
