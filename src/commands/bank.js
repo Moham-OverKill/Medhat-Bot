@@ -1284,42 +1284,60 @@ export async function handleItemClaim(interaction) {
 
       // 1. Success Message to Claimer
       const successMsg = isSelfClaim 
-        ? '✅ You have reclaimed your own dropped item!' 
-        : `✅ You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
+        ? '\u2705 You have reclaimed your own dropped item!' 
+        : `\u2705 You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
       
-      await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
+      if (isForce || interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: successMsg, components: [] }).catch(() => {});
+      } else {
+        await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
 
       // 2. Update Public Message
-      // Format: [Original First Line]\n\n[Resolution Line]
-      const originalDesc = interaction.message.embeds[0]?.description || '';
-      const firstLine = originalDesc.split('\n')[0];
-      
-      const resolutionLine = isSelfClaim
-        ? `✅ **${claimerName}** changed their mind and claimed their own drop!`
-        : `✅ **${claimerName}** claimed the item!`;
+      // Find the public message (even if we're on a private warning interaction)
+      let publicMsg = null;
+      if (!isForce && interaction.message) {
+        publicMsg = interaction.message;
+      } else if (res.item.channel_id && res.item.message_id) {
+        const channel = await interaction.guild.channels.fetch(res.item.channel_id).catch(() => null);
+        if (channel) {
+          publicMsg = await channel.messages.fetch(res.item.message_id).catch(() => null);
+        }
+      }
 
-      const newDesc = `${firstLine}\n\n${resolutionLine}`;
+      if (publicMsg && publicMsg.embeds && publicMsg.embeds.length > 0) {
+        const originalDesc = publicMsg.embeds[0].description || '';
+        const firstLine = originalDesc.split('\n')[0];
+        
+        const resolutionLine = isSelfClaim
+          ? `\u2705 **${claimerName}** changed their mind and claimed their own drop!`
+          : `\u2705 **${claimerName}** claimed the item!`;
 
-      const claimedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
-        .setDescription(newDesc)
-        .setFooter({ text: 'Dropped at' });
+        const newDesc = `${firstLine}\n\n${resolutionLine}`;
 
-      claimedEmbed.setTimestamp(new Date(res.dropped_at));
+        const claimedEmbed = EmbedBuilder.from(publicMsg.embeds[0])
+          .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
+          .setDescription(newDesc)
+          .setFooter({ text: 'Dropped at' });
 
-      const lockedRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`bank_item_claimed_locked_${dropId}`)
-          .setLabel('Claim Item')
-          .setEmoji('🎁')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true)
-      );
+        claimedEmbed.setTimestamp(new Date(res.dropped_at));
 
-      await interaction.message.edit({ embeds: [claimedEmbed], components: [lockedRow] });
+        const lockedRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`bank_item_claimed_locked_${dropId}`)
+            .setLabel('Claim Item')
+            .setEmoji('\uD83C\uDF81')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true)
+        );
+
+        await publicMsg.edit({ embeds: [claimedEmbed], components: [lockedRow] }).catch(err => {
+          console.error('[System] Failed to edit public drop message:', err.message);
+        });
+      }
 
       // 3. Log Audit
-      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
+      sendLog(interaction.guild, 'inventory', 'green', '\uD83C\uDF81 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
     const errorMessage = `❌ ${error.message}`;
