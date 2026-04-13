@@ -1300,7 +1300,7 @@ export async function handleItemClaim(interaction) {
       // 1. Success Message to Claimer
       const successMsg = isSelfClaim 
         ? '\u2705 You have reclaimed your own dropped item!' 
-        : `\u2705 You have successfully claimed **${res.item.name}**! Check your \`/inventory\` to equip it.`;
+        : `\u2705 You have successfully claimed **${res.item.name}**!`;
       
       if (isForce || interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: successMsg, components: [] }).catch(() => {});
