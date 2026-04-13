@@ -408,7 +408,17 @@ export function setupComponentHandlers(client) {
       }
 
     } catch (error) {
-      sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'InteractionCreate event' });
+      const errorMsg = error?.message || String(error);
+      // If it's a "harmless" interaction error, don't log it in red (sysError)
+      if (errorMsg.includes('already been sent') || errorMsg.includes('Unknown interaction')) {
+        sysLog('Interaction Notice', { 
+          user: interaction.user.id, 
+          guild: interaction.guildId, 
+          detail: `Handled: ${errorMsg}` 
+        });
+      } else {
+        sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: guildId, detail: 'InteractionCreate event' });
+      }
     } finally {
       clearTimeout(watchdog);
     }
