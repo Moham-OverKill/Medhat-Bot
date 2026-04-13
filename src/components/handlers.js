@@ -228,7 +228,7 @@ export function setupComponentHandlers(client) {
         await handleEditItemDetails(interaction);
       } else if (customId.startsWith('shop_pack_edit_')) {
         await handleEditPackDetails(interaction);
-      } else if (customId.startsWith('bank_shop_buy_')) {
+      } else if (customId.startsWith('bank_shop_buy_') || customId.startsWith('force_buy_')) {
         await handleShopBuyButton(interaction);
       } else if (customId.startsWith('bank_shop_confirm_')) {
         await handleShopConfirmBuy(interaction);
@@ -240,7 +240,7 @@ export function setupComponentHandlers(client) {
         await handleInventoryCategorySelect(interaction);
       } else if (customId.startsWith('bank_inv_item_') || customId.startsWith('inv_nav_')) {
         await handleInventoryItemSelect(interaction);
-      } else if (customId.startsWith('bank_item_claim_')) {
+      } else if (customId.startsWith('bank_item_claim_') || customId.startsWith('force_claim_')) {
         await handleItemClaim(interaction);
       } else if (customId.startsWith('bank_inv_equip_') || customId.startsWith('bank_inv_drop_') || customId.startsWith('bank_inv_dropconfirm_') || customId.startsWith('bank_inv_dropcancel_')) {
         await handleInventoryAction(interaction);

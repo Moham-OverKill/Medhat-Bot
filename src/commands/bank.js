@@ -359,19 +359,56 @@ export async function handleShopItemSelect(interaction) {
 
 export async function handleShopBuyButton(interaction) {
   try {
-    // 1. Defer Ephemeral (This is a private response to a public button)
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    // Parse customId: bank_shop_buy_[itemId]_[sellerId]_[payout]
+    const isForce = interaction.customId.startsWith('force_buy_');
+    
+    // Parse customId: 
+    // bank_shop_buy_[itemId]_[sellerId]_[payout] OR 
+    // force_buy_[itemId]_[sellerId]_[payout]
     const parts = interaction.customId.split('_');
-    const itemId = parseInt(parts[3]);
-    const sellerId = parts[4] || '0';
-    const payoutStr = parts[5] || '0';
+    const offset = isForce ? 0 : 1;
+    const itemId = parseInt(parts[2 + offset]);
+    const sellerId = parts[3 + offset] || '0';
+    const payoutStr = parts[4 + offset] || '0';
     const customPayout = parseInt(payoutStr) || 0;
 
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
     const member = interaction.member;
+
+    // ===========================================
+    // STEP 0: Interstitial Prerequisite Check
+    // ===========================================
+    if (!isForce) {
+      const { getShopItem, checkPrerequisites, formatPrerequisiteError } = await import('../economy/shop.js');
+      const item = await getShopItem(itemId, guildId);
+      
+      if (item && item.required_items) {
+        const prereqs = await checkPrerequisites(member, guildId, item.required_items);
+        if (!prereqs.met) {
+          const warnRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`force_buy_${itemId}_${sellerId}_${payoutStr}`)
+              .setLabel('Buy Anyway')
+              .setEmoji('\u26A0\uFE0F')
+              .setStyle(ButtonStyle.Danger)
+          );
+
+          return await interaction.reply({
+            content: `\u274C You don't meet the requirements to equip this!`,
+            components: [warnRow],
+            flags: MessageFlags.Ephemeral
+          });
+        }
+      }
+    }
+
+    // 1. Defer Update/Reply
+    if (isForce) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    }
+
     const guildName = interaction.guild.name;
     const buyerName = interaction.user.username;
 
@@ -380,6 +417,7 @@ export async function handleShopBuyButton(interaction) {
     // ===========================================
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
+    const { getShopItem } = await import('../economy/shop.js');
     const itemForPrice = await getShopItem(itemId);
     const itemPrice = itemForPrice?.price || 0;
 
@@ -404,8 +442,7 @@ export async function handleShopBuyButton(interaction) {
     // STEP 3: Live UI Refresh (Update original message on EVERY click)
     // ===========================================
     try {
-      const updatedItem = await getShopItem(itemId, guildId);
-      if (updatedItem && interaction.message) {
+      if (itemForPrice && interaction.message && interaction.message.editable) {
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
         
         // Update Stock field
@@ -1192,7 +1229,50 @@ export async function handleInventoryAction(interaction) {
  */
 export async function handleItemClaim(interaction) {
   try {
-    const dropId = interaction.customId.replace('bank_item_claim_', '');
+    const isForce = interaction.customId.startsWith('force_claim_');
+    const dropId = isForce 
+      ? interaction.customId.replace('force_claim_', '')
+      : interaction.customId.replace('bank_item_claim_', '');
+
+    // ===========================================
+    // STEP 0: Interstitial Prerequisite Check
+    // ===========================================
+    if (!isForce) {
+      const pool = getPool();
+      const dropRes = await pool.query(
+        `SELECT d.shop_item_id, si.required_items 
+         FROM dropped_items d
+         JOIN shop_items si ON d.shop_item_id = si.id
+         WHERE d.id = $1`, [dropId]
+      );
+      
+      if (dropRes.rows.length > 0) {
+        const item = dropRes.rows[0];
+        if (item.required_items) {
+          const { checkPrerequisites } = await import('../economy/shop.js');
+          const prereqs = await checkPrerequisites(interaction.member, interaction.guildId, item.required_items);
+          if (!prereqs.met) {
+            const warnRow = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`force_claim_${dropId}`)
+                .setLabel('Claim Anyway')
+                .setEmoji('\u26A0\uFE0F')
+                .setStyle(ButtonStyle.Danger)
+            );
+
+            return await interaction.reply({
+              content: `\u274C You don't meet the requirements to equip this!`,
+              components: [warnRow],
+              flags: MessageFlags.Ephemeral
+            });
+          }
+        }
+      }
+    }
+
+    if (isForce) {
+      await interaction.deferUpdate();
+    }
 
     // 1. Initial acknowledgment (STRICT: Re-acknowledge even if router missed it)
     // Attempt Claim (Atomic Transaction in shop.js)
