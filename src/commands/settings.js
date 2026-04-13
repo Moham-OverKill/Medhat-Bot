@@ -34,6 +34,7 @@ export const settingsCommand = new SlashCommandBuilder()
 /**
  * Handle /settings command
  */
+export async function handleSettingsCommand(interaction) {
   const guildName = interaction.guild?.name || 'Unknown Server';
   sysLog('Settings Dashboard opened', { user: interaction.user.id, guild: interaction.guildId });
 
@@ -297,8 +298,7 @@ export async function handleSettingsComponent(interaction) {
         }
 
         // Default: Return to main menu if no module matches (or unknown interaction)
-            await showMainMenu(interaction);
-        }
+        await showMainMenu(interaction);
     } catch (error) {
         sysError('Settings fatal component error', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error);
