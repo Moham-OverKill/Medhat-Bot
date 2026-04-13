@@ -138,15 +138,15 @@ export async function showRewardsSubMenu(interaction) {
             .setCustomId('quests_dashboard')
             .setLabel('Quests')
             .setEmoji('🎯')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('rewards_give_btn')
             .setLabel('Give Coins')
             .setEmoji('💸')
-            .setStyle(ButtonStyle.Success),
+            .setStyle(ButtonStyle.Success)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
             .setLabel('Back to Settings')
