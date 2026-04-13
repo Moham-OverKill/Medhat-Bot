@@ -10,10 +10,10 @@ import { sysLog } from '../utils/logger.js';
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
 
-  sysLog('Command Executed', { 
-    user: interaction.user, 
-    guild: interaction.guild, 
-    detail: `Name: /${commandName}` 
+  sysLog('Command Executed', {
+    user: interaction.user,
+    guild: interaction.guild,
+    detail: `Name: /${commandName}`
   });
 
   switch (commandName) {

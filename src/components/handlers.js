@@ -83,12 +83,12 @@ import {
   handleMassSave,
   handleMassCreateStandalone
 } from '../commands/item-mass.js';
-import { 
-  handleTradeSetupInteraction, 
-  handleTradeModal, 
-  handleTradeSelect, 
+import {
+  handleTradeSetupInteraction,
+  handleTradeModal,
+  handleTradeSelect,
   handleTradeExecution,
-  handleTradeFinalConfirmation 
+  handleTradeFinalConfirmation
 } from '../commands/trade.js';
 import { sanitizeError } from '../shared.js';
 import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
@@ -105,14 +105,14 @@ export function setupComponentHandlers(client) {
     try {
       // 1. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
-        const type = interaction.isButton() ? 'Button' : 
-                     interaction.isAnySelectMenu() ? 'Menu' : 
-                     interaction.isModalSubmit() ? 'Modal' : 'Interaction';
-        
-        sysLog(`${type} Clicked`, { 
-          user: interaction.user, 
-          guild: interaction.guild, 
-          detail: `CustomID: ${interaction.customId}` 
+        const type = interaction.isButton() ? 'Button' :
+          interaction.isAnySelectMenu() ? 'Menu' :
+            interaction.isModalSubmit() ? 'Modal' : 'Interaction';
+
+        sysLog(`${type} Clicked`, {
+          user: interaction.user,
+          guild: interaction.guild,
+          detail: `CustomID: ${interaction.customId}`
         });
       }
       // --- SECURITY GUARDRAIL ---

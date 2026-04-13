@@ -244,10 +244,12 @@ export async function showSetupPanel(interaction, config) {
     .setTitle('🏆 MVP System Status')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
     .addFields(
-        { name: `${statusEmoji} Status`, value: statusText, inline: true },
-        { name: '⏳ Next Award', value: nextCheckText, inline: true },
-        { name: '👤 Role', value: roleMention, inline: true },
-        { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins`, inline: true }
+      { name: `${statusEmoji} Status`, value: statusText, inline: true },
+      { name: '⏳ Next Award', value: nextCheckText, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true },
+      { name: '👤 Role', value: roleMention, inline: true },
+      { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins`, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true }
     );
 
   // If not configured, show warning message
@@ -481,9 +483,9 @@ async function handleRoleSelect(interaction, config) {
     await saveConfig(interaction, config, ['mvpRoleId']);
 
     const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Role Updated', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Action:** Set MVP award role to ${role}.`
+    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Role Updated',
+      `**Admin:** \`${logName}\`\n` +
+      `**Action:** Set MVP award role to ${role}.`
     );
 
     await showSetupPanel(interaction, config);
@@ -521,9 +523,9 @@ async function handleWinnersSelect(interaction, config) {
     await saveConfig(interaction, config, ['winnersCount']);
 
     const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Winner Count Updated', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Action:** Set daily MVP winner count to **${winnersCount}**.`
+    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Winner Count Updated',
+      `**Admin:** \`${logName}\`\n` +
+      `**Action:** Set daily MVP winner count to **${winnersCount}**.`
     );
 
     await showSetupPanel(interaction, config);
@@ -574,7 +576,7 @@ async function handleToggle(interaction, config) {
     const logName = getUserLogName(interaction);
     if (newState) {
       await scheduleMvpTimer(interaction.client, guildId, true);
-      sendLog(interaction.guild, 'audit', 'cyan', '🏆 MVP System Enabled', 
+      sendLog(interaction.guild, 'audit', 'cyan', '🏆 MVP System Enabled',
         `**Admin:** \`${logName}\`\n` +
         `**Status:** Automated daily MVP selection is now **ON**.`
       );
@@ -582,7 +584,7 @@ async function handleToggle(interaction, config) {
       await cancelMvpTimer(guildId);
       const { stopAllVoiceTracking } = await import('../activity/tracker.js');
       await stopAllVoiceTracking(guildId);
-      sendLog(interaction.guild, 'audit', 'crimson', '🏆 MVP System Disabled', 
+      sendLog(interaction.guild, 'audit', 'crimson', '🏆 MVP System Disabled',
         `**Admin:** \`${logName}\`\n` +
         `**Status:** Automated daily MVP selection is now **OFF**.`
       );
