@@ -91,34 +91,59 @@ export async function rotateGuildQuests(guildId, config, pool) {
     
     if (allQuests.length === 0) return;
     
-    const lastIds = config.active_quest_ids || [];
-    let unusedPool = allQuests.filter(q => !lastIds.includes(q.id));
+    // Increment or initialize cycle
+    const currentCycle = (config.current_quest_cycle || 0) + 1;
     
-    // Shuffle the unused pool
-    for (let i = unusedPool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [unusedPool[i], unusedPool[j]] = [unusedPool[j], unusedPool[i]];
-    }
-
+    // Build weighted items remaining
+    let availableQuests = [...allQuests];
     let selectedIds = [];
+    
+    // Pick required amount of quests (or as many as we have available)
+    for (let c = 0; c < Math.min(amount, allQuests.length); c++) {
+        let totalWeight = 0;
+        const weightedPool = [];
 
-    // 1. Pick as many as possible from unused ones
-    selectedIds = unusedPool.slice(0, amount).map(q => q.id);
-
-    // 2. If we need more, pick from the previous ones (excluding what we just picked if somehow duplicated)
-    if (selectedIds.length < amount) {
-        let previousPool = allQuests.filter(q => lastIds.includes(q.id));
-        // Shuffle the previous pool too for variety
-        for (let i = previousPool.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [previousPool[i], previousPool[j]] = [previousPool[j], previousPool[i]];
+        for (const q of availableQuests) {
+            let weight = 100; // Default max priority
+            
+            if (q.last_active_at === null || q.last_active_at === undefined) {
+                weight = 150; // Brand New priority override
+            } else {
+                const distance = currentCycle - q.last_active_at;
+                if (distance <= 1) weight = 1;      // Just used (1% base)
+                else if (distance === 2) weight = 25; // Used 2 cycles ago (Low)
+                else if (distance === 3) weight = 50; // Used 3 cycles ago (Medium)
+                else weight = 100;                    // Used 4+ cycles ago (Max)
+            }
+            
+            totalWeight += weight;
+            weightedPool.push({ quest: q, weight, cumulativeWeight: totalWeight });
+        }
+        
+        let randomNum = Math.random() * totalWeight;
+        let pickedQuest = null;
+        let pickedIndex = -1;
+        
+        for (let i = 0; i < weightedPool.length; i++) {
+            if (randomNum <= weightedPool[i].cumulativeWeight) {
+                pickedQuest = weightedPool[i].quest;
+                pickedIndex = i;
+                break;
+            }
+        }
+        
+        // Failsafe condition (mathematically shouldn't be needed)
+        if (!pickedQuest && weightedPool.length > 0) {
+             pickedQuest = weightedPool[weightedPool.length - 1].quest;
+             pickedIndex = weightedPool.length - 1;
         }
 
-        const needed = amount - selectedIds.length;
-        const additional = previousPool.slice(0, needed).map(q => q.id);
-        selectedIds = [...selectedIds, ...additional];
+        if (pickedQuest) {
+            selectedIds.push(pickedQuest.id);
+            availableQuests.splice(pickedIndex, 1);
+        }
     }
-    
+
     // Final shuffle of the selected batch for UI variety
     for (let i = selectedIds.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -126,9 +151,20 @@ export async function rotateGuildQuests(guildId, config, pool) {
     }
 
     // Atomic Update to Guild Configuration
+    const lastIds = config.active_quest_ids || [];
     config.last_quest_ids = lastIds;
     config.active_quest_ids = selectedIds;
+    config.current_quest_cycle = currentCycle;
     await setGuildConfig(guildId, config);
+    
+    // Update the DB last_active_at for the picked quests to cement their history
+    if (selectedIds.length > 0) {
+        const placeholders = selectedIds.map((_, i) => `$${i + 2}`).join(',');
+        await pool.query(
+            `UPDATE quests SET last_active_at = $1 WHERE id IN (${placeholders})`,
+            [currentCycle, ...selectedIds]
+        ).catch(e => console.error('[Quests] Failed to update last_active_at:', e));
+    }
 
     // Atomic Wipe of All User Progress for this guild on refresh
     await resetGuildQuestProgress(guildId);
@@ -136,5 +172,5 @@ export async function rotateGuildQuests(guildId, config, pool) {
     // Broadcast to tracking engine memory
     await syncQuestChannelCache(guildId);
 
-    console.log(`[Quests] [Guild ${guildId}] Isolated rotation complete. ${selectedIds.length} quests active.`);
+    console.log(`[Quests] [Guild ${guildId}] Smart Rotation complete (Cycle ${currentCycle}). ${selectedIds.length} quests active.`);
 }

@@ -1316,7 +1316,8 @@ export async function handleBankHistory(interaction) {
       else amountDisplay = `**0**`;
 
       // Format IDs to mentions if they look like User IDs (17-19 digits) and aren't already mentioned
-      let desc = tx.description.replace(/(?<!<@)(?<!<@&)(\d{17,19})(?!>)/g, '<@$1>');
+      // Added digit boundaries (?<!\d) and (?!\d) to prevent suffix-matching bugs
+      let desc = tx.description.replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
       // Normalize legacy MVP text to generic form
       desc = desc.replace(/Won MVP of the Day/gi, 'Won the MVP award')
         .replace(/MVP of the Day reward/gi, 'Won the MVP award');

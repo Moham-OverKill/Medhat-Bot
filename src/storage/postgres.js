@@ -495,12 +495,23 @@ async function createTables() {
         action_type TEXT NOT NULL DEFAULT 'send_messages',
         required_count INTEGER NOT NULL DEFAULT 1,
         reward_coins INTEGER NOT NULL DEFAULT 10,
+        last_active_at INTEGER,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_quests_guild_id ON quests(guild_id);
+    `);
+
+    // Ensure last_active_at column exists (migration for existing tables)
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quests' AND column_name='last_active_at') THEN 
+          ALTER TABLE quests ADD COLUMN last_active_at INTEGER; 
+        END IF; 
+      END $$;
     `);
 
     // Table for daily quest progress per user
