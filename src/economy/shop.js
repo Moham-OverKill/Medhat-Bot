@@ -1831,6 +1831,8 @@ export async function purgeUserInventory(userId, guildId, member = null) {
         const botMember = member.guild.members.me;
 
         for (const rid of roles) {
+          try {
+            const role = member.guild.roles.cache.get(rid);
             if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
               await member.roles.remove(rid, 'Item Expired (Lazy Purge)');
             }
@@ -1843,15 +1845,19 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       // 4. Log to Audit
       sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Reason: Lazy Purge` });
       
-      const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: () => {} }));
-      if (sendLog) {
-        sendLog(
-          { id: guildId, name: member?.guild?.name || 'Server' }, 
-          'inventory', 
-          'red', 
-          '⏳ Item Expired', 
-          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
-        );
+      try {
+        const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: null }));
+        if (sendLog) {
+          sendLog(
+            { id: guildId, name: member?.guild?.name || 'Server' }, 
+            'inventory', 
+            'red', 
+            '⏳ Item Expired', 
+            `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
+          );
+        }
+      } catch (e) {
+        // Silently fail if sendLog import or execution fails
       }
     }
 
