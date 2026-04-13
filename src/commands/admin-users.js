@@ -548,7 +548,9 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             else if (amountVal < 0) amountDisplay = `**${amountVal}**`;
             else amountDisplay = `**0**`;
 
-            let description = tx.description.replace(/(?<!<@)(?<!<@&)(\d{17,19})(?!>)/g, '<@$1>');
+            // Format IDs to mentions if they look like User IDs (17-19 digits) and aren't already mentioned
+            // Added digit boundaries (?<!\d) and (?!\d) to prevent suffix-matching bugs
+            let description = tx.description.replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
             // Normalize legacy MVP text to generic form
             description = description.replace(/Won MVP of the Day/gi, 'Won the MVP award')
                 .replace(/MVP of the Day reward/gi, 'Won the MVP award');
