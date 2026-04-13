@@ -864,6 +864,7 @@ export async function handleShopPostStart(interaction) {
 
 // Handle Item Selection in Staging Panel
 export async function handleShopPostItemSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const userId = interaction.user.id;
   const itemId = interaction.values[0];
 
@@ -891,6 +892,7 @@ export async function handleShopPostItemSelect(interaction) {
 
 // Handle Channel Selection in Staging Panel
 export async function handleShopPostChannelSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const userId = interaction.user.id;
   const channelId = interaction.values[0];
 
@@ -904,6 +906,7 @@ export async function handleShopPostChannelSelect(interaction) {
 
 // Handle Seller Selection in Staging Panel
 export async function handleShopPostSellerSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const userId = interaction.user.id;
   const selectedUserId = interaction.values[0];
   const guildOwnerId = interaction.guild.ownerId;
@@ -1817,223 +1820,201 @@ export async function handleEditCategoryRenameStart(interaction) {
 }
 
 export async function handleEditCategoryAddItemsStart(interaction) {
-  try {
-    await interaction.deferUpdate();
-    const categoryId = interaction.customId.split('_').pop();
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+  const categoryId = interaction.customId.split('_').pop();
 
-    // Get items with NO category (Standalone), valid roles, not packs
-    const items = await getShopItems(interaction.guildId, null, 'name', true);
-    const standalone = items.filter(i => {
-      if (i.category_id) return false; // Must be standalone
-      if (i.is_pack || i.item_type === 'pack') return false; // No packs
-      if (!i.role_id) return false; // Must have role
-      const roleId = i.role_id.split(/[,\s]+/)[0];
-      return interaction.guild.roles.cache.has(roleId); // Role must exist
+  // Get items with NO category (Standalone), valid roles, not packs
+  const items = await getShopItems(interaction.guildId, null, 'name', true);
+  const standalone = items.filter(i => {
+    if (i.category_id) return false; // Must be standalone
+    if (i.is_pack || i.item_type === 'pack') return false; // No packs
+    if (!i.role_id) return false; // Must have role
+    const roleId = i.role_id.split(/[,\s]+/)[0];
+    return interaction.guild.roles.cache.has(roleId); // Role must exist
+  });
+
+  if (standalone.length === 0) {
+    return interaction.followUp({ content: '❌ No available items found to add.', flags: MessageFlags.Ephemeral });
+  }
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
+    .setPlaceholder('Select Item to Add to Category')
+    .addOptions(standalone.slice(0, 25).map(i => ({ 
+      label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
+      value: i.id.toString() 
+    })));
+
+  const row = new ActionRowBuilder().addComponents(select);
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await interaction.editReply({ content: '**Choose an item to add to this category:**', components: [row, rowBack], embeds: [] });
+}
+
+export async function handleEditCategoryAddItemsSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+  const categoryId = interaction.customId.split('_').pop();
+  const itemId = interaction.values[0];
+
+  // Validation: Check if item already has a category (strict exclusivity)
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (item && item.category_id !== null) {
+    return interaction.followUp({
+      content: '❌ This item is already in a category. Remove it first.',
+      flags: MessageFlags.Ephemeral
     });
+  }
 
-    if (standalone.length === 0) {
-      return interaction.followUp({ content: '❌ No available items found to add.', flags: MessageFlags.Ephemeral });
-    }
+  await updateShopItem(itemId, { category_id: parseInt(categoryId) });
 
+  // Standardized Shop Admin Log
+  const categoriesAll = await getShopCategories(interaction.guildId);
+  const categoryTarget = categoriesAll.find(c => c.id.toString() === categoryId);
+  sendLog(interaction.guild, 'shop', 'blue', '📂 Item Added to Category', `Admin **<@${interaction.user.id}>** added item **${item?.name || itemId}** to category **${categoryTarget?.name || 'Unknown'}**`);
+
+
+  // --- Persistent Menu Logic ---
+
+  // 1. Get Category Name for feedback
+  const categories = await getShopCategories(interaction.guildId);
+  const category = categories.find(c => c.id.toString() === categoryId);
+  const categoryName = category ? category.name : 'Category';
+
+  // 2. Get Added Item Name
+  const addedItem = await getShopItem(itemId, interaction.guildId);
+  const addedItemName = addedItem ? addedItem.name : 'Item';
+
+  // 3. Fetch remaining standalone items with valid roles
+  const items = await getShopItems(interaction.guildId, null, 'name', true);
+  const standalone = items.filter(i => {
+    if (i.category_id) return false;
+    if (i.is_pack || i.item_type === 'pack') return false;
+    if (!i.role_id) return false;
+    const roleId = i.role_id.split(/[,\s]+/)[0];
+    return interaction.guild.roles.cache.has(roleId);
+  });
+
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  if (standalone.length === 0) {
+    // No more items
+    await interaction.editReply({
+      content: `✅ **${addedItemName}** added to **${categoryName}**.\n\nNo more standalone items available to add.`,
+      components: [rowBack],
+      embeds: []
+    });
+  } else {
+    // Update dropdown
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
       .setPlaceholder('Select Item to Add to Category')
       .addOptions(standalone.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString() 
+        value: i.id.toString(), 
+        description: i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins` 
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
 
-    await interaction.editReply({ content: '**Choose an item to add to this category:**', components: [row, rowBack], embeds: [] });
-  } catch (error) {
-    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting category add items' });
-    if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load add items menu.', flags: MessageFlags.Ephemeral });
-  }
-}
-
-export async function handleEditCategoryAddItemsSelect(interaction) {
-  try {
-    await interaction.deferUpdate();
-    const categoryId = interaction.customId.split('_').pop();
-    const itemId = interaction.values[0];
-
-    // Validation: Check if item already has a category (strict exclusivity)
-    const item = await getShopItem(itemId, interaction.guildId);
-    if (item && item.category_id !== null) {
-      return interaction.followUp({
-        content: '❌ This item is already in a category. Remove it first.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    await updateShopItem(itemId, { category_id: parseInt(categoryId) });
-
-    // Standardized Shop Admin Log
-    const categoriesAll = await getShopCategories(interaction.guildId);
-    const categoryTarget = categoriesAll.find(c => c.id.toString() === categoryId);
-    sendLog(interaction.guild, 'shop', 'blue', '📂 Item Added to Category', `Admin **<@${interaction.user.id}>** added item **${item?.name || itemId}** to category **${categoryTarget?.name || 'Unknown'}**`);
-
-
-    // --- Persistent Menu Logic ---
-
-    // 1. Get Category Name for feedback
-    const categories = await getShopCategories(interaction.guildId);
-    const category = categories.find(c => c.id.toString() === categoryId);
-    const categoryName = category ? category.name : 'Category';
-
-    // 2. Get Added Item Name
-    const addedItem = await getShopItem(itemId, interaction.guildId);
-    const addedItemName = addedItem ? addedItem.name : 'Item';
-
-    // 3. Fetch remaining standalone items with valid roles
-    const items = await getShopItems(interaction.guildId, null, 'name', true);
-    const standalone = items.filter(i => {
-      if (i.category_id) return false;
-      if (i.is_pack || i.item_type === 'pack') return false;
-      if (!i.role_id) return false;
-      const roleId = i.role_id.split(/[,\s]+/)[0];
-      return interaction.guild.roles.cache.has(roleId);
+    await interaction.editReply({
+      content: `✅ **${addedItemName}** added to **${categoryName}**.\nChoose another item to add:`,
+      components: [row, rowBack],
+      embeds: []
     });
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    if (standalone.length === 0) {
-      // No more items
-      await interaction.editReply({
-        content: `✅ **${addedItemName}** added to **${categoryName}**.\n\nNo more standalone items available to add.`,
-        components: [rowBack],
-        embeds: []
-      });
-    } else {
-      // Update dropdown
-      const select = new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-        .setPlaceholder('Select Item to Add to Category')
-        .addOptions(standalone.slice(0, 25).map(i => ({ 
-          label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString(), 
-          description: i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins` 
-        })));
-
-      const row = new ActionRowBuilder().addComponents(select);
-
-      await interaction.editReply({
-        content: `✅ **${addedItemName}** added to **${categoryName}**.\nChoose another item to add:`,
-        components: [row, rowBack],
-        embeds: []
-      });
-    }
-
-  } catch (error) {
-    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Adding item to category' });
-    if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to add item to category.', flags: MessageFlags.Ephemeral });
   }
 }
 
 export async function handleEditCategoryRemoveItemsStart(interaction) {
-  try {
-    await interaction.deferUpdate();
-    const categoryId = interaction.customId.split('_').pop();
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+  const categoryId = interaction.customId.split('_').pop();
 
-    const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
+  const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
 
-    if (items.length === 0) {
-      return interaction.followUp({ content: '❌ This category is empty.', flags: MessageFlags.Ephemeral });
-    }
+  if (items.length === 0) {
+    return interaction.followUp({ content: '❌ This category is empty.', flags: MessageFlags.Ephemeral });
+  }
 
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
+    .setPlaceholder('Select Item to Remove from Category')
+    .addOptions(items.slice(0, 25).map(i => ({ 
+      label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
+      value: i.id.toString() 
+    })));
+
+  const row = new ActionRowBuilder().addComponents(select);
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await interaction.editReply({ content: '**Choose an item to remove:**', components: [row, rowBack], embeds: [] });
+}
+
+export async function handleEditCategoryRemoveItemsSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+  const categoryId = interaction.customId.split('_').pop();
+  const itemId = parseInt(interaction.values[0]);
+
+  const item = await getShopItem(itemId, interaction.guildId);
+  const removedItemName = item?.name || itemId;
+  const categoriesAll = await getShopCategories(interaction.guildId);
+  const category = categoriesAll.find(c => c.id.toString() === categoryId);
+  const categoryName = category ? category.name : 'Category';
+
+  await updateShopItem(itemId, { category_id: null });
+
+  // Standardized Shop Admin Log
+  sendLog(interaction.guild, 'shop', 'blue', '📂 Item Removed from Category', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from category **${categoryName}**`);
+
+
+  // --- Persistent Menu Logic ---
+
+  // 3. Fetch remaining items in this category
+  const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
+
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  if (items.length === 0) {
+    await interaction.editReply({
+      content: `✅ **${removedItemName}** removed from **${categoryName}**.\n\n❌ Category is now empty.`,
+      components: [rowBack],
+      embeds: []
+    });
+  } else {
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
       .setPlaceholder('Select Item to Remove from Category')
       .addOptions(items.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString() 
+        value: i.id.toString(),
+        description: `${i.price.toLocaleString()} coins`
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
 
-    await interaction.editReply({ content: '**Choose an item to remove:**', components: [row, rowBack], embeds: [] });
-  } catch (error) {
-    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting category remove items' });
-    if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load remove items menu.', flags: MessageFlags.Ephemeral });
-  }
-}
-
-export async function handleEditCategoryRemoveItemsSelect(interaction) {
-  try {
-    await interaction.deferUpdate();
-    const categoryId = interaction.customId.split('_').pop();
-    const itemId = parseInt(interaction.values[0]);
-
-    const item = await getShopItem(itemId, interaction.guildId);
-    const removedItemName = item?.name || itemId;
-    const categoriesAll = await getShopCategories(interaction.guildId);
-    const category = categoriesAll.find(c => c.id.toString() === categoryId);
-    const categoryName = category ? category.name : 'Category';
-
-    await updateShopItem(itemId, { category_id: null });
-
-    // Standardized Shop Admin Log
-    sendLog(interaction.guild, 'shop', 'blue', '📂 Item Removed from Category', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from category **${categoryName}**`);
-
-
-    // --- Persistent Menu Logic ---
-
-    // 3. Fetch remaining items in this category
-    const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    if (items.length === 0) {
-      await interaction.editReply({
-        content: `✅ **${removedItemName}** removed from **${categoryName}**.\n\n❌ Category is now empty.`,
-        components: [rowBack],
-        embeds: []
-      });
-    } else {
-      const select = new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-        .setPlaceholder('Select Item to Remove from Category')
-        .addOptions(items.slice(0, 25).map(i => ({ 
-          label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString(),
-          description: `${i.price.toLocaleString()} coins`
-        })));
-
-      const row = new ActionRowBuilder().addComponents(select);
-
-      await interaction.editReply({
-        content: `✅ **${removedItemName}** removed from **${categoryName}**.\nChoose another item to remove:`,
-        components: [row, rowBack],
-        embeds: []
-      });
-    }
-
-  } catch (error) {
-    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Removing item from category' });
-    if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to remove item from category.', flags: MessageFlags.Ephemeral });
+    await interaction.editReply({
+      content: `✅ **${removedItemName}** removed from **${categoryName}**.\nChoose another item to remove:`,
+      components: [row, rowBack],
+      embeds: []
+    });
   }
 }
 
@@ -2219,17 +2200,17 @@ export async function handleEditItemCategorySelect(interaction) {
 }
 
 export async function handleEditItemSelect(interaction, successHeader = null) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+  
+  // This might come from a select menu (values[0]) or a button (customId split)
+  let itemId;
+  if (interaction.isAnySelectMenu()) {
+    itemId = interaction.values[0];
+  } else {
+    itemId = interaction.customId.split('_').pop();
+  }
+
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-    // This might come from a select menu (values[0]) or a button (customId split)
-    let itemId;
-    if (interaction.isAnySelectMenu()) {
-      itemId = interaction.values[0];
-    } else {
-      itemId = interaction.customId.split('_').pop();
-    }
-
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
@@ -2436,9 +2417,8 @@ export async function handleEditPackDetails(interaction) {
 }
 
 export async function handleEditPackStart(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
     const items = await getShopItems(interaction.guildId, null, 'name', true);
     const packs = items.filter(i => i.item_type === 'pack' || i.is_pack);
 
@@ -2467,9 +2447,8 @@ export async function handleEditPackStart(interaction) {
 }
 
 export async function handleEditPackSelect(interaction, successHeader = null) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
     // Determine packId from select menu or customId
     let packId;
     if (interaction.isAnySelectMenu()) {

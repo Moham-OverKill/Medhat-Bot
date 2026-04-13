@@ -194,6 +194,7 @@ export async function showQuestsSchedule(interaction) {
  * Handle schedule dropdown updates
  */
 export async function handleQuestsScheduleUpdate(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId) || {};
   const value = parseInt(interaction.values[0]);
@@ -294,12 +295,12 @@ export async function handleAddQuestStart(interaction) {
 }
 
 export async function handleAddChannelSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const channelId = interaction.values[0];
   const guild = interaction.guild;
   const channel = await guild.channels.fetch(channelId).catch(() => null);
 
   if (!channel) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     await interaction.editReply({ content: '❌ Channel not found.', embeds: [], components: [] });
     return;
   }

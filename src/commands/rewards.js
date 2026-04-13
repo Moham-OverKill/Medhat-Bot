@@ -108,8 +108,9 @@ export async function handleRewardsComponent(interaction) {
 
   try {
     if (customId === 'rewards_home') {
+      await interaction.deferUpdate().catch(() => {});
       const payload = await getRewardsPayload(guildId);
-      await interaction.update({
+      await interaction.editReply({
         content: null,
         embeds: payload.embeds,
         components: payload.components
@@ -218,6 +219,7 @@ export async function handleRewardsComponent(interaction) {
 }
 
 export async function handleRewardsModal(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const customId = interaction.customId;
   const guildId = interaction.guildId;
 
@@ -328,8 +330,19 @@ export async function handleRewardsModal(interaction) {
           `**Reason:** ${reason}`
         );
 
-        const payload = await getRewardsPayload(interaction.guildId);
-        await interaction.update(payload);
+        // Return to user selector instead of main menu
+        const userSelect = new UserSelectMenuBuilder()
+          .setCustomId('rewards_give_select')
+          .setPlaceholder('Select user to give coins to')
+          .setMinValues(1)
+          .setMaxValues(1);
+
+        const row = new ActionRowBuilder().addComponents(userSelect);
+        const backRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('settings_rewards_menu').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.update({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
         await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
       } catch (error) {
         sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });

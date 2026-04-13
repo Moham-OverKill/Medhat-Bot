@@ -145,17 +145,6 @@ export async function resetGuildActivity(guildId) {
 
 /**
  * Add message point with strict anti-spam checks
- * Rules:
- * 1. 10-second cooldown between valid messages
- * 2. Minimum 5 characters
- * 3. No duplicate content (same as last message)
- * 4. No command prefixes (/, !, ?, etc.)
- * 
- * @param {Object} guild - Discord guild object
- * @param {string} userId - Discord user ID
- * @param {string} username - Discord username
- * @param {string} messageContent - The actual message content
- * @returns {boolean} - Whether point was awarded
  */
 export async function addMessagePoint(guild, userId, username, messageContent = '') {
   if (!guild || !userId) return false;
@@ -164,43 +153,21 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   const key = `${guildId}:${userId}`;
   const content = (messageContent || '').trim();
 
-  // === EVENT-DRIVEN PURGE (Lazy Evaluation) ===
-  // We only purge the DATABASE here to save rate limits. 
-  // Roles will be stripped when they open /inventory or /shop.
   const { purgeUserInventory } = await import('../economy/shop.js');
   await purgeUserInventory(userId, guildId, null);
 
-  // === ANTI-SPAM CHECKS ===
-
-  // Check 1: Minimum length (5 characters)
-  if (content.length < MIN_MESSAGE_LENGTH) {
-    return false;
-  }
-
-  // Check 2: No command prefixes
+  if (content.length < MIN_MESSAGE_LENGTH) return false;
   const firstChar = content.charAt(0);
-  if (COMMAND_PREFIXES.includes(firstChar)) {
-    return false;
-  }
+  if (COMMAND_PREFIXES.includes(firstChar)) return false;
 
-  // Check 3: Cooldown (10 seconds)
   const cached = userMessageCache.get(key);
-  if (cached && (now - cached.timestamp) < MESSAGE_COOLDOWN_MS) {
-    return false;
-  }
+  if (cached && (now - cached.timestamp) < MESSAGE_COOLDOWN_MS) return false;
 
-  // Check 4: Anti-duplicate (compare with last message)
   const contentLower = content.toLowerCase();
-  if (cached && cached.lastContent === contentLower) {
-    return false;
-  }
+  if (cached && cached.lastContent === contentLower) return false;
 
-  // === ALL CHECKS PASSED - AWARD POINT ===
-
-  // Update in-memory cache
   userMessageCache.set(key, { timestamp: now, lastContent: contentLower });
 
-  // Update database
   try {
     const pool = getPool();
     await pool.query(
@@ -216,7 +183,6 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       [guildId, userId, username, now, new Date(now), contentLower.substring(0, 500)]
     );
     return true;
-    return true;
   } catch (error) {
     sysError('Activity Persistence Failed', error, { user: userId, guild: guildId, detail: 'Message point' });
     return false;
@@ -224,25 +190,13 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 }
 
 /**
- * Get top active users for MVP selection with proper SQL filtering
- * Uses ORDER BY score DESC, LIMIT, and filters for score > 0
- * @param {string} guildId - Guild ID
- * @param {number} limit - Maximum number of winners (from config)
- * @param {string} guildName - Guild name for logging
- * @returns {Promise<Array>} - Array of top users sorted by score
+ * Get top active users for MVP selection
  */
 export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
   const pool = getPool();
   const users = [];
-  const tag = guildName ? `[${guildName}]` : '[System]';
 
   try {
-    // Strict SQL query:
-    // 1. Filter by guild
-    // 2. Calculate score as message_count + voice_minutes
-    // 3. Filter WHERE score > 0 (no inactive users)
-    // 4. ORDER BY score DESC (highest first)
-    // 5. LIMIT by configured winner count
     const result = await pool.query(
       `SELECT 
          user_id, 
@@ -269,9 +223,6 @@ export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
         lastActive: row.last_active ? new Date(row.last_active) : new Date()
       });
     }
-
-    sysLog('Activity Audit', { guild: guildId, detail: `${users.length} candidates found | Limit: ${limit}` });
-
   } catch (error) {
     sysError('Activity Fetch Failed', error, { guild: guildId, detail: 'Top users' });
   }
@@ -280,14 +231,12 @@ export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
 }
 
 /**
- * Stop all voice tracking for a guild (used when disabling system)
+ * Stop all voice tracking for a guild
  */
 export async function stopAllVoiceTracking(guildId) {
   const pool = getPool();
   try {
-    // First, flush any accumulated time for users who were tracking
     await flushAllVoiceTime(guildId);
-
     await pool.query(
       `UPDATE user_activity 
        SET is_voice_tracking = FALSE,
@@ -304,66 +253,32 @@ export async function stopAllVoiceTracking(guildId) {
 // VOICE CHAT: EVENT-BASED STOPWATCH SYSTEM
 // ============================================
 
-/**
- * Check if a voice state is "valid" for tracking
- * Invalid if: alone, muted, deafened
- */
 export function isVoiceStateValid(voiceState) {
   if (!voiceState || !voiceState.channel) return false;
-
-  // Check if user is muted or deafened
   if (voiceState.selfMute || voiceState.serverMute) return false;
   if (voiceState.selfDeaf || voiceState.serverDeaf) return false;
-
-  // Check AFK channel
   if (voiceState.guild.afkChannelId && voiceState.channel.id === voiceState.guild.afkChannelId) return false;
-
-  // Check if user is alone (only humans count, not bots)
   const humanMembers = voiceState.channel.members.filter(m => !m.user.bot);
   if (humanMembers.size < 2) return false;
-
   return true;
 }
 
-/**
- * Count human members in a voice channel
- */
-export function countHumansInChannel(channel) {
-  if (!channel) return 0;
-  return channel.members.filter(m => !m.user.bot).size;
-}
-
-/**
- * Handle voice state change with proper state transitions:
- * - Invalid -> Valid: START tracking
- * - Valid -> Invalid: STOP & SAVE time
- * - Valid -> Valid: DO NOTHING (preserve timer)
- */
 export async function handleVoiceStateChange(guild, oldState, newState) {
   if (!guild) return;
-
-  // Get the user who triggered the event
   const member = newState?.member || oldState?.member;
   if (!member || member.user.bot) return;
 
   const userId = member.id;
   const username = member.user.username;
-
-  // Determine old and new validity for THIS user
   const wasValid = isVoiceStateValid(oldState);
   const isNowValid = isVoiceStateValid(newState);
 
-  // State transition for the user who triggered the event
   if (!wasValid && isNowValid) {
-    // Invalid -> Valid: START tracking
     await startVoiceTracking(guild, userId, username);
   } else if (wasValid && !isNowValid) {
-    // Valid -> Invalid: STOP & SAVE
     await pauseVoiceTracking(guild, userId, username);
   }
-  // Valid -> Valid: DO NOTHING (timer continues)
 
-  // Now handle OTHER users who might be affected (e.g., someone left making others alone)
   const affectedChannels = new Set();
   if (oldState?.channel) affectedChannels.add(oldState.channel);
   if (newState?.channel) affectedChannels.add(newState.channel);
@@ -373,13 +288,8 @@ export async function handleVoiceStateChange(guild, oldState, newState) {
   }
 }
 
-/**
- * Re-evaluate OTHER users in a channel (not the one who triggered the event)
- * This handles the case where User A leaves, making User B alone
- */
 async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId) {
   if (!channel) return;
-
   const humanMembers = channel.members.filter(m => !m.user.bot && m.id !== excludeUserId);
   const totalHumans = channel.members.filter(m => !m.user.bot).size;
   const hasEnoughPeople = totalHumans >= 2;
@@ -388,16 +298,13 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId) {
     const voiceState = member.voice;
     const username = member.user.username;
 
-    // Check if this user SHOULD be tracking
     const shouldBeTracking = hasEnoughPeople &&
       !voiceState.selfMute && !voiceState.serverMute &&
       !voiceState.selfDeaf && !voiceState.serverDeaf;
 
-    // Check if this user IS currently tracking (in DB)
     const pool = getPool();
     const result = await pool.query(
-      `SELECT voice_valid_start FROM user_activity 
-       WHERE guild_id = $1 AND user_id = $2`,
+      `SELECT voice_valid_start FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
       [guild.id, memberId]
     );
 
@@ -413,10 +320,6 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId) {
   }
 }
 
-/**
- * Start voice tracking for a user (Invalid -> Valid transition)
- * Only logs if actually starting (not already tracking)
- */
 async function startVoiceTracking(guild, userId, username) {
   if (!guild || !userId) return;
   const guildId = guild.id;
@@ -424,8 +327,6 @@ async function startVoiceTracking(guild, userId, username) {
 
   try {
     const pool = getPool();
-
-    // Check if already tracking (to avoid duplicate logs)
     const check = await pool.query(
       `SELECT voice_valid_start FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
@@ -435,9 +336,8 @@ async function startVoiceTracking(guild, userId, username) {
       check.rows[0].voice_valid_start !== null &&
       parseInt(check.rows[0].voice_valid_start) > 0;
 
-    if (alreadyTracking) return; // Already tracking, don't reset or re-log
+    if (alreadyTracking) return;
 
-    // Start tracking
     await pool.query(
       `INSERT INTO user_activity (guild_id, user_id, username, voice_valid_start, last_active)
        VALUES ($1, $2, $3, $4, $5)
@@ -448,17 +348,11 @@ async function startVoiceTracking(guild, userId, username) {
          username = $3`,
       [guildId, userId, username, now, new Date(now)]
     );
-    // Voice tracking logic (logs removed)
   } catch (error) {
     sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Start voice tracking' });
   }
 }
 
-/**
- * Pause voice tracking for a user (Valid -> Invalid transition)
- * Saves elapsed time to buffer. Awards points if threshold crossed.
- * Buffer is preserved so user can resume where they left off.
- */
 async function pauseVoiceTracking(guild, userId, username) {
   if (!guild || !userId) return;
   const guildId = guild.id;
@@ -466,10 +360,8 @@ async function pauseVoiceTracking(guild, userId, username) {
 
   try {
     const pool = getPool();
-
-    // Get current tracking state
     const result = await pool.query(
-      `SELECT voice_valid_start, voice_seconds_accumulated, voice_minutes 
+      `SELECT voice_valid_start, voice_seconds_accumulated 
        FROM user_activity 
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
@@ -479,46 +371,31 @@ async function pauseVoiceTracking(guild, userId, username) {
 
     const row = result.rows[0];
     const validStart = row.voice_valid_start ? parseInt(row.voice_valid_start) : null;
-
-    if (!validStart || validStart <= 0) return; // Wasn't tracking
+    if (!validStart || validStart <= 0) return;
 
     let buffer = parseInt(row.voice_seconds_accumulated || 0);
-    let voiceMinutes = parseInt(row.voice_minutes || 0);
-
-    // Calculate elapsed time since tracking started
     const elapsedMs = now - validStart;
     const elapsedSeconds = Math.floor(elapsedMs / 1000);
     buffer += elapsedSeconds;
 
-    // Award points if threshold crossed (60 seconds = 1 point)
     const pointsToAward = Math.floor(buffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
     const remainingBuffer = buffer % VOICE_POINTS_THRESHOLD_SECONDS;
 
-    if (pointsToAward > 0) {
-      voiceMinutes += pointsToAward;
-      buffer = remainingBuffer;
-    }
-
-    // Update DB: clear start time, save buffer for next session
+    // ATOMIC UPDATE: Consume valid time and increment points in one step
     await pool.query(
       `UPDATE user_activity 
        SET voice_valid_start = NULL,
            voice_seconds_accumulated = $3,
-           voice_minutes = $4,
+           voice_minutes = voice_minutes + $4,
            last_active = $5
        WHERE guild_id = $1 AND user_id = $2`,
-      [guildId, userId, buffer, voiceMinutes, new Date(now)]
+      [guildId, userId, remainingBuffer, pointsToAward, new Date(now)]
     );
   } catch (error) {
     sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Pause voice tracking' });
   }
 }
 
-/**
- * PERIODIC TICK: Award points to active voice users every 30 seconds
- * Checks all currently valid users and awards +1 point per 60 seconds of buffer
- * NOW INCLUDES REALTIME VALIDATION - verifies user is actually in voice
- */
 export async function voicePointsTick(client) {
   if (!client) return;
 
@@ -526,26 +403,21 @@ export async function voicePointsTick(client) {
   const now = Date.now();
 
   try {
-    // Get all users currently tracking across all guilds
     const result = await pool.query(
-      `SELECT guild_id, user_id, username, voice_valid_start, voice_seconds_accumulated, voice_minutes
+      `SELECT guild_id, user_id, username, voice_valid_start, voice_seconds_accumulated
        FROM user_activity 
        WHERE voice_valid_start IS NOT NULL`
     );
 
     for (const row of result.rows) {
-      // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
       const { purgeUserInventory } = await import('../economy/shop.js');
       await purgeUserInventory(row.user_id, row.guild_id, null);
 
       const validStart = parseInt(row.voice_valid_start);
       if (!validStart || validStart <= 0) continue;
 
-      // ========== REALTIME VALIDATION ==========
-      // Fetch guild and member to verify they're actually in voice
       const guild = client.guilds.cache.get(row.guild_id);
       if (!guild) {
-        // Guild not cached, stop tracking
         await stopTrackingUser(pool, row.guild_id, row.user_id, null, 'guild not found');
         continue;
       }
@@ -554,45 +426,34 @@ export async function voicePointsTick(client) {
       try {
         member = await guild.members.fetch(row.user_id);
       } catch {
-        // Member not in server anymore
         await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
         continue;
       }
 
-      // Check if actually in voice and valid state
       const voiceState = member.voice;
       if (!voiceState || !voiceState.channel) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: not in voice' });
         continue;
       }
 
-      // Check mute/deaf
       if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: muted/deafened' });
         continue;
       }
 
-      // Check AFK channel
       if (guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: in AFK channel' });
         continue;
       }
 
-      // Check 2+ humans
       const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
       if (humanCount < 2) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: alone in channel' });
         continue;
       }
 
       // ========== VALIDATION PASSED - AWARD POINTS ==========
-      let buffer = parseInt(row.voice_seconds_accumulated || 0);
-      let voiceMinutes = parseInt(row.voice_minutes || 0);
-
+      const buffer = parseInt(row.voice_seconds_accumulated || 0);
       const elapsedMs = now - validStart;
       const elapsedSeconds = Math.floor(elapsedMs / 1000);
       const totalBuffer = buffer + elapsedSeconds;
@@ -601,19 +462,23 @@ export async function voicePointsTick(client) {
         const pointsToAward = Math.floor(totalBuffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
         const remainingBuffer = totalBuffer % VOICE_POINTS_THRESHOLD_SECONDS;
 
-        voiceMinutes += pointsToAward;
-
-        await pool.query(
+        // ATOMIC UPDATE: Consume valid time and increment points in one step
+        // We use a WHERE clause on voice_valid_start to ensure we only update if it hasn't changed
+        const updateResult = await pool.query(
           `UPDATE user_activity 
            SET voice_valid_start = $3,
                voice_seconds_accumulated = $4,
-               voice_minutes = $5,
+               voice_minutes = voice_minutes + $5,
                last_active = $6
-           WHERE guild_id = $1 AND user_id = $2`,
-          [row.guild_id, row.user_id, now, remainingBuffer, voiceMinutes, new Date(now)]
+           WHERE guild_id = $1 AND user_id = $2 AND voice_valid_start = $7`,
+          [row.guild_id, row.user_id, now, remainingBuffer, pointsToAward, new Date(now), row.voice_valid_start]
         );
 
-        // Check voice quest progress
+        if (updateResult.rowCount === 0) {
+          sysLog('Activity Sync Notice', { user: row.user_id, guild: row.guild_id, detail: 'Atomic update skipped: state changed' });
+          continue;
+        }
+
         try {
           const { checkVoiceQuest } = await import('./index.js');
           const voiceChannelId = voiceState?.channel?.id;
@@ -621,7 +486,7 @@ export async function voicePointsTick(client) {
             await checkVoiceQuest(row.guild_id, row.user_id, voiceChannelId, pointsToAward, voiceState);
           }
         } catch {
-          // Silent fail — never crash core voice tracking for quests
+          // Silent fail
         }
       }
     }
@@ -630,9 +495,6 @@ export async function voicePointsTick(client) {
   }
 }
 
-/**
- * Helper to stop tracking a user and log reason
- */
 async function stopTrackingUser(pool, guildId, userId, guild, reason) {
   try {
     await pool.query(
@@ -641,55 +503,33 @@ async function stopTrackingUser(pool, guildId, userId, guild, reason) {
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
-    sysLog('Activity Heart-Beat Flush', { user: userId, guild: guildId, detail: `Stopped ghost tracking: ${reason}` });
-  } catch (e) {
-    // Ignore errors during cleanup
-  }
+  } catch (e) {}
 }
 
-/**
- * Sync all voice users for a guild (Presence Sweep)
- * Iterates all voice channels and initializes tracking for valid human members.
- * Used on startup and after quest rotation to prevent 'ghosting'.
- */
 export async function syncVoicePresence(guild) {
   if (!guild) return;
-
   try {
     const channels = guild.channels.cache.filter(c => c.isVoiceBased());
-    let syncedCount = 0;
-
     for (const [id, channel] of channels) {
       const humanMembers = channel.members.filter(m => !m.user.bot);
-      
       for (const [memberId, member] of humanMembers) {
         if (isVoiceStateValid(member.voice)) {
           await startVoiceTracking(guild, memberId, member.user.username);
-          syncedCount++;
         }
       }
-    }
-
-    if (syncedCount > 0) {
-        sysLog('Presence Audit', { guild: guild.id, detail: `Initialized tracking for ${syncedCount} active voice users` });
     }
   } catch (error) {
     sysError('Presence Audit Failed', error, { guild: guild.id, detail: 'Initial voice sync' });
   }
 }
 
-/**
- * Flush all voice time for a guild (used before MVP award or when stopping)
- * Awards any pending points and saves remaining buffer
- */
 export async function flushAllVoiceTime(guildId) {
   const pool = getPool();
   const now = Date.now();
 
   try {
-    // Get all users currently tracking
     const result = await pool.query(
-      `SELECT user_id, username, voice_valid_start, voice_seconds_accumulated, voice_minutes
+      `SELECT user_id, username, voice_valid_start, voice_seconds_accumulated 
        FROM user_activity 
        WHERE guild_id = $1 AND voice_valid_start IS NOT NULL`,
       [guildId]
@@ -700,28 +540,21 @@ export async function flushAllVoiceTime(guildId) {
       if (!validStart || validStart <= 0) continue;
 
       let buffer = parseInt(row.voice_seconds_accumulated || 0);
-      let voiceMinutes = parseInt(row.voice_minutes || 0);
-
       const elapsedMs = now - validStart;
       const elapsedSeconds = Math.floor(elapsedMs / 1000);
       buffer += elapsedSeconds;
 
-      // Award points (60 seconds = 1 point)
       const pointsToAward = Math.floor(buffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
       const remainingBuffer = buffer % VOICE_POINTS_THRESHOLD_SECONDS;
 
-      if (pointsToAward > 0) {
-        voiceMinutes += pointsToAward;
-        buffer = remainingBuffer;
-      }
-
+      // ATOMIC UPDATE: Consume valid time and increment points in one step
       await pool.query(
         `UPDATE user_activity 
          SET voice_valid_start = NULL,
              voice_seconds_accumulated = $3,
-             voice_minutes = $4
+             voice_minutes = voice_minutes + $4
          WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, row.user_id, buffer, voiceMinutes]
+        [guildId, row.user_id, remainingBuffer, pointsToAward]
       );
     }
   } catch (error) {
