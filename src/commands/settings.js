@@ -9,7 +9,7 @@ import {
     ChannelSelectMenuBuilder,
     ChannelType
 } from 'discord.js';
-import { setGuildConfig } from '../storage/config.js';
+import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
