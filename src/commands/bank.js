@@ -148,7 +148,7 @@ export async function handleBankDaily(interaction) {
   // FORCE REFRESH: Ensuring interaction is deferred immediately to prevent 'InteractionNotReplied' errors.
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
+      await interaction.deferUpdate().catch(() => { });
     }
   } catch (err) {
     sysLog('Interaction Warning', { detail: `DeferUpdate failed: ${err.message}` });
@@ -190,7 +190,7 @@ export async function handleBankDaily(interaction) {
     // 2.5 Log to Discord Logs
     const logUsername = getUserLogName(member);
     const initialBal = result.balance - result.amount;
-    sendLog(interaction.guild, 'economy', 'orange', '🎁 Rewards Claimed', 
+    sendLog(interaction.guild, 'economy', 'orange', '🎁 Rewards Claimed',
       `**User:** \`${logUsername}\`\n` +
       `**Reward:** \`${result.amount.toLocaleString()}\` ${COIN_EMOJI} (Daily)\n` +
       `**Streak:** \`${result.streak} days\`\n` +
@@ -243,10 +243,10 @@ export async function handleShopButton(interaction) {
     const select = new StringSelectMenuBuilder()
       .setCustomId('bank_shop_category')
       .setPlaceholder('Select a Category')
-      .addOptions(categories.map(c => ({ 
-        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
-        value: c.id.toString(), 
-        description: (c.type && c.type.trim().length > 0) ? c.type.slice(0, 100) : undefined 
+      .addOptions(categories.map(c => ({
+        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`,
+        value: c.id.toString(),
+        description: (c.type && c.type.trim().length > 0) ? c.type.slice(0, 100) : undefined
       })));
 
     await interaction.editReply({
@@ -286,10 +286,10 @@ export async function handleShopCategorySelect(interaction) {
     const select = new StringSelectMenuBuilder()
       .setCustomId('bank_shop_item')
       .setPlaceholder('Select an Item to View')
-      .addOptions(items.slice(0, 25).map(i => ({ 
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString(), 
-        description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} coins` 
+      .addOptions(items.slice(0, 25).map(i => ({
+        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
+        value: i.id.toString(),
+        description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} coins`
       })));
 
     const backRow = new ActionRowBuilder().addComponents(
@@ -339,7 +339,7 @@ export async function handleShopItemSelect(interaction) {
       .setStyle(ButtonStyle.Secondary);
 
     const backButton = new ButtonBuilder()
-      .setCustomId('bank_shop') 
+      .setCustomId('bank_shop')
       .setLabel('Back')
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('⬅️');
@@ -360,7 +360,7 @@ export async function handleShopItemSelect(interaction) {
 export async function handleShopBuyButton(interaction) {
   try {
     const isForce = interaction.customId.startsWith('force_buy_');
-    
+
     // Parse customId: 
     // bank_shop_buy_[itemId]_[sellerId]_[payout] OR 
     // force_buy_[itemId]_[sellerId]_[payout]
@@ -381,7 +381,7 @@ export async function handleShopBuyButton(interaction) {
     if (!isForce) {
       const { getShopItem, checkPrerequisites, formatPrerequisiteError } = await import('../economy/shop.js');
       const item = await getShopItem(itemId, guildId);
-      
+
       if (item && item.required_items) {
         const prereqs = await checkPrerequisites(member, guildId, item.required_items);
         if (!prereqs.met) {
@@ -393,10 +393,10 @@ export async function handleShopBuyButton(interaction) {
               .setStyle(ButtonStyle.Danger)
           );
 
-          sysLog('Prereq Warning Triggered', { 
-            user: userId, 
-            guild: guildId, 
-            detail: `Action: ShopBuy | ItemID: ${itemId}` 
+          sysLog('Prereq Warning Triggered', {
+            user: userId,
+            guild: guildId,
+            detail: `Action: ShopBuy | ItemID: ${itemId}`
           });
 
           return await interaction.reply({
@@ -440,9 +440,9 @@ export async function handleShopBuyButton(interaction) {
     const { purgeUserInventory } = await import('../economy/shop.js');
     await purgeUserInventory(userId, guildId, member);
 
-    const result = await purchaseItem(userId, guildId, itemId, member, { 
-      sellerId, 
-      payoutAmount 
+    const result = await purchaseItem(userId, guildId, itemId, member, {
+      sellerId,
+      payoutAmount
     });
 
     // ===========================================
@@ -451,10 +451,10 @@ export async function handleShopBuyButton(interaction) {
     try {
       const { getShopItem } = await import('../economy/shop.js');
       const updatedItem = await getShopItem(itemId, guildId);
-      
+
       if (updatedItem && interaction.message && interaction.message.editable) {
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-        
+
         // Update Stock field
         let stockHeader = '♾️ Stock';
         let stockValue = 'Unlimited';
@@ -468,7 +468,7 @@ export async function handleShopBuyButton(interaction) {
             stockValue = `**${updatedItem.stock}** Left`;
           }
         }
-        
+
         // Update fields array while preserving others
         const updatedFields = (embed.data.fields || []).map(f => {
           if (f.name.includes('Stock')) {
@@ -482,14 +482,14 @@ export async function handleShopBuyButton(interaction) {
         const isSoldOut = updatedItem.stock !== null && updatedItem.stock <= 0;
         const row = ActionRowBuilder.from(interaction.message.components[0]);
         const buyBtn = ButtonBuilder.from(row.components[0]);
-        
+
         // Force Secondary (Grey) style and update disabled state
         buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
         row.setComponents(buyBtn);
 
-        await interaction.message.edit({ 
-          embeds: [embed], 
-          components: [row] 
+        await interaction.message.edit({
+          embeds: [embed],
+          components: [row]
         }).catch(() => { /* original message might be deleted */ });
       }
     } catch (refreshErr) {
@@ -502,22 +502,22 @@ export async function handleShopBuyButton(interaction) {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0);
         const missing = itemPrice - currentBal;
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: `\u274C You need **${missing}** ${COIN_EMOJI} more to buy this.`,
           components: []
         });
       } else if (result.error.includes('higher than my highest role')) {
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: '\u274C Error: I cannot assign this role. Please contact an admin.',
           components: []
         });
       } else if (result.error.includes('already') || result.error.includes('expire')) {
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: `\u2755 ${result.error}`,
           components: []
         });
       } else {
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: `\u274C ${result.error}`,
           components: []
         });
@@ -533,14 +533,14 @@ export async function handleShopBuyButton(interaction) {
     } else {
       msg = `✅ Bought **${result.item.name}**! new balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    await interaction.editReply({ 
-      content: msg, 
-      components: [] 
+    await interaction.editReply({
+      content: msg,
+      components: []
     });
 
   } catch (error) {
     sysError('Transaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop purchase handler' });
-    await interaction.editReply({ 
+    await interaction.editReply({
       content: '\u274C An unexpected error occurred. Please try again.',
       components: []
     }).catch(() => { });
@@ -706,7 +706,7 @@ export async function handleInventoryButton(interaction) {
 export async function handleInventoryCategorySelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
+      await interaction.deferUpdate().catch(() => { });
     }
 
     const catIdStr = interaction.customId.replace('bank_inv_cat_', '');
@@ -794,11 +794,11 @@ export async function handleInventoryCategorySelect(interaction) {
       .setPlaceholder('Select an Item to Manage')
       .addOptions(items.slice(0, 25).map((i, idx) => {
         // Check if item is temporary (has duration/expiry) or permanent
-        const isTemp = !!(i.expires_at || 
-                       (i.duration_seconds && i.duration_seconds > 0) || 
-                       (i.duration_hours && i.duration_hours > 0));
+        const isTemp = !!(i.expires_at ||
+          (i.duration_seconds && i.duration_seconds > 0) ||
+          (i.duration_hours && i.duration_hours > 0));
         const isAdminIdentified = i.source === 'SYNC';
-        
+
         let statusEmoji = '⬜';
         let statusText = 'Unknown';
 
@@ -812,7 +812,7 @@ export async function handleInventoryCategorySelect(interaction) {
           statusEmoji = i.is_active ? '✅' : '⬜';
           statusText = i.is_active ? 'Equipped' : 'Unequipped';
         }
-          
+
         return {
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
           value: `${i.id}_${idx}`,
@@ -848,7 +848,7 @@ export async function handleInventoryItemSelect(interaction) {
   try {
     // 1. Force immediate acknowledgment to prevent "Interaction Failed"
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
+      await interaction.deferUpdate().catch(() => { });
     }
 
     // Parse interaction data
@@ -862,7 +862,7 @@ export async function handleInventoryItemSelect(interaction) {
       const [itemId, idx] = interaction.values[0].split('_');
       invId = itemId; // Can be string (admin_id) or number
       currentIndex = parseInt(idx) || 0;
-      
+
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
       categoryId = catPart === 'null' ? null : parseInt(catPart);
     } else if (interaction.customId.startsWith('inv_nav_')) {
@@ -1064,7 +1064,7 @@ export async function handleInventoryItemSelect(interaction) {
       toggleLabel = item.is_active ? 'Unequip' : 'Equip';
       toggleEmoji = item.is_active ? '⏸️' : '✅';
     }
- 
+
     row1.addComponents(
       new ButtonBuilder()
         .setCustomId(`bank_inv_equip_${item.id}_${catIdStr}_${currentIndex}`)
@@ -1202,7 +1202,7 @@ export async function handleInventoryAction(interaction) {
         const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [row] });
 
         // Update the drop record with message IDs for 24h expiration/edits
-        await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3', 
+        await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
           [publicMsg.id, interaction.channelId, res.dropId]);
 
         sysLog('Item Dropped', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${res.item.name} | DropID: ${res.dropId}` });
@@ -1216,10 +1216,10 @@ export async function handleInventoryAction(interaction) {
             .setStyle(ButtonStyle.Secondary)
         );
 
-        await interaction.editReply({ 
-          content: '✅ Item dropped successfully!', 
-          embeds: [], 
-          components: [backRow] 
+        await interaction.editReply({
+          content: '✅ Item dropped successfully!',
+          embeds: [],
+          components: [backRow]
         });
 
         // Optional: Send inventory audit log
@@ -1232,7 +1232,7 @@ export async function handleInventoryAction(interaction) {
     if (action === 'equip') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
       const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
-      
+
       if (!result.success) {
         return interaction.followUp({ content: `❌ ${result.error}`, flags: [64] });
       }
@@ -1267,7 +1267,7 @@ export async function handleItemClaim(interaction) {
     if (!isForce) {
       const { checkPrerequisites } = await import('../economy/shop.js');
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
-      
+
       if (dropRes.rows.length > 0) {
         const itemRes = await query('SELECT required_items FROM shop_items WHERE id = $1', [dropRes.rows[0].shop_item_id]);
         if (itemRes.rows.length > 0 && itemRes.rows[0].required_items) {
@@ -1281,10 +1281,10 @@ export async function handleItemClaim(interaction) {
                 .setStyle(ButtonStyle.Danger)
             );
 
-            sysLog('Prereq Warning Triggered', { 
-              user: interaction.user.id, 
-              guild: interaction.guildId, 
-              detail: `Action: ItemClaim | DropID: ${dropId}` 
+            sysLog('Prereq Warning Triggered', {
+              user: interaction.user.id,
+              guild: interaction.guildId,
+              detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
             return await interaction.reply({
@@ -1311,14 +1311,14 @@ export async function handleItemClaim(interaction) {
       const claimerName = getUserDisplayName(interaction.user);
 
       // 1. Success Message to Claimer
-      const successMsg = isSelfClaim 
-        ? '\u2705 You have reclaimed your own dropped item!' 
+      const successMsg = isSelfClaim
+        ? '\u2705 You have reclaimed your own dropped item!'
         : `\u2705 You have successfully claimed **${res.item.name}**!`;
-      
+
       if (isForce || interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: successMsg, components: [] }).catch(() => {});
+        await interaction.editReply({ content: successMsg, components: [] }).catch(() => { });
       } else {
-        await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
+        await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
       }
 
       // 2. Update Public Message
@@ -1336,7 +1336,7 @@ export async function handleItemClaim(interaction) {
       if (publicMsg && publicMsg.embeds && publicMsg.embeds.length > 0) {
         const originalDesc = publicMsg.embeds[0].description || '';
         const firstLine = originalDesc.split('\n')[0];
-        
+
         const resolutionLine = isSelfClaim
           ? `\u2705 <@${interaction.user.id}> changed their mind and claimed their own drop!`
           : `\u2705 <@${interaction.user.id}> claimed the item!`;
@@ -1372,9 +1372,9 @@ export async function handleItemClaim(interaction) {
     const errorMsgStr = error.message || '';
 
     // DISTINGUISH: Validation Errors (User fault) vs System Errors (Bot fault)
-    const isValidationError = errorMsgStr.includes('server for at least') || 
-                               errorMsgStr.includes('already been claimed') || 
-                               errorMsgStr.includes('already own');
+    const isValidationError = errorMsgStr.includes('server for at least') ||
+      errorMsgStr.includes('already been claimed') ||
+      errorMsgStr.includes('already own');
 
     if (isValidationError) {
       // Log as moderate warning/info to avoid "Red" logs on Railway for normal user behavior
@@ -1383,12 +1383,12 @@ export async function handleItemClaim(interaction) {
       // TRUE System Error: Log as error for investigation
       sysError('Critical Claim Error', error, { user: interaction.user.id, guild: interaction.guildId });
     }
-    
+
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
     } else {
       await interaction.editReply({ content: errorMessage, components: [] }).catch(() => {
-        interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => {});
+        interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
       });
     }
   }
@@ -1463,7 +1463,7 @@ export async function handleBankHistory(interaction) {
 export async function handleBackButton(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
+      await interaction.deferUpdate().catch(() => { });
     }
     await refreshBankUI(interaction);
   } catch (error) {
@@ -1501,7 +1501,7 @@ export async function cleanupExpiredDrops(client) {
             if (message && message.embeds.length > 0) {
               const oldEmbed = message.embeds[0];
               const firstLine = oldEmbed.description?.split('\n')[0] || `An item was dropped.`;
-              
+
               const expiredEmbed = EmbedBuilder.from(oldEmbed)
                 .setColor('#2C2F33') // Dark Grey
                 .setDescription(`${firstLine}\n\n⏰ This item has expired and the drop was lost.`)
@@ -1517,7 +1517,7 @@ export async function cleanupExpiredDrops(client) {
                   .setDisabled(true)
               );
 
-              await message.edit({ embeds: [expiredEmbed], components: [disabledRow] }).catch(() => {});
+              await message.edit({ embeds: [expiredEmbed], components: [disabledRow] }).catch(() => { });
             }
           }
         }
