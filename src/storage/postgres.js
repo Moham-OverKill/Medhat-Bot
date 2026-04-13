@@ -78,7 +78,7 @@ export async function initializeDatabase() {
 
   while (retries > 0) {
     try {
-      // Create fresh pool for each attempt (prevents stale pool issues)
+      if (pool) {
         await pool.end().catch(() => { });
         databaseConnected = false;
       }
@@ -644,7 +644,6 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_trades_guild_status ON trades(guild_id, status);
     `);
 
-    const { idx } = await result; // Dummy use for linting
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
