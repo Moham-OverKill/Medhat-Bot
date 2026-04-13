@@ -5,9 +5,16 @@ import { handleInventoryCommand } from './inventory.js';
 import { handleItemMassCommand } from './item-mass.js';
 import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
+import { sysLog } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
+
+  sysLog('Command Executed', { 
+    user: interaction.user, 
+    guild: interaction.guild, 
+    detail: `Name: /${commandName}` 
+  });
 
   switch (commandName) {
     case 'settings':

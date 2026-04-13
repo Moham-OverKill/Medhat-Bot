@@ -13,7 +13,7 @@ import {
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 
 const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
 
@@ -52,14 +52,12 @@ export async function showUserSelector(interaction) {
  */
 export async function showUserDashboard(interaction, targetUserId) {
     const guildId = interaction.guildId;
-    const guildName = interaction.guild?.name || 'Unknown Server';
     const pool = getPool();
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     const displayName = targetMember ? targetMember.displayName : targetUserId;
-    const userTag = targetMember ? targetMember.user.username : 'Unknown';
 
-    console.log(`[${guildName}] [Settings] Opening dashboard for ${displayName} (${userTag})`);
+    sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Opening user management dashboard for ${targetUserId}` });
     
     // Defer as early as possible if not already
     if (!interaction.deferred && !interaction.replied) {
@@ -74,7 +72,7 @@ export async function showUserDashboard(interaction, targetUserId) {
         );
 
         if (userResult.rowCount === 0) {
-            console.log(`[${guildName}] [Database] No balance record for ${displayName}, creating first-time entry.`);
+            sysLog('Infrastructure Audit', { guild: guildId, detail: `Creating first-time balance entry for ${targetUserId}` });
             // Create entry if missing
             userResult = await pool.query(
                 'INSERT INTO user_balances (guild_id, user_id, balance) VALUES ($1, $2, 0) RETURNING balance',
@@ -88,11 +86,10 @@ export async function showUserDashboard(interaction, targetUserId) {
         const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
         const itemCount = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack)).length;
 
-        console.log(`[${guildName}] [Economy] Fetched data for ${displayName}: balance=${balance.toLocaleString()}, items=${itemCount}`);
-        console.log(`[${guildName}] [Settings] Building UI for ${displayName} (${userTag})`);
+        sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Building management UI for ${targetUserId}` });
 
         const embed = new EmbedBuilder()
-            .setTitle(`⚙️ Managing: ${displayName} (@${userTag})`)
+            .setTitle(`⚙️ Managing: ${displayName}`)
             .setDescription(`> Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} | Items: **${itemCount}**`)
             .setColor(0x5865F2);
 
@@ -123,14 +120,13 @@ export async function showUserDashboard(interaction, targetUserId) {
         );
 
     const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-    console.log(`[${guildName}] [Settings] Sending response via ${responseMethod}`);
     await interaction[responseMethod]({
         embeds: [embed],
         components: [actionRow, backRow]
     });
     } catch (err) {
-        console.error(`[${guildName}] [Error] Failed to show dashboard for ${displayName}:`, err.message);
-        throw err; // Propagate to handler
+        sysError('UI Update Failed', err, { user: interaction.user.id, guild: guildId, detail: `Failed to show dashboard for ${targetUserId}` });
+        throw err;
     }
 }
 
@@ -214,7 +210,7 @@ export async function handleBalanceModal(interaction) {
         await interaction.deferUpdate();
         await showUserDashboard(interaction, targetUserId);
     } catch (error) {
-        console.error('Balance adjust error:', error);
+        sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, guild: guildId, detail: `Balance adjust: ${targetUserId}` });
         await interaction.reply({ content: '❌ Failed to update balance.', flags: MessageFlags.Ephemeral });
     }
 }
@@ -462,7 +458,6 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
         // 2. Log in user history
         const adminName = getUserDisplayName(interaction.member);
         const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-        const targetName = targetMember ? targetMember.displayName : targetUserId;
 
         if (targetMember && item.role_id) {
             const roles = item.role_id.split(/[,\s]+/);
@@ -470,7 +465,7 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
                 try {
                     await targetMember.roles.remove(rid);
                 } catch (roleErr) {
-                    console.warn(`[Error] Failed to remove role ${rid} from ${targetName}:`, roleErr.message);
+                    sysError('Infrastructure Audit Failure', roleErr, { user: targetUserId, guild: interaction.guildId, detail: `Revoke role: ${rid}` });
                 }
             }
         }
@@ -495,7 +490,7 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
         await showUserItems(interaction, targetUserId, categoryId);
     } catch (error) {
         if (client) await client.query('ROLLBACK').catch(() => {});
-        console.error('Revoke error:', error);
+        sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, target: targetUserId, guild: interaction.guildId, detail: 'Revoke item' });
         
         const errorMsg = '❌ Failed to revoke item properly.';
         if (interaction.deferred || interaction.replied) {
@@ -549,7 +544,6 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             else amountDisplay = `**0**`;
 
             // Format IDs to mentions if they look like User IDs (17-19 digits) and aren't already mentioned
-            // Added digit boundaries (?<!\d) and (?!\d) to prevent suffix-matching bugs
             let description = tx.description.replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
             // Normalize legacy MVP text to generic form
             description = description.replace(/Won MVP of the Day/gi, 'Won the MVP award')
@@ -624,7 +618,6 @@ export async function handleAdminUserComponent(interaction) {
             case 'isel': {
                 const partsValue = interaction.values[0].split('_');
                 // Handle cases where ID contains underscores (like admin_123)
-                // The last part is the index (from getSynthesizedInventory indexing in display)
                 partsValue.pop(); 
                 const invId = partsValue.join('_');
                 const catId = parts[4];
@@ -644,7 +637,7 @@ export async function handleAdminUserComponent(interaction) {
             }
         }
     } catch (error) {
-        console.error(`[Error] in handleAdminUserComponent:`, error.message);
+        sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Admin user component handler' });
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
         } else {

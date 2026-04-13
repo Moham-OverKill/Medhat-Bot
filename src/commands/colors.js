@@ -16,7 +16,7 @@ import {
   getAllColorRoles
 } from '../storage/colors.js';
 import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
-import { logServerEvent, sendLog, sendBulkLog } from '../utils/logger.js';
+import { logServerEvent, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 
 // Helper to check if a member is a server booster
 export async function isMemberBooster(member) {
@@ -74,7 +74,7 @@ export async function handleColorsCommand(interaction) {
       await showColorPanel(interaction);
     }
   } catch (error) {
-    console.error('Error in /colors command:', sanitizeError(error));
+    sysError('Colors command failed', error, { user: interaction.user.id, guild: interaction.guildId });
     const errorMsg = 'An error occurred while processing the command.';
 
     if (interaction.deferred || interaction.replied) {
@@ -169,7 +169,7 @@ async function handleColorMassCommand(interaction) {
 
     await interaction.editReply(summary.join('\n') || '✅ Done');
   } catch (error) {
-    console.error('Error in /colors mass command:', sanitizeError(error));
+    sysError('Colors mass command failed', error, { user: interaction.user.id, guild: interaction.guildId });
     await interaction.editReply('An error occurred while processing your request.');
   }
 }
@@ -401,7 +401,7 @@ async function findLastPanelNumber(channel, botId) {
 
     return highestNumber;
   } catch (error) {
-    console.error('Error finding last panel number:', error);
+    sysError('Failed to find last color panel number', error, { guild: channel.guild.id, channel: channel.id });
     return 0;
   }
 }
@@ -547,7 +547,7 @@ export async function handleColorsComponent(interaction) {
         break;
     }
   } catch (error) {
-    console.error('Error handling colors component:', sanitizeError(error));
+    sysError('Colors component router failed', error, { user: interaction.user.id, guild: interaction.guildId });
 
     const errorMsg = 'An error occurred while processing your selection.';
 
@@ -789,7 +789,7 @@ export async function handleRoleSelection(interaction) {
       }
     }
   } catch (error) {
-    console.error('Error handling role selection:', sanitizeError(error));
+    sysError('Colors role selection failed', error, { user: interaction.user.id, guild: interaction.guildId });
 
     const errorMsg = 'Failed to process role selection.';
 
@@ -826,7 +826,7 @@ export async function stripBoosterColorsFromMember(member, guildId) {
         `**Roles Stripped:** ${rolesToRemove.map(r => `\`${r.name}\``).join(', ')}`
       );
     } catch (error) {
-      console.error(`Failed to strip booster colors:`, error);
+      sysError('Failed to strip booster colors', error, { user: member.id, guild: guildId });
     }
   }
 }
@@ -876,7 +876,7 @@ export async function auditBoosterColors(guild) {
     }
 
   } catch (error) {
-    console.error(`Booster audit error:`, sanitizeError(error));
+    sysError('Booster audit error', error, { guild: guild.id });
   }
 }
 
@@ -945,9 +945,11 @@ export async function handleColorButton(interaction) {
         .map(role => role.id);
 
       if (rolesToRemove.length > 0) {
-        await member.roles.remove(rolesToRemove).catch(err => {
-          console.warn('[Colors] Non-fatal error removing old color roles:', err.message);
-        });
+        try {
+          await member.roles.remove(rolesToRemove);
+        } catch (err) {
+          sysError('Non-fatal error removing old color roles', err, { user: member.id, guild: member.guild.id });
+        }
       }
 
       // Add the new color role (Check hierarchy first)
@@ -971,8 +973,7 @@ export async function handleColorButton(interaction) {
       });
     }
   } catch (error) {
-    console.error('Error handling color button:', sanitizeError(error));
-    console.error('Full error details:', error);
+    sysError('Error handling color button', error, { user: interaction.user.id, guild: interaction.guildId });
 
     let errorMsg = 'Failed to update your color role.';
 

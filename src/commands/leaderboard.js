@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysError } from '../utils/logger.js';
 
 // Define the /leaderboard command
 export const data = new SlashCommandBuilder()
@@ -329,7 +329,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                     if (msg) await msg.delete().catch(() => { });
                 }
             } catch (err) {
-                console.error(`Cleanup failed for ${type.key}:`, sanitizeError(err));
+                sysError('Leaderboard cleanup failed', err, { guild: guildId, detail: type.key });
             }
         }
     }
@@ -340,53 +340,27 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     // 1. Daily MVP
     if (config.daily_channel_id) {
         try {
-            const channel = await guild.channels.fetch(config.daily_channel_id).catch(() => null);
-            if (channel) {
-                let rawData = activityData;
-                if (!rawData || rawData.length === 0) {
-                    const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-                    const cycleData = await getLastMvpCycleResults(guildId, 50);
-                    rawData = cycleData.results;
-                }
-                const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                const embed = buildDailyActivityEmbed(enrichedData, mvpRecipients);
-                const newMessage = await channel.send({ embeds: [embed] });
-                config.daily_message_id = newMessage.id;
-            }
+            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'daily_coins');
         } catch (error) {
-            console.error('Failed to update daily leaderboard:', sanitizeError(error));
+            sysError('Failed to update daily leaderboard', error, { guild: guildId });
         }
     }
 
     // 2. Richest Members
     if (config.coins_channel_id) {
         try {
-            const channel = await guild.channels.fetch(config.coins_channel_id).catch(() => null);
-            if (channel) {
-                const rawData = await getTopCoinUsers(guildId);
-                const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                const embed = buildCoinsEmbed(enrichedData);
-                const newMessage = await channel.send({ embeds: [embed] });
-                config.coins_message_id = newMessage.id;
-            }
+            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'coins');
         } catch (error) {
-            console.error('Failed to update coins leaderboard:', sanitizeError(error));
+            sysError('Failed to update coins leaderboard', error, { guild: guildId });
         }
     }
 
     // 3. Longest Streaks
     if (config.streak_channel_id) {
         try {
-            const channel = await guild.channels.fetch(config.streak_channel_id).catch(() => null);
-            if (channel) {
-                const rawData = await getTopStreakUsers(guildId);
-                const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                const embed = buildStreakEmbed(enrichedData);
-                const newMessage = await channel.send({ embeds: [embed] });
-                config.streak_message_id = newMessage.id;
-            }
+            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'streak');
         } catch (error) {
-            console.error('Failed to update streak leaderboard:', sanitizeError(error));
+            sysError('Failed to update streak leaderboard', error, { guild: guildId });
         }
     }
 
@@ -492,7 +466,7 @@ async function handleSetup(interaction) {
         await interaction.editReply({ embeds: [successEmbed] });
 
     } catch (error) {
-        console.error('Leaderboard setup failed:', sanitizeError(error));
+        sysError('Leaderboard setup failed', error, { guildId });
         await interaction.editReply({
             content: `❌ Failed to setup leaderboards: ${error.message}`
         });
@@ -526,7 +500,7 @@ async function handleStatus(interaction) {
         await interaction.editReply({ embeds: [embed] });
 
     } catch (error) {
-        console.error('Leaderboard status failed:', sanitizeError(error));
+        sysError('Leaderboard status failed', error, { guildId: interaction.guildId });
         await interaction.editReply({
             content: `❌ Failed to get leaderboard status: ${error.message}`
         });

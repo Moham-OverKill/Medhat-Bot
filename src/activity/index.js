@@ -10,6 +10,7 @@ import {
 import { sanitizeError } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getTodayCairo } from '../utils/time.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 // Re-export for use in index.js
 export { clearStaleVoiceTracking };
@@ -51,7 +52,7 @@ export async function initializeActivityTracking(discordClient) {
     try {
       await voicePointsTick(client);
     } catch (error) {
-      console.error('[System] Voice points tick error:', sanitizeError(error));
+      sysError('Activity Heart-Beat Sync Error', error, { detail: 'Voice points tick' });
     }
   }, 30000);
 
@@ -92,17 +93,16 @@ export async function initializeActivityTracking(discordClient) {
       }
     }
 
-    const logPrefix = client.guilds.cache.first()?.name || 'System';
-    console.log(`[${logPrefix}] Quests: Watch-mode active tracking ready (${activeQuestsCache.size} guilds warmed up).`);
+    sysLog('Quest Cache Audit', { detail: `Watch-mode tracking ready | Guilds: ${activeQuestsCache.size}` });
 
     // PERFORM INITIAL VOICE SWEEP (Fix for ghosting on startup)
     const { syncVoicePresence } = await import('./tracker.js');
-    console.log('[System] [Presence Sweep] Performing initial voice sync for all guilds...');
+    sysLog('Presence Audit', { detail: 'Performing initial voice sync for all guilds' });
     for (const [id, guild] of client.guilds.cache) {
       await syncVoicePresence(guild);
     }
   } catch (err) {
-    console.error('[Quests] Cache warmup failed:', err);
+    sysError('Quest Cache Warmup Failed', err);
   }
 
   handlersInitialized = true;
@@ -227,7 +227,7 @@ async function checkQuestProgress(message) {
         const { incrementProgressAndPayout } = await import('../quests/quests.js');
         const result = await incrementProgressAndPayout(guildId, userId, quest);
         
-        console.log(`[Quests Debug] Guild [${guildId}] User [${userId}] progressed quest [${quest.id}] (${quest.action_type})`);
+        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Type: ${quest.action_type}` });
 
         if (result.justCompleted) {
           if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
@@ -236,7 +236,7 @@ async function checkQuestProgress(message) {
           map.get(quest.id).add(userId);
         }
     } catch (e) {
-        console.error('[Quests Debug] Increment failed:', e);
+        sysError('Quest Progress Update Failed', e, { user: userId, guild: guildId, detail: `QuestID: ${quest.id}` });
     }
   }
 }
@@ -250,7 +250,7 @@ export async function syncQuestChannelCache(guildId) {
     if (!config?.quests_enabled || !config?.active_quest_ids) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
-      console.log(`[Quests Debug] Cleared cache for guild ${guildId} (Quests disabled or empty pool)`);
+      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache: quests disabled' });
       return;
     }
 
@@ -264,9 +264,9 @@ export async function syncQuestChannelCache(guildId) {
     // Reset completed state for today (or partial reload)
     if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
     
-    console.log(`[Quests Debug] Cache Sync: Guild ${guildId} now tracking ${activeQuests.length} quests.`);
+    sysLog('Quest Cache Sync', { guild: guildId, detail: `Tracking ${activeQuests.length} quests` });
   } catch (e) {
-    console.error('[Quests] Cache sync failed:', e);
+    sysError('Quest Cache Sync Failed', e, { guild: guildId });
   }
 }
 
@@ -307,7 +307,7 @@ export async function checkReactionQuest(reaction, user) {
         const { incrementProgressAndPayout } = await import('../quests/quests.js');
         const result = await incrementProgressAndPayout(guildId, userId, quest);
         
-        console.log(`[Quests Debug] Guild [${guildId}] User [${userId}] reacted in [${channelId}] for quest [${quest.id}]`);
+        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Reaction | QuestID: ${quest.id}` });
 
         if (result.justCompleted) {
           if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
@@ -316,7 +316,7 @@ export async function checkReactionQuest(reaction, user) {
           map.get(quest.id).add(userId);
         }
     } catch (e) {
-        console.error('[Quests Debug] Reaction increment failed:', e);
+        sysError('Quest Progress Update Failed', e, { user: userId, guild: guildId, detail: `Source: Reaction | QuestID: ${quest.id}` });
     }
   }
 }

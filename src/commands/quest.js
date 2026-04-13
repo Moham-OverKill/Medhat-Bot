@@ -17,6 +17,7 @@ import {
 } from '../quests/quests.js';
 import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { getNextQuestRefresh } from '../utils/time.js';
+import { sysError } from '../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('quest')
@@ -162,7 +163,7 @@ export async function renderQuests(interaction, page = 0) {
     });
 
   } catch (error) {
-    console.error('[Quests] Command error:', sanitizeError(error));
+    sysError('Quest command failed', error, { user: user.id, guild: guildId });
     const errorMsg = '❌ An error occurred while fetching your quest progress.';
     if (isButton) await interaction.editReply({ content: errorMsg });
     else await interaction.editReply({ content: errorMsg });

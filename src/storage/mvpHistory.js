@@ -1,6 +1,6 @@
-// No changes needed
 import { query } from './postgres.js';
 import { sanitizeError } from '../shared.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 export async function appendAwardRecord(record) {
   if (!record || typeof record !== 'object') return;
@@ -31,7 +31,7 @@ export async function appendAwardRecord(record) {
       [record.guildId]
     );
   } catch (error) {
-    console.error('Failed to save MVP award record:', sanitizeError(error));
+    sysError('History Audit Failed', error, { user: record.userId, guild: record.guildId, detail: 'Saving MVP award record' });
   }
 }
 
@@ -63,7 +63,7 @@ export async function getRecentAwards(guildId = null, limit = 25) {
       savedAt: row.saved_at
     }));
   } catch (error) {
-    console.error('Failed to get recent awards:', sanitizeError(error));
+    sysError('History Audit Failed', error, { guild: guildId, detail: 'Getting recent awards' });
     return [];
   }
 }
@@ -110,7 +110,7 @@ export async function getLastMvpCycleResults(guildId, limit = 50) {
       }))
     };
   } catch (error) {
-    console.error('Failed to get last MVP cycle results:', sanitizeError(error));
+    sysError('History Audit Failed', error, { guild: guildId, detail: 'Getting last MVP cycle results' });
     return { results: [], awardedAt: null };
   }
 }

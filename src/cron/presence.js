@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { ActivityType } from 'discord.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 /**
  * Cat-themed status list
@@ -45,9 +46,9 @@ export function updateBotPresence(client) {
       }]
     });
     
-    console.log(`[System] Presence Updated: "${statusText}"`);
+    sysLog('Infrastructure Audit', { detail: `Presence updated: "${statusText}"` });
   } catch (error) {
-    console.error('[System] Failed to update presence:', error);
+    sysError('Infrastructure Audit Failed', error, { detail: 'Presence update failure' });
     
     // Fallback to Playing (0) if Custom fails
     try {
@@ -70,5 +71,5 @@ export function startPresenceRotation(client) {
     timezone: "Africa/Cairo"
   });
 
-  console.log('[System] Hourly Presence Rotator initialized (Timezone: Africa/Cairo)');
+  sysLog('Infrastructure Audit', { detail: 'Hourly Presence Rotator initialized (Timezone: Africa/Cairo)' });
 }

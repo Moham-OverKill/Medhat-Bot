@@ -10,7 +10,7 @@ import {
     PermissionFlagsBits
 } from 'discord.js';
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
-import { sendLog, checkChannelPermissions } from '../../utils/logger.js';
+import { sendLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { getUserLogName } from '../../shared.js';
 
@@ -108,9 +108,8 @@ export async function handleLeaderboardSettings(interaction, selectedId = null) 
 
         const method = (interaction.deferred || interaction.replied) ? 'editReply' : 'update';
         await interaction[method]({ embeds: [embed], components, content: '' });
-
     } catch (error) {
-        console.error('[LeaderboardSettings] Fatal Error:', error);
+        sysError('Leaderboard settings panel failed', error, { user: interaction.user.id, guild: interaction.guildId });
         const err = { content: '❌ Error loading settings.', flags: MessageFlags.Ephemeral };
         if (interaction.deferred || interaction.replied) await interaction.followUp(err).catch(() => {});
         else await interaction.reply(err).catch(() => {});
@@ -125,7 +124,7 @@ export async function handleLeaderboardCategorySelect(interaction) {
         const selectedId = interaction.values[0];
         return handleLeaderboardSettings(interaction, selectedId);
     } catch (error) {
-        console.error('[Leaderboard] Category Select Error:', error);
+        sysError('Leaderboard category select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Category Select');
     }
 }
@@ -173,7 +172,7 @@ export async function handleLeaderboardChannelSelect(interaction) {
 
         return handleLeaderboardSettings(interaction, cat.id);
     } catch (error) {
-        console.error('[Leaderboard] Channel Select Error:', error);
+        sysError('Leaderboard channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Channel Select');
     }
 }
@@ -220,7 +219,7 @@ export async function handleLeaderboardDisable(interaction) {
 
         return handleLeaderboardSettings(interaction, cat.id);
     } catch (error) {
-        console.error('[Leaderboard] Disable Error:', error);
+        sysError('Leaderboard disable failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Disable');
     }
 }
@@ -252,7 +251,7 @@ export async function handleLeaderboardRefresh(interaction) {
             flags: MessageFlags.Ephemeral 
         });
     } catch (error) {
-        console.error('[Leaderboard] Refresh Error:', error);
+        sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Refresh');
     }
 }

@@ -4,7 +4,7 @@ import { sanitizeError, COIN_EMOJI, getUserLogName } from '../shared.js';
 import { updateBalance } from './service.js';
 import { logAudit, createRefund, getBoosterLossPolicy } from '../storage/audit.js';
 import { isMemberBooster } from '../commands/colors.js';
-import { logServerEvent, logSystemError, sendLog, sendBulkLog } from '../utils/logger.js';
+import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 
 /**
  * Validate that a role ID is not already linked to another shop item
@@ -30,7 +30,7 @@ export async function validateRoleUniqueness(guildId, roleId, currentItemId = nu
     }
     return { valid: true, existingItem: null };
   } catch (error) {
-    logSystemError(`Failed to validate role uniqueness: ${sanitizeError(error)}`);
+    sysError('Role Uniqueness Check Failed', error, { guild: guildId });
     return { valid: false, existingItem: null };
   }
 }
@@ -160,7 +160,7 @@ export async function calculatePackPrice(userId, guildId, itemId) {
       item
     };
   } catch (error) {
-    console.error('Error calculating pack price:', error);
+    sysError('Pack Price Calculation Failed', error, { user: userId, guild: guildId });
     return defaultResult;
   }
 }
@@ -268,7 +268,7 @@ export async function getItemUsageCount(itemId) {
     }
     return packCount;
   } catch (error) {
-    console.error('Error getting item usage count:', error);
+    sysError('Item Usage Count Failed', error);
     return 0;
   }
 }
@@ -321,6 +321,7 @@ export async function updateShopItem(itemId, updates) {
     }
 
     if (setClauses.length === 0) {
+      sysError('Update Shop Item Rejected', 'No valid fields to update', { detail: `Item: ${itemId}` });
       throw new Error('No valid fields to update');
     }
 
@@ -350,7 +351,7 @@ export async function deleteShopItem(itemId) {
     // 2. Delete the shop item itself
     await query('DELETE FROM shop_items WHERE id = $1', [itemId]);
 
-    console.log(`[System] Shop: Deleted item ${itemId}`);
+    sysLog('Shop Item Deleted', { detail: `ItemID: ${itemId}` });
     return true;
   } catch (error) {
     logSystemError(`Failed to delete shop item: ${sanitizeError(error)}`);
@@ -454,7 +455,7 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
           missingMvp = true;
         }
       } catch (error) {
-        console.error('Error checking MVP prerequisite:', error);
+        sysError('MVP Prereq Check Failed', error, { user: userId, guild: guildId });
         missingMvp = true; 
       }
       continue;
@@ -465,7 +466,7 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
     // SELF-HEALING: Verify item still exists in shop_items
     const itemExists = await pool.query('SELECT 1 FROM shop_items WHERE id = $1', [req]);
     if (itemExists.rowCount === 0) {
-      console.warn(`[Self-Healing] Ghost prerequisite detected: Item ${req} no longer exists. Skipping.`);
+      sysLog('Self-Healing Prereq', { guild: guildId, detail: `Ghost prerequisite detected: Item ${req} no longer exists. Skipping.` });
       continue;
     }
 
@@ -563,11 +564,11 @@ export async function scrubPrerequisiteFromGuild(guildId, itemId) {
     );
 
     if (res.rowCount > 0) {
-      console.log(`[Self-Healing] Scrubbed item ${itemIntId} from ${res.rowCount} prerequisite lists in ${guildId}`);
+      sysLog('Self-Healing Scrub', { guild: guildId, detail: `Scrubbed item ${itemIntId} from ${res.rowCount} prerequisite lists` });
     }
     return res.rowCount;
   } catch (error) {
-    console.error(`[Self-Healing] Failed to scrub item ${itemId} from guild ${guildId}:`, error);
+    sysError('Self-Healing Scrub Failed', error, { guild: guildId, detail: `ItemID: ${itemId}` });
     return 0;
   }
 }
@@ -608,7 +609,7 @@ export async function runDependencySweep(userId, guildId, member, client = null)
           }
         }
         unequippedNames.push(item.name);
-        console.log(`[Sweep] Unequipped ${item.name} from ${member.user.username} (Prereqs not met)`);
+        sysLog('Dependency Unequip', { user: userId, guild: guildId, detail: `Item: ${item.shop_item_id} (${item.name}) due to lost prereqs` });
       }
     }
 
@@ -622,7 +623,7 @@ export async function runDependencySweep(userId, guildId, member, client = null)
 
     return unequippedNames;
   } catch (error) {
-    console.error(`[System] runDependencySweep error for ${userId}:`, error);
+    sysError('Dependency Sweep Failed', error, { user: userId, guild: guildId });
     return [];
   }
 }
@@ -661,6 +662,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     if (itemResult.rows.length === 0) {
       await client.query('ROLLBACK');
+      sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `ItemID: ${itemId} | Reason: Item not found` });
       return { success: false, error: 'Item not found' };
     }
 
@@ -675,18 +677,20 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     const audit = await checkPrerequisites(member, guildId, item.required_items, client);
     if (!audit.met) {
       const errorMsg = await formatPrerequisiteError(audit, guildId);
-      console.log(`[Shop] User ${userId} bought ${item.name} without meeting prerequisites: ${errorMsg}`);
+      sysLog('Purchase Prereq Warning', { user: userId, guild: guildId, detail: `Item: ${item.name} | Missing: ${errorMsg}` });
     }
 
     // Check if item is active
     if (!item.is_active) {
       await client.query('ROLLBACK');
+      sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Inactive` });
       return { success: false, error: 'This item is no longer available' };
     }
 
     // Check stock
     if (item.stock !== null && item.stock <= 0) {
       await client.query('ROLLBACK');
+      sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Out of stock` });
       return { success: false, error: 'Item out of stock' };
     }
 
@@ -734,6 +738,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
       if (activeTemp.rows.length > 0) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already active temporary item` });
         return { success: false, error: 'Wait for the item to expire before buying it again.' };
       }
     }
@@ -747,6 +752,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       const firstRoleId = item.role_id.split(/[,\s]+/)[0];
       if (member.roles.cache.has(firstRoleId)) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Role already owned in Discord` });
         return { success: false, error: 'You already have that item.' };
       }
     }
@@ -761,6 +767,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
       if (existing.rows.length > 0) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already owned in Database` });
         return { success: false, error: 'You already have that item.' };
       }
     }
@@ -786,6 +793,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       // Only block if user owns ALL items in the pack
       if (ownedCount >= totalCount) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Pack: ${item.name} | Reason: All contents already owned` });
         return { success: false, error: 'You already have that pack.' };
       }
 
@@ -812,6 +820,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       for (const cItem of contentItemsRes.rows) {
         if (cItem.role_id && !checkRoleSafety(cItem.role_id)) {
           await client.query('ROLLBACK');
+          sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Pack: ${item.name} | Reason: Hierarchy restriction on content role ${cItem.role_id}` });
           return { success: false, error: 'Some roles in this pack is higher than my role. Please contact an admin.' };
         }
       }
@@ -838,6 +847,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
       if (currentBalance < effectivePrice) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Insufficient funds (Bal: ${currentBalance}, Req: ${effectivePrice})` });
         sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `**${getUserLogName(member)}** tried to buy **${item.name}** but has insufficient funds.\n• Required: **${effectivePrice.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
         return { success: false, error: 'Insufficient balance' };
       }
@@ -881,7 +891,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
           const firstRoleId = contentItem.role_id.split(/[,\s]+/)[0];
           const roleExists = member.guild.roles.cache.has(firstRoleId);
           if (!roleExists) {
-            console.log(`[${member.guild.name}] ${member.user.username} — Pack: Skipping ghost item "${contentItem.name}"`);
+            sysLog('Pack Sync Notice', { user: userId, guild: guildId, detail: `Skipping ghost item "${contentItem.name}" in pack ${item.name}` });
             skippedCount++;
             continue;
           }
@@ -904,7 +914,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         if (contentItem.role_id) {
           const firstRoleId = contentItem.role_id.split(/[,\s]+/)[0];
           if (!member.guild.roles.cache.has(firstRoleId)) {
-            console.log(`[${member.guild.name}] ${member.user.username} — Pack: Skipping ghost item "${contentItem.name}"`);
+            sysLog('Pack Sync Notice', { user: userId, guild: guildId, detail: `Skipping ghost item "${contentItem.name}" in content chain` });
             continue;
           }
         }
@@ -926,6 +936,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       // Enforce non-negative balance check again (though logic above ensures it)
       if (newBalance < 0) {
         await client.query('ROLLBACK');
+        sysLog('Purchase Rejection', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Atomic balance fault check` });
         return { success: false, error: 'Transaction rejected: Negative balance protection.' };
       }
 
@@ -982,7 +993,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         [guildId, sellerId, payoutAmount, sellerBefore + payoutAmount, `<@${userId}> bought **${item.name}**`, `sale_${itemId}_${userId}`]
       );
       
-      console.log(`[Shop] Atomic Payout: Seller ${sellerId} received ${payoutAmount} coins for item ${itemId}`);
+      sysLog('Seller Payout Executed', { user: sellerId, guild: guildId, detail: `Amount: ${payoutAmount} | Item: ${item.name} | From: ${userId}` });
     }
 
     await client.query('COMMIT');
@@ -998,13 +1009,9 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       for (const rid of roles) {
         try {
           await member.roles.add(rid);
-          const roleObj = member.guild.roles.cache.get(rid);
-          const roleName = roleObj ? roleObj.name : rid;
-          console.log(`[${member.guild.name}] Granted role "${roleName}" to ${member.user.username} for TEMP item "${item.name}"`);
+          sysLog('Role Granted', { user: userId, guild: guildId, detail: `RoleID: ${rid} | Reason: TEMP Item ${item.name}` });
         } catch (e) {
-          const roleObj = member.guild.roles.cache.get(rid);
-          const roleName = roleObj ? roleObj.name : rid;
-          console.error(`[${member.guild.name}] Failed to grant role "${roleName}" to ${member.user.username}:`, e.message);
+          sysError('Role Grant Failed', e, { user: userId, guild: guildId, detail: `RoleID: ${rid} | Item: ${item.name}` });
         }
       }
     }
@@ -1014,7 +1021,14 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     const buyerLogName = getUserLogName(member);
     const buyerAfter = buyerBefore - effectivePrice;
     
-    // 1. Buyer Log
+    // Final Success Log
+    sysLog('Purchase Success', { 
+      user: userId, 
+      guild: guildId, 
+      detail: `Item: ${item.name} | Paid: ${effectivePrice} | New Bal: ${newBalance}` 
+    });
+
+    // 1. Buyer Log [Discord]
     sendLog(member.guild, 'shop', 'green', '🛒 Item Purchased', 
       `**User:** \`${buyerLogName}\`\n` +
       `**Item:** \`${item.name}\`\n` +
@@ -1046,7 +1060,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Purchase error:', error);
+    sysError('Purchase Critical Failure', error, { user: userId, guild: guildId, detail: `ItemID: ${itemId}` });
     return { success: false, error: 'Purchase failed due to an error.' };
   } finally {
     client.release();
@@ -1100,7 +1114,7 @@ export async function dropItem(userId, guildId, invId, member) {
             await member.roles.remove(role);
           } catch (err) {
             await client.query('ROLLBACK');
-            console.error('[Drop Error] Role removal failed:', err.message);
+            sysError('Drop Role Removal Failed', err, { user: userId, guild: guildId, detail: `RoleID: ${role.id}` });
             throw new Error(`❌ Failed to drop item: Internal error removing your role.`);
           }
         }
@@ -1122,6 +1136,8 @@ export async function dropItem(userId, guildId, invId, member) {
     await runDependencySweep(userId, guildId, member, client);
 
     await client.query('COMMIT');
+
+    sysLog('Item Dropped', { user: userId, guild: guildId, detail: `Item: ${item.name} | DropID: ${dropRes.rows[0].id}` });
 
     return { 
       success: true, 
@@ -1214,6 +1230,9 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     );
 
     await client.query('COMMIT');
+
+    sysLog('Item Claimed', { user: claimerId, guild: guildId, detail: `Item: ${drop.name} | From Drop: ${dropId}` });
+
     return { 
       success: true, 
       item: drop,
@@ -1354,7 +1373,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
 
     return inventory.rows;
   } catch (error) {
-    console.error('Inventory Sync Error:', error);
+    sysError('Inventory Sync Error', error, { user: userId, guild: guildId });
     return [];
   }
 }
@@ -1412,11 +1431,11 @@ export async function cleanupOrphanedInventory(guildId = null) {
 
     const result = await query(sql, params);
     if (result.rowCount > 0) {
-      console.log(`[System] Cleaned up ${result.rowCount} orphaned inventory entries`);
+      sysLog('Orphan Cleanup', { guild: guildId, detail: `Cleaned up ${result.rowCount} orphaned inventory entries` });
     }
     return result.rowCount;
   } catch (error) {
-    logSystemError(`Failed to cleanup orphaned inventory: ${sanitizeError(error)}`);
+    sysError('Orphan Cleanup Failed', error, { guild: guildId });
     return 0;
   }
 }
@@ -1490,12 +1509,10 @@ export async function cleanupGhostItems(guild) {
       [ghostItemIds]
     );
 
-    // Log each removed item
-    for (const name of ghostItemNames) {
-      console.log(`[System] Ghost Cleanup: Removed item "${name}" (Role deleted)`);
+    // Log removal in God-Mode console
+    if (shopResult.rowCount > 0) {
+      sysLog('Ghost Cleanup Executed', { guild: guild.id, detail: `Removed ${shopResult.rowCount} items, ${inventoryResult.rowCount} inventory entries, updated ${packsUpdated} packs. Items: ${ghostItemNames.join(', ')}` });
     }
-
-    console.log(`[System] Ghost Cleanup (${guild.name}): Removed ${shopResult.rowCount} items, ${inventoryResult.rowCount} inventory entries, updated ${packsUpdated} packs`);
 
     return {
       itemsRemoved: shopResult.rowCount,
@@ -1569,9 +1586,7 @@ export async function cleanupDeletedRole(guildId, roleId) {
       await scrubPrerequisiteFromGuild(guildId, itemId);
     }
 
-    for (const name of itemNames) {
-      console.log(`[System] Role deleted - Deactivated shop item "${name}" and scrubbed prerequisites.`);
-    }
+    sysLog('Role Deletion Purge', { guild: guildId, detail: `RoleID: ${roleId} | Purged: ${shopResult.rowCount} items | Reason: Role deleted` });
 
     // Discord Log (Bulk)
     if (shopResult.rowCount > 0) {
@@ -1653,7 +1668,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
         // FIRST ACTIVATION: Start the timer now
         const expiresAt = new Date(Date.now() + durationSeconds * 1000);
         await client.query('UPDATE user_inventory SET expires_at = $1 WHERE id = $2', [expiresAt, inventoryId]);
-        console.log(`[Shop] Timer started for consumable ${item.name} (User: ${userId}, Duration: ${durationSeconds}s)`);
+        sysLog('Timer Started', { user: userId, guild: guildId, detail: `Consumable: ${item.name} | Duration: ${durationSeconds}s` });
       } else {
         // RE-ACTIVATION (Timer already running)
         // Check if actually expired
@@ -1734,18 +1749,18 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     // LOGGING
     const action = newStatus ? 'Equipped' : 'Unequipped';
+    
+    // God-Mode System Log (Audit)
+    sysLog(`Item ${action}`, { user: userId, guild: guildId, detail: `Item: ${item.name} | InventoryID: ${inventoryId}` });
+    
     const logName = `${member.displayName} (${member.user.username})`;
-    
-    // Console log with standardized Railway prefix
-    console.log(`[${member.guild.name}] [Inventory] ${logName} ${action.toLowerCase()} ${item.name}`);
-    
     sendLog(member.guild, 'inventory', 'blue', `🎒 Item ${action}`, `**${logName}** ${action.toLowerCase()} **${item.name}**.`);
 
     return { success: true, is_active: newStatus, name: item.name, action: newStatus ? 'activated' : 'deactivated' };
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Activate/Deactivate toggle error:', error);
+    sysError('Toggle Equip Failed', error, { user: userId, guild: guildId, detail: `InventoryID: ${inventoryId}` });
     return { success: false, error: 'Failed to toggle item.' };
   } finally {
     client.release();
@@ -1772,7 +1787,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Sell item error:', error);
+    sysError('Sell Item Failed', error, { user: userId, guild: guildId, detail: `InventoryID: ${inventoryId}` });
     return { success: false, error: 'Failed to sell item.' };
   } finally {
     client.release();
@@ -1816,19 +1831,17 @@ export async function purgeUserInventory(userId, guildId, member = null) {
         const botMember = member.guild.members.me;
 
         for (const rid of roles) {
-          try {
-            const role = member.guild.roles.cache.get(rid);
             if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
               await member.roles.remove(rid, 'Item Expired (Lazy Purge)');
             }
           } catch (e) {
-            console.error(`[Purge] Failed to remove expired role ${rid}:`, e.message);
+            sysError('Purge Role Removal Failed', e, { user: userId, guild: guildId, detail: `RoleID: ${rid}` });
           }
         }
       }
 
       // 4. Log to Audit
-      console.log(`[${guildId}] [Purge] ${member?.user?.tag || userId}'s item "${itemName}" expired and was removed.`);
+      sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Reason: Lazy Purge` });
       
       const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: () => {} }));
       if (sendLog) {

@@ -1,4 +1,5 @@
 import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { logSystemError, sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getGuildActivity, resetGuildActivity, getTopActiveUsers } from '../activity/tracker.js';
 import { getGuildConfig, setGuildConfig, loadGuildConfigs } from '../storage/config.js';
 import { appendAwardRecord } from '../storage/mvpHistory.js';
@@ -102,7 +103,7 @@ async function executeWithRetry(promiseFactory, { label, timeoutMs = API_TIMEOUT
       if (attempt >= maxAttempts || !shouldRetry(error)) {
         throw error;
       }
-      console.warn(`Retry ${attempt}: ${sanitizeError(error)}`);
+      sysLog('API Retry', { detail: `Attempt ${attempt} | Result: ${sanitizeError(error)}` });
       await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
     }
     attempt += 1;
@@ -347,13 +348,12 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
     try {
       // Timer has fired at 00:00 Cairo time
       const guild = client.guilds.cache.get(guildId);
-      const guildName = guild ? guild.name : guildId;
-      console.log(`[System] MVP Timer - 00:00 Cairo - Running daily cycle for ${guildName}`);
+      sysLog('MVP Daily Cycle Triggered', { guild: guildId });
 
       // Check if still in Auto mode
       const currentConfig = await getGuildConfig(guildId);
       if (!currentConfig || currentConfig.enabled !== true) {
-        console.log(`[System] MVP Timer - ${guildName} no longer in Auto mode, skipping`);
+        sysLog('MVP Cycle Skipped', { guild: guildId, detail: 'Auto mode disabled' });
         await scheduleMvpTimer(client, guildId, true);
         return;
       }
@@ -362,7 +362,7 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
       
       // 1. Finalize Day: Award any pending voice time
       const { flushAllVoiceTime, resetGuildActivity, getTopActiveUsers } = await import('../activity/tracker.js');
-      await flushAllVoiceTime(guildId).catch(e => console.error(`[System] Voice flush error for ${guildId}:`, e));
+      await flushAllVoiceTime(guildId).catch(e => sysError('Voice Flush Sync Failed', e, { guild: guildId }));
 
       // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
       const { updateLeaderboards } = await import('../commands/leaderboard.js');
@@ -373,7 +373,7 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
       await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
 
       // 3. Clear stale streaks
-      await resetCairoStaleStreaks(guildId).catch(e => console.error(`[System] Streak reset error for ${guildId}:`, e));
+      await resetCairoStaleStreaks(guildId).catch(e => sysError('Streak Reset Failed', e, { guild: guildId }));
 
       // 4. Perform Award Ceremony (Roles, Coins, History)
       // awardMvp manages the Role Sweep and new assignments
@@ -387,10 +387,10 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
         `**Status:** Winners awarded, Leaderboards updated, and progress reset for the next 24h.`
       );
 
-      console.log(`[System] MVP Timer - Daily cycle complete for ${guildName}`);
+      sysLog('MVP Daily Cycle Complete', { guild: guildId });
       await scheduleMvpTimer(client, guildId, true);
     } catch (error) {
-      console.error(`[System] MVP timer error for guild ${guildId}:`, sanitizeError(error));
+      sysError('MVP Cycle Failure', error, { guild: guildId });
       // ALWAYS reschedule to prevent the system from getting stuck forever
       await scheduleMvpTimer(client, guildId, true).catch(() => {});
     }
@@ -488,13 +488,13 @@ async function fetchMembersWithRoleFallback(guild, roleId) {
     try {
       batch = await guild.members.fetch(fetchOptions);
     } catch (error) {
-      const isTimeout = error?.code === 'GUILD_MEMBERS_TIMEOUT' || error?.message?.includes("Members didn't arrive in time");
-      if (isTimeout && attempt < ROLE_CLEANUP_MAX_ATTEMPTS) {
+      const isTimeoutError = error.message?.toLowerCase().includes('timed out') || error.message?.toLowerCase().includes('timeout');
+      if (isTimeoutError && attempt < ROLE_CLEANUP_MAX_ATTEMPTS) {
         attempt += 1;
         await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
         continue;
       }
-      console.error(`Role fetch failed:`, sanitizeError(error));
+      sysError('Role Fetch Failed', error, { guild: guild.id, detail: `Role: ${roleId}` });
       throw error;
     }
 
@@ -624,7 +624,7 @@ export async function clear_all_current_mvp_holders(guild, mvpRole, keepUserIds 
           });
 
           if (reason === 'hierarchy' || reason === 'missing permission') {
-            console.error(`Cannot manage MVP role: ${reason}`);
+            sysError('MVP Role Permission Fault', `Cannot manage MVP role: ${reason}`, { guild: guildId });
             return {
               removedCount,
               remainingCount: remainingMembers.length,
@@ -753,14 +753,14 @@ export async function awardMvp(client, guildId, options = {}) {
 
   // Input validation
   if (!client || !client.guilds) {
-    console.error('[System] Invalid client provided');
+    sysError('Award Ceremony Blocked', 'Invalid client provided');
     return { winners: [], error: 'Invalid client' };
   }
 
   // ========== STEP 1: FETCH CONFIG ==========
   const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) {
-    console.error(`[System] Guild ${guildId} not found`);
+    sysError('Award Ceremony Blocked', 'Guild not found', { guild: guildId });
     return { winners: [], error: 'Guild not found' };
   }
 
@@ -768,17 +768,17 @@ export async function awardMvp(client, guildId, options = {}) {
 
   const config = await getGuildConfig(guildId);
   if (!config || !config.mvpRoleId) {
-    console.error(`${tag} MVP config incomplete`);
+    sysError('Award Ceremony Blocked', 'MVP config incomplete', { guild: guildId });
     return { winners: [], error: 'MVP configuration incomplete' };
   }
 
   // Get configured winner count (clamped to 1-5)
   const configuredWinnerCount = Math.min(Math.max(1, config.winnersCount || 1), MAX_WINNERS);
-  console.log(`${tag} Config: Winners=${configuredWinnerCount}, Role=${config.mvpRoleId}`);
+  sysLog('Award Ceremony Starting', { guild: guildId, detail: `Winners: ${configuredWinnerCount} | Role: ${config.mvpRoleId}` });
 
   const lock = acquireGuildLock(guildId);
   if (!lock) {
-    console.warn(`${tag} Award already in progress`);
+    sysLog('Award Ceremony Warning', { guild: guildId, detail: 'Award already in progress' });
     return { winners: [], error: 'Award already in progress' };
   }
 
@@ -786,16 +786,12 @@ export async function awardMvp(client, guildId, options = {}) {
     // ========== STEP 2: SELECT WINNERS (SQL-BASED) ==========
     const winners = await getTopActiveUsers(guildId, configuredWinnerCount, guild.name);
 
-    console.log(`${tag} Found ${winners.length} candidates (limit: ${configuredWinnerCount})`);
-
     if (winners.length > 0) {
-      winners.forEach((w, i) => {
-        console.log(`${tag}   ${i + 1}. ${w.username || w.userId} - Score: ${w.score}`);
-      });
+      sysLog('MVP Candidates Found', { guild: guildId, detail: `Candidates: ${winners.length}` });
     }
 
     if (winners.length === 0) {
-      console.log(`${tag} No eligible winners found today.`);
+      sysLog('MVP Cycle Result', { guild: guildId, detail: 'No eligible winners found' });
       return { winners: [], error: null };
     }
 
@@ -813,11 +809,11 @@ export async function awardMvp(client, guildId, options = {}) {
     const cleanupResult = await clear_all_current_mvp_holders(guild, mvpRole, winnerUserIds);
 
     if (cleanupResult.removedCount > 0) {
-      console.log(`${tag} Cleared ${cleanupResult.removedCount} old MVP holder(s)`);
+      sysLog('MVP Role Sweep', { guild: guildId, detail: `Removed ${cleanupResult.removedCount} old holders` });
     }
 
     if (cleanupResult.failures && cleanupResult.failures.length > 0) {
-      console.warn(`${tag} Failed to clear ${cleanupResult.failures.length} member(s)`);
+      sysLog('MVP Role Sweep Warning', { guild: guildId, detail: `Failures: ${cleanupResult.failures.length}` });
     }
 
     if (cleanupResult.fatal) {
@@ -836,7 +832,7 @@ export async function awardMvp(client, guildId, options = {}) {
         const oldCycle = await getLastMvpCycleResults(guildId, 5);
         oldMvpUserIds = oldCycle.results.map(r => r.userId);
       } catch (e) {
-        console.error(`${tag} Failed to capture old MVPs for sweep:`, e);
+        sysError('Old MVP Capture Failed', e, { guild: guildId });
       }
 
       for (const winner of winners) {
@@ -861,17 +857,17 @@ export async function awardMvp(client, guildId, options = {}) {
             { label: `Assign MVP to ${member.user.tag}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
           );
 
-          console.log(`${tag} Assigned MVP -> ${member.user.tag} (Score: ${winner.score})`);
+          sysLog('MVP Assigned', { user: winner.userId, guild: guildId, detail: `RoleID: ${mvpRole.id} | Score: ${winner.score}` });
           resultMembers.push(member);
 
         } catch (error) {
-          console.error(`${tag} Failed to assign MVP to ${winner.username}:`, sanitizeError(error));
+          sysError('MVP Assignment Failed', error, { user: winner.userId, guild: guildId });
           assignmentFailures.push({ userId: winner.userId, username: winner.username, reason: sanitizeError(error) });
         }
       }
 
       if (assignmentFailures.length > 0) {
-        console.warn(`${tag} ${assignmentFailures.length} assignment(s) failed`);
+        sysLog('Award Ceremony Warning', { guild: guildId, detail: `${assignmentFailures.length} assignments failed` });
         const failureList = assignmentFailures.map(f => `<@${f.userId}>: \`${f.reason}\``).join('\n');
         sendLog(guild, 'audit', 'red', '❌ MVP Assignment Failed', 
           `**Action:** \`Award Ceremony\`\n` +
@@ -890,7 +886,7 @@ export async function awardMvp(client, guildId, options = {}) {
           try {
             await awardCoinReward(guildId, member.id, rewardAmount, guild.name);
           } catch (error) {
-            console.error(`${tag} Failed to award coins to ${member.id}:`, sanitizeError(error));
+            sysError('MVP Reward Failed', error, { user: member.id, guild: guildId });
           }
         }
       }
@@ -911,7 +907,7 @@ export async function awardMvp(client, guildId, options = {}) {
           rank: i + 1
         });
       }
-      console.log(`${tag} Saved ${resultMembers.length} winner(s) to MVP history`);
+      sysLog('Award Ceremony Complete', { guild: guildId, detail: `Saved ${resultMembers.length} winners to history` });
 
       const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
       const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
@@ -931,13 +927,13 @@ export async function awardMvp(client, guildId, options = {}) {
           if (!currentWinnerIds.includes(oldMvpId)) {
             const oldMember = await guild.members.fetch(oldMvpId).catch(() => null);
             if (oldMember) {
-              console.log(`${tag} Running dependency sweep for dethroned MVP ${oldMember.user.tag}`);
+              sysLog('Dethronement Sweep', { user: oldMvpId, guild: guildId });
               await runDependencySweep(oldMvpId, guildId, oldMember);
             }
           }
         }
       } catch (e) {
-        console.error(`${tag} Failed to run dependency sweep for old MVPs:`, e);
+        sysError('Dethronement Sweep Failed', e, { guild: guildId });
       }
     }
 
@@ -956,10 +952,9 @@ export async function awardMvp(client, guildId, options = {}) {
     try {
       await setGuildConfig(guildId, config);
     } catch (error) {
-      console.error(`${tag} Failed to save MVP metadata:`, sanitizeError(error));
+      sysError('MVP Metadata Save Failed', error, { guild: guildId });
     }
 
-    console.log(`${tag} Cycle complete`);
     return { winners, winnerMembers: resultMembers, assignmentFailures };
   } finally {
     lock.release();
@@ -987,7 +982,7 @@ export async function reconcileAllMvpHolders(client) {
     try {
       const result = await reconcileMvpHolders(client, guildId);
     } catch (error) {
-      console.error(`Startup reconciliation failed:`, sanitizeError(error));
+      sysError('Startup Reconciliation Failed', error, { guild: guildId });
     }
   }
 }
@@ -1029,7 +1024,7 @@ async function announceWinners(guild, config, winnerMembers, winnerData, rewardA
       allowedMentions: { parse: [] }
     });
   } catch (error) {
-    console.error(`[System] Failed to send MVP announcement:`, sanitizeError(error));
+    sysError('MVP Announcement Failed', error, { guild: guild.id, detail: `Channel: ${config.announceChannelId}` });
     throw error;
   }
 }
@@ -1047,13 +1042,13 @@ async function awardCoinReward(guildId, userId, amount, guildName) {
     const result = await updateBalance(userId, guildId, amount, 'mvp_reward', 'Won MVP of the Day');
     
     if (result.success) {
-      console.log(`${tag} [Reward Success] Awarded ${amount} coins to ${userId} (New Balance: ${result.balance.toLocaleString()})`);
+      sysLog('MVP Payout Success', { user: userId, guild: guildId, detail: `Amount: ${amount}` });
       return true;
     } else {
       throw new Error(result.error || 'Failed to update balance');
     }
   } catch (error) {
-    console.error(`${tag} [Reward Failure] Failed to payout MVP coins to ${userId}:`, sanitizeError(error));
+    sysError('MVP Payout Failure', error, { user: userId, guild: guildId });
     throw error;
   }
 }
@@ -1073,7 +1068,7 @@ export async function scheduleCairoMidnightReset(client) {
   }
 
   setTimeout(async () => {
-    console.log('[System] ⏰ Cairo midnight - running global reset (streaks & quests)...');
+    sysLog('Global Reset Sequence Starting', { detail: 'Cairo Midnight Triggered' });
     
     // 1. Reset streaks globally
     await resetCairoStaleStreaks();
@@ -1122,12 +1117,11 @@ export async function resetCairoStaleStreaks(guildId = null) {
     `, params);
 
     if (result.rowCount > 0) {
-      const scope = guildId ? `for guild ${guildId}` : 'globally';
-      console.log(`[System] Reset ${result.rowCount} expired streaks ${scope} (Last claim before Cairo Date: ${yesterday})`);
+      sysLog('Streak Reset Executed', { guild: guildId, detail: `Reset ${result.rowCount} holders | Threshold: ${yesterday}` });
     } else {
-      console.log(`[System] Streak check complete ${guildId ? `for ${guildId}` : 'globally'} - No expired streaks found.`);
+      sysLog('Streak Reset Complete', { guild: guildId, detail: 'No expired streaks found' });
     }
   } catch (error) {
-    console.error('[System] Streak reset error:', sanitizeError(error));
+    sysError('Streak Reset Failed', error, { guild: guildId });
   }
 }

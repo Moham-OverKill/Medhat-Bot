@@ -1,6 +1,6 @@
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
-import { logServerError } from '../utils/logger.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 // ============================================
 // TEXT CHAT: ANTI-SPAM CONFIGURATION
@@ -79,10 +79,10 @@ export async function clearStaleVoiceTracking() {
       WHERE voice_valid_start IS NOT NULL OR is_voice_tracking = TRUE
     `);
     if (result.rowCount > 0) {
-      console.log(`[System] Cleared stale voice tracking for ${result.rowCount} users`);
+      sysLog('Presence Audit', { detail: `Cleared stale voice tracking for ${result.rowCount} users` });
     }
   } catch (error) {
-    console.error('[System] Failed to clear stale voice tracking:', sanitizeError(error));
+    sysError('Presence Audit Failed', error, { detail: 'Stale voice tracking' });
   }
 }
 
@@ -112,7 +112,7 @@ export async function getGuildActivity(guildId) {
       });
     }
   } catch (error) {
-    console.error(`Failed to fetch guild activity for ${guildId}:`, sanitizeError(error));
+    sysError('Activity Fetch Failed', error, { guild: guildId });
   }
 
   return { users };
@@ -139,7 +139,7 @@ export async function resetGuildActivity(guildId) {
     );
     invalidateConfigCache(guildId);
   } catch (error) {
-    console.error(`Failed to reset guild activity for ${guildId}:`, sanitizeError(error));
+    sysError('Activity Reset Failed', error, { guild: guildId });
   }
 }
 
@@ -216,8 +216,9 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       [guildId, userId, username, now, new Date(now), contentLower.substring(0, 500)]
     );
     return true;
+    return true;
   } catch (error) {
-    console.error(`[Activity Tracker] Failed to persist message point for ${username}:`, sanitizeError(error));
+    sysError('Activity Persistence Failed', error, { user: userId, guild: guildId, detail: 'Message point' });
     return false;
   }
 }
@@ -269,10 +270,10 @@ export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
       });
     }
 
-    console.log(`${tag} Query: ${users.length} candidates found (limit: ${limit})`);
+    sysLog('Activity Audit', { guild: guildId, detail: `${users.length} candidates found | Limit: ${limit}` });
 
   } catch (error) {
-    console.error(`${tag} Failed to fetch top active users:`, sanitizeError(error));
+    sysError('Activity Fetch Failed', error, { guild: guildId, detail: 'Top users' });
   }
 
   return users;
@@ -295,7 +296,7 @@ export async function stopAllVoiceTracking(guildId) {
       [guildId]
     );
   } catch (error) {
-    console.error(`Failed to stop all voice tracking for ${guildId}:`, sanitizeError(error));
+    sysError('Activity Update Failed', error, { guild: guildId, detail: 'Stop all voice tracking' });
   }
 }
 
@@ -449,7 +450,7 @@ async function startVoiceTracking(guild, userId, username) {
     );
     // Voice tracking logic (logs removed)
   } catch (error) {
-    logServerError(guild, username, `Failed to start voice tracking: ${sanitizeError(error)}`);
+    sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Start voice tracking' });
   }
 }
 
@@ -509,7 +510,7 @@ async function pauseVoiceTracking(guild, userId, username) {
       [guildId, userId, buffer, voiceMinutes, new Date(now)]
     );
   } catch (error) {
-    console.error(`Failed to pause voice tracking for ${username} in ${guild.id}:`, sanitizeError(error));
+    sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Pause voice tracking' });
   }
 }
 
@@ -562,21 +563,21 @@ export async function voicePointsTick(client) {
       const voiceState = member.voice;
       if (!voiceState || !voiceState.channel) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        console.log(`[${guild.name}] Paused ghost tracking for ${row.username}: not in voice (buffer saved)`);
+        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: not in voice' });
         continue;
       }
 
       // Check mute/deaf
       if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        console.log(`[${guild.name}] Paused ghost tracking for ${row.username}: muted/deafened (buffer saved)`);
+        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: muted/deafened' });
         continue;
       }
 
       // Check AFK channel
       if (guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        console.log(`[${guild.name}] Paused ghost tracking for ${row.username}: in AFK channel (buffer saved)`);
+        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: in AFK channel' });
         continue;
       }
 
@@ -584,7 +585,7 @@ export async function voicePointsTick(client) {
       const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
       if (humanCount < 2) {
         await pauseVoiceTracking(guild, row.user_id, row.username);
-        console.log(`[${guild.name}] Paused ghost tracking for ${row.username}: alone in channel (buffer saved)`);
+        sysLog('Activity Heart-Beat Warning', { user: row.user_id, guild: row.guild_id, detail: 'Ghost tracking: alone in channel' });
         continue;
       }
 
@@ -625,7 +626,7 @@ export async function voicePointsTick(client) {
       }
     }
   } catch (error) {
-    console.error('Voice points tick error:', sanitizeError(error));
+    sysError('Activity Heart-Beat Failed', error, { detail: 'Voice points tick' });
   }
 }
 
@@ -640,8 +641,7 @@ async function stopTrackingUser(pool, guildId, userId, guild, reason) {
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
-    const tag = guild?.name ? `[${guild.name}]` : '[System]';
-    console.log(`${tag} Stopped ghost tracking for ${userId}: ${reason}`);
+    sysLog('Activity Heart-Beat Flush', { user: userId, guild: guildId, detail: `Stopped ghost tracking: ${reason}` });
   } catch (e) {
     // Ignore errors during cleanup
   }
@@ -671,10 +671,10 @@ export async function syncVoicePresence(guild) {
     }
 
     if (syncedCount > 0) {
-        console.log(`[${guild.name}] [Presence Sweep] Initialized tracking for ${syncedCount} active voice users.`);
+        sysLog('Presence Audit', { guild: guild.id, detail: `Initialized tracking for ${syncedCount} active voice users` });
     }
   } catch (error) {
-    console.error(`[${guild.name}] [Presence Sweep] Failed:`, error);
+    sysError('Presence Audit Failed', error, { guild: guild.id, detail: 'Initial voice sync' });
   }
 }
 
@@ -725,6 +725,6 @@ export async function flushAllVoiceTime(guildId) {
       );
     }
   } catch (error) {
-    console.error(`Failed to flush voice time for ${guildId}:`, sanitizeError(error));
+    sysError('Activity Flush Failed', error, { guild: guildId, detail: 'Flush all voice time' });
   }
 }

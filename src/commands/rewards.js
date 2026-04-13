@@ -13,7 +13,8 @@ import {
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { updateBalance } from '../economy/service.js';
-import { sendLog } from '../utils/logger.js';
+import { logServerEvent, sendLog, sysError } from '../utils/logger.js';
+import { handleInteractionError } from '../utils/errors.js';
 import { getUserDisplayName, getUserLogName, sanitizeError, COIN_EMOJI } from '../shared.js';
 
 export const rewardsCommand = new SlashCommandBuilder()
@@ -97,7 +98,7 @@ export async function handleRewardsSetup(interaction) {
       await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
     }
   } catch (error) {
-    console.error('Rewards setup error:', error);
+    sysError('Rewards setup error', error, { user: interaction.user.id, guild: interaction.guildId });
     const reply = { content: '❌ An error occurred loading rewards setup.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
     else await interaction.reply(reply);
@@ -226,7 +227,7 @@ export async function handleRewardsComponent(interaction) {
       await interaction.showModal(modal);
     }
   } catch (error) {
-     console.error('[Rewards] Interaction Error:', error);
+     sysError('Rewards component router failed', error, { user: interaction.user.id, guild: interaction.guildId });
      const reply = { content: '❌ An error occurred processing this interaction.', flags: MessageFlags.Ephemeral };
      if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
      else await interaction.reply(reply);
@@ -372,12 +373,12 @@ export async function handleRewardsModal(interaction) {
       await interaction.update(payload);
       await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
     } catch (error) {
-      console.error('Give coins error:', error);
+      sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
       await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
     }
   }
   } catch (error) {
-    console.error('[Rewards] Modal Error:', error);
+    sysError('Rewards modal error', error, { user: interaction.user.id, guild: interaction.guildId });
     const reply = { content: '❌ An error occurred processing this configuration.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
     else await interaction.reply(reply);

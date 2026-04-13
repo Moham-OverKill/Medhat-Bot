@@ -1,5 +1,6 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { sanitizeError } from '../shared.js';
+import { sysLog, sysError } from './logger.js';
 
 /**
  * Create a standardized error embed
@@ -25,7 +26,11 @@ export function createSuccessEmbed(title, description) {
  * Handle interaction errors uniformly
  */
 export async function handleInteractionError(interaction, error, context) {
-  console.error(`Error in ${context}:`, sanitizeError(error));
+  sysError('Interaction Audit Failure', error, { 
+    user: interaction?.user?.id, 
+    guild: interaction?.guildId, 
+    detail: context 
+  });
   
   const message = 'An error occurred while processing your request.';
   
@@ -45,6 +50,6 @@ export async function handleInteractionError(interaction, error, context) {
       });
     }
   } catch (e) {
-    console.error('Failed to send error response:', sanitizeError(e));
+    sysError('Interaction Warning', e, { detail: 'Failed to send ephemeral error response' });
   }
 }

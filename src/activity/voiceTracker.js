@@ -1,5 +1,5 @@
 import { getPool } from '../storage/postgres.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
 
 /**
@@ -94,9 +94,8 @@ export async function updateVoiceTracking(guild, member) {
         `**Reason:** User muted/left/alone.`
       );
     }
-
   } catch (error) {
-    console.error(`[Voice Tracker] Update failed for ${username}:`, sanitizeError(error));
+    sysError('Activity Capture Failed', error, { user: userId, guild: guildId, detail: 'Voice tracking update' });
   }
 }
 
@@ -111,11 +110,11 @@ export async function resetVoiceTrackingTimestamps() {
     await pool.query(
       `UPDATE user_activity 
        SET last_voice_check = $1, last_active = $1 
-       WHERE is_voice_tracking = TRUE`,
+        WHERE is_voice_tracking = TRUE`,
       [now]
     );
   } catch (error) {
-    console.error('Failed to reset voice tracking timestamps:', sanitizeError(error));
+    sysError('Activity Reset Failed', error, { detail: 'Voice tracking timestamps' });
   }
 }
 
@@ -212,9 +211,8 @@ export async function voiceTrackingTick(client, guildId) {
         );
       }
     }
-
   } catch (error) {
-    console.error(`Voice tick error:`, sanitizeError(error));
+    sysError('Activity Heart-Beat Failed', error, { guild: guildId, detail: 'Voice tracking tick' });
   }
 }
 
@@ -229,8 +227,7 @@ async function stopGhostTracking(pool, guildId, userId, guild, reason) {
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
-    const tag = guild?.name ? `[${guild.name}]` : '[System]';
-    console.log(`${tag} Stopped ghost voice tracking for ${userId}: ${reason}`);
+    sysLog('Activity Heart-Beat Flush', { user: userId, guild: guildId, detail: `Stopped ghost voice tracking: ${reason}` });
   } catch (e) {
     // Ignore
   }

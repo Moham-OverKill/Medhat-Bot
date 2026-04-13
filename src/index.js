@@ -14,7 +14,7 @@ import { scheduleAllMvpTimers } from './mvp/award.js';
 import { startQuestScheduler } from './cron/quests.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
-import { logSystemEvent } from './utils/logger.js';
+import { logSystemEvent, sysLog, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
 import pkg from '../package.json' with { type: 'json' };
@@ -27,13 +27,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 // GLOBAL ERROR HANDLERS (CRASH PREVENTION)
 // ============================================
 process.on('unhandledRejection', (reason, promise) => {
-  console.warn('[System] Unhandled Promise Rejection:', reason);
-  // Do NOT exit the process. Let it keep running.
+  sysError('Unhandled Promise Rejection', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[System] Uncaught Exception:', sanitizeError(error));
-  // Keep the bot alive despite synchronous errors
+  sysError('Uncaught Exception', error);
 });
 
 const client = new Client({
@@ -70,12 +68,13 @@ const depsState = {
 function emitPhase(key, message, metadata = {}) {
   if (startupContext.emittedPhases.has(key)) return;
   startupContext.emittedPhases.add(key);
-  const meta = Object.entries(metadata)
+  
+  const details = Object.entries(metadata)
     .filter(([, value]) => value !== undefined && value !== null)
-    .map(([k, value]) => `${k}=${value}`)
-    .join(' ');
-  const suffix = meta ? ` ${meta}` : '';
-  logSystemEvent(`${message}${suffix}`);
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' | ');
+
+  sysLog(`Phase: ${message}`, { detail: details || key });
 }
 
 function tryEmitDeps() {
@@ -87,28 +86,28 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
   if (shuttingDown) return;
   shuttingDown = true;
   let resolvedExitCode = exitCode;
-  logSystemEvent(`${signal} received - shutting down`);
+  sysLog('Shutdown Sequence Triggered', { detail: `Signal: ${signal}` });
 
   try {
     cleanupActivityTracking();
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
-    console.error('Error during shutdown cleanup:', sanitizeError(error));
+    sysError('Shutdown Cleanup Failed', error, { detail: 'Activity Tracking' });
   }
 
   try {
     closeColorsDB();
-    logSystemEvent('Colors database closed');
+    sysLog('Database Closed', { detail: 'Colors DB' });
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
-    console.error('Error closing colors database:', sanitizeError(error));
+    sysError('Shutdown Database Close Failed', error, { detail: 'Colors DB' });
   }
 
   try {
     await closeDatabase();
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
-    console.error('Error closing PostgreSQL database:', sanitizeError(error));
+    sysError('Shutdown Database Close Failed', error, { detail: 'PostgreSQL' });
   }
 
   if (keepAliveServer) {
@@ -116,7 +115,7 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
       keepAliveServer.close((closeError) => {
         if (closeError) {
           resolvedExitCode = resolvedExitCode || 1;
-          console.error('Error closing keepalive server:', sanitizeError(closeError));
+          sysError('Shutdown Server Close Failed', closeError, { detail: 'Keepalive' });
         }
         resolve();
       });
@@ -126,10 +125,10 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
 
   try {
     client.destroy();
-    logSystemEvent('Client destroyed');
+    sysLog('Client Destroyed');
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
-    console.error('Error destroying client:', sanitizeError(error));
+    sysError('Shutdown Client Destroy Failed', error);
   }
 
   process.exit(resolvedExitCode);
@@ -148,7 +147,7 @@ keepAliveServer = createServer((req, res) => {
 });
 
 keepAliveServer.on('error', (error) => {
-  console.error('Keepalive server error:', sanitizeError(error));
+  sysError('Keepalive Server Critical Error', error);
   shutdown('KEEPALIVE_SERVER_ERROR', { exitCode: 1 });
 });
 
@@ -158,34 +157,24 @@ keepAliveServer.listen(keepalivePort, () => {
   tryEmitDeps();
 });
 
-logSystemEvent('Attempting to login to Discord...');
+sysLog('Client Authenticating', { detail: 'Attempting Discord login' });
 
 client.once(Events.ClientReady, async () => {
-  console.log('[System] ClientReady event received');
+  sysLog('Client Ready', { user: client.user.id });
 
   try {
     // Initialize database (MUST BE FIRST)
-    logSystemEvent('Initializing database...');
     await initializeDatabase();
     emitPhase('deps', 'Database ready');
-    logSystemEvent('Database initialized');
 
     // Initialize cached configs
-    logSystemEvent('Initializing guild configs...');
     await initializeGuildConfigs();
-    logSystemEvent('Guild configs initialized');
 
     // Initialize colors database
-    logSystemEvent('Initializing colors database...');
     await initializeColorsDB();
-    logSystemEvent('Colors database initialized');
 
     const configs = await loadGuildConfigs();
-    console.log('[System] Configs loaded');
     const configCount = Object.keys(configs).length;
-    const shardsInfo = client.options.shards && client.options.shards.length
-      ? client.options.shards.length
-      : 1;
     emitPhase('config', 'Configs loaded', {
       guilds: configCount
     });
@@ -193,11 +182,9 @@ client.once(Events.ClientReady, async () => {
     tryEmitDeps();
 
     // Register slash commands globally
-    console.log('[System] Registering slash commands...');
     const { registered: commandsUpdated } = await registerSlashCommands(client);
-    console.log('[System] Slash commands registered');
     if (commandsUpdated) {
-      logSystemEvent('Commands refreshed');
+      sysLog('Commands Refreshed', { detail: 'Global sync complete' });
     }
 
     emitPhase('discord', `Logged in as ${client.user.tag}`);
@@ -205,7 +192,7 @@ client.once(Events.ClientReady, async () => {
     // Initialize Presence Rotation
     updateBotPresence(client);
     startPresenceRotation(client);
-    logSystemEvent('Presence rotation active (Hourly)');
+    sysLog('Task Started', { detail: 'Presence Rotation (Hourly)' });
 
     // Clear stale voice tracking data before starting activity tracking
     // Prevents point spam from timestamps saved before bot restart
@@ -231,7 +218,7 @@ client.once(Events.ClientReady, async () => {
     // Run booster color audit in background (don't block startup)
     const { auditAllGuilds } = await import('./commands/colors.js');
     auditAllGuilds(client).catch((error) => {
-      console.error('[System] Booster audit error:', sanitizeError(error));
+      sysError('Booster Audit Background Error', error);
     });
 
     // Schedule periodic audit every 8 hours
@@ -239,7 +226,7 @@ client.once(Events.ClientReady, async () => {
       try {
         await auditAllGuilds(client);
       } catch (error) {
-        console.error('[System] Booster audit error:', sanitizeError(error));
+        sysError('Booster Audit Periodic Error', error);
       }
     }, 8 * 60 * 60 * 1000); // 8 hours in milliseconds
 
@@ -249,14 +236,14 @@ client.once(Events.ClientReady, async () => {
     scheduleCairoMidnightReset(client);
 
   } catch (error) {
-    console.error('[System] Startup failed:', sanitizeError(error));
+    sysError('Startup Critical Failure', error);
     await shutdown('STARTUP_FAILURE', { exitCode: 1 });
   }
 });
 
 // Handle Discord API errors silently (prevents WebSocket crash)
 client.on(Events.Error, (error) => {
-  console.error('[System] Discord Client Error:', sanitizeError(error));
+  sysError('Discord Client Error', error);
 });
 
 // Handle reactions for quest tracking (Optimized Watch-mode)
@@ -299,7 +286,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 client.on(Events.GuildRoleDelete, async (role) => {
   try {
     const guild = role.guild;
-    console.log(`[System] Role Deleted: @${role.name} (${role.id}) in ${guild.name}. Cleaning up...`);
+    sysLog('Role Deleted', { guild: guild.id, detail: `RoleID: ${role.id}` });
 
     // 1. Cleanup Shop Items & Inventory (standard logic)
     const { cleanupDeletedRole } = await import('./economy/shop.js');
@@ -321,7 +308,7 @@ client.on(Events.GuildRoleDelete, async (role) => {
       );
     }
   } catch (error) {
-    console.error('[System] Error in roleDelete maintenance:', sanitizeError(error));
+    sysError('Role Deletion Cleanup Failed', error, { guild: role.guild.id, detail: `RoleID: ${role.id}` });
   }
 });
 
@@ -354,15 +341,11 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       }
     }
 
-    if (updated) {
-      await setGuildConfig(guild.id, config);
-      console.warn(`[System] Configuration Updated: Deleted channel #${channel.name} was a linked resource in ${guild.name}.`);
-      
       // Attempt to log to console and any remaining log channels
-      logSystemEvent(`[${guild.name}] Channel #${channel.name} deleted. Cleaned up resource links.`);
+      sysLog('Config Updated', { guild: guild.id, detail: 'Deleted linked channel resource' });
     }
   } catch (error) {
-    console.error('[System] Error in channelDelete maintenance:', sanitizeError(error));
+    sysError('Channel Deletion Cleanup Failed', error, { guild: channel.guild?.id });
   }
 });
 
@@ -380,7 +363,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     await handleSlashCommand(interaction);
   } catch (error) {
-    console.error('Interaction error:', sanitizeError(error));
+    sysError('Interaction Processing Failed', error, { user: interaction.user.id, guild: interaction.guildId });
 
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({
@@ -398,7 +381,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 // Validate required environment variables
 if (!process.env.DISCORD_TOKEN) {
-  console.error('DISCORD_TOKEN environment variable is required');
+  sysError('Critical Startup Error', 'DISCORD_TOKEN environment variable is required');
   process.exit(1);
 }
 
@@ -409,8 +392,9 @@ client.on('guildDelete', async (guild) => {
     const { deleteGuildConfig } = await import('./storage/config.js');
     cancelMvpTimer(guild.id);
     await deleteGuildConfig(guild.id);
+    sysLog('Guild Left', { guild: guild.id, detail: 'Cleaned up data and timers' });
   } catch (error) {
-    console.error('Error cleaning up guild data:', sanitizeError(error));
+    sysError('Guild Leave Cleanup Failed', error, { guild: guild.id });
   }
 });
 
@@ -444,7 +428,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
     }
   } catch (error) {
-    console.error('[System] Member update error:', sanitizeError(error));
+    sysError('Booster Update Processing Failed', error, { user: newMember.id, guild: newMember.guild.id });
   }
 });
 
@@ -453,10 +437,10 @@ client.on('roleDelete', async (role) => {
   try {
     const result = await cleanupDeletedRole(role.guild.id, role.id);
     if (result.itemsRemoved > 0) {
-      console.log(`[${role.guild.name}] Role Deleted: Purged ${result.itemsRemoved} shop items, ${result.inventoryRemoved} inventory entries, updated ${result.packsUpdated || 0} packs for role "${role.name}"`);
+      sysLog('Ghost Cleanup Success', { guild: role.guild.id, detail: `RoleID: ${role.id} | Removed: ${result.itemsRemoved}` });
     }
   } catch (error) {
-    console.error('[System] Role delete cleanup error:', sanitizeError(error));
+    sysError('Ghost Cleanup Failed', error, { guild: role.guild.id, detail: `RoleID: ${role.id}` });
   }
 });
 
