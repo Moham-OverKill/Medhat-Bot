@@ -9,7 +9,7 @@ import {
     ChannelSelectMenuBuilder,
     ChannelType
 } from 'discord.js';
-import { getGuildConfig, setGuildConfig } from '../storage/config.js';
+// Config imports moved to dynamic imports within handlers to prevent scope errors
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
@@ -138,15 +138,15 @@ export async function showRewardsSubMenu(interaction) {
             .setCustomId('quests_dashboard')
             .setLabel('Quests')
             .setEmoji('🎯')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('rewards_give_btn')
             .setLabel('Give Coins')
             .setEmoji('💸')
-            .setStyle(ButtonStyle.Success)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId('settings_home')
             .setLabel('Back to Settings')
@@ -186,6 +186,7 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_mvp') {
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
             const guildId = interaction.guildId;
             let config = await getGuildConfig(guildId);
             if (!config) {

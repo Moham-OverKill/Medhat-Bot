@@ -56,8 +56,10 @@ async function getRewardsPayload(guildId) {
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
       { name: 'Boost Mult', value: boosterText, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true },
       { name: 'Streak Bonus', value: streakText, inline: true },
-      { name: 'Streak Cap', value: capText, inline: true }
+      { name: 'Streak Cap', value: capText, inline: true },
+      { name: '\u200B', value: '\u200B', inline: true }
     );
 
   // Row 1: Config Buttons (2 Primary)
@@ -185,7 +187,7 @@ export async function handleRewardsComponent(interaction) {
     }
     else if (customId === 'rewards_give_select') {
       const targetUserId = interaction.users?.first()?.id || (interaction.values ? interaction.values[0] : null);
-      
+
       if (!targetUserId) {
         return interaction.reply({ content: '❌ Could not determine selected user.', flags: MessageFlags.Ephemeral });
       }
@@ -208,10 +210,10 @@ export async function handleRewardsComponent(interaction) {
       await interaction.showModal(modal);
     }
   } catch (error) {
-     sysError('Rewards component router failed', error, { user: interaction.user.id, guild: interaction.guildId });
-     const reply = { content: '❌ An error occurred processing this interaction.', flags: MessageFlags.Ephemeral };
-     if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
-     else await interaction.reply(reply);
+    sysError('Rewards component router failed', error, { user: interaction.user.id, guild: interaction.guildId });
+    const reply = { content: '❌ An error occurred processing this interaction.', flags: MessageFlags.Ephemeral };
+    if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
+    else await interaction.reply(reply);
   }
 }
 
@@ -222,118 +224,118 @@ export async function handleRewardsModal(interaction) {
   try {
     const config = await getGuildConfig(guildId) || {};
 
-  if (customId === 'rewards_booster_modal') {
-    const inputVal = interaction.fields.getTextInputValue('multiplier');
-    const mult = inputVal ? Math.max(0, parseFloat(inputVal)) : 2.0;
+    if (customId === 'rewards_booster_modal') {
+      const inputVal = interaction.fields.getTextInputValue('multiplier');
+      const mult = inputVal ? Math.max(0, parseFloat(inputVal)) : 2.0;
 
-    if (inputVal && isNaN(mult)) {
-      return interaction.reply({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
-    }
-    config.booster_multiplier = mult;
-    await setGuildConfig(guildId, config);
+      if (inputVal && isNaN(mult)) {
+        return interaction.reply({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
+      }
+      config.booster_multiplier = mult;
+      await setGuildConfig(guildId, config);
 
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed',
         `**Admin:** \`${logName}\`\n` +
         `**Setting:** Booster Multiplier\n` +
         `**New Value:** \`${mult}x\``
-    );
-
-    const payload = await getRewardsPayload(interaction.guildId);
-    await interaction.update(payload);
-  }
-  else if (customId === 'rewards_streak_modal') {
-    const inputVal = interaction.fields.getTextInputValue('amount');
-    const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 5;
-
-    if (inputVal && isNaN(amount)) {
-      return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
-    }
-    config.daily_streak_bonus = amount;
-    await setGuildConfig(guildId, config);
-
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Setting:** Daily Streak Bonus\n` +
-        `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
-    );
-
-    const payload = await getRewardsPayload(interaction.guildId);
-    await interaction.update(payload);
-  }
-  else if (customId === 'rewards_daily_base_modal') {
-    const inputVal = interaction.fields.getTextInputValue('amount');
-    const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 25;
-
-    if (inputVal && isNaN(amount)) {
-      return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
-    }
-    config.daily_base_reward = amount;
-    await setGuildConfig(guildId, config);
-
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Setting:** Base Daily Reward\n` +
-        `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
-    );
-
-    const payload = await getRewardsPayload(interaction.guildId);
-    await interaction.update(payload);
-  }
-  else if (customId === 'rewards_streak_cap_modal') {
-    const inputVal = interaction.fields.getTextInputValue('cap');
-    const cap = inputVal ? Math.max(1, parseInt(inputVal, 10)) : 20;
-
-    if (inputVal && (isNaN(cap) || cap < 1)) {
-      return interaction.reply({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
-    }
-    config.daily_streak_cap = cap;
-    await setGuildConfig(guildId, config);
-
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Setting:** Daily Streak Cap\n` +
-        `**New Value:** \`${cap} days\``
-    );
-
-    const payload = await getRewardsPayload(interaction.guildId);
-    await interaction.update(payload);
-  }
-  else if (customId.startsWith('rewards_give_modal_')) {
-    const targetUserId = customId.split('_').pop();
-    const amountStr = interaction.fields.getTextInputValue('amount');
-    const amount = parseInt(amountStr, 10);
-    const reason = interaction.fields.getTextInputValue('reason') || 'Admin Grant';
-
-    if (isNaN(amount) || amount <= 0) {
-      return interaction.reply({ content: '❌ Invalid amount. Must be greater than 0.', flags: MessageFlags.Ephemeral });
-    }
-
-    try {
-      await updateBalance(targetUserId, guildId, amount, 'admin_grant', reason);
-
-      const logName = getUserLogName(interaction);
-      const recipientUser = await interaction.client.users.fetch(targetUserId).catch(() => null);
-      const recipientLogName = recipientUser ? getUserLogName(recipientUser) : targetUserId;
-
-      sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed', 
-        `**Target:** \`${recipientLogName}\`\n` +
-        `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
-        `**Admin:** \`${logName}\`\n` +
-        `**Reason:** ${reason}`
       );
 
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.update(payload);
-      await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
-    } catch (error) {
-      sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
-      await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
     }
-  }
+    else if (customId === 'rewards_streak_modal') {
+      const inputVal = interaction.fields.getTextInputValue('amount');
+      const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 5;
+
+      if (inputVal && isNaN(amount)) {
+        return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+      }
+      config.daily_streak_bonus = amount;
+      await setGuildConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed',
+        `**Admin:** \`${logName}\`\n` +
+        `**Setting:** Daily Streak Bonus\n` +
+        `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
+      );
+
+      const payload = await getRewardsPayload(interaction.guildId);
+      await interaction.update(payload);
+    }
+    else if (customId === 'rewards_daily_base_modal') {
+      const inputVal = interaction.fields.getTextInputValue('amount');
+      const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 25;
+
+      if (inputVal && isNaN(amount)) {
+        return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+      }
+      config.daily_base_reward = amount;
+      await setGuildConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed',
+        `**Admin:** \`${logName}\`\n` +
+        `**Setting:** Base Daily Reward\n` +
+        `**New Value:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}`
+      );
+
+      const payload = await getRewardsPayload(interaction.guildId);
+      await interaction.update(payload);
+    }
+    else if (customId === 'rewards_streak_cap_modal') {
+      const inputVal = interaction.fields.getTextInputValue('cap');
+      const cap = inputVal ? Math.max(1, parseInt(inputVal, 10)) : 20;
+
+      if (inputVal && (isNaN(cap) || cap < 1)) {
+        return interaction.reply({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
+      }
+      config.daily_streak_cap = cap;
+      await setGuildConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Reward Config Changed',
+        `**Admin:** \`${logName}\`\n` +
+        `**Setting:** Daily Streak Cap\n` +
+        `**New Value:** \`${cap} days\``
+      );
+
+      const payload = await getRewardsPayload(interaction.guildId);
+      await interaction.update(payload);
+    }
+    else if (customId.startsWith('rewards_give_modal_')) {
+      const targetUserId = customId.split('_').pop();
+      const amountStr = interaction.fields.getTextInputValue('amount');
+      const amount = parseInt(amountStr, 10);
+      const reason = interaction.fields.getTextInputValue('reason') || 'Admin Grant';
+
+      if (isNaN(amount) || amount <= 0) {
+        return interaction.reply({ content: '❌ Invalid amount. Must be greater than 0.', flags: MessageFlags.Ephemeral });
+      }
+
+      try {
+        await updateBalance(targetUserId, guildId, amount, 'admin_grant', reason);
+
+        const logName = getUserLogName(interaction);
+        const recipientUser = await interaction.client.users.fetch(targetUserId).catch(() => null);
+        const recipientLogName = recipientUser ? getUserLogName(recipientUser) : targetUserId;
+
+        sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed',
+          `**Target:** \`${recipientLogName}\`\n` +
+          `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
+          `**Admin:** \`${logName}\`\n` +
+          `**Reason:** ${reason}`
+        );
+
+        const payload = await getRewardsPayload(interaction.guildId);
+        await interaction.update(payload);
+        await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
+      } catch (error) {
+        sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
+        await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
+      }
+    }
   } catch (error) {
     sysError('Rewards modal error', error, { user: interaction.user.id, guild: interaction.guildId });
     const reply = { content: '❌ An error occurred processing this configuration.', flags: MessageFlags.Ephemeral };
