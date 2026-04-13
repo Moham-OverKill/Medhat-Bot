@@ -231,7 +231,7 @@ export async function handleRewardsModal(interaction) {
       const mult = inputVal ? Math.max(0, parseFloat(inputVal)) : 2.0;
 
       if (inputVal && isNaN(mult)) {
-        return interaction.reply({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
       }
       config.booster_multiplier = mult;
       await setGuildConfig(guildId, config);
@@ -244,14 +244,14 @@ export async function handleRewardsModal(interaction) {
       );
 
       const payload = await getRewardsPayload(interaction.guildId);
-      await interaction.update(payload);
+      await interaction.editReply(payload);
     }
     else if (customId === 'rewards_streak_modal') {
       const inputVal = interaction.fields.getTextInputValue('amount');
       const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 5;
 
       if (inputVal && isNaN(amount)) {
-        return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
       }
       config.daily_streak_bonus = amount;
       await setGuildConfig(guildId, config);
@@ -264,14 +264,14 @@ export async function handleRewardsModal(interaction) {
       );
 
       const payload = await getRewardsPayload(interaction.guildId);
-      await interaction.update(payload);
+      await interaction.editReply(payload);
     }
     else if (customId === 'rewards_daily_base_modal') {
       const inputVal = interaction.fields.getTextInputValue('amount');
       const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 25;
 
       if (inputVal && isNaN(amount)) {
-        return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
       }
       config.daily_base_reward = amount;
       await setGuildConfig(guildId, config);
@@ -284,14 +284,14 @@ export async function handleRewardsModal(interaction) {
       );
 
       const payload = await getRewardsPayload(interaction.guildId);
-      await interaction.update(payload);
+      await interaction.editReply(payload);
     }
     else if (customId === 'rewards_streak_cap_modal') {
       const inputVal = interaction.fields.getTextInputValue('cap');
       const cap = inputVal ? Math.max(1, parseInt(inputVal, 10)) : 20;
 
       if (inputVal && (isNaN(cap) || cap < 1)) {
-        return interaction.reply({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
       }
       config.daily_streak_cap = cap;
       await setGuildConfig(guildId, config);
@@ -304,7 +304,7 @@ export async function handleRewardsModal(interaction) {
       );
 
       const payload = await getRewardsPayload(interaction.guildId);
-      await interaction.update(payload);
+      await interaction.editReply(payload);
     }
     else if (customId.startsWith('rewards_give_modal_')) {
       const targetUserId = customId.split('_').pop();
@@ -313,7 +313,7 @@ export async function handleRewardsModal(interaction) {
       const reason = interaction.fields.getTextInputValue('reason') || 'Admin Grant';
 
       if (isNaN(amount) || amount <= 0) {
-        return interaction.reply({ content: '❌ Invalid amount. Must be greater than 0.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid amount. Must be greater than 0.', flags: MessageFlags.Ephemeral });
       }
 
       try {
@@ -342,11 +342,11 @@ export async function handleRewardsModal(interaction) {
           new ButtonBuilder().setCustomId('settings_rewards_menu').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
 
-        await interaction.update({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
+        await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
         await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
       } catch (error) {
         sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
-        await interaction.reply({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
+        await interaction.followUp({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
       }
     }
   } catch (error) {
