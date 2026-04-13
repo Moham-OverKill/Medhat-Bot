@@ -560,6 +560,8 @@ export async function handleTradeModal(interaction) {
     } else if (interaction.customId === 'trade_modal_request_coins') {
         const balance = await getUserBalance(setup.targetId, setup.guildId);
         if (amount > balance.balance) {
+            return interaction.reply({ content: `❌ This user only has ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
+        }
         setup.targetCoins = amount;
     }
 
