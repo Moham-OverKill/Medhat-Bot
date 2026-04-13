@@ -492,13 +492,25 @@ export async function handleShopBuyButton(interaction) {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0);
         const missing = itemPrice - currentBal;
-        return interaction.editReply({ content: `❌ You need **${missing}** ${COIN_EMOJI} more to buy this.` });
+        return interaction.editReply({ 
+          content: `\u274C You need **${missing}** ${COIN_EMOJI} more to buy this.`,
+          components: []
+        });
       } else if (result.error.includes('higher than my highest role')) {
-        return interaction.editReply({ content: '❌ Error: I cannot assign this role. Please contact an admin.' });
+        return interaction.editReply({ 
+          content: '\u274C Error: I cannot assign this role. Please contact an admin.',
+          components: []
+        });
       } else if (result.error.includes('already') || result.error.includes('expire')) {
-        return interaction.editReply({ content: `❕ ${result.error}` });
+        return interaction.editReply({ 
+          content: `\u2755 ${result.error}`,
+          components: []
+        });
       } else {
-        return interaction.editReply({ content: `❌ ${result.error}` });
+        return interaction.editReply({ 
+          content: `\u274C ${result.error}`,
+          components: []
+        });
       }
     }
 
@@ -511,11 +523,14 @@ export async function handleShopBuyButton(interaction) {
     } else {
       msg = `✅ Bought **${result.item.name}**! new balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    await interaction.editReply({ content: msg });
+    await interaction.editReply({ content: msg, components: [] });
 
   } catch (error) {
     console.error('[System] Buy handler error:', error);
-    await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again.' }).catch(() => { });
+    await interaction.editReply({ 
+      content: '\u274C An unexpected error occurred. Please try again.',
+      components: []
+    }).catch(() => { });
   }
 }
 
@@ -1357,9 +1372,11 @@ export async function handleItemClaim(interaction) {
     }
     
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
-      await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.editReply({ content: errorMessage, components: [] }).catch(() => {
+        interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => {});
+      });
     }
   }
 }
