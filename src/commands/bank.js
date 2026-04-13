@@ -442,7 +442,10 @@ export async function handleShopBuyButton(interaction) {
     // STEP 3: Live UI Refresh (Update original message on EVERY click)
     // ===========================================
     try {
-      if (itemForPrice && interaction.message && interaction.message.editable) {
+      const { getShopItem } = await import('../economy/shop.js');
+      const updatedItem = await getShopItem(itemId, guildId);
+      
+      if (updatedItem && interaction.message && interaction.message.editable) {
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
         
         // Update Stock field
