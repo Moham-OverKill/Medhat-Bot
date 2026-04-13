@@ -24,6 +24,7 @@ import {
   formatCompactQuest
 } from '../quests/quests.js';
 import { sysError } from '../utils/logger.js';
+import { handleInteractionError } from '../utils/errors.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
 const pendingQuestAdd = new Map();
@@ -126,7 +127,7 @@ export async function showQuestsDashboard(interaction) {
       content: null
     });
   } catch (error) {
-    sysError('Quest dashboard render failed', error, { user: interaction.user.id, guild: interaction.guildId });
+    await handleInteractionError(interaction, error, 'Quest dashboard render');
   }
 }
 
@@ -138,75 +139,82 @@ export async function showQuestsDashboard(interaction) {
  * Show the Schedule Configuration Page
  */
 export async function showQuestsSchedule(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-  const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId) || {};
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
 
-  const refreshes = config.quests_refreshes_per_day || 1;
-  const perRefresh = config.quests_per_refresh || 3;
+    const refreshes = config.quests_refreshes_per_day || 1;
+    const perRefresh = config.quests_per_refresh || 3;
 
-  const embed = new EmbedBuilder()
-    .setTitle('📅 Quest Rotation Schedule')
-    .setColor('#3498DB');
+    const embed = new EmbedBuilder()
+      .setTitle('📅 Quest Rotation Schedule')
+      .setColor('#3498DB');
 
-  // Dropdown for Quests Per Refresh (1-10)
-  const perRefreshMenu = new StringSelectMenuBuilder()
-    .setCustomId('quests_setting_per_refresh')
-    .setPlaceholder('Quests per Refresh...')
-    .addOptions(
-      Array.from({ length: 10 }, (_, i) => ({
-        label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
-        value: `${i + 1}`,
-        default: perRefresh === (i + 1)
-      }))
+    // Dropdown for Quests Per Refresh (1-10)
+    const perRefreshMenu = new StringSelectMenuBuilder()
+      .setCustomId('quests_setting_per_refresh')
+      .setPlaceholder('Quests per Refresh...')
+      .addOptions(
+        Array.from({ length: 10 }, (_, i) => ({
+          label: `${i + i} Quest${i === 0 ? '' : 's'}`,
+          value: `${i + 1}`,
+          default: perRefresh === (i + 1)
+        }))
+      );
+
+    // Dropdown for Refreshes Per Day (1x, 2x, 4x)
+    const refreshesMenu = new StringSelectMenuBuilder()
+      .setCustomId('quests_setting_refreshes')
+      .setPlaceholder('Refreshes per Day...')
+      .addOptions([
+        { label: '1x Daily (12 AM)', value: '1', default: refreshes === 1 },
+        { label: '2x Daily (12 AM, 12 PM)', value: '2', default: refreshes === 2 },
+        { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', default: refreshes === 4 }
+      ]);
+
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('quests_dashboard')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
     );
 
-  // Dropdown for Refreshes Per Day (1x, 2x, 4x)
-  const refreshesMenu = new StringSelectMenuBuilder()
-    .setCustomId('quests_setting_refreshes')
-    .setPlaceholder('Refreshes per Day...')
-    .addOptions([
-      { label: '1x Daily (12 AM)', value: '1', default: refreshes === 1 },
-      { label: '2x Daily (12 AM, 12 PM)', value: '2', default: refreshes === 2 },
-      { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', default: refreshes === 4 }
-    ]);
-
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('quests_dashboard')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  await interaction.editReply({
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(perRefreshMenu),
-      new ActionRowBuilder().addComponents(refreshesMenu),
-      backRow
-    ]
-  });
+    await interaction.editReply({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(perRefreshMenu),
+        new ActionRowBuilder().addComponents(refreshesMenu),
+        backRow
+      ]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Quest schedule view');
+  }
 }
 
 /**
  * Handle schedule dropdown updates
  */
 export async function handleQuestsScheduleUpdate(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId) || {};
-  const value = parseInt(interaction.values[0]);
+  try {
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+    const value = parseInt(interaction.values[0]);
 
-  if (interaction.customId === 'quests_setting_per_refresh') {
-    config.quests_per_refresh = value;
-  } else if (interaction.customId === 'quests_setting_refreshes') {
-    config.quests_refreshes_per_day = value;
+    if (interaction.customId === 'quests_setting_per_refresh') {
+      config.quests_per_refresh = value;
+    } else if (interaction.customId === 'quests_setting_refreshes') {
+      config.quests_refreshes_per_day = value;
+    }
+
+    await setGuildConfig(guildId, config);
+    await showQuestsSchedule(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Quest schedule update');
   }
-
-  await setGuildConfig(guildId, config);
-  await showQuestsSchedule(interaction);
 }
 
 // ============================================
@@ -255,7 +263,7 @@ export async function showQuestDetail(interaction, questId) {
 
     await interaction.editReply({ embeds: [embed], components: [row, backRow], content: null });
   } catch (error) {
-    sysError('Quest detail render failed', error, { user: interaction.user.id, guild: interaction.guildId, detail: questId });
+    await handleInteractionError(interaction, error, 'Quest detail render');
   }
 }
 
@@ -264,91 +272,97 @@ export async function showQuestDetail(interaction, questId) {
 // ============================================
 
 export async function handleAddQuestStart(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-  const embed = new EmbedBuilder()
-    .setTitle('➕ Add to Pool — Step 1')
-    .setDescription('Select the **target channel** for this quest.')
-    .setColor('#2ECC71');
+    const embed = new EmbedBuilder()
+      .setTitle('➕ Add to Pool — Step 1')
+      .setDescription('Select the **target channel** for this quest.')
+      .setColor('#2ECC71');
 
-  const channelSelect = new ChannelSelectMenuBuilder()
-    .setCustomId('quests_add_channel')
-    .setPlaceholder('Select target channel...')
-    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum);
+    const channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId('quests_add_channel')
+      .setPlaceholder('Select target channel...')
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum);
 
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('quests_dashboard')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('quests_dashboard')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
-  await interaction.editReply({
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(channelSelect),
-      backRow
-    ],
-    content: null
-  });
+    await interaction.editReply({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(channelSelect),
+        backRow
+      ],
+      content: null
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Add quest start');
+  }
 }
 
 export async function handleAddChannelSelect(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const channelId = interaction.values[0];
-  const guild = interaction.guild;
-  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const channelId = interaction.values[0];
+    const guild = interaction.guild;
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
 
-  if (!channel) {
-    await interaction.editReply({ content: '❌ Channel not found.', embeds: [], components: [] });
-    return;
+    if (!channel) {
+      await interaction.editReply({ content: '❌ Channel not found.', embeds: [], components: [] });
+      return;
+    }
+
+    let channelType = 'text';
+    if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
+      channelType = 'voice';
+    } else if (channel.type === ChannelType.GuildForum || channel.type === ChannelType.GuildMedia) {
+      channelType = 'media';
+    }
+
+    pendingQuestAdd.set(interaction.user.id, { channelId, channelType });
+    const actions = getActionsForChannelType(channelType);
+
+    if (actions.length === 1) {
+      pendingQuestAdd.get(interaction.user.id).actionType = actions[0].value;
+      await showAddQuestModal(interaction, actions[0].value);
+      return;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('➕ Add to Pool — Step 2')
+      .setDescription(`Channel: <#${channelId}> (${channelType})\n\nSelect the **action type** for this quest.`)
+      .setColor('#2ECC71');
+
+    const actionSelect = new StringSelectMenuBuilder()
+      .setCustomId('quests_add_action')
+      .setPlaceholder('Select action type...')
+      .addOptions(actions);
+
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('quests_dashboard')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(actionSelect),
+        backRow
+      ],
+      content: null
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Add quest channel select');
   }
-
-  let channelType = 'text';
-  if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
-    channelType = 'voice';
-  } else if (channel.type === ChannelType.GuildForum || channel.type === ChannelType.GuildMedia) {
-    channelType = 'media';
-  }
-
-  pendingQuestAdd.set(interaction.user.id, { channelId, channelType });
-  const actions = getActionsForChannelType(channelType);
-
-  if (actions.length === 1) {
-    pendingQuestAdd.get(interaction.user.id).actionType = actions[0].value;
-    await showAddQuestModal(interaction, actions[0].value);
-    return;
-  }
-
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const embed = new EmbedBuilder()
-    .setTitle('➕ Add to Pool — Step 2')
-    .setDescription(`Channel: <#${channelId}> (${channelType})\n\nSelect the **action type** for this quest.`)
-    .setColor('#2ECC71');
-
-  const actionSelect = new StringSelectMenuBuilder()
-    .setCustomId('quests_add_action')
-    .setPlaceholder('Select action type...')
-    .addOptions(actions);
-
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('quests_dashboard')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  await interaction.editReply({
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(actionSelect),
-      backRow
-    ],
-    content: null
-  });
 }
 
 export async function handleAddActionSelect(interaction) {
@@ -392,42 +406,46 @@ async function showAddQuestModal(interaction, actionType) {
 }
 
 export async function handleAddQuestModal(interaction) {
-  await interaction.deferUpdate();
+  try {
+    await interaction.deferUpdate();
 
-  const pending = pendingQuestAdd.get(interaction.user.id);
-  if (!pending) {
-    await interaction.followUp({ content: '❌ Session expired. Please start over.', flags: MessageFlags.Ephemeral });
-    return;
+    const pending = pendingQuestAdd.get(interaction.user.id);
+    if (!pending) {
+      await interaction.followUp({ content: '❌ Session expired. Please start over.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
+    const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
+
+    if (isNaN(requiredCount) || requiredCount <= 0 || !Number.isInteger(requiredCount) || requiredCount > 10000) {
+      await interaction.followUp({ content: '❌ Requirement must be a whole number between **1** and **10,000**.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (isNaN(rewardCoins) || rewardCoins <= 0 || !Number.isInteger(rewardCoins) || rewardCoins > 1000000) {
+      await interaction.followUp({ content: '❌ Reward must be a whole number between **1** and **1,000,000**.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const result = await addQuest(interaction.guildId, {
+      channelId: pending.channelId,
+      channelType: pending.channelType,
+      actionType: pending.actionType,
+      requiredCount,
+      rewardCoins
+    });
+
+    pendingQuestAdd.delete(interaction.user.id);
+
+    if (result.error) {
+      await interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    await showQuestsDashboard(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Add quest modal submit');
   }
-
-  const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
-  const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
-
-  if (isNaN(requiredCount) || requiredCount <= 0 || !Number.isInteger(requiredCount) || requiredCount > 10000) {
-    await interaction.followUp({ content: '❌ Requirement must be a whole number between **1** and **10,000**.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-  if (isNaN(rewardCoins) || rewardCoins <= 0 || !Number.isInteger(rewardCoins) || rewardCoins > 1000000) {
-    await interaction.followUp({ content: '❌ Reward must be a whole number between **1** and **1,000,000**.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  const result = await addQuest(interaction.guildId, {
-    channelId: pending.channelId,
-    channelType: pending.channelType,
-    actionType: pending.actionType,
-    requiredCount,
-    rewardCoins
-  });
-
-  pendingQuestAdd.delete(interaction.user.id);
-
-  if (result.error) {
-    await interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  await showQuestsDashboard(interaction);
 }
 
 // ============================================
@@ -470,27 +488,32 @@ export async function handleEditQuest(interaction, questId) {
 }
 
 export async function handleEditQuestModal(interaction) {
-  await interaction.deferUpdate();
+  try {
+    await interaction.deferUpdate();
 
-  const questId = parseInt(interaction.customId.split('_').pop(), 10);
-  const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
-  const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
+    const questId = parseInt(interaction.customId.split('_').pop(), 10);
+    const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
+    const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
 
-  if (isNaN(requiredCount) || requiredCount <= 0 || !Number.isInteger(requiredCount) || requiredCount > 10000) {
-    await interaction.followUp({ content: '❌ Requirement must be a whole number between **1** and **10,000**.', flags: MessageFlags.Ephemeral });
-    return;
+    if (isNaN(requiredCount) || requiredCount <= 0 || !Number.isInteger(requiredCount) || requiredCount > 10000) {
+      await interaction.followUp({ content: '❌ Requirement must be a whole number between **1** and **10,000**.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (isNaN(rewardCoins) || rewardCoins <= 0 || !Number.isInteger(rewardCoins) || rewardCoins > 1000000) {
+      await interaction.followUp({ content: '❌ Reward must be a whole number between **1** and **1,000,000**.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const success = await updateQuest(questId, { requiredCount, rewardCoins });
+    if (!success) {
+      await interaction.followUp({ content: '❌ Failed to update Quest.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    await showQuestDetail(interaction, questId);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Edit quest modal submit');
   }
-  if (isNaN(rewardCoins) || rewardCoins <= 0 || !Number.isInteger(rewardCoins) || rewardCoins > 1000000) {
-    await interaction.followUp({ content: '❌ Reward must be a whole number between **1** and **1,000,000**.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  const success = await updateQuest(questId, { requiredCount, rewardCoins });
-  if (!success) {
-    await interaction.followUp({ content: '❌ Failed to update Quest.', flags: MessageFlags.Ephemeral });
-  }
-
-  await showQuestDetail(interaction, questId);
 }
 
 // ============================================
@@ -498,24 +521,28 @@ export async function handleEditQuestModal(interaction) {
 // ============================================
 
 export async function handleDeleteQuest(interaction, questId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-  const config = await getGuildConfig(interaction.guildId) || {};
+    const config = await getGuildConfig(interaction.guildId) || {};
 
-  // If the active Quest is the one being deleted, clear it
-  if (config.active_quest_ids && config.active_quest_ids.includes(questId)) {
-    config.active_quest_ids = config.active_quest_ids.filter(id => id !== questId);
-    await setGuildConfig(interaction.guildId, config);
-    const { syncQuestChannelCache } = await import('../activity/index.js');
-    await syncQuestChannelCache(interaction.guildId);
+    // If the active Quest is the one being deleted, clear it
+    if (config.active_quest_ids && config.active_quest_ids.includes(questId)) {
+      config.active_quest_ids = config.active_quest_ids.filter(id => id !== questId);
+      await setGuildConfig(interaction.guildId, config);
+      const { syncQuestChannelCache } = await import('../activity/index.js');
+      await syncQuestChannelCache(interaction.guildId);
+    }
+
+    const success = await deleteQuest(questId);
+    if (!success) {
+      await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
+    }
+
+    await showQuestsDashboard(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Delete quest');
   }
-
-  const success = await deleteQuest(questId);
-  if (!success) {
-    await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
-  }
-
-  await showQuestsDashboard(interaction);
 }
 
 // ============================================
@@ -523,16 +550,20 @@ export async function handleDeleteQuest(interaction, questId) {
 // ============================================
 
 export async function handleToggleQuests(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-  const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId) || {};
-  config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
-  await setGuildConfig(guildId, config);
-  const { syncQuestChannelCache } = await import('../activity/index.js');
-  await syncQuestChannelCache(guildId);
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+    config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
+    await setGuildConfig(guildId, config);
+    const { syncQuestChannelCache } = await import('../activity/index.js');
+    await syncQuestChannelCache(guildId);
 
-  await showQuestsDashboard(interaction);
+    await showQuestsDashboard(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Toggle quests');
+  }
 }
 
 // ============================================
@@ -540,42 +571,48 @@ export async function handleToggleQuests(interaction) {
 // ============================================
 
 export async function handleQuestsComponent(interaction) {
-  const customId = interaction.customId;
+  try {
+    const customId = interaction.customId;
 
-  if (customId === 'quests_dashboard') {
-    await showQuestsDashboard(interaction);
-  } else if (customId === 'quests_toggle') {
-    await handleToggleQuests(interaction);
-  } else if (customId === 'quests_add_start') {
-    await handleAddQuestStart(interaction);
-  } else if (customId === 'quests_add_channel') {
-    await handleAddChannelSelect(interaction);
-  } else if (customId === 'quests_add_action') {
-    await handleAddActionSelect(interaction);
-  } else if (customId === 'quests_schedule_view') {
-    await showQuestsSchedule(interaction);
-  } else if (customId === 'quests_setting_per_refresh' || customId === 'quests_setting_refreshes') {
-    await handleQuestsScheduleUpdate(interaction);
-  } else if (customId.startsWith('quests_select_')) {
-    const questId = parseInt(customId.split('_').pop(), 10);
-    await showQuestDetail(interaction, questId);
-    const { syncQuestChannelCache } = await import('../activity/index.js');
-    await syncQuestChannelCache(interaction.guildId);
-  } else if (customId.startsWith('quests_edit_') && !customId.includes('modal')) {
-    const questId = parseInt(customId.split('_').pop(), 10);
-    await handleEditQuest(interaction, questId);
-  } else if (customId.startsWith('quests_delete_')) {
-    const questId = parseInt(customId.split('_').pop(), 10);
-    await handleDeleteQuest(interaction, questId);
+    if (customId === 'quests_dashboard') {
+      await showQuestsDashboard(interaction);
+    } else if (customId === 'quests_toggle') {
+      await handleToggleQuests(interaction);
+    } else if (customId === 'quests_add_start') {
+      await handleAddQuestStart(interaction);
+    } else if (customId === 'quests_add_channel') {
+      await handleAddChannelSelect(interaction);
+    } else if (customId === 'quests_add_action') {
+      await handleAddActionSelect(interaction);
+    } else if (customId === 'quests_schedule_view') {
+      await showQuestsSchedule(interaction);
+    } else if (customId === 'quests_setting_per_refresh' || customId === 'quests_setting_refreshes') {
+      await handleQuestsScheduleUpdate(interaction);
+    } else if (customId.startsWith('quests_select_')) {
+      const questId = parseInt(customId.split('_').pop(), 10);
+      await showQuestDetail(interaction, questId);
+    } else if (customId.startsWith('quests_edit_') && !customId.includes('modal')) {
+      const questId = parseInt(customId.split('_').pop(), 10);
+      await handleEditQuest(interaction, questId);
+    } else if (customId.startsWith('quests_delete_')) {
+      const questId = parseInt(customId.split('_').pop(), 10);
+      await handleDeleteQuest(interaction, questId);
+    }
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Quest component router');
   }
 }
 
 export async function handleQuestsModal(interaction) {
-  const customId = interaction.customId;
+  try {
+    const customId = interaction.customId;
 
-  if (customId === 'quests_add_modal') {
-    await handleAddQuestModal(interaction);
-  } else if (customId.startsWith('quests_edit_modal_')) {
-    await handleEditQuestModal(interaction);
+    if (customId === 'quests_add_modal') {
+      await handleAddQuestModal(interaction);
+    } else if (customId.startsWith('quests_edit_modal_')) {
+      await handleEditQuestModal(interaction);
+    }
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Quest modal router');
   }
 }
