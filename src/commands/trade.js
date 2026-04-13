@@ -1145,9 +1145,11 @@ export async function handleTradeFinalConfirmation(interaction) {
         }
 
         // 7b. DOMINO SWEEP (Post-Trade Cascading Unequip)
+        let senderUnequipped = [];
+        let targetUnequipped = [];
         try {
-            if (senderMember) await runDependencySweep(trade.sender_id, trade.guild_id, senderMember);
-            if (targetMember) await runDependencySweep(trade.target_id, trade.guild_id, targetMember);
+            if (senderMember) senderUnequipped = await runDependencySweep(trade.sender_id, trade.guild_id, senderMember);
+            if (targetMember) targetUnequipped = await runDependencySweep(trade.target_id, trade.guild_id, targetMember);
         } catch (sweepError) {
             sysError('Post-trade domino sweep error', sweepError, { guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
         }
@@ -1157,18 +1159,18 @@ export async function handleTradeFinalConfirmation(interaction) {
         let completionDesc = `✅ Trade Completed! <@${trade.sender_id}> 🤝 <@${trade.target_id}>\n\n`;
 
         // Prerequisite Alerts (If any items were swept)
-        if (senderUnequipped.size > 0) {
-            completionDesc += `⚠️ **<@${trade.sender_id}>:** Unequipped **${Array.from(senderUnequipped).join(', ')}** (Missing prerequisites)\n`;
+        if (senderUnequipped.length > 0) {
+            completionDesc += `⚠️ **<@${trade.sender_id}>:** Unequipped **${senderUnequipped.join(', ')}** (Missing prerequisites)\n`;
         }
-        if (targetUnequipped.size > 0) {
-            completionDesc += `⚠️ **<@${trade.target_id}>:** Unequipped **${Array.from(targetUnequipped).join(', ')}** (Missing prerequisites)\n`;
+        if (targetUnequipped.length > 0) {
+            completionDesc += `⚠️ **<@${trade.target_id}>:** Unequipped **${targetUnequipped.join(', ')}** (Missing prerequisites)\n`;
         }
-        if (senderUnequipped.size > 0 || targetUnequipped.size > 0) completionDesc += '\n';
+        if (senderUnequipped.length > 0 || targetUnequipped.length > 0) completionDesc += '\n';
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
         await interaction.update({
-            content: `✅ Trade Completed! <@${trade.sender_id}> 🤝 <@${trade.target_id}>`,
+            content: completionDesc,
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' })]
         });
