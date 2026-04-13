@@ -236,7 +236,7 @@ export async function showSetupPanel(interaction, config) {
 
   // Build status overview
   const statusEmoji = config.enabled ? '🟢' : '🔴';
-  const statusText = config.enabled ? 'Auto / Enabled' : 'Manual / Disabled';
+  const statusText = config.enabled ? 'Auto' : 'Disabled';
   const rewardAmount = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
   const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
@@ -244,10 +244,10 @@ export async function showSetupPanel(interaction, config) {
     .setTitle('🏆 MVP System Status')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
     .addFields(
-        { name: 'Status', value: `${statusEmoji} ${statusText}`, inline: true },
-        { name: 'Next Award', value: `⏳ ${nextCheckText}`, inline: true },
-        { name: 'Role', value: `👤 ${roleMention}`, inline: true },
-        { name: 'Reward', value: `${COIN_EMOJI} **${rewardAmount.toLocaleString()}** coins`, inline: true }
+        { name: `${statusEmoji} Status`, value: statusText, inline: true },
+        { name: '⏳ Next Award', value: nextCheckText, inline: true },
+        { name: '👤 Role', value: roleMention, inline: true },
+        { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins`, inline: true }
     );
 
   // If not configured, show warning message
