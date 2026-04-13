@@ -318,59 +318,96 @@ function resolveNextAward(config, { nowMs = Date.now(), force = false } = {}) {
 
 /**
  * Executes a full MVP award cycle (Flush -> Snapshot -> Award -> Reset)
- * This is used by both the daily timer and the startup catch-up logic.
+ * Each step is individually fault-isolated: a failure in one step does NOT
+ * prevent subsequent steps from running. Only a total crash (e.g. missing guild)
+ * will abort the whole cycle.
  */
 export async function runMvpCycle(client, guildId) {
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  if (!guild) return;
+
+  sysLog('MVP Daily Cycle Triggered', { guild: guildId });
+
+  // Check if still in Auto mode
+  const currentConfig = await getGuildConfig(guildId).catch(e => {
+    sysError('MVP Cycle Config Fetch Failed', e, { guild: guildId });
+    return null;
+  });
+  if (!currentConfig || currentConfig.enabled !== true) {
+    sysLog('MVP Cycle Skipped', { guild: guildId, detail: 'Auto mode disabled or config unavailable' });
+    await scheduleMvpTimer(client, guildId, true).catch(() => {});
+    return;
+  }
+
+  // === STEP 1: Voice Flush — Finalize any pending voice time for today ===
   try {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) return;
+    const { flushAllVoiceTime } = await import('../activity/tracker.js');
+    await flushAllVoiceTime(guildId);
+    sysLog('Step 1/5 Complete: Voice Flush', { guild: guildId });
+  } catch (e) {
+    sysError('Step 1/5 Failed: Voice Flush', e, { guild: guildId });
+    // Non-fatal — continue with possibly stale voice data
+  }
 
-    sysLog('MVP Daily Cycle Triggered', { guild: guildId });
-
-    // Check if still in Auto mode
-    const currentConfig = await getGuildConfig(guildId);
-    if (!currentConfig || currentConfig.enabled !== true) {
-      sysLog('MVP Cycle Skipped', { guild: guildId, detail: 'Auto mode disabled' });
-      await scheduleMvpTimer(client, guildId, true);
-      return;
-    }
-
-    // === ATOMIC DAILY RESET SEQUENCE (00:00 Cairo) ===
-    
-    // 1. Finalize Day: Award any pending voice time
-    const { flushAllVoiceTime, resetGuildActivity, getTopActiveUsers } = await import('../activity/tracker.js');
-    await flushAllVoiceTime(guildId).catch(e => sysError('Voice Flush Sync Failed', e, { guild: guildId }));
-
-    // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
-    const { updateLeaderboards } = await import('../commands/leaderboard.js');
-    const finalSnapshotData = await getTopActiveUsers(guildId, 15);
+  // === STEP 2: Leaderboard Snapshot — Capture final data BEFORE any resets ===
+  let finalSnapshotData = [];
+  let potentialWinners = [];
+  try {
+    const { getTopActiveUsers } = await import('../activity/tracker.js');
+    finalSnapshotData = await getTopActiveUsers(guildId, 15);
     const configuredWinnerCount = currentConfig.winnersCount || 1;
-    const potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
-    
+    potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
+
+    const { updateLeaderboards } = await import('../commands/leaderboard.js');
     await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
+    sysLog('Step 2/5 Complete: Leaderboards Updated', { guild: guildId });
+  } catch (e) {
+    sysError('Step 2/5 Failed: Leaderboard Update', e, { guild: guildId });
+    // Non-fatal — award ceremony will still run with the snapshot data we have
+  }
 
-    // 3. Clear stale streaks
-    await resetCairoStaleStreaks(guildId).catch(e => sysError('Streak Reset Failed', e, { guild: guildId }));
+  // === STEP 3: Streak Reset — Clear stale daily streaks ===
+  try {
+    await resetCairoStaleStreaks(guildId);
+    sysLog('Step 3/5 Complete: Stale Streaks Reset', { guild: guildId });
+  } catch (e) {
+    sysError('Step 3/5 Failed: Streak Reset', e, { guild: guildId });
+    // Non-fatal — streaks may be stale until next cycle
+  }
 
-    // 4. Perform Award Ceremony (Roles, Coins, History)
-    // awardMvp manages the Role Sweep and new assignments
+  // === STEP 4: Award Ceremony — Role sweeps, coin rewards, history logging ===
+  try {
     await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+    sysLog('Step 4/5 Complete: Award Ceremony', { guild: guildId });
+  } catch (e) {
+    sysError('Step 4/5 Failed: Award Ceremony', e, { guild: guildId });
+    // Non-fatal — points will still be reset for the new day
+  }
 
-    // 5. DEEP RESET: Wipe points and reset voice laps for the new day
+  // === STEP 5: Activity Reset — Wipe daily points for the new period ===
+  try {
+    const { resetGuildActivity } = await import('../activity/tracker.js');
     await resetGuildActivity(guildId);
-    
-    sendLog(guild, 'audit', 'cyan', '📊 Daily MVP Cycle Complete', 
+    sysLog('Step 5/5 Complete: Activity Reset', { guild: guildId });
+  } catch (e) {
+    sysError('Step 5/5 Failed: Activity Reset', e, { guild: guildId });
+    // Non-fatal — points carry over until next successful reset
+  }
+
+  // === CYCLE COMPLETE ===
+  try {
+    sendLog(guild, 'audit', 'cyan', '📊 Daily MVP Cycle Complete',
       `**Action:** \`Daily Reset\`\n` +
       `**Status:** Winners awarded, Leaderboards updated, and progress reset for the next 24h.`
     );
+  } catch { /* Swallow audit log failures */ }
 
-    sysLog('MVP Daily Cycle Complete', { guild: guildId });
-    await scheduleMvpTimer(client, guildId, true);
-  } catch (error) {
-    sysError('MVP Cycle Failure', error, { guild: guildId });
-    // ALWAYS reschedule to prevent the system from getting stuck forever
-    await scheduleMvpTimer(client, guildId, true).catch(() => {});
-  }
+  sysLog('MVP Daily Cycle Complete', { guild: guildId });
+
+  // ALWAYS reschedule — even if individual steps failed
+  await scheduleMvpTimer(client, guildId, true).catch(e =>
+    sysError('MVP Timer Reschedule Failed', e, { guild: guildId })
+  );
 }
 
 export async function scheduleMvpTimer(client, guildId, forceReschedule = false) {

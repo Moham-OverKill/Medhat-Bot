@@ -304,7 +304,62 @@ export async function getTopStreakUsers(guildId, limit = 50) {
 }
 
 /**
- * Update all leaderboard embeds
+ * Refresh a single leaderboard type: fetches fresh data, posts a new message,
+ * and persists the new message ID back to the database.
+ * Safe to call standalone - does NOT sweep old messages (that's done by updateLeaderboards).
+ * 
+ * @param {Client} client - Discord client
+ * @param {string} guildId
+ * @param {'daily_coins'|'coins'|'streak'} type
+ */
+export async function refreshLeaderboard(client, guildId, type) {
+    const config = await getLeaderboardConfig(guildId);
+    if (!config) return;
+
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return;
+
+    let channelId, embed;
+
+    if (type === 'daily_coins') {
+        channelId = config.daily_channel_id;
+        if (!channelId) return;
+        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
+        const cycleData = await getLastMvpCycleResults(guildId, 50);
+        const enrichedData = await enrichUserData(client, guildId, cycleData.results, 'userId');
+        embed = buildDailyActivityEmbed(enrichedData, []);
+    } else if (type === 'coins') {
+        channelId = config.coins_channel_id;
+        if (!channelId) return;
+        const rawData = await getTopCoinUsers(guildId);
+        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+        embed = buildCoinsEmbed(enrichedData);
+    } else if (type === 'streak') {
+        channelId = config.streak_channel_id;
+        if (!channelId) return;
+        const rawData = await getTopStreakUsers(guildId);
+        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+        embed = buildStreakEmbed(enrichedData);
+    } else {
+        return;
+    }
+
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    const newMessage = await channel.send({ embeds: [embed] });
+
+    // Persist the new message ID so the next sweep can delete it
+    if (type === 'daily_coins') config.daily_message_id = newMessage.id;
+    else if (type === 'coins') config.coins_message_id = newMessage.id;
+    else if (type === 'streak') config.streak_message_id = newMessage.id;
+
+    await setLeaderboardConfig(guildId, config);
+}
+
+/**
+ * Update all leaderboard embeds.
+ * Sweeps (deletes) old messages first, then re-sends all three in order.
  */
 export async function updateLeaderboards(client, guildId, activityData = null, mvpRecipients = []) {
     const config = await getLeaderboardConfig(guildId);
@@ -335,12 +390,12 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     }
 
     // --- PASS 2: Re-send in absolute order (Daily -> Richest -> Streak) ---
-    // If they share a channel, this order is guaranteed relative to each other.
+    // Each call is isolated - a single failure won't prevent the others from posting.
 
     // 1. Daily MVP
     if (config.daily_channel_id) {
         try {
-            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'daily_coins');
+            await refreshLeaderboard(client, guildId, 'daily_coins');
         } catch (error) {
             sysError('Failed to update daily leaderboard', error, { guild: guildId });
         }
@@ -349,7 +404,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     // 2. Richest Members
     if (config.coins_channel_id) {
         try {
-            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'coins');
+            await refreshLeaderboard(client, guildId, 'coins');
         } catch (error) {
             sysError('Failed to update coins leaderboard', error, { guild: guildId });
         }
@@ -358,13 +413,11 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     // 3. Longest Streaks
     if (config.streak_channel_id) {
         try {
-            await (await import('./leaderboard.js')).refreshLeaderboard(client, guildId, 'streak');
+            await refreshLeaderboard(client, guildId, 'streak');
         } catch (error) {
             sysError('Failed to update streak leaderboard', error, { guild: guildId });
         }
     }
-
-    await setLeaderboardConfig(guildId, config);
 }
 
 /**
