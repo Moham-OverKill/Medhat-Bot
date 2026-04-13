@@ -102,6 +102,19 @@ export function setupComponentHandlers(client) {
   }
 
   client.on('interactionCreate', async (interaction) => {
+    // --- 0. INTERACTION WATCHDOG ---
+    // Log a warning if any interaction takes > 2.5s to acknowledge.
+    const watchdog = setTimeout(() => {
+      if (!interaction.deferred && !interaction.replied) {
+        const detail = interaction.isCommand() ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
+        sysLog('⚠️ Latency Warning', {
+          user: interaction.user.tag,
+          guildId: interaction.guildId,
+          detail: `Interaction "${detail}" not acknowledged within 2.5s. Potential for "Unknown interaction" error!`
+        });
+      }
+    }, 2500);
+
     try {
       // 1. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
@@ -396,6 +409,8 @@ export function setupComponentHandlers(client) {
 
     } catch (error) {
       sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'InteractionCreate event' });
+    } finally {
+      clearTimeout(watchdog);
     }
   });
 

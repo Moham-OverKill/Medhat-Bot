@@ -316,6 +316,63 @@ function resolveNextAward(config, { nowMs = Date.now(), force = false } = {}) {
 }
 
 
+/**
+ * Executes a full MVP award cycle (Flush -> Snapshot -> Award -> Reset)
+ * This is used by both the daily timer and the startup catch-up logic.
+ */
+export async function runMvpCycle(client, guildId) {
+  try {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return;
+
+    sysLog('MVP Daily Cycle Triggered', { guild: guildId });
+
+    // Check if still in Auto mode
+    const currentConfig = await getGuildConfig(guildId);
+    if (!currentConfig || currentConfig.enabled !== true) {
+      sysLog('MVP Cycle Skipped', { guild: guildId, detail: 'Auto mode disabled' });
+      await scheduleMvpTimer(client, guildId, true);
+      return;
+    }
+
+    // === ATOMIC DAILY RESET SEQUENCE (00:00 Cairo) ===
+    
+    // 1. Finalize Day: Award any pending voice time
+    const { flushAllVoiceTime, resetGuildActivity, getTopActiveUsers } = await import('../activity/tracker.js');
+    await flushAllVoiceTime(guildId).catch(e => sysError('Voice Flush Sync Failed', e, { guild: guildId }));
+
+    // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
+    const { updateLeaderboards } = await import('../commands/leaderboard.js');
+    const finalSnapshotData = await getTopActiveUsers(guildId, 15);
+    const configuredWinnerCount = currentConfig.winnersCount || 1;
+    const potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
+    
+    await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
+
+    // 3. Clear stale streaks
+    await resetCairoStaleStreaks(guildId).catch(e => sysError('Streak Reset Failed', e, { guild: guildId }));
+
+    // 4. Perform Award Ceremony (Roles, Coins, History)
+    // awardMvp manages the Role Sweep and new assignments
+    await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
+
+    // 5. DEEP RESET: Wipe points and reset voice laps for the new day
+    await resetGuildActivity(guildId);
+    
+    sendLog(guild, 'audit', 'cyan', '📊 Daily MVP Cycle Complete', 
+      `**Action:** \`Daily Reset\`\n` +
+      `**Status:** Winners awarded, Leaderboards updated, and progress reset for the next 24h.`
+    );
+
+    sysLog('MVP Daily Cycle Complete', { guild: guildId });
+    await scheduleMvpTimer(client, guildId, true);
+  } catch (error) {
+    sysError('MVP Cycle Failure', error, { guild: guildId });
+    // ALWAYS reschedule to prevent the system from getting stuck forever
+    await scheduleMvpTimer(client, guildId, true).catch(() => {});
+  }
+}
+
 export async function scheduleMvpTimer(client, guildId, forceReschedule = false) {
   const config = await getGuildConfig(guildId);
   if (!config) return;
@@ -343,57 +400,43 @@ export async function scheduleMvpTimer(client, guildId, forceReschedule = false)
   const now = Date.now();
   const delay = Math.max(0, nextMs - now);
 
-
-  const timer = setTimeout(async () => {
+  // === STARTUP CATCH-UP CHECK ===
+  // If we're initializing (not a reschedule) and the last award was NOT today (Cairo),
+  // and it's already past midnight (meaning nextMs is for tomorrow), we missed today's reset.
+  if (!forceReschedule) {
     try {
-      // Timer has fired at 00:00 Cairo time
-      const guild = client.guilds.cache.get(guildId);
-      sysLog('MVP Daily Cycle Triggered', { guild: guildId });
+      const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
+      const lastCycle = await getLastMvpCycleResults(guildId, 1);
+      
+      const currentCairo = getCairoDate(new Date());
+      let needsCatchup = false;
 
-      // Check if still in Auto mode
-      const currentConfig = await getGuildConfig(guildId);
-      if (!currentConfig || currentConfig.enabled !== true) {
-        sysLog('MVP Cycle Skipped', { guild: guildId, detail: 'Auto mode disabled' });
-        await scheduleMvpTimer(client, guildId, true);
-        return;
+      if (!lastCycle.awardedAt) {
+        // No history at all? If bot is new, we don't catch up, just schedule first one.
+      } else {
+        const lastAwardDate = getCairoDate(new Date(lastCycle.awardedAt));
+        // If last award was yesterday or earlier (Cairo time)
+        if (lastAwardDate.year < currentCairo.year || 
+            lastAwardDate.month < currentCairo.month || 
+            lastAwardDate.day < currentCairo.day) {
+          needsCatchup = true;
+        }
       }
 
-      // === ATOMIC DAILY RESET SEQUENCE (00:00 Cairo) ===
-      
-      // 1. Finalize Day: Award any pending voice time
-      const { flushAllVoiceTime, resetGuildActivity, getTopActiveUsers } = await import('../activity/tracker.js');
-      await flushAllVoiceTime(guildId).catch(e => sysError('Voice Flush Sync Failed', e, { guild: guildId }));
-
-      // 2. Snapshot & Leaderboards: Capture final data BEFORE any resets
-      const { updateLeaderboards } = await import('../commands/leaderboard.js');
-      const finalSnapshotData = await getTopActiveUsers(guildId, 15);
-      const configuredWinnerCount = currentConfig.winnersCount || 1;
-      const potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
-      
-      await updateLeaderboards(client, guildId, finalSnapshotData, potentialWinners);
-
-      // 3. Clear stale streaks
-      await resetCairoStaleStreaks(guildId).catch(e => sysError('Streak Reset Failed', e, { guild: guildId }));
-
-      // 4. Perform Award Ceremony (Roles, Coins, History)
-      // awardMvp manages the Role Sweep and new assignments
-      const awardResult = await awardMvp(client, guildId, { isTest: false, trigger: 'timer' });
-
-      // 5. DEEP RESET: Wipe points and reset voice laps for the new day
-      await resetGuildActivity(guildId);
-      
-      sendLog(guild, 'audit', 'cyan', '📊 Daily MVP Cycle Complete', 
-        `**Action:** \`Daily Reset\`\n` +
-        `**Status:** Winners awarded, Leaderboards updated, and progress reset for the next 24h.`
-      );
-
-      sysLog('MVP Daily Cycle Complete', { guild: guildId });
-      await scheduleMvpTimer(client, guildId, true);
-    } catch (error) {
-      sysError('MVP Cycle Failure', error, { guild: guildId });
-      // ALWAYS reschedule to prevent the system from getting stuck forever
-      await scheduleMvpTimer(client, guildId, true).catch(() => {});
+      if (needsCatchup) {
+        sysLog('MVP Startup Catch-up Triggered', { guild: guildId });
+        // Run immediately (with a small safety delay to let client stabilize)
+        setTimeout(() => {
+          runMvpCycle(client, guildId).catch(e => sysError('Catch-up Cycle Failed', e, { guild: guildId }));
+        }, 5000);
+      }
+    } catch (e) {
+      sysError('Catch-up Check Failed', e, { guild: guildId });
     }
+  }
+
+  const timer = setTimeout(async () => {
+    await runMvpCycle(client, guildId);
   }, delay);
 
   mvpTimers.set(guildId, timer);

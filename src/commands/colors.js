@@ -308,6 +308,7 @@ function buildColorPanelContent(sortedColors, startIdx = 0, isBooster = false) {
  * Handle color list
  */
 async function handleColorList(interaction, guildId, isBooster) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const colors = await getColorRoles(guildId, isBooster);
 
   if (colors.length === 0) {
@@ -321,7 +322,7 @@ async function handleColorList(interaction, guildId, isBooster) {
 
     const backRow = new ActionRowBuilder().addComponents(backButton);
 
-    const responseMethod = interaction.isAnySelectMenu() ? 'update' : 'reply';
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isAnySelectMenu() ? 'update' : 'reply');
     await interaction[responseMethod]({
       content: type === 'booster color'
         ? `❌ Add Booster color roles first!`
@@ -362,7 +363,7 @@ async function handleColorList(interaction, guildId, isBooster) {
 
   const backRow = new ActionRowBuilder().addComponents(backButton);
 
-  const responseMethod = interaction.isAnySelectMenu() ? 'update' : 'reply';
+  const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isAnySelectMenu() ? 'update' : 'reply');
   await interaction[responseMethod]({
     embeds: [embed],
     components: [backRow],
@@ -521,6 +522,7 @@ async function handleColorReact(interaction, guildId, isBooster) {
  */
 export async function handleColorsComponent(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
     const [, category, action] = interaction.customId.split('_');
     const selectedAction = interaction.values[0];
@@ -635,6 +637,7 @@ async function buildRoleSelectorResponse(client, guildId, isBooster, operation) 
  */
 async function showRoleSelector(interaction, isBooster, operation) {
   const guildId = interaction.guildId;
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
   if (operation === 'booster_role') {
     const roleSelect = new RoleSelectMenuBuilder()
@@ -653,7 +656,8 @@ async function showRoleSelector(interaction, isBooster, operation) {
 
     const backRow = new ActionRowBuilder().addComponents(backButton);
 
-    await interaction.update({
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+    await interaction[responseMethod]({
       content: 'Select the booster role:',
       components: [selectRow, backRow],
       embeds: [],
@@ -669,7 +673,8 @@ async function showRoleSelector(interaction, isBooster, operation) {
     operation
   );
 
-  await interaction.update({
+  const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+  await interaction[responseMethod]({
     content,
     components,
     embeds: [],
@@ -894,6 +899,9 @@ export async function auditAllGuilds(client) {
  */
 export async function handleColorButton(interaction) {
   try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
     const [, type, roleId] = interaction.customId.split('_');
     const isBooster = type === 'booster';
     const member = interaction.member;
@@ -901,9 +909,8 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.reply({
+      await interaction.editReply({
         content: '❌ Boost the server to unlock this color!',
-        flags: MessageFlags.Ephemeral
       });
       return;
     }
@@ -920,9 +927,8 @@ export async function handleColorButton(interaction) {
       const targetRole = interaction.guild.roles.cache.get(roleId);
       
       if (targetRole && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.reply({
+        return interaction.editReply({
           content: '❌ I cannot remove this role because it is positioned above me in the hierarchy.',
-          flags: MessageFlags.Ephemeral
         });
       }
 
@@ -933,9 +939,8 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Removed color role <@&${roleId}>.`
       );
-      await interaction.reply({
+      await interaction.editReply({
         content: `✅ Removed <@&${roleId}> from you.`,
-        flags: MessageFlags.Ephemeral
       });
     } else {
       // Remove all other color roles first (ONLY if manageable)
@@ -955,9 +960,8 @@ export async function handleColorButton(interaction) {
       // Add the new color role (Check hierarchy first)
       const targetRole = interaction.guild.roles.cache.get(roleId);
       if (targetRole && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.reply({
+        return interaction.editReply({
           content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.',
-          flags: MessageFlags.Ephemeral
         });
       }
 
@@ -967,9 +971,8 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Picked color role <@&${roleId}>.`
       );
-      await interaction.reply({
+      await interaction.editReply({
         content: `✅ Gave you <@&${roleId}>!`,
-        flags: MessageFlags.Ephemeral
       });
     }
   } catch (error) {

@@ -1131,6 +1131,9 @@ export async function handleInventoryAction(interaction) {
 
     // --- 1. DROP (Step 1: Ephemeral Confirmation) ---
     if (action === 'drop') {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => { });
+      }
       const [item] = await query(
         `SELECT si.name, si.duration_seconds, si.duration_hours, ui.expires_at 
          FROM user_inventory ui 
@@ -1265,6 +1268,7 @@ export async function handleItemClaim(interaction) {
     // STEP 0: Interstitial Prerequisite Check
     // ===========================================
     if (!isForce) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
       const { checkPrerequisites } = await import('../economy/shop.js');
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
 
