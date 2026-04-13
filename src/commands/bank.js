@@ -39,6 +39,7 @@ import {
 const DAILY_BASE_REWARD = 25;
 const DAILY_STREAK_BONUS = 5;
 const BANK_THUMBNAIL_URL = 'https://media.discordapp.net/attachments/487762905551339540/1444320252019343391/Ok_Coin.png?ex=692c478e&is=692af60e&hm=5fee9ed4c93a354d1d06a9c1d411002189fb3c540c02423bde6c2e7f052fcd80&=&format=png&quality=lossless&width=1042&height=1042';
+const lockEmoji = '🔒';
 
 // --- Command Definition ---
 export const bankCommand = new SlashCommandBuilder()
@@ -911,7 +912,7 @@ export async function handleInventoryItemSelect(interaction) {
         getUserBalance(interaction.guildId, interaction.user.id)
       ]);
 
-      const activeItems = [...dbInventory, ...adminItems].filter(i => i.item_type !== 'pack' && !i.is_pack);
+      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
       const totalCount = activeItems.length;
       const currentBalance = parseInt(userBal.balance);
 
