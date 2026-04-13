@@ -528,9 +528,10 @@ export async function handleTradeSetupInteraction(interaction) {
  * Handle Modal Submissions for coins
  */
 export async function handleTradeModal(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
-    if (!setup) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+    if (!setup) return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
 
     const amountStr = interaction.fields.getTextInputValue('amount');
     
@@ -559,12 +560,9 @@ export async function handleTradeModal(interaction) {
     } else if (interaction.customId === 'trade_modal_request_coins') {
         const balance = await getUserBalance(setup.targetId, setup.guildId);
         if (amount > balance.balance) {
-            return interaction.reply({ content: `❌ The target user only has ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
-        }
         setup.targetCoins = amount;
     }
 
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     return showTradeSetup(interaction, setup);
 }
 
@@ -572,9 +570,10 @@ export async function handleTradeModal(interaction) {
  * Handle Select Menu for items
  */
 export async function handleTradeSelect(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
-    if (!setup) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+    if (!setup) return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
 
     const invId = parseInt(interaction.values[0], 10);
     
@@ -787,6 +786,7 @@ async function finalizeTradePosting(interaction, setup) {
  * Handle Public Trade Button clicks (Accept/Decline)
  */
 export async function handleTradeExecution(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const customId = interaction.customId;
 
 
@@ -794,7 +794,7 @@ export async function handleTradeExecution(interaction) {
 
     // Fetch trade from DB
     const res = await query('SELECT * FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, interaction.guildId]);
-    if (res.rows.length === 0) return interaction.reply({ content: '❌ Trade not found.', flags: MessageFlags.Ephemeral });
+    if (res.rows.length === 0) return interaction.editReply({ content: '❌ Trade not found.', components: [], embeds: [] });
 
     const trade = res.rows[0];
 
@@ -856,13 +856,14 @@ export async function handleTradeExecution(interaction) {
  * ATOMIC SWAP EXECUTION (The Fortress)
  */
 export async function handleTradeFinalConfirmation(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const tradeId = parseInt(interaction.customId.split('_')[2], 10);
 
 
     const confirmText = interaction.fields.getTextInputValue('confirm');
 
     if (confirmText.toUpperCase() !== 'CONFIRM') {
-        return interaction.reply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
     }
 
     // Fetch trade again to be sure

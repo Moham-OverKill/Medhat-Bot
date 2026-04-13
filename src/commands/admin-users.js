@@ -156,11 +156,12 @@ export async function handleBalanceAction(interaction, targetUserId) {
  * Process balance modal submission
  */
 export async function handleBalanceModal(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const targetUserId = interaction.customId.split('_').pop();
     const newBalance = parseInt(interaction.fields.getTextInputValue('new_balance'));
 
     if (isNaN(newBalance) || newBalance < 0) {
-        return interaction.reply({ content: '❌ Invalid balance. Please enter a positive number.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ Invalid balance. Please enter a positive number.', flags: MessageFlags.Ephemeral });
     }
 
     const guildId = interaction.guildId;
@@ -207,11 +208,10 @@ export async function handleBalanceModal(interaction) {
             );
         }
 
-        await interaction.deferUpdate();
         await showUserDashboard(interaction, targetUserId);
     } catch (error) {
         sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, guild: guildId, detail: `Balance adjust: ${targetUserId}` });
-        await interaction.reply({ content: '❌ Failed to update balance.', flags: MessageFlags.Ephemeral });
+        await interaction.followUp({ content: '❌ Failed to update balance.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
 }
 
@@ -219,12 +219,13 @@ export async function handleBalanceModal(interaction) {
  * Show user inventory (items)
  */
 export async function showUserItems(interaction, targetUserId, categoryId = null) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const guildId = interaction.guildId;
     const isOther = categoryId === 'null';
     const catId = isOther ? null : (categoryId ? parseInt(categoryId) : null);
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    if (!targetMember) return interaction.reply({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
+    if (!targetMember) return interaction.followUp({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
 
     // Sync and fetch inventory for target user (including synthesized admin items)
     const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
@@ -284,7 +285,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         if (buttons.length > 0) rows.push(new ActionRowBuilder().addComponents(buttons));
         rows.push(backRow);
 
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
         await interaction[responseMethod]({ embeds: [embed], components: rows });
     } else {
         // Show items in specific category
@@ -345,7 +346,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
         await interaction[responseMethod]({ embeds: [embed], components: [...rows, backRow] });
     }
 }
@@ -354,6 +355,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
  * Handle single item management (Revoke view)
  */
 export async function showItemRevokePanel(interaction, targetUserId, invId, categoryId) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const pool = getPool();
     const isAdminGranted = invId.toString().startsWith('admin_');
 
@@ -362,7 +364,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
         // Synthesized item: fetch directly from shop_items
         const shopItemId = invId.replace('admin_', '');
         const res = await pool.query('SELECT * FROM shop_items WHERE id = $1', [shopItemId]);
-        if (res.rowCount === 0) return interaction.reply({ content: '❌ Shop item not found.', flags: MessageFlags.Ephemeral });
+        if (res.rowCount === 0) return interaction.followUp({ content: '❌ Shop item not found.', flags: MessageFlags.Ephemeral });
         item = res.rows[0];
     } else {
         // Standard item: fetch from inventory
@@ -374,7 +376,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
             [invId]
         );
 
-        if (result.rowCount === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+        if (result.rowCount === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
         item = result.rows[0];
     }
 
@@ -414,7 +416,8 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
             .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.update({ embeds: [embed], components: [actionRow, backRow] });
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+    await interaction[responseMethod]({ embeds: [embed], components: [actionRow, backRow] });
 }
 
 /**
@@ -507,6 +510,7 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
  * Show transaction history for the target user
  */
 export async function showUserHistory(interaction, targetUserId, page = 0) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const LIMIT = 15;
     const offset = page * LIMIT;
     const pool = getPool();
@@ -577,7 +581,8 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.update({ embeds: [embed], components: [navRow, backRow] });
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
+    await interaction[responseMethod]({ embeds: [embed], components: [navRow, backRow] });
 }
 
 /**
