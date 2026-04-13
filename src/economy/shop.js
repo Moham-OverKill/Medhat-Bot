@@ -1767,32 +1767,6 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
   }
 }
 
-/**
-
-    // Refund coins
-    await client.query(
-      `UPDATE user_balances SET balance = balance + $1, total_earned = total_earned + $1 WHERE user_id = $2 AND guild_id = $3`,
-      [refundAmount, userId, guildId]
-    );
-
-    // Log transaction
-    await client.query(
-      `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
-       VALUES ($1, $2, $3, (SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2), 'sell', $4)`,
-      [userId, guildId, refundAmount, `Sold item: ${item.name}`]
-    );
-
-    await client.query('COMMIT');
-    return { success: true, refundAmount, name: item.name };
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    sysError('Sell Item Failed', error, { user: userId, guild: guildId, detail: `InventoryID: ${inventoryId}` });
-    return { success: false, error: 'Failed to sell item.' };
-  } finally {
-    client.release();
-  }
-}
 
 /**
  * EVENT-DRIVEN PURGE (Lazy Evaluation)

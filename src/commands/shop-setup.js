@@ -2543,14 +2543,6 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    if (!success) {
-      return interaction.followUp({ content: '❌ Failed to update item.', flags: MessageFlags.Ephemeral });
-    }
-  } catch (error) {
-    sysError('Shop item update failed', error, { user: interaction.user.id, guild: interaction.guildId });
-    await interaction.followUp({ content: '❌ Failed to process update request.', flags: MessageFlags.Ephemeral });
-  }
-}
 
     await interaction.editReply({ 
       content: successHeader || '**Manage items and settings for this pack:**', 
