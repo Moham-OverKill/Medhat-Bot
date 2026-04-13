@@ -17,6 +17,7 @@ import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { scheduleMvpTimer, cancelMvpTimer, getScheduleIntervalMs } from '../mvp/award.js';
 import { invalidateConfigCache } from '../activity/index.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { handleInteractionError } from '../utils/errors.js';
 
 // Command Definition
 export const mvpCommand = new SlashCommandBuilder()
@@ -163,11 +164,16 @@ async function hasRequiredPermissions(interaction) {
     flags: MessageFlags.Ephemeral
   };
 
-  if (interaction.deferred || interaction.replied) {
-    await interaction.followUp(replyPayload);
-  } else {
-    await interaction.reply(replyPayload);
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp(replyPayload);
+    } else {
+      await interaction.reply(replyPayload);
+    }
+  } catch (e) {
+    sysError('Permission Check Error', e, { user: interaction.user.id });
   }
+
   return false;
 }
 
@@ -393,9 +399,9 @@ export async function handleMvpComponent(interaction) {
         const latestConfig = await getGuildConfig(guildId);
         await showSetupPanel(interaction, latestConfig);
         break;
-    }
+    } // end switch
   } catch (error) {
-    sysError('MVP Component router failed', error, { guild: interaction.guildId });
+    await handleInteractionError(interaction, error, 'MVP component router');
   }
 }
 
@@ -594,12 +600,7 @@ async function handleToggle(interaction, config) {
 
     await showSetupPanel(interaction, latestConfig);
   } catch (error) {
-    sysError('Failed to toggle MVP', error, { user: interaction.user.id, guild: interaction.guildId });
-    await interaction.update({
-      content: '❌ Failed to toggle MVP. Please try again.',
-      embeds: [],
-      components: []
-    });
+    await handleInteractionError(interaction, error, 'toggle MVP');
   }
 }
 
@@ -648,10 +649,14 @@ async function showStatsLeaderboard(interaction, config) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-  await interaction.update({
-    embeds: [embed],
-    components: [backButton]
-  });
+  try {
+    await interaction.update({
+      embeds: [embed],
+      components: [backButton]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'MVP stats leaderboard');
+  }
 }
 
 // handleSkip function REMOVED - Skip button no longer exists in UI

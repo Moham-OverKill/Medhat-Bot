@@ -536,7 +536,7 @@ export async function handleTradeModal(interaction) {
     const amountStr = interaction.fields.getTextInputValue('amount');
     
     if (!isValidEconomyAmount(amountStr, true)) {
-        return interaction.reply({ 
+        return interaction.followUp({ 
             content: `❌ Please enter a valid non-negative whole number (e.g., 500).`, 
             flags: MessageFlags.Ephemeral 
         });
@@ -544,7 +544,7 @@ export async function handleTradeModal(interaction) {
 
     const amount = parseInt(amountStr, 10);
     if (amount > SINGLE_TX_CAP) {
-        return interaction.reply({ 
+        return interaction.followUp({ 
             content: `❌ **Security Limit:** You cannot trade more than **${SINGLE_TX_CAP.toLocaleString()} coins** in a single transaction.`, 
             flags: MessageFlags.Ephemeral 
         });
@@ -554,13 +554,13 @@ export async function handleTradeModal(interaction) {
     if (interaction.customId === 'trade_modal_give_coins') {
         const balance = await getUserBalance(setup.senderId, setup.guildId);
         if (amount > balance.balance) {
-            return interaction.reply({ content: `❌ You only have ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: `❌ You only have ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
         }
         setup.senderCoins = amount;
     } else if (interaction.customId === 'trade_modal_request_coins') {
         const balance = await getUserBalance(setup.targetId, setup.guildId);
         if (amount > balance.balance) {
-            return interaction.reply({ content: `❌ This user only has ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: `❌ This user only has ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
         }
         setup.targetCoins = amount;
     }
@@ -588,20 +588,20 @@ export async function handleTradeSelect(interaction) {
         [invId, setup.guildId, interaction.user.id]
     );
 
-    if (result.rows.length === 0) return interaction.reply({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    if (result.rows.length === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
     const item = result.rows[0];
     const isSoulbound = item.source !== 'SHOP';
 
     // Layer 2: Selection Check (only block admin-granted items)
     if (isSoulbound) {
-        return interaction.reply({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.customId === 'trade_select_give_item') {
         // Prevent duplicates in offer
         if (setup.senderItems.find(i => i.id === invId)) {
-            return interaction.reply({ content: '❌ Item already added to offer.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ Item already added to offer.', flags: MessageFlags.Ephemeral });
         }
         
         // Prevent giving permanent items the target already owns
@@ -614,14 +614,14 @@ export async function handleTradeSelect(interaction) {
             );
 
             if (dbCheck.rows.length > 0 || hasExplicit) {
-                return interaction.reply({ content: `❌ The recipient already has this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
+                return interaction.followUp({ content: `❌ The recipient already has this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
             }
 
         setup.senderItems.push(item);
     } else if (interaction.customId === 'trade_select_request_item') {
         // Prevent duplicates in request
         if (setup.targetItems.find(i => i.id === invId)) {
-            return interaction.reply({ content: '❌ Item already added to request.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ Item already added to request.', flags: MessageFlags.Ephemeral });
         }
 
         // Prevent requesting permanent items you already own correctly
@@ -636,7 +636,7 @@ export async function handleTradeSelect(interaction) {
             );
 
             if (dbCheck.rows.length > 0 || hasExplicit) {
-                return interaction.reply({ content: `❌ You already possess this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
+                return interaction.followUp({ content: `❌ You already possess this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
             }
         }
 
