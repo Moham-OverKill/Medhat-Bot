@@ -91,22 +91,29 @@ import {
   handleTradeFinalConfirmation 
 } from '../commands/trade.js';
 import { sanitizeError } from '../shared.js';
-import { logSystemEvent } from '../utils/logger.js';
+import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
 
 export function setupComponentHandlers(client) {
   if (handlersSetup) {
-    console.warn('[System] Component handlers already set up');
+    sysLog('Handlers Redundancy', { detail: 'Component handlers already set up' });
     return;
   }
 
   client.on('interactionCreate', async (interaction) => {
     try {
-      // 2. --- INTERACTION WATCHTOWER ---
+      // 1. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
-        const serverPrefix = interaction.guild ? `[${interaction.guild.name}]` : '[System]';
-        console.log(`${serverPrefix} [Interaction] ${interaction.customId} by ${interaction.user.tag}`);
+        const type = interaction.isButton() ? 'Button' : 
+                     interaction.isAnySelectMenu() ? 'Menu' : 
+                     interaction.isModalSubmit() ? 'Modal' : 'Interaction';
+        
+        sysLog(`${type} Clicked`, { 
+          user: interaction.user, 
+          guild: interaction.guild, 
+          detail: `CustomID: ${interaction.customId}` 
+        });
       }
       // --- SECURITY GUARDRAIL ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
@@ -383,15 +390,15 @@ export function setupComponentHandlers(client) {
       } else {
         // --- SAFETY NET: LOG UNHANDLED ---
         if (customId && !customId.startsWith('shop_main') && !customId.startsWith('bank_')) {
-            console.warn(`[System] Unhandled Interaction ID: "${customId}" (Type: ${interaction.type})`);
+          sysLog('Unhandled Interaction', { detail: `ID: "${customId}" | Type: ${interaction.type}` });
         }
       }
 
     } catch (error) {
-      console.error('[System] Interaction handler error:', sanitizeError(error));
+      sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'InteractionCreate event' });
     }
   });
 
   handlersSetup = true;
-  logSystemEvent('Component handlers set up');
+  sysLog('Infrastructure Audit', { detail: 'Component handlers set up' });
 }

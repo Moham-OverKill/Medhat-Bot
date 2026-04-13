@@ -23,6 +23,7 @@ import {
   formatQuestTask,
   formatCompactQuest
 } from '../quests/quests.js';
+import { sysError } from '../utils/logger.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
 const pendingQuestAdd = new Map();
@@ -125,7 +126,7 @@ export async function showQuestsDashboard(interaction) {
         content: null 
     });
   } catch (error) {
-    console.error('[Quests] Dashboard error:', error);
+    sysError('Quest dashboard render failed', error, { user: interaction.user.id, guild: interaction.guildId });
   }
 }
 
@@ -253,7 +254,7 @@ export async function showQuestDetail(interaction, questId) {
 
     await interaction.editReply({ embeds: [embed], components: [row, backRow], content: null });
   } catch (error) {
-    console.error('[Quests] Detail error:', error);
+    sysError('Quest detail render failed', error, { user: interaction.user.id, guild: interaction.guildId, detail: questId });
   }
 }
 

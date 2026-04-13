@@ -14,7 +14,7 @@ import {
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount } from '../shared.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance, updateBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { syncInventoryWithDiscord } from '../economy/shop.js';
@@ -344,7 +344,7 @@ export async function showTradeSetup(interaction, setupInfo = null, activeSelect
             await interaction.reply(payload);
         }
     } catch (err) {
-        console.error('UI Refresh failed:', err);
+        sysError('UI Refresh failed', err, { user: interaction.user.id, guild: interaction.guildId });
     }
 }
 
@@ -498,7 +498,7 @@ export async function handleTradeSetupInteraction(interaction) {
         try {
             await finalizeTradePosting(interaction, setup);
         } catch (error) {
-            console.error('Finalize trade posting error:', error);
+            sysError('Finalize trade posting failed', error, { user: interaction.user.id, guild: interaction.guildId });
             // ROLLBACK: Remove setup lock so user isn't stuck in a "Ghost Trade"
             ACTIVE_SETUPS.delete(setupId);
             
@@ -771,7 +771,7 @@ async function finalizeTradePosting(interaction, setup) {
                     }).catch(() => { }); // Ignore Unknown Message errors
                 }
             } catch (err) {
-                console.error('Trade timeout error:', err);
+                sysError('Trade timeout error', err, { guild: setup.guildId, detail: `TradeID: ${tradeId}` });
             } finally {
                 TRADE_TIMEOUTS.delete(tradeId);
             }
@@ -781,8 +781,8 @@ async function finalizeTradePosting(interaction, setup) {
 
         // 5. Finalize the ephemeral setup UI
         return interaction.editReply({ content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
-    } catch (err) {
-        console.error('Finalize post error:', err);
+    } catch (error) {
+        sysError('Finalize post error', error, { user: interaction.user.id, guild: interaction.guildId });
         return interaction.followUp({ content: '❌ Failed to post trade. Check logs.', flags: MessageFlags.Ephemeral });
     }
 }
@@ -1099,7 +1099,7 @@ export async function handleTradeFinalConfirmation(interaction) {
                         const sRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [sItems]);
                         for (const row of sRoleRes.rows) {
                              if (row.role_id && freshS.roles.cache.has(row.role_id)) {
-                                 console.log(`[System] Admin Role Overlap Detected - Not Removed for sender ${trade.sender_id} (Role: ${row.role_id})`);
+                                 sysLog('Admin Role Overlap Detected', { user: trade.sender_id, detail: `Role: ${row.role_id} (Not removed)` });
                              }
                         }
                     }
@@ -1107,7 +1107,7 @@ export async function handleTradeFinalConfirmation(interaction) {
                          const tRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [tItems]);
                          for (const row of tRoleRes.rows) {
                               if (row.role_id && freshT.roles.cache.has(row.role_id)) {
-                                  console.log(`[System] Admin Role Overlap Detected - Not Removed for target ${trade.target_id} (Role: ${row.role_id})`);
+                                  sysLog('Admin Role Overlap Detected', { user: trade.target_id, detail: `Role: ${row.role_id} (Not removed)` });
                               }
                          }
                     }
@@ -1140,7 +1140,7 @@ export async function handleTradeFinalConfirmation(interaction) {
                 }
             }
         } catch (roleError) {
-            console.error('Failed to swap roles after trade:', roleError);
+            sysError('Failed to swap roles after trade', roleError, { guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
             // Non-critical, sync cycle will catch it eventually, but we tried!
         }
 
@@ -1149,7 +1149,7 @@ export async function handleTradeFinalConfirmation(interaction) {
             if (senderMember) await runDependencySweep(trade.sender_id, trade.guild_id, senderMember);
             if (targetMember) await runDependencySweep(trade.target_id, trade.guild_id, targetMember);
         } catch (sweepError) {
-            console.error('Post-trade domino sweep error:', sweepError);
+            sysError('Post-trade domino sweep error', sweepError, { guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
         }
 
 

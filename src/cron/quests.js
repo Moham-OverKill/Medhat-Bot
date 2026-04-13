@@ -3,6 +3,7 @@ import { getPool } from '../storage/postgres.js';
 import { getQuests, resetGuildQuestProgress } from '../quests/quests.js';
 import { syncQuestChannelCache } from '../activity/index.js';
 import { getCairoHour } from '../utils/time.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 export function startQuestScheduler(client) {
   // Check every minute
@@ -77,7 +78,7 @@ async function checkQuests(client, forceCheck = false) {
           }
       }
     } catch (err) {
-      console.error(`[Quests] Independent refresh failed for guild ${guildId}:`, err);
+      sysError('Quest Independent Refresh Failed', err, { guild: guildId });
     }
   }
 }
@@ -163,7 +164,7 @@ export async function rotateGuildQuests(guildId, config, pool) {
         await pool.query(
             `UPDATE quests SET last_active_at = $1 WHERE id IN (${placeholders})`,
             [currentCycle, ...selectedIds]
-        ).catch(e => console.error('[Quests] Failed to update last_active_at:', e));
+        ).catch(e => sysError('Quest History Update Failed', e, { guild: guildId }));
     }
 
     // Atomic Wipe of All User Progress for this guild on refresh
@@ -172,5 +173,5 @@ export async function rotateGuildQuests(guildId, config, pool) {
     // Broadcast to tracking engine memory
     await syncQuestChannelCache(guildId);
 
-    console.log(`[Quests] [Guild ${guildId}] Smart Rotation complete (Cycle ${currentCycle}). ${selectedIds.length} quests active.`);
+    sysLog('Quest Smart Rotation Complete', { guild: guildId, detail: `Cycle: ${currentCycle} | Quests: ${selectedIds.length}` });
 }

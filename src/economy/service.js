@@ -1,7 +1,7 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { formatDetailedTimeRemaining, getNextCairoMidnight, hasClaimedToday, isStreakValid } from '../utils/time.js';
-import { sendLog, logServerEvent, logServerError } from '../utils/logger.js';
+import { sendLog, logServerEvent, logServerError, sysLog, sysError } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
 
 /**
@@ -27,7 +27,7 @@ export async function getUserBalance(userId, guildId) {
 
     return result.rows[0];
   } catch (error) {
-    console.error(`Get balance failed:`, sanitizeError(error));
+    sysError('Economy Audit Failed', error, { user: userId, guild: guildId, detail: 'Getting user balance' });
     throw error;
   }
 }
@@ -83,7 +83,7 @@ export async function updateBalance(userId, guildId, amount, type, description =
     return { success: true, balance: newBalance, amount };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(`Update balance failed:`, sanitizeError(error));
+    sysError('Economy Audit Failed', error, { user: userId, guild: guildId, detail: `Updating balance (Type: ${type})` });
     throw error;
   } finally {
     client.release();
@@ -234,7 +234,7 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(`Daily claim failed:`, sanitizeError(error));
+    sysError('Economy Audit Failed', error, { user: userId, guild: guildId, detail: 'Daily claim logic failure' });
     throw error;
   } finally {
     client.release();
@@ -257,7 +257,7 @@ export async function getLeaderboard(guildId, limit = 10) {
 
     return result.rows;
   } catch (error) {
-    console.error(`Leaderboard failed:`, sanitizeError(error));
+    sysError('Economy Audit Failed', error, { guild: guildId, detail: 'Generating leaderboard' });
     return [];
   }
 }
@@ -277,7 +277,7 @@ export async function getTransactionHistory(userId, guildId, limit = 10) {
 
     return result.rows;
   } catch (error) {
-    console.error(`Transaction history failed:`, sanitizeError(error));
+    sysError('Economy Audit Failed', error, { user: userId, guild: guildId, detail: 'Getting transaction history' });
     return [];
   }
 }

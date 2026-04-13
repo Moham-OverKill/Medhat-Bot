@@ -2,7 +2,7 @@ import { getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
 import { getCairoDateString, getTodayCairo } from '../utils/time.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { updateBalance } from '../economy/service.js';
 
 const MAX_QUESTS_PER_GUILD = 10;
@@ -23,7 +23,7 @@ export async function getQuests(guildId) {
     );
     return result.rows;
   } catch (error) {
-    console.error('[Quests] Failed to get quests:', sanitizeError(error));
+    sysError('Quest Fetch Failed', error, { guild: guildId });
     return [];
   }
 }
@@ -40,7 +40,7 @@ export async function getQuest(questId) {
     );
     return result.rows[0] || null;
   } catch (error) {
-    console.error('[Quests] Failed to get quest:', sanitizeError(error));
+    sysError('Quest Fetch Failed', error, { detail: `QuestID: ${questId}` });
     return null;
   }
 }
@@ -66,7 +66,7 @@ export async function addQuest(guildId, { channelId, channelType, actionType, re
     );
     return { quest: result.rows[0] };
   } catch (error) {
-    console.error('[Quests] Failed to add quest:', sanitizeError(error));
+    sysError('Quest Addition Failed', error, { guild: guildId });
     return { error: 'Database error.' };
   }
 }
@@ -83,7 +83,7 @@ export async function updateQuest(questId, { requiredCount, rewardCoins }) {
     );
     return true;
   } catch (error) {
-    console.error('[Quests] Failed to update quest:', sanitizeError(error));
+    sysError('Quest Update Failed', error, { detail: `QuestID: ${questId}` });
     return false;
   }
 }
@@ -97,7 +97,7 @@ export async function deleteQuest(questId) {
     await pool.query('DELETE FROM quests WHERE id = $1', [questId]);
     return true;
   } catch (error) {
-    console.error('[Quests] Failed to delete quest:', sanitizeError(error));
+    sysError('Quest Deletion Failed', error, { detail: `QuestID: ${questId}` });
     return false;
   }
 }
@@ -120,7 +120,7 @@ export async function getProgress(guildId, userId, questId) {
     );
     return result.rows[0] || null;
   } catch (error) {
-    console.error('[Quests] Failed to get progress:', sanitizeError(error));
+    sysError('Quest Progress Fetch Failed', error, { user: userId, guild: guildId, detail: `QuestID: ${questId}` });
     return null;
   }
 }
@@ -144,7 +144,7 @@ export async function getAllActiveProgress(guildId, userId, activeQuestIds) {
     );
     return result.rows;
   } catch (error) {
-    console.error('[Quests] Failed to get all progress:', sanitizeError(error));
+    sysError('Quest Progress Fetch Failed', error, { user: userId, guild: guildId });
     return [];
   }
 }
@@ -162,7 +162,7 @@ export async function resetGuildQuestProgress(guildId) {
     );
     return true;
   } catch (error) {
-    console.error('[Quests] Failed to reset guild progress:', sanitizeError(error));
+    sysError('Quest Progress Reset Failed', error, { guild: guildId });
     return false;
   }
 }
@@ -205,7 +205,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     const justCompleted = oldProgress < quest.required_count && newProgress >= quest.required_count;
 
     if (amount > 0) {
-        console.log(`[SQL Debug] Guild [${guildId}] User [${userId}] Quest [${quest.id}] Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})`);
+        sysLog('Quest Progress Upsert', { user: userId, guild: guildId, detail: `Quest: ${quest.id} | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})` });
     }
 
     // Execute Auto-Payout silently in background
@@ -219,7 +219,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
       justCompleted: justCompleted
     };
   } catch (error) {
-    console.error('[Quests] Failed to increment progress:', sanitizeError(error));
+    sysError('Quest Progress Increment Failed', error, { user: userId, guild: guildId, detail: `QuestID: ${quest.id}` });
     return { progress: 0, completed: false, justCompleted: false };
   }
 }
@@ -238,12 +238,12 @@ async function autoPayout(guildId, userId, quest) {
         if (guild) {
              const user = await client.users.fetch(userId).catch(()=>null);
              const tag = user ? user.tag : userId;
-             sendLog(guild, 'economy', 'green', '✅ Quest Auto-Payout', 
+             sendLog(guild, 'economy', 'green', 'Quest Auto-Payout', 
                 `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` Coins`);
         }
     }
   } catch (err) {
-    console.error('[Quests] Auto-Payout failed:', err);
+    sysError('Quest Auto-Payout Failed', err, { user: userId, guild: guildId, detail: `QuestID: ${quest.id}` });
   }
 }
 
@@ -269,7 +269,7 @@ export async function cleanupOldProgress() {
       `DELETE FROM quest_progress WHERE quest_date < CURRENT_DATE - INTERVAL '7 days'`
     );
   } catch (error) {
-    console.error('[Quests] Progress cleanup error:', sanitizeError(error));
+    sysError('Quest Maintenance Failed', error, { detail: 'Progress cleanup' });
   }
 }
 

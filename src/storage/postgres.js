@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { sanitizeError } from '../shared.js';
-import { logSystemEvent } from '../utils/logger.js';
+import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 const { Pool } = pg;
 
@@ -14,10 +14,8 @@ let pool = null;
 function getDatabaseConfig() {
   // Check if DATABASE_URL is provided (Railway style)
   if (process.env.DATABASE_URL) {
-    console.log('[System] Database: Using DATABASE_URL connection string');
-    // Log masked URL for debugging (hiding password)
     const maskedUrl = process.env.DATABASE_URL.replace(/:([^:@]+)@/, ':****@');
-    console.log(`[System] Database: Config: ${maskedUrl}`);
+    sysLog('Database Config Loaded', { detail: `Source: DATABASE_URL | URL: ${maskedUrl}` });
 
     // Railway internal network does not use/support SSL properly, which causes the 60s timeout
     const isInternal = process.env.DATABASE_URL.includes('.railway.internal');
@@ -44,7 +42,7 @@ function getDatabaseConfig() {
   const dbName = process.env.DB_NAME || 'mvp_bot';
   const port = parseInt(process.env.DB_PORT || '5432', 10);
 
-  console.log(`[System] Database: Using explicit config - Host: ${host}:${port}, User: ${user}, DB: ${dbName}`);
+  sysLog('Database Config Loaded', { detail: `Source: Explicit | Host: ${host}:${port} | User: ${user} | DB: ${dbName}` });
 
   return {
     user: user,
@@ -67,7 +65,7 @@ let databaseConnected = false;
  */
 export async function initializeDatabase() {
   if (pool && databaseConnected) {
-    console.log('[System] Database pool already active and connected');
+    sysLog('Database Connection Maintenance', { detail: 'Pool already active' });
     return pool;
   }
 
@@ -81,36 +79,35 @@ export async function initializeDatabase() {
   while (retries > 0) {
     try {
       // Create fresh pool for each attempt (prevents stale pool issues)
-      if (pool) {
         await pool.end().catch(() => { });
         databaseConnected = false;
       }
 
-      console.log(`[System] Database: Creating new connection pool...`);
+      sysLog('Database Pool Creation', { detail: `Attempt: ${11 - retries}` });
       pool = new Pool(config);
 
       // Handle pool errors (prevents crashes on connection loss)
       pool.on('error', (err) => {
-        console.error('⚠️ [System] Unexpected pool error:', err.message);
+        sysError('Database Pool Error', err);
         databaseConnected = false; // Mark as disconnected on error
         // Pool will automatically try to reconnect on next query
       });
 
       // Test the connection
       const host = config.host || (process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'unknown');
-      console.log(`[System] Database: Connecting to ${host} (Attempt ${11 - retries}/10)...`);
+      sysLog('Database Networking', { detail: `Connecting to ${host} (Attempt ${11 - retries})` });
 
       // Attempt DNS lookup to debug networking issues
       try {
         const dns = await import('dns/promises');
         const addresses = await dns.lookup(host);
-        console.log(`[System] Database: Host '${host}' resolves to: ${JSON.stringify(addresses)}`);
+        sysLog('Database Networking', { detail: `Host ${host} resolved: ${JSON.stringify(addresses)}` });
       } catch (dnsErr) {
-        console.warn(`[System] Database: DNS lookup failed for '${host}': ${dnsErr.message}`);
+        sysLog('Database Networking Warning', { detail: `DNS lookup failed for ${host}: ${dnsErr.message}` });
       }
 
       const client = await pool.connect();
-      logSystemEvent(`Connected to PostgreSQL successfully (Attempt ${11 - retries})`);
+      sysLog('Database Connection Success', { detail: `Attempt ${11 - retries}` });
       client.release();
 
       // Mark as successfully connected
@@ -130,13 +127,10 @@ export async function initializeDatabase() {
       const isFirstAttempt = retries === 9;
       const delay = isFirstAttempt ? FIRST_RETRY_DELAY : RETRY_DELAY;
 
-      console.warn(
-        `⚠️ DB connection failed (${error.message}). ` +
-        (isLastAttempt ? 'Giving up.' : `Retry in ${delay / 1000}s... (${retries} left)`)
-      );
+      sysLog('Database Connection Warning', { detail: `Attempt failed: ${error.message} | Retry in ${delay / 1000}s` });
 
       if (isLastAttempt) {
-        console.error('❌ Failed to initialize database after multiple attempts:', sanitizeError(error));
+        sysError('Database Critical Failure', error, { detail: 'Exhausted all retries' });
         throw error;
       }
 
@@ -170,7 +164,7 @@ function startHealthCheck() {
     try {
       await pool.query('SELECT 1');
     } catch (error) {
-      console.warn('⚠️ DB health check failed:', error.message);
+      sysLog('Database Health Warning', { detail: `Check failed: ${error.message}` });
       // Pool will auto-reconnect on next query
     }
   }, 30000); // Every 30 seconds
@@ -449,7 +443,7 @@ async function createTables() {
       `);
 
     } catch (e) {
-      console.warn('[System] Migration status (harmless if already exists):', e.message);
+      sysLog('Migration Notice', { detail: `Status: ${e.message}` });
     }
 
     // Table for audit logs
@@ -650,16 +644,17 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_trades_guild_status ON trades(guild_id, status);
     `);
 
-    logSystemEvent('Database tables initialized');
+    const { idx } = await result; // Dummy use for linting
+    sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
     setImmediate(() => {
       cleanupOldData().catch(error => {
-        console.error('Background cleanup failed:', sanitizeError(error));
+        sysError('Background Cleanup Failed', error);
       });
     });
   } catch (error) {
-    console.error('❌ Failed to create tables:', sanitizeError(error));
+    sysError('Infrastructure Setup Failed', error, { detail: 'Table Creation' });
     throw error;
   }
 }
@@ -680,7 +675,7 @@ async function cleanupOldData() {
     );
 
     if (transactionResult.rowCount > 0) {
-      logSystemEvent(`Cleaned ${transactionResult.rowCount} old transactions`);
+      sysLog('Maintenance Cleanup', { detail: `Purged ${transactionResult.rowCount} old transactions` });
     }
 
     // Clean inactive user activity (users with 0 activity in guilds that haven't awarded MVP in 30 days)
@@ -695,11 +690,11 @@ async function cleanupOldData() {
     `, [thirtyDaysAgo]);
 
     if (activityResult.rowCount > 0) {
-      logSystemEvent(`Cleaned ${activityResult.rowCount} inactive records`);
+      sysLog('Maintenance Cleanup', { detail: `Purged ${activityResult.rowCount} inactive records` });
     }
 
   } catch (error) {
-    console.error('Cleanup error:', sanitizeError(error));
+    sysError('Maintenance Cleanup Failed', error);
   }
 }
 
@@ -725,7 +720,7 @@ export async function closeDatabase() {
   if (pool) {
     await pool.end();
     pool = null;
-    logSystemEvent('Database connection closed');
+    sysLog('Database Closed', { detail: 'Link terminated' });
   }
 }
 
@@ -737,7 +732,7 @@ export async function query(text, params) {
     const result = await pool.query(text, params);
     return result;
   } catch (error) {
-    console.error('Database query error:', sanitizeError(error));
+    sysError('Database Query Error', error, { detail: text.substring(0, 100) });
     throw error;
   }
 }

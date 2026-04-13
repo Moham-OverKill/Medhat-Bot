@@ -16,7 +16,7 @@ import { handleInteractionError } from '../utils/errors.js';
 import { addColorRole, removeColorRole } from '../storage/colors.js';
 import { isMemberBooster } from './colors.js';
 import { hasAnyDangerousPermission } from './colors.js';
-import { logServerEvent, sendBulkLog } from '../utils/logger.js';
+import { logServerEvent, sendBulkLog, sysError } from '../utils/logger.js';
 import { getUserDisplayName, getUserLogName, isValidEconomyAmount } from '../shared.js';
 
 // Temporary storage: userId -> input_ids
@@ -293,7 +293,7 @@ export async function handleMassModalSubmit(interaction) {
         await renderMassPanel(interaction, userId);
         
     } catch (error) {
-        console.error(`Mass create ${type} error:`, error);
+        sysError(`Mass create ${type} failed`, error, { user: interaction.user.id, guild: interaction.guildId });
         await interaction.followUp({ content: `❌ Failed to create ${type}.`, flags: MessageFlags.Ephemeral });
     }
 }
@@ -380,7 +380,7 @@ export async function handleMassSave(interaction) {
                 }
                 processedRoleIds.push(roleId);
             } catch (e) {
-                console.error(`Failed to process role ${roleId}:`, e);
+                sysError(`Mass process role failed`, e, { user: interaction.user.id, guild: interaction.guildId, detail: roleId });
                 errors++;
             }
         }
@@ -438,7 +438,7 @@ export async function handleMassSave(interaction) {
         }
         
     } catch (error) {
-        console.error('Mass save error:', error);
+        sysError('Mass save failed', error, { user: interaction.user.id, guild: interaction.guildId });
         await interaction.editReply({ content: `❌ Error: ${error.message}`, components: [] });
     }
 }
@@ -532,7 +532,7 @@ async function handleMassColorSubcommand(interaction) {
 
         await interaction.editReply(summary.join('\n') || '✅ Done');
     } catch (error) {
-        console.error('Error in /mass color command:', error);
+        sysError('Mass color command failed', error, { user: interaction.user.id, guild: interaction.guildId });
         await interaction.editReply('An error occurred while processing your request.');
     }
 }

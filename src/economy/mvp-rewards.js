@@ -1,8 +1,30 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError } from '../shared.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysError } from '../utils/logger.js';
 
 const DEFAULT_MVP_REWARD = 100;
+
+/**
+ * Handle individual guild MVP rewards
+ */
+export async function processGuildMvpRewards(guildId, coins) {
+  try {
+    const config = await getGuildConfig(guildId);
+    if (!config?.mvpRoleId) return;
+
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return;
+
+    // Find all eligible MVP roles
+    const mvpMembers = guild.roles.cache.get(config.mvpRoleId)?.members || [];
+    
+    for (const [userId, member] of mvpMembers) {
+      await updateBalance(userId, guildId, coins, 'MVP Reward');
+    }
+  } catch (error) {
+    sysError('MVP reward distribution failed', error, { guild: guildId });
+  }
+}
 
 /**
  * Award coins to MVP winner
@@ -58,7 +80,7 @@ export async function awardMvpCoins(userId, guild, username, customAmount = null
     };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error awarding MVP coins:', sanitizeError(error));
+    sysError('Error awarding MVP coins', error, { user: userId, guild: guildId });
     throw error;
   } finally {
     client.release();

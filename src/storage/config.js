@@ -1,5 +1,6 @@
 import { getPool, query } from './postgres.js';
 import { isValidSnowflake, sanitizeError as formatError } from '../shared.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 // Config schema validation
 const CONFIG_SCHEMA = {
@@ -90,11 +91,11 @@ export async function initializeGuildConfigs() {
     await pool.query('SELECT 1');
     
     if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'production') {
-      console.debug('Guild configs storage ready (PostgreSQL)');
+      sysLog('Infrastructure Audit', { detail: 'Guild configs storage ready (PostgreSQL)' });
     }
     return true;
   } catch (error) {
-    console.error('Failed to initialize guild configs:', formatError(error));
+    sysError('Infrastructure Audit Failed', error, { detail: 'Guild configs init' });
     throw error;
   }
 }
@@ -118,7 +119,7 @@ export async function loadGuildConfigs() {
     
     return validConfigs;
   } catch (error) {
-    console.error('Error loading guild configs:', formatError(error));
+    sysError('Infrastructure Audit Failed', error, { detail: 'Loading guild configs' });
     return {};
   }
 }
@@ -161,8 +162,7 @@ export async function saveGuildConfigs(configs) {
       client.release();
     }
   } catch (error) {
-    const errorMessage = 'Error saving guild configs: ' + formatError(error);
-    console.error(errorMessage);
+    sysError('Infrastructure Audit Failed', error, { detail: 'Saving guild configs' });
     throw new Error('Failed to save configuration. Please try again.');
   }
 }
@@ -170,7 +170,7 @@ export async function saveGuildConfigs(configs) {
 export async function getGuildConfig(guildId) {
   // Security: Validate guild ID
   if (!isValidSnowflake(guildId)) {
-    console.warn('Invalid guild ID attempted');
+    sysLog('Interaction Warning', { detail: `Invalid guild ID attempted: ${guildId}` });
     return null;
   }
   
@@ -187,7 +187,7 @@ export async function getGuildConfig(guildId) {
     const config = result.rows[0].config;
     return validateConfig(config);
   } catch (error) {
-    console.error('Error getting guild config:', formatError(error));
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Getting guild config' });
     return null;
   }
 }
@@ -213,7 +213,7 @@ export async function setGuildConfig(guildId, config) {
       [guildId, JSON.stringify(sanitized)]
     );
   } catch (error) {
-    console.error('Error setting guild config:', formatError(error));
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Setting guild config', error: formatError(error) });
     throw new Error('Failed to save configuration');
   }
 }
@@ -227,7 +227,7 @@ export async function deleteGuildConfig(guildId) {
   try {
     await query('DELETE FROM guild_configs WHERE guild_id = $1', [guildId]);
   } catch (error) {
-    console.error('Error deleting guild config:', formatError(error));
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Deleting guild config' });
     throw new Error('Failed to delete configuration');
   }
 }
