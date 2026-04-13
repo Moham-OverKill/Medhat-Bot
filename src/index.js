@@ -340,8 +340,8 @@ client.on(Events.GuildChannelDelete, async (channel) => {
         logs.push(`• **${field.name}:** Unset (Channel #${channel.name} deleted)`);
       }
     }
-
-      // Attempt to log to console and any remaining log channels
+    if (updated) {
+      await setGuildConfig(guild.id, config);
       sysLog('Config Updated', { guild: guild.id, detail: 'Deleted linked channel resource' });
     }
   } catch (error) {
