@@ -17,7 +17,7 @@ import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount } f
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance, updateBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
-import { syncInventoryWithDiscord } from '../economy/shop.js';
+import { syncInventoryWithDiscord, runDependencySweep } from '../economy/shop.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 /**
@@ -46,10 +46,6 @@ import { handleInteractionError } from '../utils/errors.js';
 // Define single transaction cap limit
 const SINGLE_TX_CAP = 100000;
 
-// Dummy implementation for runDependencySweep (logic removed during rollback)
-const runDependencySweep = async (userId, guildId, shopItemId, member) => {
-    return [];
-};
 
 /**
  * Calculates trade tax (e.g. 10%)
