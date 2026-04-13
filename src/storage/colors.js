@@ -1,5 +1,5 @@
 import { getPool } from './postgres.js';
-import { logSystemEvent } from '../utils/logger.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 // No initialization needed here as tables are created in postgres.js
 export function initializeColorsDB() {
@@ -25,7 +25,7 @@ export async function addColorRole(guildId, roleId, isBooster = false) {
     // We can assume success for this UI.
     return { success: true };
   } catch (error) {
-    console.error('Error adding color role:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: `Adding color role: ${roleId}` });
     return { success: false, error: 'Database error' };
   }
 }
@@ -44,7 +44,7 @@ export async function removeColorRole(guildId, roleId, isBooster = false) {
     );
     return { success: true, deleted: result.rowCount > 0 };
   } catch (error) {
-    console.error('Error removing color role:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: `Removing color role: ${roleId}` });
     return { success: false, error: 'Database error' };
   }
 }
@@ -66,7 +66,7 @@ export async function getColorRoles(guildId, isBooster = false) {
     );
     return result.rows;
   } catch (error) {
-    console.error('Error fetching color roles:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Fetching color roles' });
     return [];
   }
 }
@@ -86,7 +86,7 @@ export async function getAllColorRoles(guildId) {
     
     return [...normal.rows.map(r => r.role_id), ...booster.rows.map(r => r.role_id)];
   } catch (error) {
-    console.error('Error fetching all color roles:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Fetching all color roles' });
     return [];
   }
 }
@@ -106,7 +106,7 @@ export async function setBoosterRole(guildId, roleId) {
     );
     return { success: true };
   } catch (error) {
-    console.error('Error setting booster role:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: `Setting booster role: ${roleId}` });
     return { success: false, error: 'Database error' };
   }
 }
@@ -124,7 +124,7 @@ export async function getBoosterRole(guildId) {
     );
     return result.rows[0]?.role_id || null;
   } catch (error) {
-    console.error('Error fetching booster role:', error);
+    sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Fetching booster role' });
     return null;
   }
 }

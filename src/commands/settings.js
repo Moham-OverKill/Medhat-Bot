@@ -9,8 +9,8 @@ import {
     ChannelSelectMenuBuilder,
     ChannelType
 } from 'discord.js';
-import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { sendLog } from '../utils/logger.js';
+import { setGuildConfig } from '../storage/config.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
 import { handleRewardsSetup as showRewardsPanel } from './rewards.js';
@@ -34,10 +34,8 @@ export const settingsCommand = new SlashCommandBuilder()
 /**
  * Handle /settings command
  */
-export async function handleSettingsCommand(interaction) {
-    const userName = interaction.user.displayName || interaction.user.username;
-    const guildName = interaction.guild?.name || 'Unknown Server';
-    console.log(`[${guildName}] [Settings] Opening main menu for ${userName}`);
+  const guildName = interaction.guild?.name || 'Unknown Server';
+  sysLog('Settings Dashboard opened', { user: interaction.user.id, guild: interaction.guildId });
 
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({
@@ -299,11 +297,10 @@ export async function handleSettingsComponent(interaction) {
         }
 
         // Default: Return to main menu if no module matches (or unknown interaction)
-        if (!interaction.replied && !interaction.deferred) {
             await showMainMenu(interaction);
         }
     } catch (error) {
-        console.error('[Settings] Fatal Component Error:', error);
+        sysError('Settings fatal component error', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error);
     }
 }

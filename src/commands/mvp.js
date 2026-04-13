@@ -16,7 +16,7 @@ import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, CO
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { scheduleMvpTimer, cancelMvpTimer, getScheduleIntervalMs } from '../mvp/award.js';
 import { invalidateConfigCache } from '../activity/index.js';
-import { sendLog } from '../utils/logger.js';
+import { sendLog, sysLog, sysError } from '../utils/logger.js';
 
 // Command Definition
 export const mvpCommand = new SlashCommandBuilder()
@@ -393,20 +393,7 @@ export async function handleMvpComponent(interaction) {
         break;
     }
   } catch (error) {
-    console.error('Error handling MVP component interaction:', sanitizeError(error));
-
-    // Try to respond to the interaction if we haven't already
-    try {
-      const errorMessage = 'An error occurred while processing your request. Please try again.';
-
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
-      } else {
-        await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
-      }
-    } catch (replyError) {
-      console.error('Failed to send error message:', sanitizeError(replyError));
-    }
+    sysError('MVP Component router failed', error, { guild: interaction.guildId });
   }
 }
 
@@ -502,7 +489,7 @@ async function handleRoleSelect(interaction, config) {
     await showSetupPanel(interaction, config);
 
   } catch (error) {
-    console.error('Failed to validate/save role config:', sanitizeError(error));
+    sysError('Failed to validate/save role config', error, { guild: guildId });
     await interaction.update({
       content: '❌ Failed to save configuration. Please try again.',
       embeds: [],
@@ -512,62 +499,6 @@ async function handleRoleSelect(interaction, config) {
 }
 
 // handleChannelSelect removed - announcement channel feature deprecated
-
-async function handleScheduleSelect(interaction, config) {
-  const guildId = interaction.guildId;
-  const scheduleValue = interaction.values[0];
-
-  // Security: Validate schedule input
-  if (!SCHEDULE_BY_VALUE.has(scheduleValue)) {
-    await interaction.update({
-      content: '❌ Invalid schedule selection.',
-      embeds: [],
-      components: []
-    });
-    return;
-  }
-
-  const option = SCHEDULE_BY_VALUE.get(scheduleValue);
-  const previousValue = deriveScheduleValue(config);
-  const actorTag = interaction.user?.tag ?? 'unknown user';
-
-  config.intervalNumber = option.intervalNumber;
-  config.intervalUnit = option.intervalUnit;
-  config.schedule_interval_ms = option.intervalMs;
-
-  // Delete stale fields - the Cairo scheduler will set the correct next_award_at
-  delete config.next_award_at;
-  delete config.nextCheckTime;
-
-  try {
-    // Save schedule fields
-    const changedFields = ['intervalNumber', 'intervalUnit', 'schedule_interval_ms'];
-    await saveConfig(interaction, config, changedFields);
-
-    // If in Auto mode, reschedule timer to use new Cairo-based next time
-    if (config.enabled === true) {
-      await cancelMvpTimer(guildId);
-      await scheduleMvpTimer(interaction.client, guildId, true); // Force recalculate to Cairo slots
-    }
-
-    const latestConfig = await getGuildConfig(guildId);
-
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Schedule Updated', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Action:** Set MVP award schedule to **${option.label}**.`
-    );
-
-    await showSetupPanel(interaction, latestConfig);
-  } catch (error) {
-    console.error('Failed to save schedule config:', sanitizeError(error));
-    await interaction.update({
-      content: '❌ Failed to save configuration. Please try again.',
-      embeds: [],
-      components: []
-    });
-  }
-}
 
 async function handleWinnersSelect(interaction, config) {
   const guildId = interaction.guildId;
@@ -597,7 +528,7 @@ async function handleWinnersSelect(interaction, config) {
 
     await showSetupPanel(interaction, config);
   } catch (error) {
-    console.error('Failed to save winners config:', sanitizeError(error));
+    sysError('Failed to save winners config', error, { guild: guildId });
     await interaction.update({
       content: '❌ Failed to save configuration. Please try again.',
       embeds: [],
@@ -661,7 +592,7 @@ async function handleToggle(interaction, config) {
 
     await showSetupPanel(interaction, latestConfig);
   } catch (error) {
-    console.error('Failed to toggle MVP:', sanitizeError(error));
+    sysError('Failed to toggle MVP', error, { user: interaction.user.id, guild: interaction.guildId });
     await interaction.update({
       content: '❌ Failed to toggle MVP. Please try again.',
       embeds: [],

@@ -11,7 +11,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
-import { sendLog, checkChannelPermissions } from '../../utils/logger.js';
+import { sendLog, checkChannelPermissions, sysLog, sysError } from '../../utils/logger.js';
 import { getUserLogName } from '../../shared.js';
 
 /**
@@ -169,8 +169,8 @@ export async function handleLogCategorySelect(interaction) {
         );
     }
 
-    // Console log the change
-    console.log(`[${guildName}] [Audit] ${logName} set ${category} logs to #${targetChannel?.name || channelId}`);
+    // System Audit Log
+    sysLog('Log Settings Changed', { user: interaction.user.id, guild: guildId, detail: `Category: ${category} | Channel: ${channelId}` });
 
     // Refresh UI
     return handleLogsSettings(interaction);
@@ -202,7 +202,7 @@ export async function handleLogDisable(interaction) {
         `**Action:** Disabled all Discord logging categories.`
     );
 
-    console.log(`[${guildName}] [Audit] ${logName} disabled all Discord logs.`);
+    sysLog('Logs Disabled', { user: interaction.user.id, guild: guildId });
 
     // Refresh UI
     return handleLogsSettings(interaction);

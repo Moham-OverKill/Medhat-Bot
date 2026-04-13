@@ -22,10 +22,10 @@ async function safeSend(guild, channelId, embed, configKey) {
         if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) return;
 
         await channel.send({ embeds: [embed] }).catch(err => {
-            console.error(`[${guild.name}] [Error] Failed to send to ${channel.name}:`, err.message);
+            sysError('safeSend Failure', err, { guild });
         });
     } catch (err) {
-        console.error(`[${guild.name}] [Error] safeSend critical failure:`, err.message);
+        sysError('safeSend Critical', err, { guild });
     }
 }
 
@@ -47,10 +47,11 @@ export function checkChannelPermissions(channel) {
 export async function sendLog(guild, category, colorKey, title, description) {
     if (!guild || !guild.id) return;
     
-    // Console logging with server prefix for reliability (Cleaned of emojis/markdown)
-    const cleanTitle = stripLog(title);
-    const cleanDescription = stripLog(description);
-    console.log(`[${guild.name}] [${category.toUpperCase()}] ${cleanTitle}${cleanDescription ? `: ${cleanDescription}` : ''}`);
+    // Console logging via God-Mode System (ID Only / No Prefix)
+    sysLog(`${category.toUpperCase()} Event`, { 
+        guild, 
+        detail: `${title}${description ? `: ${description}` : ''}` 
+    });
 
     try {
         const pool = getPool();
@@ -103,7 +104,7 @@ export async function sendLog(guild, category, colorKey, title, description) {
             await safeSend(guild, channelId, embed, configKey);
         }
     } catch (err) {
-        console.error(`[${guild.name}] [Error] Logging failure:`, err.message);
+        sysError('Logging failure', err, { guild });
     }
 }
 
@@ -138,17 +139,40 @@ export function formatDiff(oldData, newData, exclude = []) {
 
 // Legacy helpers (wrapped for compatibility)
 export async function logServerEvent(guild, username, event) {
-    return sendLog(guild, 'audit', 'blue', '🛡️ Audit Event', `**${username}** ${event}`);
+    return sendLog(guild, 'audit', 'blue', 'Audit Event', event);
 }
 
 export function logServerError(guild, username, error) {
-    console.error(`[${guild?.name || 'Unknown'}] ${username} — Error: ${error}`);
+    sysError('Server Error', error, { guild });
 }
 
-export function logSystemEvent(event) {
-    console.log(`[System] ${stripLog(event)}`);
+export function logSystemEvent(event, detail = null) {
+    sysLog(event, { detail });
 }
 
-export function logSystemError(error) {
-    console.error(`[System] Error: ${error}`);
+export function logSystemError(error, action = 'System Error') {
+    sysError(action, error);
+}
+
+/**
+ * Core logging utility for the "God-Mode" Audit System.
+ * Enforces NO-PREFIX and ID-ONLY standards for console logs.
+ */
+export function sysLog(action, { user, guild, detail } = {}) {
+    const userId = user?.id || user || 'System';
+    const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
+    
+    // Ensure we are NEVER logging names to the console
+    const cleanAction = stripLog(action);
+    const cleanDetail = detail ? stripLog(detail) : null;
+    
+    console.log(`${cleanAction} | User: ${userId} | Guild: ${guildId}${cleanDetail ? ` | Detail: ${cleanDetail}` : ''}`);
+}
+
+export function sysError(action, error, { user, guild } = {}) {
+    const userId = user?.id || user || 'System';
+    const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
+    const errorMessage = error?.message || error || 'Unknown Error';
+    
+    console.error(`${stripLog(action)} | User: ${userId} | Guild: ${guildId} | Error: ${stripLog(errorMessage)}`);
 }

@@ -12,7 +12,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { logServerEvent, sendLog } from '../utils/logger.js';
+import { logServerEvent, sendLog, sysLog, sysError } from '../utils/logger.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
@@ -139,7 +139,7 @@ export async function handleBankCommand(interaction) {
     }
     await refreshBankUI(interaction);
   } catch (error) {
-    console.error('Error in /bank command:', error);
+    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Bank command' });
     await interaction.editReply({ content: '❌ An error occurred.' });
   }
 }
@@ -151,7 +151,7 @@ export async function handleBankDaily(interaction) {
       await interaction.deferUpdate().catch(() => {});
     }
   } catch (err) {
-    console.log('[System] DeferUpdate failed (ignoring):', err.message);
+    sysLog('Interaction Warning', { detail: `DeferUpdate failed: ${err.message}` });
   }
 
   try {
@@ -210,7 +210,7 @@ export async function handleBankDaily(interaction) {
     });
 
   } catch (error) {
-    console.error('Error processing daily claim:', error);
+    sysError('Daily claim processing failure', error, { user: interaction.user.id, guild: interaction.guildId });
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ Failed to process daily claim.', flags: MessageFlags.Ephemeral });
     } else {
@@ -255,7 +255,7 @@ export async function handleShopButton(interaction) {
       embeds: []
     });
   } catch (error) {
-    console.error('Shop error:', error);
+    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop main menu' });
   }
 }
 
@@ -302,7 +302,7 @@ export async function handleShopCategorySelect(interaction) {
       components: [new ActionRowBuilder().addComponents(select), backRow]
     });
   } catch (error) {
-    console.error('Shop cat select error:', error);
+    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop category select' });
   }
 }
 
@@ -353,7 +353,7 @@ export async function handleShopItemSelect(interaction) {
       ]
     });
   } catch (error) {
-    console.error('Item view error:', error);
+    sysError('Item View Failed', error, { user: interaction.user.id, guild: interaction.guildId });
   }
 }
 
@@ -393,6 +393,12 @@ export async function handleShopBuyButton(interaction) {
               .setStyle(ButtonStyle.Danger)
           );
 
+          sysLog('Prereq Warning Triggered', { 
+            user: userId, 
+            guild: guildId, 
+            detail: `Action: ShopBuy | ItemID: ${itemId}` 
+          });
+
           return await interaction.reply({
             content: `\u274C You don't meet the requirements to equip this!`,
             components: [warnRow],
@@ -404,6 +410,7 @@ export async function handleShopBuyButton(interaction) {
 
     // 1. Defer Update/Reply
     if (isForce) {
+      sysLog('Bypass Button Clicked', { user: userId, guild: guildId, detail: `Action: ForceBuy | ItemID: ${itemId}` });
       await interaction.deferUpdate();
     } else {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -486,7 +493,7 @@ export async function handleShopBuyButton(interaction) {
         }).catch(() => { /* original message might be deleted */ });
       }
     } catch (refreshErr) {
-      console.error('[System] Live UI Refresh failed:', refreshErr);
+      sysError('Live UI Refresh Failed', refreshErr, { guild: guildId });
     }
 
     if (!result.success) {
@@ -526,10 +533,13 @@ export async function handleShopBuyButton(interaction) {
     } else {
       msg = `✅ Bought **${result.item.name}**! new balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    await interaction.editReply({ content: msg, components: [] });
+    await interaction.editReply({ 
+      content: msg, 
+      components: [] 
+    });
 
   } catch (error) {
-    console.error('[System] Buy handler error:', error);
+    sysError('Transaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop purchase handler' });
     await interaction.editReply({ 
       content: '\u274C An unexpected error occurred. Please try again.',
       components: []
@@ -685,7 +695,7 @@ export async function handleInventoryButton(interaction) {
     });
 
   } catch (error) {
-    console.error('Inventory Home Error:', error);
+    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Inventory dashboard' });
     if (!interaction.replied) await interaction.editReply({ content: '❌ Error loading inventory.' });
   }
 }
@@ -828,7 +838,7 @@ export async function handleInventoryCategorySelect(interaction) {
     });
 
   } catch (error) {
-    console.error('Category View Error:', error);
+    sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
     await interaction.editReply({ content: '❌ Error loading category.' });
   }
 }
@@ -1101,7 +1111,7 @@ export async function handleInventoryItemSelect(interaction) {
     });
 
   } catch (error) {
-    console.error('Item Manage Error:', error);
+    sysError('Item Manage Error', error, { user: interaction.user.id, guild: interaction.guildId });
     if (!interaction.replied) {
       await interaction.editReply({ content: '❌ Error loading item.' });
     }
@@ -1195,8 +1205,7 @@ export async function handleInventoryAction(interaction) {
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3', 
           [publicMsg.id, interaction.channelId, res.dropId]);
 
-        // Standardized console audit
-        console.log(`[${interaction.guild.name}] [Inventory] ${interaction.user.tag} dropped ${res.item.name}`);
+        sysLog('Item Dropped', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${res.item.name} | DropID: ${res.dropId}` });
 
         // Cleanup ephemeral confirmation and add Back button
         const backRow = new ActionRowBuilder().addComponents(
@@ -1233,7 +1242,7 @@ export async function handleInventoryAction(interaction) {
     }
 
   } catch (error) {
-    console.error('Inventory Action Error:', error);
+    sysError('Inventory Action Error', error, { user: interaction.user.id, guild: interaction.guildId });
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
     } else {
@@ -1247,28 +1256,22 @@ export async function handleInventoryAction(interaction) {
  */
 export async function handleItemClaim(interaction) {
   try {
+    const parts = interaction.customId.split('_');
     const isForce = interaction.customId.startsWith('force_claim_');
-    const dropId = isForce 
-      ? interaction.customId.replace('force_claim_', '')
-      : interaction.customId.replace('bank_item_claim_', '');
+    const offset = isForce ? 0 : 1;
+    const dropId = parts[3 + offset];
 
     // ===========================================
     // STEP 0: Interstitial Prerequisite Check
     // ===========================================
     if (!isForce) {
-      const pool = getPool();
-      const dropRes = await pool.query(
-        `SELECT d.shop_item_id, si.required_items 
-         FROM dropped_items d
-         JOIN shop_items si ON d.shop_item_id = si.id
-         WHERE d.id = $1`, [dropId]
-      );
+      const { checkPrerequisites } = await import('../economy/shop.js');
+      const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
       
       if (dropRes.rows.length > 0) {
-        const item = dropRes.rows[0];
-        if (item.required_items) {
-          const { checkPrerequisites } = await import('../economy/shop.js');
-          const prereqs = await checkPrerequisites(interaction.member, interaction.guildId, item.required_items);
+        const itemRes = await query('SELECT required_items FROM shop_items WHERE id = $1', [dropRes.rows[0].shop_item_id]);
+        if (itemRes.rows.length > 0 && itemRes.rows[0].required_items) {
+          const prereqs = await checkPrerequisites(interaction.member, interaction.guildId, itemRes.rows[0].required_items);
           if (!prereqs.met) {
             const warnRow = new ActionRowBuilder().addComponents(
               new ButtonBuilder()
@@ -1277,6 +1280,12 @@ export async function handleItemClaim(interaction) {
                 .setEmoji('\u26A0\uFE0F')
                 .setStyle(ButtonStyle.Danger)
             );
+
+            sysLog('Prereq Warning Triggered', { 
+              user: interaction.user.id, 
+              guild: interaction.guildId, 
+              detail: `Action: ItemClaim | DropID: ${dropId}` 
+            });
 
             return await interaction.reply({
               content: `\u274C You don't meet the requirements to equip this!`,
@@ -1289,6 +1298,7 @@ export async function handleItemClaim(interaction) {
     }
 
     if (isForce) {
+      sysLog('Bypass Button Clicked', { user: interaction.user.id, guild: interaction.guildId, detail: `Action: ForceClaim | DropID: ${dropId}` });
       await interaction.deferUpdate();
     }
 
@@ -1350,7 +1360,7 @@ export async function handleItemClaim(interaction) {
         );
 
         await publicMsg.edit({ embeds: [claimedEmbed], components: [lockedRow] }).catch(err => {
-          console.error('[System] Failed to edit public drop message:', err.message);
+          sysError('Failed to edit public drop message', err, { guild: interaction.guildId, detail: `DropID: ${dropId}` });
         });
       }
 
@@ -1368,10 +1378,10 @@ export async function handleItemClaim(interaction) {
 
     if (isValidationError) {
       // Log as moderate warning/info to avoid "Red" logs on Railway for normal user behavior
-      console.log(`[${interaction.guild.name}] [Claim Denied] User ${interaction.user.tag}: ${errorMsgStr}`);
+      sysLog('Claim Denied', { user: interaction.user.id, guild: interaction.guildId, detail: errorMsgStr });
     } else {
       // TRUE System Error: Log as error for investigation
-      console.error('[System] Critical Claim Error:', error);
+      sysError('Critical Claim Error', error, { user: interaction.user.id, guild: interaction.guildId });
     }
     
     if (!interaction.replied && !interaction.deferred) {
@@ -1444,7 +1454,7 @@ export async function handleBankHistory(interaction) {
     const embed = new EmbedBuilder().setColor(0x808080).setTitle('📜 Recent History').setDescription(lines.join('\n')).setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
     await interaction.editReply({ content: null, embeds: [embed], components: [navRow, backRow] });
   } catch (error) {
-    console.error('History error:', error);
+    sysError('History interaction failure', error, { user: interaction.user.id, guild: interaction.guildId });
   }
 }
 
@@ -1457,7 +1467,7 @@ export async function handleBackButton(interaction) {
     }
     await refreshBankUI(interaction);
   } catch (error) {
-    console.error('Back button error:', error);
+    sysError('Back button interaction failure', error, { user: interaction.user.id, guild: interaction.guildId });
   }
 }
 
@@ -1514,16 +1524,16 @@ export async function cleanupExpiredDrops(client) {
 
         // 3. Mark as expired in DB
         await pool.query("UPDATE dropped_items SET status = 'expired' WHERE id = $1", [drop.id]);
-        console.log(`[System] [Cleanup] Drop ${drop.id} (${drop.name}) expired.`);
+        sysLog('Drop Expired', { guild: drop.guild_id, detail: `DropID: ${drop.id} | Item: ${drop.name}` });
 
       } catch (err) {
-        console.error(`[System] [Cleanup] Failed to expire drop ${drop.id}:`, err);
+        sysError('Drop expiration processing failure', err, { guild: drop.guild_id, detail: `DropID: ${drop.id}` });
         // Mark as error so it doesn't loop forever if message is deleted/unreachable
         await pool.query("UPDATE dropped_items SET status = 'expired_error' WHERE id = $1", [drop.id]);
       }
     }
   } catch (error) {
-    console.error('[System] cleanupExpiredDrops error:', error);
+    sysError('Background drop cleanup failure', error);
   }
 }
 

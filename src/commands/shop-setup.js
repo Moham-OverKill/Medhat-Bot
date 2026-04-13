@@ -14,7 +14,7 @@ import {
   ChannelType,
   MessageFlags
 } from 'discord.js';
-import { sendLog, formatDiff, sendBulkLog } from '../utils/logger.js';
+import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
@@ -526,7 +526,7 @@ export async function handleItemModalSubmit(interaction) {
           }
           requiredItems = reqValidation.resolved;
         } catch (e) {
-          console.error('[System] Error resolving prerequisites during add:', e);
+          sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during add' });
         }
 
         const item = await addShopItem(interaction.guildId, null, roleId, name, '', price, durationSeconds, null, 'role', [], requiredItems);
@@ -609,7 +609,7 @@ export async function handleItemModalSubmit(interaction) {
             updates.required_items = reqValidation.resolved;
           }
         } catch (e) {
-          console.error('[System] Error resolving prerequisites during edit:', e);
+          sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during edit' });
         }
       } else if (type === 'pack') {
         updates.item_type = 'pack';
@@ -653,7 +653,7 @@ export async function handleItemModalSubmit(interaction) {
       else await handleEditItemSelect(mock, successMsg);
     }
   } catch (error) {
-    console.error('[System] Modal Submit Error:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Modal submit' });
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Error saving changes.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1297,7 +1297,7 @@ export async function handleShopPostPublish(interaction) {
     // Re-render panel (stay open for more posts)
     await handleShopPostStart(interaction);
   } catch (error) {
-    console.error('Failed to post shop item:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Failed to post shop item' });
     await interaction.followUp({ content: '❌ Failed to post. Check bot permissions in that channel.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1556,7 +1556,7 @@ export async function handleDeletePackSelect(interaction) {
     try {
         sendLog(interaction.guild, 'shop', 'red', '📦 Pack Deleted', `Admin **<@${interaction.user.id}>** deleted pack **${packName}**.`);
     } catch (logErr) {
-        console.error('[System] ❌ Pack deletion log failed:', logErr.message);
+        sysError('Shop Admin Warning', logErr, { guild: interaction.guildId, detail: 'Pack deletion log failure' });
     }
 
     // Fetch remaining packs
@@ -1591,7 +1591,7 @@ export async function handleDeletePackSelect(interaction) {
       });
     }
   } catch (error) {
-    console.error('[System] ❌ Error in handleDeletePackSelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Deleting pack select' });
     const msg = '❌ Failed to delete pack.';
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     else await interaction.editReply({ content: msg, components: [], embeds: [] });
@@ -1677,7 +1677,7 @@ export async function handleCategoryModalSubmit(interaction) {
       await interaction.followUp({ content: `✅ Category **${name}** created!`, flags: MessageFlags.Ephemeral });
     }
   } catch (error) {
-    console.error('[System] ❌ Category Modal Error:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Category modal submit' });
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Error saving category.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1765,7 +1765,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
 
     await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditCategorySelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Editing category select' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1808,7 +1808,7 @@ export async function handleEditCategoryRenameStart(interaction) {
 
     await interaction.showModal(modal);
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditCategoryRenameStart:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting category rename' });
     // Cannot reply if we failed before showing modal usually, but try
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ Failed to open rename modal.', flags: MessageFlags.Ephemeral });
@@ -1853,7 +1853,7 @@ export async function handleEditCategoryAddItemsStart(interaction) {
 
     await interaction.editReply({ content: '**Choose an item to add to this category:**', components: [row, rowBack], embeds: [] });
   } catch (error) {
-    console.error(`[System] ❌ Error in handleEditCategoryAddItemsStart:`, error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting category add items' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load add items menu.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1937,7 +1937,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
     }
 
   } catch (error) {
-    console.error(`[System] ❌ Error in handleEditCategoryAddItemsSelect:`, error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Adding item to category' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to add item to category.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -1971,7 +1971,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction) {
 
     await interaction.editReply({ content: '**Choose an item to remove:**', components: [row, rowBack], embeds: [] });
   } catch (error) {
-    console.error(`[System] ❌ Error in handleEditCategoryRemoveItemsStart:`, error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting category remove items' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load remove items menu.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2032,7 +2032,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
     }
 
   } catch (error) {
-    console.error(`[System] ❌ Error in handleEditCategoryRemoveItemsSelect:`, error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Removing item from category' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to remove item from category.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2131,7 +2131,7 @@ export async function handleDeleteCategoryConfirm(interaction) {
           `Admin **${getUserLogName(interaction.member)}** deleted category **'${categoryName}'**.\n• **Status:** Removed successfully.\n• **Items Affected:** **${detachResult.count}** items were made standalone.`
         );
     } catch (logErr) {
-        console.error('[System] ❌ Category deletion log failed:', logErr.message);
+        sysError('Shop Admin Warning', logErr, { guild: interaction.guildId, detail: 'Category deletion log failure' });
     }
 
     // Step 3: Fetch remaining categories
@@ -2165,7 +2165,7 @@ export async function handleDeleteCategoryConfirm(interaction) {
       });
     }
   } catch (error) {
-    console.error('[System] ❌ Error in handleDeleteCategoryConfirm:', error);
+    sysError('Delete category confirm failed', error, { user: interaction.user.id, guild: interaction.guildId });
     const msg = '❌ Failed to delete category.';
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     else await interaction.editReply({ content: msg, components: [], embeds: [] });
@@ -2235,7 +2235,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     // Ensure we are not editing a pack in the item editor
     if (item.is_pack || item.item_type === 'pack') {
-      console.warn(`[System] ⚠️ Attempted to edit Pack ${item.id} in Item Editor`);
+      sysLog('Shop Admin Warning', { guild: interaction.guildId, detail: `Attempted to edit Pack ${item.id} in Item Editor` });
       // Redirect or error
       // Since we have handleEditPackSelect, we could redirect, but safer to error
       return interaction.followUp({ content: '❌ This is a pack. Please use "Edit Pack" instead.', flags: MessageFlags.Ephemeral });
@@ -2320,7 +2320,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       components: [rowCat, actionRow, backRow]
     });
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditItemSelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Editing item select' });
     if (!interaction.replied) {
       await interaction.followUp({ content: '❌ An error occurred while loading item details.', flags: MessageFlags.Ephemeral });
     }
@@ -2386,7 +2386,7 @@ export async function handleEditItemDetails(interaction) {
 
     await interaction.showModal(modal);
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditItemDetails:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Editing item details' });
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ Failed to open edit details.', flags: MessageFlags.Ephemeral });
     }
@@ -2428,7 +2428,7 @@ export async function handleEditPackDetails(interaction) {
 
     await interaction.showModal(modal);
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditPackDetails:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Editing pack details' });
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ Failed to open pack edit modal.', flags: MessageFlags.Ephemeral });
     }
@@ -2461,7 +2461,7 @@ export async function handleEditPackStart(interaction) {
 
     await interaction.editReply({ content: '**Choose a pack to manage:**', components: [row, rowBack], embeds: [] });
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditPackStart:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting pack edit' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2537,11 +2537,20 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('shop_edit_pack_start') // Back to pack list
+        .setCustomId('shop_edit_pack_start')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
+
+    if (!success) {
+      return interaction.followUp({ content: '❌ Failed to update item.', flags: MessageFlags.Ephemeral });
+    }
+  } catch (error) {
+    sysError('Shop item update failed', error, { user: interaction.user.id, guild: interaction.guildId });
+    await interaction.followUp({ content: '❌ Failed to process update request.', flags: MessageFlags.Ephemeral });
+  }
+}
 
     await interaction.editReply({ 
       content: successHeader || '**Manage items and settings for this pack:**', 
@@ -2549,7 +2558,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
       components: [actionRow, backRow] 
     });
   } catch (error) {
-    console.error('[System] ❌ Error in handleEditPackSelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Editing pack select' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load pack details.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2597,7 +2606,7 @@ export async function handlePackAddContentStart(interaction) {
         embeds: []
     });
   } catch (error) {
-    console.error('[System] ❌ Error in handlePackAddContentStart:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting pack add content' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load add content menu.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2690,7 +2699,7 @@ export async function handlePackAddContentSelect(interaction) {
     }
 
   } catch (error) {
-    console.error('[System] ❌ Error in handlePackAddContentSelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Adding item to pack' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to add item to pack.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2750,7 +2759,7 @@ export async function handlePackRemoveContentStart(interaction) {
         embeds: []
     });
   } catch (error) {
-    console.error('[System] ❌ Error in handlePackRemoveContentStart:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Starting pack remove content' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to load remove content menu.', flags: MessageFlags.Ephemeral });
   }
 }
@@ -2844,7 +2853,7 @@ export async function handlePackRemoveContentSelect(interaction) {
       });
     }
   } catch (error) {
-    console.error('[System] ❌ Error in handlePackRemoveContentSelect:', error);
+    sysError('Shop Admin Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Removing item from pack' });
     if (!interaction.replied) await interaction.followUp({ content: '❌ Failed to remove item from pack.', flags: MessageFlags.Ephemeral });
   }
 }

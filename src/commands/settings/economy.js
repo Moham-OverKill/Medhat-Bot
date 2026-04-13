@@ -2,6 +2,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlag
 import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig } from '../../storage/config.js';
 import { COIN_EMOJI } from '../../shared.js';
+import { sysLog } from '../../utils/logger.js';
 
 export async function handleEconomySettings(interaction) {
     // Prevent "interaction failed" on slow SQL queries by deferring the button update immediately
@@ -25,7 +26,7 @@ async function showEconomyDashboard(interaction, view) {
     const userName = interaction.user.displayName || interaction.user.username;
     const userTag = interaction.user.username;
     
-    console.log(`[${guildName}] [Economy] Opening dashboard for ${userName} (${userTag}) (View: ${view})`);
+    sysLog('Economy Dashboard Opened', { user: interaction.user.id, guild: guildId, detail: `View: ${view}` });
     
     const pool = getPool();
 

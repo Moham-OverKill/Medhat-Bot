@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeError } from '../shared.js';
+import { sysError } from '../utils/logger.js';
 import { bankCommand } from './bank.js';
 import { inventoryCommand } from './inventory.js';
 import { itemMassCommand } from './item-mass.js';
@@ -67,7 +68,7 @@ export async function registerSlashCommands(client) {
     await writeHash(currentHash);
     return { registered: true, count: commands.length };
   } catch (error) {
-    console.error('Error registering slash commands:', sanitizeError(error));
+    sysError('Slash command registration failed', error, { detail: client.application?.id });
     throw error;
   }
 }
