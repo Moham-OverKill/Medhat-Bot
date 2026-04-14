@@ -276,7 +276,7 @@ export async function handleVoiceStateChange(guild, oldState, newState) {
   if (!wasValid && isNowValid) {
     await startVoiceTracking(guild, userId, username);
   } else if (wasValid && !isNowValid) {
-    await pauseVoiceTracking(guild, userId, username);
+    await pauseVoiceTracking(guild, userId, username, oldState);
   }
 
   const affectedChannels = new Set();
@@ -315,7 +315,7 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId) {
     if (shouldBeTracking && !isCurrentlyTracking) {
       await startVoiceTracking(guild, memberId, username);
     } else if (!shouldBeTracking && isCurrentlyTracking) {
-      await pauseVoiceTracking(guild, memberId, username);
+      await pauseVoiceTracking(guild, memberId, username, voiceState);
     }
   }
 }
@@ -353,7 +353,7 @@ async function startVoiceTracking(guild, userId, username) {
   }
 }
 
-async function pauseVoiceTracking(guild, userId, username) {
+async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
   if (!guild || !userId) return;
   const guildId = guild.id;
   const now = Date.now();
@@ -391,6 +391,19 @@ async function pauseVoiceTracking(guild, userId, username) {
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId, remainingBuffer, pointsToAward, new Date(now)]
     );
+
+    // NEW: Sync with Quest Engine
+    if (pointsToAward > 0) {
+      try {
+        const { checkVoiceQuest } = await import('./index.js');
+        const voiceChannelId = voiceState?.channel?.id || voiceState?.channelId;
+        if (voiceChannelId) {
+          await checkVoiceQuest(guildId, userId, voiceChannelId, pointsToAward, voiceState);
+        }
+      } catch {
+        // Silent fail
+      }
+    }
   } catch (error) {
     sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Pause voice tracking' });
   }
@@ -432,23 +445,23 @@ export async function voicePointsTick(client) {
 
       const voiceState = member.voice;
       if (!voiceState || !voiceState.channel) {
-        await pauseVoiceTracking(guild, row.user_id, row.username);
+        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
         continue;
       }
 
       if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
-        await pauseVoiceTracking(guild, row.user_id, row.username);
+        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
         continue;
       }
 
       if (guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
-        await pauseVoiceTracking(guild, row.user_id, row.username);
+        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
         continue;
       }
 
       const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
       if (humanCount < 2) {
-        await pauseVoiceTracking(guild, row.user_id, row.username);
+        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
         continue;
       }
 
