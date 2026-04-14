@@ -306,6 +306,27 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.editReply(payload);
     }
+    else if (customId === 'rewards_mvp_modal') {
+      const inputVal = interaction.fields.getTextInputValue('amount');
+      const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 100;
+
+      if (inputVal && isNaN(amount)) {
+        return interaction.followUp({ content: '❌ Invalid reward amount.', flags: MessageFlags.Ephemeral });
+      }
+
+      config.mvpRewardAmount = amount;
+      await setGuildConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ MVP Reward Updated',
+        `**Admin:** \`${logName}\`\n` +
+        `**Action:** Set daily MVP reward to **${amount.toLocaleString()}** ${COIN_EMOJI}.`
+      );
+
+      // Return to MVP panel instead of Rewards panel
+      const { showSetupPanel } = await import('./mvp.js');
+      await showSetupPanel(interaction, config);
+    }
     else if (customId.startsWith('rewards_give_modal_')) {
       const targetUserId = customId.split('_').pop();
       const amountStr = interaction.fields.getTextInputValue('amount');
