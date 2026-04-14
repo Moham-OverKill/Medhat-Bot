@@ -714,18 +714,20 @@ export async function handleShopPostStart(interaction) {
   }
 
   // Get current pending state or initialize
-  let state = pendingPosts.get(userId) || { 
-    itemId: null, 
-    channelId: null, 
-    sellerId: null, 
-    imageUrl: null, 
-    description: null, 
-    payout: null, 
-    stock: null, 
-    overridePrice: null,
-    postStep: 0, // 0: Root, 1: Categories, 2: Items
-    postFilter: null // 'standalone', 'packs', or 'cat_ID'
-  };
+  let state = pendingPosts.get(userId) || {};
+  
+  // Enforce defaults for missing keys (critical for Post-Publish re-render)
+  state.itemId = state.itemId || null;
+  state.channelId = state.channelId || null;
+  state.sellerId = state.sellerId || null;
+  state.imageUrl = state.imageUrl || null;
+  state.description = state.description || null;
+  state.payout = state.payout || null;
+  state.stock = state.stock || null;
+  state.overridePrice = state.overridePrice || null;
+  state.postStep = (state.postStep === undefined || state.postStep === null) ? 0 : state.postStep;
+  state.postFilter = state.postFilter || null;
+
   pendingPosts.set(userId, state);
 
   // Build embed with current selections
@@ -828,6 +830,15 @@ export async function handleShopPostStart(interaction) {
 
     itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset', description: 'Return to folder selection' });
     placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
+  }
+
+  // CRITICAL: Prevent Discord BASE_TYPE_BAD_LENGTH error (0 options)
+  if (itemOptions.length === 0) {
+    itemOptions.push({
+      label: '📂 Folder is empty',
+      value: 'folder_reset',
+      description: 'Check back later or choose another folder'
+    });
   }
 
   const itemSelect = new StringSelectMenuBuilder()
@@ -1284,15 +1295,16 @@ export async function handleShopPostPublish(interaction) {
     // Construct the Embed
     const embed = new EmbedBuilder()
       .setTitle(item.name)
-      .setColor('#3498DB'); // Always Blue
+      .setColor('#3498DB'); 
 
     // JIT Sync: Always update global stock in DB before publishing to ensure state consistency
-    // (This resets 'Sold Out' status if the user wants Unlimited/Null stock)
     await updateShopItem(itemId, { stock }); 
     item.stock = stock;
 
-    if (imageUrl) {
-      embed.setImage(imageUrl);
+    // Image Fallback: Private custom image > Default shop image
+    const finalImage = imageUrl || item.image_url;
+    if (finalImage) {
+      embed.setImage(finalImage);
     }
 
     // Use custom description if set, otherwise item's default description
@@ -1380,7 +1392,9 @@ export async function handleShopPostPublish(interaction) {
       description: null,
       payout: null,
       stock: null,
-      overridePrice: null
+      overridePrice: null,
+      postStep: 0,
+      postFilter: null
     });
 
     // Feedback - Only if posting to a DIFFERENT channel
