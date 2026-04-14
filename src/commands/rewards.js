@@ -124,10 +124,10 @@ export async function handleRewardsComponent(interaction) {
       const modal = new ModalBuilder().setCustomId('rewards_booster_modal').setTitle('Booster Multiplier');
       const input = new TextInputBuilder()
         .setCustomId('multiplier')
-        .setLabel('Multiplier (e.g. 2.5)')
+        .setLabel('Multiplier')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('2')
-        .setValue(String(config.booster_multiplier || 2.0))
+        .setValue(String(Math.floor(config.booster_multiplier || 2)))
         .setRequired(false);
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       await interaction.showModal(modal);
@@ -228,7 +228,7 @@ export async function handleRewardsModal(interaction) {
 
     if (customId === 'rewards_booster_modal') {
       const inputVal = interaction.fields.getTextInputValue('multiplier');
-      const mult = inputVal ? Math.max(0, parseFloat(inputVal)) : 2.0;
+      const mult = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 2;
 
       if (inputVal && isNaN(mult)) {
         return interaction.followUp({ content: '❌ Invalid multiplier.', flags: MessageFlags.Ephemeral });
