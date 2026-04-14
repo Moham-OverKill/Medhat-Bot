@@ -1323,14 +1323,76 @@ export async function handleItemClaim(interaction) {
 
     // NEW: Disable the public claim button immediately to prevent multiple people hitting it simultaneously
     // while the database is still processing the first one.
+    // We change the label to 'Processing...' to provide context.
     if (interaction.message && interaction.message.editable) {
-        const disabledRow = ActionRowBuilder.from(interaction.message.components[0]);
-        disabledRow.components.forEach(c => c.setDisabled(true));
-        await interaction.message.edit({ components: [disabledRow] }).catch(() => { });
+        const processingRow = ActionRowBuilder.from(interaction.message.components[0]);
+        processingRow.components.forEach(c => {
+            c.setDisabled(true);
+            if (c.data.label === 'Claim Item') c.setLabel('Processing...');
+        });
+        await interaction.message.edit({ components: [processingRow] }).catch(() => { });
     }
 
-    // Attempt Claim (Atomic Transaction in shop.js)
-    const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
+    let claimResult = null;
+    try {
+      // Attempt Claim (Atomic Transaction in shop.js)
+      claimResult = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
+    } catch (err) {
+      // If the claim fails (e.g. already claimed, no space, etc.), we need to decide whether to re-enable
+      // OR force-refresh the UI if it was actually already claimed by someone else.
+      if (interaction.message && interaction.message.editable) {
+          const errorMsg = err.message || '';
+          
+          if (errorMsg.includes('already been claimed')) {
+              // FORCED REFRESH: If it was already claimed, try to find the actual state and update the UI
+              // This fixes the "No Context" issue where someone else won while you were clicking.
+              try {
+                  const { getPool } = await import('../storage/postgres.js');
+                  const pool = getPool();
+                  const fresh = await pool.query('SELECT * FROM dropped_items WHERE id = $1', [dropId]);
+                  if (fresh.rows.length > 0 && fresh.rows[0].claimed_at) {
+                      const claimerId = fresh.rows[0].claimer_id;
+                      const isSelf = claimerId === interaction.user.id;
+                      
+                      const resolutionLine = isSelf 
+                          ? `\u2705 ${interaction.user} re-claimed their own drop!`
+                          : `\u2705 <@${claimerId}> claimed the item!`;
+                          
+                      const originalDesc = interaction.message.embeds[0].description || '';
+                      const firstLine = originalDesc.split('\n')[0];
+                      
+                      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                          .setColor(isSelf ? '#3498DB' : '#2ECC71')
+                          .setDescription(`${firstLine}\n\n${resolutionLine}`);
+
+                      const lockedRow = new ActionRowBuilder().addComponents(
+                          new ButtonBuilder()
+                              .setCustomId(`bank_item_claimed_locked_${dropId}`)
+                              .setLabel('Claimed')
+                              .setEmoji('🎁')
+                              .setStyle(ButtonStyle.Secondary)
+                              .setDisabled(true)
+                      );
+                      
+                      await interaction.message.edit({ embeds: [updatedEmbed], components: [lockedRow] }).catch(() => {});
+                  }
+              } catch (refreshErr) {
+                  // Fallback: Just re-enable if we can't find who won
+              }
+          } else {
+              // RE-ENABLE: If it was a level catch or role error, turn the button back on for others!
+              const recoveryRow = ActionRowBuilder.from(interaction.message.components[0]);
+              recoveryRow.components.forEach(c => {
+                  c.setDisabled(false);
+                  if (c.data.label === 'Processing...') c.setLabel('Claim Item');
+              });
+              await interaction.message.edit({ components: [recoveryRow] }).catch(() => { });
+          }
+      }
+      throw err; // Re-throw to handle the ephemeral error message to the user
+    }
+
+    const res = claimResult;
 
     if (res.success) {
       const isSelfClaim = res.item.dropper_id === interaction.user.id;
