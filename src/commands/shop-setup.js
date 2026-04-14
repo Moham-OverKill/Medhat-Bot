@@ -1547,8 +1547,9 @@ export async function handleDeleteItemStart(interaction) {
       .setCustomId('shop_select_item_delete')
       .setPlaceholder('Select Item to Delete')
       .addOptions(items.slice(0, 25).map(i => ({ 
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString() 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+        value: i.id.toString(),
+        description: `${i.price.toLocaleString()} coins`
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -1607,9 +1608,9 @@ export async function handleDeleteItemSelect(interaction) {
         const roleId = i.role_id ? i.role_id.split(/[,\s]+/)[0] : null;
         const isGhost = roleId && !interaction.guild.roles.cache.has(roleId);
         return { 
-          label: isGhost ? `[GHOST] ${i.name}` : i.name, 
+          label: isGhost ? `👻 [GHOST] ${i.name}` : `🏷️ ${i.name}`, 
           value: i.id.toString(),
-          description: isGhost ? 'Role was deleted from server' : undefined
+          description: isGhost ? 'Role was deleted from server' : `${i.price.toLocaleString()} coins`
         };
       }));
 
@@ -2302,7 +2303,7 @@ export async function handleEditItemStart(interaction) {
       .setCustomId('shop_item_edit_select')
       .setPlaceholder('Select Item to Manage')
       .addOptions(filteredItems.slice(0, 25).map(i => ({ 
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
         value: i.id.toString(),
         description: `${i.price.toLocaleString()} coins`
       })));
