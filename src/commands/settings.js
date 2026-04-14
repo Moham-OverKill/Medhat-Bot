@@ -166,6 +166,13 @@ export async function showRewardsSubMenu(interaction) {
  */
 export async function handleSettingsComponent(interaction) {
     try {
+        // Runtime guard: verify Administrator permission in THIS guild
+        if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+            const deny = { content: '⛔ Administrator permission required.', flags: MessageFlags.Ephemeral };
+            if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
+            return interaction.reply(deny);
+        }
+
         const customId = interaction.customId;
 
         // Handle back button from any module

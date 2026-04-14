@@ -590,6 +590,13 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
+        // Runtime guard: verify Administrator permission in THIS guild
+        if (!interaction.member?.permissions.has('Administrator')) {
+            const deny = { content: '⛔ Administrator permission required.', flags: 64 };
+            if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
+            return interaction.reply(deny);
+        }
+
         const customId = interaction.customId;
 
         if (customId === 'admin_user_select') {
