@@ -717,16 +717,16 @@ export async function handleShopPostStart(interaction) {
   let state = pendingPosts.get(userId) || {};
   
   // Enforce defaults for missing keys (critical for Post-Publish re-render)
-  state.itemId = state.itemId || null;
-  state.channelId = state.channelId || null;
-  state.sellerId = state.sellerId || null;
-  state.imageUrl = state.imageUrl || null;
-  state.description = state.description || null;
-  state.payout = state.payout || null;
-  state.stock = state.stock || null;
-  state.overridePrice = state.overridePrice || null;
+  state.itemId = state.itemId ?? null;
+  state.channelId = state.channelId ?? null;
+  state.sellerId = state.sellerId ?? null;
+  state.imageUrl = state.imageUrl ?? null;
+  state.description = state.description ?? null;
+  state.payout = state.payout ?? null;
+  state.stock = state.stock ?? null;
+  state.overridePrice = state.overridePrice ?? null;
   state.postStep = (state.postStep === undefined || state.postStep === null) ? 0 : state.postStep;
-  state.postFilter = state.postFilter || null;
+  state.postFilter = state.postFilter ?? null;
 
   pendingPosts.set(userId, state);
 
