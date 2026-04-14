@@ -217,7 +217,7 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive
     }
 
     if (nextRefreshTimestamp) {
-        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+        description += `\n⏱️ Next Refresh **<t:${nextRefreshTimestamp}:R>**`;
     }
 
     embed.setDescription(description);
@@ -240,7 +240,7 @@ export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
     }
 
     if (nextRefreshTimestamp) {
-        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+        description += `\n⏱️ Next Refresh **<t:${nextRefreshTimestamp}:R>**`;
     }
 
     embed.setDescription(description);
@@ -263,7 +263,7 @@ export function buildStreakEmbed(streakData, nextRefreshTimestamp = null) {
     }
 
     if (nextRefreshTimestamp) {
-        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+        description += `\n⏱️ Next Refresh **<t:${nextRefreshTimestamp}:R>**`;
     }
 
     embed.setDescription(description);
@@ -462,7 +462,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 const { getTopActiveUsers } = await import('../activity/tracker.js');
                 const rawData = await getTopActiveUsers(guildId, 50);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                embed = buildDailyActivityEmbed(enrichedData, [], true, nextRefreshTimestamp); 
+                embed = buildDailyActivityEmbed(enrichedData, mvpRecipients, true, nextRefreshTimestamp); 
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
