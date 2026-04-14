@@ -1187,6 +1187,16 @@ export async function handleInventoryAction(interaction) {
     if (action === 'dropconfirm') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
+      // NEW: Disable buttons immediately to prevent double-click race conditions
+      if (interaction.message && interaction.message.editable) {
+        const disabledRows = interaction.message.components.map(row => {
+          const newRow = ActionRowBuilder.from(row);
+          newRow.components.forEach(c => c.setDisabled(true));
+          return newRow;
+        });
+        await interaction.editReply({ components: disabledRows }).catch(() => { });
+      }
+
       // Execute the drop logic (Atomically deletes from DB and removes role)
       const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member);
 
@@ -1310,6 +1320,15 @@ export async function handleItemClaim(interaction) {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
+
+    // NEW: Disable the public claim button immediately to prevent multiple people hitting it simultaneously
+    // while the database is still processing the first one.
+    if (interaction.message && interaction.message.editable) {
+        const disabledRow = ActionRowBuilder.from(interaction.message.components[0]);
+        disabledRow.components.forEach(c => c.setDisabled(true));
+        await interaction.message.edit({ components: [disabledRow] }).catch(() => { });
+    }
+
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
