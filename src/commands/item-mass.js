@@ -71,6 +71,11 @@ export const itemMassCommand = new SlashCommandBuilder()
 
 export async function handleItemMassCommand(interaction) {
   try {
+    // Runtime guard: verify Administrator permission in THIS guild
+    if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '⛔ You need Administrator permission to use this command.', flags: MessageFlags.Ephemeral });
+    }
+
     // Verify subcommand (in case we add more)
     const sub = interaction.options.getSubcommand();
     
