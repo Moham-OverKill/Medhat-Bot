@@ -257,3 +257,11 @@ export function getTimeUntilNextCairoHour() {
 
     return targetTime.getTime() - now.getTime();
 }
+
+/**
+ * Get the UNIX timestamp (in seconds) for the next Cairo hour.
+ */
+export function getNextCairoHourTimestamp() {
+    const delay = getTimeUntilNextCairoHour();
+    return Math.floor((Date.now() + delay) / 1000);
+}

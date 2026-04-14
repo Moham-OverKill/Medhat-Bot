@@ -204,51 +204,69 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
 /**
  * Build the Daily Activity leaderboard embed (shows either LIVE progress or YESTERDAY's final results)
  */
-export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive = false) {
+export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive = false, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
         .setTitle('🏆 MVP Champions')
         .setColor(0xFFD700); // Always Gold for the Champions brand
 
+    let description;
     if (!activityData || activityData.length === 0) {
-        embed.setDescription('*📉 No daily activity yet...*\n*Start chatting to climb the live ranks!*');
+        description = '*📉 No daily activity yet...*\n*Start chatting to climb the live ranks!*';
     } else {
-        const table = buildLeaderboardTable(activityData, 'score', ' Points', mvpRecipients, true);
-        embed.setDescription(table + `\n*⏱️ Live snapshot. Winners are locked at midnight Cairo!*`);
+        description = buildLeaderboardTable(activityData, 'score', ' Points', mvpRecipients, true);
     }
+
+    if (nextRefreshTimestamp) {
+        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+    }
+
+    embed.setDescription(description);
     return embed;
 }
 
 /**
  * Build the Total Coins leaderboard embed
  */
-export function buildCoinsEmbed(coinsData) {
+export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
         .setTitle('💰 Richest Members')
         .setColor(0x2ECC71); // Emerald Green
 
+    let description;
     if (!coinsData || coinsData.length === 0) {
-        embed.setDescription('*💸 The vault is empty...*\n*Be the first to earn coins and claim the top spot!*');
+        description = '*💸 The vault is empty...*\n*Be the first to earn coins and claim the top spot!*';
     } else {
-        const table = buildLeaderboardTable(coinsData, 'balance', '', [], true);
-        embed.setDescription(table);
+        description = buildLeaderboardTable(coinsData, 'balance', '', [], true);
     }
+
+    if (nextRefreshTimestamp) {
+        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+    }
+
+    embed.setDescription(description);
     return embed;
 }
 
 /**
  * Build the Highest Streak leaderboard embed
  */
-export function buildStreakEmbed(streakData) {
+export function buildStreakEmbed(streakData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
         .setTitle('🔥 Longest Streaks')
         .setColor(0xFF4500); // Fire Orange
 
+    let description;
     if (!streakData || streakData.length === 0) {
-        embed.setDescription('*🕯️ No flames burning yet...*\n*Use `/daily` every day to ignite your streak!*');
+        description = '*🕯️ No flames burning yet...*\n*Use `/daily` every day to ignite your streak!*';
     } else {
-        const table = buildLeaderboardTable(streakData, 'daily_streak', ' Days', [], false);
-        embed.setDescription(table);
+        description = buildLeaderboardTable(streakData, 'daily_streak', ' Days', [], false);
     }
+
+    if (nextRefreshTimestamp) {
+        description += `\n*⏱️ Next Refresh <t:${nextRefreshTimestamp}:R>*`;
+    }
+
+    embed.setDescription(description);
     return embed;
 }
 
@@ -434,6 +452,9 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         const channel = channelMap.get(t.type) || await guild.channels.fetch(config[t.configChannel]).catch(() => null);
         if (!channel) continue;
 
+        const { getNextCairoHourTimestamp } = await import('../utils/time.js');
+        const nextRefreshTimestamp = getNextCairoHourTimestamp();
+
         let embed;
         try {
             if (t.type === 'daily_coins') {
@@ -441,15 +462,15 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 const { getTopActiveUsers } = await import('../activity/tracker.js');
                 const rawData = await getTopActiveUsers(guildId, 50);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                embed = buildDailyActivityEmbed(enrichedData, [], true); 
+                embed = buildDailyActivityEmbed(enrichedData, [], true, nextRefreshTimestamp); 
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildCoinsEmbed(enrichedData);
+                embed = buildCoinsEmbed(enrichedData, nextRefreshTimestamp);
             } else if (t.type === 'streak') {
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildStreakEmbed(enrichedData);
+                embed = buildStreakEmbed(enrichedData, nextRefreshTimestamp);
             }
 
             if (messagesIntact && msgMap.get(t.type)) {
