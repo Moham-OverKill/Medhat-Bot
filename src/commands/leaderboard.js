@@ -184,7 +184,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
             userStr += ' 🌟';
         }
 
-        // Final line assembly
+        // Final line assembly: Tight formatting to maximize name space
         const baseLine = `${rankStr} | ${valueStr} | `;
         const maxNameLen = MOBILE_MAX_LINE_LENGTH - baseLine.length;
         const finalName = truncateName(userStr, maxNameLen);
@@ -213,7 +213,7 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive
     if (!activityData || activityData.length === 0) {
         description = '*📉 No daily activity yet...*\n*Start chatting to climb the live ranks!*';
     } else {
-        description = buildLeaderboardTable(activityData, 'score', ' Points', mvpRecipients, true);
+        description = buildLeaderboardTable(activityData, 'score', '', mvpRecipients, true);
     }
 
     if (nextRefreshTimestamp) {
@@ -259,7 +259,7 @@ export function buildStreakEmbed(streakData, nextRefreshTimestamp = null) {
     if (!streakData || streakData.length === 0) {
         description = '*🕯️ No flames burning yet...*\n*Use `/daily` every day to ignite your streak!*';
     } else {
-        description = buildLeaderboardTable(streakData, 'daily_streak', ' Days', [], false);
+        description = buildLeaderboardTable(streakData, 'daily_streak', '', [], false);
     }
 
     if (nextRefreshTimestamp) {
