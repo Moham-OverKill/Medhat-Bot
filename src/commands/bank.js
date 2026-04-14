@@ -1143,12 +1143,12 @@ export async function handleInventoryAction(interaction) {
         [invId]
       ).then(r => r.rows);
 
-      if (!item) return interaction.reply({ content: '❌ Item not found.', flags: [64] });
+      if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
       // STRICT: Block any non-permanent item from being dropped
       const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
       if (isTemp) {
-        return interaction.reply({ content: '❌ This item is temporary and cannot be dropped.', flags: [64] });
+        return interaction.followUp({ content: '❌ This item is temporary and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
       const confirmEmbed = new EmbedBuilder()
@@ -1172,7 +1172,7 @@ export async function handleInventoryAction(interaction) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      return interaction.update({ embeds: [confirmEmbed], components: [row] });
+      return interaction.editReply({ embeds: [confirmEmbed], components: [row] });
     }
 
     // --- 1.5. DROP CANCEL (Go back to management) ---
@@ -1238,7 +1238,7 @@ export async function handleInventoryAction(interaction) {
       const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
 
       if (!result.success) {
-        return interaction.followUp({ content: `❌ ${result.error}`, flags: [64] });
+        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
       }
 
       // Refresh the inventory view to show updated status
@@ -1292,7 +1292,7 @@ export async function handleItemClaim(interaction) {
               detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
-            return await interaction.reply({
+            return await interaction.followUp({
               content: `\u274C You don't meet the requirements to equip this!`,
               components: [warnRow],
               flags: MessageFlags.Ephemeral
@@ -1323,7 +1323,7 @@ export async function handleItemClaim(interaction) {
       if (isForce || interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: successMsg, components: [] }).catch(() => { });
       } else {
-        await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
+        await interaction.followUp({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
       }
 
       // 2. Update Public Message
