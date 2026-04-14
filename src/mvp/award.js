@@ -1119,7 +1119,7 @@ async function announceWinners(guild, config, winnerMembers, winnerData, rewardA
 async function awardCoinReward(guildId, userId, amount, guildName) {
   const tag = guildName ? `[${guildName}]` : '[System]';
   try {
-    const result = await updateBalance(userId, guildId, amount, 'mvp_reward', 'Won MVP of the Day');
+    const result = await updateBalance(userId, guildId, amount, 'mvp_reward', 'Current MVP!');
     
     if (result.success) {
       sysLog('MVP Payout Success', { user: userId, guild: guildId, detail: `Amount: ${amount}` });

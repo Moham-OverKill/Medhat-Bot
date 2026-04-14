@@ -432,7 +432,7 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       continue;
     }
 
-    // 1.5. MVP Role Exemption Check (True Database Source-of-Truth)
+    // 1.5. MVP Role Exemption Check (In-Memory Cache — Single Source of Truth)
     if (typeof req === 'string' && req.startsWith('mvp:')) {
       const reqRoleId = req.split(':')[1];
       
@@ -440,18 +440,15 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
         const { getGuildConfig } = await import('../storage/config.js');
         const config = await getGuildConfig(guildId);
         
-        // Failsafe Auto-Unlinking: If the MVP requirement on the item doesn't match the current Guild setting, 
-        // it means the admin changed/deleted the MVP role. We bypass the requirement (auto-unlock).
+        // Failsafe Auto-Unlinking: If the MVP requirement on the item doesn't match the current
+        // guild setting, the admin changed/deleted the MVP role. Bypass the requirement.
         if (!config || config.mvpRoleId !== reqRoleId) {
           continue; 
         }
 
-        // True Database Source-of-Truth
-        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-        const { results } = await getLastMvpCycleResults(guildId, 5); // Fetch top 5 recent winners
-        const isUserMvp = results.some(r => r.userId === userId);
-        
-        if (!isUserMvp) {
+        // Use the in-memory KotH cache for an O(1) real-time check
+        const { isUserMvp } = await import('../mvp/mvpCache.js');
+        if (!isUserMvp(guildId, userId)) {
           missingMvp = true;
         }
       } catch (error) {
