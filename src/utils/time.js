@@ -215,3 +215,45 @@ export function getTimeUntilCairoMidnight() {
   const nextMidnight = getNextCairoMidnight();
   return nextMidnight.getTime() - Date.now();
 }
+
+/**
+ * Calculate milliseconds until the next full hour in Cairo time.
+ * Example: If Cairo is 1:45:10, this returns the ms until 2:00:00.
+ */
+export function getTimeUntilNextCairoHour() {
+    const now = new Date();
+    
+    // 1. Get Cairo components
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Africa/Cairo',
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
+
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    const hour = getPart('hour') % 24;
+    const minute = getPart('minute');
+    const second = getPart('second');
+
+    // 2. Calculate offset between Cairo components and UTC
+    const cairoNowAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+    const offsetMs = cairoNowAsUtc - now.getTime();
+
+    // 3. Define the next hour target
+    let targetHour = hour + 1;
+    let targetDay = day;
+    if (targetHour >= 24) {
+        targetHour = 0;
+        targetDay++;
+    }
+
+    const targetUtcParts = Date.UTC(year, month - 1, targetDay, targetHour, 0, 0);
+    const targetTime = new Date(targetUtcParts - offsetMs);
+
+    return targetTime.getTime() - now.getTime();
+}
