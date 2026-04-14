@@ -1196,7 +1196,8 @@ export async function handleInventoryAction(interaction) {
         const publicEmbed = new EmbedBuilder()
           .setTitle('Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`<@${interaction.user.id}> dropped <@&${res.item.role_id}>!\n\nExpires: <t:${expiresUnix}:R>`);
+          .setDescription(`<@${interaction.user.id}> dropped <@&${res.item.role_id}>!\n\nExpires: <t:${expiresUnix}:R>`)
+          .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -1348,9 +1349,7 @@ export async function handleItemClaim(interaction) {
         const claimedEmbed = EmbedBuilder.from(publicMsg.embeds[0])
           .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
           .setDescription(newDesc)
-          .setFooter({ text: 'Dropped at' });
-
-        claimedEmbed.setTimestamp(new Date(res.dropped_at));
+          .setTimestamp(new Date(res.dropped_at));
 
         const lockedRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -1509,7 +1508,7 @@ export async function cleanupExpiredDrops(client) {
               const expiredEmbed = EmbedBuilder.from(oldEmbed)
                 .setColor('#2C2F33') // Dark Grey
                 .setDescription(`${firstLine}\n\n⏰ This item has expired and the drop was lost.`)
-                .setFooter({ text: 'Expired' });
+                .setTimestamp(new Date(drop.created_at));
 
               // Disable the claim button
               const disabledRow = new ActionRowBuilder().addComponents(
