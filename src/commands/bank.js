@@ -1269,7 +1269,7 @@ export async function handleItemClaim(interaction) {
     // STEP 0: Interstitial Prerequisite Check
     // ===========================================
     if (!isForce) {
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+      // (Security check: ephemeral reply will be handled at line 1308)
       const { checkPrerequisites } = await import('../economy/shop.js');
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
 
@@ -1302,12 +1302,10 @@ export async function handleItemClaim(interaction) {
       }
     }
 
-    if (isForce) {
-      sysLog('Bypass Button Clicked', { user: interaction.user.id, guild: interaction.guildId, detail: `Action: ForceClaim | DropID: ${dropId}` });
-      await interaction.deferUpdate();
+    // 1. Initial acknowledgment (STRICT: Ephemeral-first to protect public messages)
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
-
-    // 1. Initial acknowledgment (STRICT: Re-acknowledge even if router missed it)
     // Attempt Claim (Atomic Transaction in shop.js)
     const res = await claimItem(interaction.user.id, interaction.guildId, dropId, interaction.member);
 
@@ -1315,16 +1313,12 @@ export async function handleItemClaim(interaction) {
       const isSelfClaim = res.item.dropper_id === interaction.user.id;
       const claimerName = getUserDisplayName(interaction.user);
 
-      // 1. Success Message to Claimer
-      const successMsg = isSelfClaim
-        ? '\u2705 You have reclaimed your own dropped item!'
-        : `\u2705 You have successfully claimed **${res.item.name}**!`;
-
-      if (isForce || interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: successMsg, components: [] }).catch(() => { });
-      } else {
-        await interaction.followUp({ content: successMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
-      }
+        // 1. Success Message to Claimer (PRIVATE)
+        const successMsg = isSelfClaim
+          ? '\u2705 You have reclaimed your own dropped item!'
+          : `\u2705 You have successfully claimed **${res.item.name}**!`;
+        
+        await interaction.editReply({ content: successMsg }).catch(() => { });
 
       // 2. Update Public Message
       // Find the public message (even if we're on a private warning interaction)
@@ -1359,13 +1353,16 @@ export async function handleItemClaim(interaction) {
           new ButtonBuilder()
             .setCustomId(`bank_item_claimed_locked_${dropId}`)
             .setLabel('Claim Item')
-            .setEmoji('\uD83C\uDF81')
+            .setEmoji('🎁')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true)
         );
 
-        await publicMsg.edit({ embeds: [claimedEmbed], components: [lockedRow] }).catch(err => {
-          sysError('Failed to edit public drop message', err, { guild: interaction.guildId, detail: `DropID: ${dropId}` });
+        await publicMsg.edit({ 
+            embeds: [claimedEmbed], 
+            components: [lockedRow] 
+        }).catch(err => {
+            sysError('Failed to disable public claim button', err, { guild: interaction.guildId });
         });
       }
 
@@ -1390,10 +1387,10 @@ export async function handleItemClaim(interaction) {
     }
 
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
+      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => { });
     } else {
-      // IMPORTANT: Use followUp for claim errors to prevent overwriting the PUBLIC drop message
-      await interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
+      // Private error response (Interaction is ephemeral-deferred)
+      await interaction.editReply({ content: errorMessage }).catch(() => { });
     }
   }
 }
