@@ -765,11 +765,11 @@ export async function handleShopPostStart(interaction) {
   if (state.postStep === 0) {
     // Root Folder View
     itemOptions = [
-      { label: '🗂️ Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
-      { label: '📦 Uncategorized Items', value: 'folder_standalone', description: 'Show items not assigned to any category' },
-      { label: '🎁 Item Packs', value: 'folder_packs', description: 'Show all item packs' }
+      { label: '📂 Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
+      { label: '🏷️ Uncategorized Items', value: 'folder_standalone', description: 'Show items not assigned to any category' },
+      { label: '📦 Item Packs', value: 'folder_packs', description: 'Show all item packs' }
     ];
-    placeholder = '🧭 Explore Folders...';
+    placeholder = '📦 Select Item/Pack (Required)';
     
     // If an item is already selected, show it as a quick-pick at the top
     if (selectedItem) {
@@ -789,34 +789,38 @@ export async function handleShopPostStart(interaction) {
       description: 'Open this category folder'
     }));
     itemOptions.unshift({ label: '↩️ Back to Start', value: 'folder_reset', description: 'Return to main folder view' });
-    placeholder = '📁 Browse Categories...';
+    placeholder = '📂 Choose Category Folder...';
   } 
   else if (state.postStep === 2) {
     // Final Item List (Filtered)
     let filtered = [];
+    let groupPrefix = '🏷️';
     let groupName = 'Items';
 
     if (state.postFilter === 'standalone') {
       filtered = itemsAll.filter(i => !i.category_id && !i.is_pack);
       groupName = 'Uncategorized';
+      groupPrefix = '🏷️';
     } else if (state.postFilter === 'packs') {
       filtered = itemsAll.filter(i => i.is_pack);
       groupName = 'Packs';
+      groupPrefix = '📦';
     } else if (state.postFilter?.startsWith('cat_')) {
       const catId = parseInt(state.postFilter.split('_').pop());
       filtered = itemsAll.filter(i => i.category_id === catId);
       groupName = categories.find(c => c.id === catId)?.name || 'Category';
+      groupPrefix = '🏷️';
     }
 
     itemOptions = filtered.slice(0, 24).map(i => ({
-      label: i.name.slice(0, 80),
+      label: `${groupPrefix} ${i.name.slice(0, 75)}`,
       value: i.id.toString(),
-      description: `${i.is_pack ? '📦 Pack' : '👤 Item'} - ${i.price.toLocaleString()} coins`,
+      description: `${i.is_pack ? '📦 Pack' : '🏷️ Item'} - ${i.price.toLocaleString()} coins`,
       default: state.itemId === i.id.toString()
     }));
 
     itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset', description: 'Return to folder selection' });
-    placeholder = `✨ ${groupName.slice(0, 20)}: Pick one`;
+    placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
   }
 
   const itemSelect = new StringSelectMenuBuilder()
