@@ -236,7 +236,7 @@ export function setupComponentHandlers(client) {
         await handleManageItemCategorySelect(interaction);
       } else if (customId === 'bank_shop_item') {
         await handleShopItemSelect(interaction);
-      } else if (customId === 'shop_edit_item_select' || customId === 'shop_select_item_edit') {
+      } else if (customId === 'shop_edit_item_select' || customId === 'shop_select_item_edit' || customId === 'shop_item_edit_select') {
         await handleEditItemSelect(interaction);
       } else if (customId === 'shop_edit_category_start') {
         await handleEditCategoryStart(interaction);
