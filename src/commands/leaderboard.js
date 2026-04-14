@@ -206,23 +206,14 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
  */
 export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive = false) {
     const embed = new EmbedBuilder()
-        .setTitle(isLive ? '⏱️ Live MVP Progress' : '🏆 MVP Champions')
-        .setColor(isLive ? 0x3498DB : 0xFFD700); // Blue for live, Gold for Champions
+        .setTitle('🏆 MVP Champions')
+        .setColor(0xFFD700); // Always Gold for the Champions brand
 
     if (!activityData || activityData.length === 0) {
-        embed.setDescription(isLive 
-            ? '*📉 No daily activity yet...*\n*Start chatting to climb the live ranks!*'
-            : '*🌅 No MVP history yet...*\n*The first champions will appear after the next daily award cycle!*'
-        );
+        embed.setDescription('*📉 No daily activity yet...*\n*Start chatting to climb the live ranks!*');
     } else {
         const table = buildLeaderboardTable(activityData, 'score', ' Points', mvpRecipients, true);
-        const footerText = isLive 
-            ? '*This is a live snapshot. Winners are locked at midnight!*'
-            : (mvpRecipients && mvpRecipients.length > 0 ? '*🌟 MVP Winners listed above!*' : null);
-        
-        let desc = table;
-        if (footerText) desc += `\n${footerText}`;
-        embed.setDescription(desc);
+        embed.setDescription(table + `\n*⏱️ Live snapshot. Winners are locked at midnight Cairo!*`);
     }
     return embed;
 }
@@ -362,27 +353,28 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
+    // Define the strict order of leaderboard types
     const channelKeys = [
-        { type: 'daily_coins', configChannel: 'daily_channel_id', configMsg: 'daily_message_id' },
-        { type: 'coins', configChannel: 'coins_channel_id', configMsg: 'coins_message_id' },
-        { type: 'streak', configChannel: 'streak_channel_id', configMsg: 'streak_message_id' }
+        { type: 'daily_coins', configChannel: 'daily_channel_id', configMsg: 'daily_message_id', name: 'MVP Champions' },
+        { type: 'coins', configChannel: 'coins_channel_id', configMsg: 'coins_message_id', name: 'Richest Members' },
+        { type: 'streak', configChannel: 'streak_channel_id', configMsg: 'streak_message_id', name: 'Longest Streaks' }
     ];
 
     // Filter to only configured types
     const configuredTypes = channelKeys.filter(k => config[k.configChannel]);
     if (configuredTypes.length === 0) return;
 
-    // First, let's fetch all messages to see if they exist and check order
+    // Phase 1: Verify Order & Integrity
     let messagesIntact = true;
-    
-    // Key by type
     const channelMap = new Map();
     const msgMap = new Map();
 
     for (const t of configuredTypes) {
         try {
-            const channel = await guild.channels.fetch(config[t.configChannel]).catch(() => null);
+            const chanId = config[t.configChannel];
+            const channel = await guild.channels.fetch(chanId).catch(() => null);
             channelMap.set(t.type, channel);
+            
             if (!channel) {
                 messagesIntact = false;
                 break;
@@ -391,9 +383,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             if (config[t.configMsg]) {
                 const msg = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
                 msgMap.set(t.type, msg);
-                if (!msg) {
-                    messagesIntact = false;
-                }
+                if (!msg) messagesIntact = false;
             } else {
                 messagesIntact = false;
             }
@@ -402,9 +392,8 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         }
     }
 
-    // Check order if they share the same channel
+    // Strict Sequence Check: Ensure Daily -> Richest -> Streak
     if (messagesIntact) {
-        // Group messages by channel ID
         const msgsByChannel = {};
         for (const t of configuredTypes) {
             const cid = config[t.configChannel];
@@ -413,19 +402,14 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         }
         
         for (const cid in msgsByChannel) {
-            const channelMsgs = msgsByChannel[cid];
+            const channelMsgs = msgsByChannel[cid]; 
             if (channelMsgs.length > 1) {
-                // Ensure order: daily_coins before coins before streak
-                const expectedOrder = ['daily_coins', 'coins', 'streak'];
-                // Sort channelMsgs based on their snowflake
-                const sortedBySnowflake = [...channelMsgs].sort((a, b) => {
-                    return (BigInt(a.msgId) < BigInt(b.msgId)) ? -1 : 1;
-                });
+                // Expected order: daily_coins < coins < streak (snowflake comparison)
+                const sortedBySnowflake = [...channelMsgs].sort((a, b) => (BigInt(a.msgId) < BigInt(b.msgId) ? -1 : 1));
+                const expectedOrder = ['daily_coins', 'coins', 'streak'].filter(type => channelMsgs.some(cm => cm.type === type));
                 
-                // Now verify the expected order matches the snowflake order
-                const filteredExpected = expectedOrder.filter(ex => channelMsgs.some(cm => cm.type === ex));
-                for(let i=0; i<sortedBySnowflake.length; i++){
-                    if(sortedBySnowflake[i].type !== filteredExpected[i]) {
+                for (let i = 0; i < sortedBySnowflake.length; i++) {
+                    if (sortedBySnowflake[i].type !== expectedOrder[i]) {
                         messagesIntact = false;
                         break;
                     }
@@ -434,82 +418,53 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         }
     }
 
-    // If not intact or unordered, perform a PASS 1: sweep
+    // Phase 2: Sweep if Broken
     if (!messagesIntact) {
         for (const t of configuredTypes) {
-            if (config[t.configMsg]) {
-                const channel = channelMap.get(t.type);
-                if (channel) {
-                    const msg = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
-                    if (msg) await msg.delete().catch(() => {});
-                }
-            }
+            const msg = msgMap.get(t.type);
+            if (msg) await msg.delete().catch(() => {});
+            config[t.configMsg] = null;
         }
     }
 
-    // Now build all three embeds
-    const embeds = new Map();
+    // Phase 3: Build & Dispatch
+    let configUpdated = false;
+    for (const t of channelKeys) {
+        if (!config[t.configChannel]) continue;
+        const channel = channelMap.get(t.type) || await guild.channels.fetch(config[t.configChannel]).catch(() => null);
+        if (!channel) continue;
 
-    for (const t of configuredTypes) {
+        let embed;
         try {
             if (t.type === 'daily_coins') {
-                let enrichedData;
-                let isLive = false;
-                if (activityData) {
-                    // Midnight / Historical passed directly
-                    enrichedData = await enrichUserData(client, guildId, activityData, 'userId');
-                } else {
-                    // Live Race
-                    isLive = true;
-                    const { getTopActiveUsers } = await import('../activity/tracker.js');
-                    const rawData = await getTopActiveUsers(guildId, 50);
-                    enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                }
-                embeds.set(t.type, buildDailyActivityEmbed(enrichedData, mvpRecipients, isLive));
+                // FORCE LIVE CONTENT: We ignore historical snapshots to keep it "Today's Race" 24/7
+                const { getTopActiveUsers } = await import('../activity/tracker.js');
+                const rawData = await getTopActiveUsers(guildId, 50);
+                const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
+                embed = buildDailyActivityEmbed(enrichedData, [], true); 
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embeds.set(t.type, buildCoinsEmbed(enrichedData));
+                embed = buildCoinsEmbed(enrichedData);
             } else if (t.type === 'streak') {
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embeds.set(t.type, buildStreakEmbed(enrichedData));
+                embed = buildStreakEmbed(enrichedData);
             }
-        } catch(err) {
-            sysError('Failed to build embed', err, { guild: guildId, detail: t.type });
-        }
-    }
 
-    // Now either edit or send sequentially
-    let configUpdated = false;
-
-    // Use absolute order: Daily -> Richest -> Streak
-    const absoluteOrder = ['daily_coins', 'coins', 'streak'];
-    for (const type of absoluteOrder) {
-        const t = configuredTypes.find(ct => ct.type === type);
-        if (!t) continue;
-        const embed = embeds.get(type);
-        if (!embed) continue;
-        const channel = channelMap.get(type);
-        if (!channel) continue;
-
-        try {
-            if (messagesIntact && msgMap.get(type)) {
-                // Edit existing
-                await msgMap.get(type).edit({ embeds: [embed] }).catch(async () => {
-                    // Fallback to resend if edit fails
-                    const newMessage = await channel.send({ embeds: [embed] });
-                    config[t.configMsg] = newMessage.id;
+            if (messagesIntact && msgMap.get(t.type)) {
+                await msgMap.get(t.type).edit({ embeds: [embed] }).catch(async () => {
+                    const newMsg = await channel.send({ embeds: [embed] });
+                    config[t.configMsg] = newMsg.id;
                     configUpdated = true;
                 });
             } else {
-                // Send new
-                const newMessage = await channel.send({ embeds: [embed] });
-                config[t.configMsg] = newMessage.id;
+                const newMsg = await channel.send({ embeds: [embed] });
+                config[t.configMsg] = newMsg.id;
                 configUpdated = true;
             }
-        } catch(err) {
-            sysError('Failed to update/send embed', err, { guild: guildId, detail: type });
+        } catch (err) {
+            sysError(`Failed to update ${t.type} leaderboard`, err, { guild: guildId });
         }
     }
 
