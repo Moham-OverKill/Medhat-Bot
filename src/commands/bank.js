@@ -1262,8 +1262,8 @@ export async function handleItemClaim(interaction) {
   try {
     const parts = interaction.customId.split('_');
     const isForce = interaction.customId.startsWith('force_claim_');
-    const offset = isForce ? 0 : 1;
-    const dropId = parts[3 + offset];
+    // bank_item_claim_[dropId] (index 3) OR force_claim_[dropId] (index 2)
+    const dropId = isForce ? parts[2] : parts[3];
 
     // ===========================================
     // STEP 0: Interstitial Prerequisite Check
@@ -1392,9 +1392,8 @@ export async function handleItemClaim(interaction) {
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
     } else {
-      await interaction.editReply({ content: errorMessage, components: [] }).catch(() => {
-        interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
-      });
+      // IMPORTANT: Use followUp for claim errors to prevent overwriting the PUBLIC drop message
+      await interaction.followUp({ content: errorMessage, components: [], flags: MessageFlags.Ephemeral }).catch(() => { });
     }
   }
 }
