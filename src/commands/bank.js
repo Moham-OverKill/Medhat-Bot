@@ -1206,7 +1206,7 @@ export async function handleInventoryAction(interaction) {
         const publicEmbed = new EmbedBuilder()
           .setTitle('Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`<@${interaction.user.id}> dropped <@&${res.item.role_id}>!\n\nExpires: <t:${expiresUnix}:R>`)
+          .setDescription(`${interaction.user} dropped <@&${res.item.role_id}>!\n\nExpires: <t:${expiresUnix}:R>`)
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
@@ -1360,8 +1360,8 @@ export async function handleItemClaim(interaction) {
         const firstLine = originalDesc.split('\n')[0];
 
         const resolutionLine = isSelfClaim
-          ? `\u2705 <@${interaction.user.id}> changed their mind and claimed their own drop!`
-          : `\u2705 <@${interaction.user.id}> claimed the item!`;
+          ? `\u2705 ${interaction.user} changed their mind and claimed their own drop!`
+          : `\u2705 ${interaction.user} claimed the item!`;
 
         const newDesc = `${firstLine}\n\n${resolutionLine}`;
 
