@@ -714,15 +714,17 @@ export async function handleShopPostStart(interaction) {
   }
 
   // Get current pending state or initialize
-  let state = pendingPosts.get(userId) || {
-    itemId: null,
-    channelId: null,
-    sellerId: null,
-    imageUrl: null,
-    description: null,
-    payout: null, // null = 100% of price, otherwise specific amount
-    stock: null, // null = unlimited
-    overridePrice: null // null = use original price
+  let state = pendingPosts.get(userId) || { 
+    itemId: null, 
+    channelId: null, 
+    sellerId: null, 
+    imageUrl: null, 
+    description: null, 
+    payout: null, 
+    stock: null, 
+    overridePrice: null,
+    postStep: 0, // 0: Root, 1: Categories, 2: Items
+    postFilter: null // 'standalone', 'packs', or 'cat_ID'
   };
   pendingPosts.set(userId, state);
 
@@ -753,17 +755,73 @@ export async function handleShopPostStart(interaction) {
     .setTitle('📢 Post an Item/Pack To The Shop!')
     .setColor(0x9B59B6);
 
-  // Row 1: Item Select
-  const itemOptions = items.slice(0, 25).map(i => ({
-    label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed ${i.item_type === 'pack' ? 'Pack' : 'Item'} #${i.id}`,
-    value: i.id.toString(),
-    description: `${i.item_type === 'pack' ? '📦 Pack' : '👤 Item'} - ${i.price === 0 ? 'FREE' : i.price.toLocaleString() + ' coins'}`,
-    default: state.itemId === i.id.toString()
-  }));
+  // --- Item Navigation Wizard ---
+  const categories = await getShopCategories(guildId);
+  const itemsAll = await getShopItems(guildId, null, 'name', false); // Post flow: Active items only
+  
+  let itemOptions = [];
+  let placeholder = '📦 Select Item/Pack (Required)';
+
+  if (state.postStep === 0) {
+    // Root Folder View
+    itemOptions = [
+      { label: '📂 Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
+      { label: '📦 Uncategorized Items', value: 'folder_standalone', description: 'Show items not assigned to any category' },
+      { label: '🎒 Packs', value: 'folder_packs', description: 'Show all item packs' }
+    ];
+    placeholder = '📁 Browse Folders...';
+    
+    // If an item is already selected, show it as a quick-pick at the top
+    if (selectedItem) {
+      itemOptions.unshift({
+        label: `✅ Currently: ${selectedItem.name.slice(0, 50)}`,
+        value: selectedItem.id.toString(),
+        description: `Selected: ${selectedItem.price.toLocaleString()} coins`,
+        default: true
+      });
+    }
+  } 
+  else if (state.postStep === 1) {
+    // Category Folder List
+    itemOptions = categories.map(c => ({
+      label: `📂 ${c.name.slice(0, 50)}`,
+      value: `filter_cat_${c.id}`,
+      description: 'Open this category folder'
+    }));
+    itemOptions.unshift({ label: '⬅️ Back to Start', value: 'folder_reset', description: 'Return to main folder view' });
+    placeholder = '📂 Choose Category Folder...';
+  } 
+  else if (state.postStep === 2) {
+    // Final Item List (Filtered)
+    let filtered = [];
+    let groupName = 'Items';
+
+    if (state.postFilter === 'standalone') {
+      filtered = itemsAll.filter(i => !i.category_id && !i.is_pack);
+      groupName = 'Uncategorized';
+    } else if (state.postFilter === 'packs') {
+      filtered = itemsAll.filter(i => i.is_pack);
+      groupName = 'Packs';
+    } else if (state.postFilter?.startsWith('cat_')) {
+      const catId = parseInt(state.postFilter.split('_').pop());
+      filtered = itemsAll.filter(i => i.category_id === catId);
+      groupName = categories.find(c => c.id === catId)?.name || 'Category';
+    }
+
+    itemOptions = filtered.slice(0, 24).map(i => ({
+      label: i.name.slice(0, 80),
+      value: i.id.toString(),
+      description: `${i.is_pack ? '📦 Pack' : '👤 Item'} - ${i.price.toLocaleString()} coins`,
+      default: state.itemId === i.id.toString()
+    }));
+
+    itemOptions.unshift({ label: '⬅️ Back to Folders', value: 'folder_reset', description: 'Return to category selection' });
+    placeholder = `🎯 ${groupName.slice(0, 20)}: Pick an Item`;
+  }
 
   const itemSelect = new StringSelectMenuBuilder()
     .setCustomId('shop_post_item_select')
-    .setPlaceholder('📦 Select Item/Pack (Required)')
+    .setPlaceholder(placeholder)
     .addOptions(itemOptions);
 
   // Row 2: Channel Select
@@ -863,21 +921,40 @@ export async function handleShopPostItemSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const userId = interaction.user.id;
   const itemId = interaction.values[0];
+  let state = pendingPosts.get(userId) || { itemId: null, channelId: null, sellerId: null, imageUrl: null, description: null, payout: null, postStep: 0, postFilter: null };
 
-  let state = pendingPosts.get(userId) || { itemId: null, channelId: null, sellerId: null, imageUrl: null, description: null, payout: null };
-  state.itemId = itemId;
-  state.overridePrice = null; // Revert override on item change
-  
-  const items = await getShopItems(interaction.guildId, null, 'name', true);
-  const selectedItem = items.find(i => i.id === parseInt(itemId));
+  // --- Navigation Routing ---
+  if (itemId === 'folder_reset') {
+    state.postStep = 0;
+    state.postFilter = null;
+  } else if (itemId === 'folder_categorized') {
+    state.postStep = 1;
+    state.postFilter = null;
+  } else if (itemId === 'folder_standalone') {
+    state.postStep = 2;
+    state.postFilter = 'standalone';
+  } else if (itemId === 'folder_packs') {
+    state.postStep = 2;
+    state.postFilter = 'packs';
+  } else if (itemId.startsWith('filter_cat_')) {
+    state.postStep = 2;
+    state.postFilter = itemId.replace('filter_', '');
+  } else {
+    // Final Item Selection
+    state.itemId = itemId;
+    state.overridePrice = null;
+    state.postStep = 0; // Return to root after selection
+    
+    const items = await getShopItems(interaction.guildId, null, 'name', true);
+    const selectedItem = items.find(i => i.id === parseInt(itemId));
 
-  // Check if selected item is a pack - if so, reset seller/payout (packs are server-only)
-  if (selectedItem && selectedItem.item_type === 'pack') {
-    state.sellerId = null;
-    state.payout = null;
-  } else if (selectedItem && state.sellerId) {
-    // Item changed and seller exists - recalculate payout to 50% of new price
-    state.payout = Math.floor(selectedItem.price * 0.5);
+    // Check if selected item is a pack - if so, reset seller/payout (packs are server-only)
+    if (selectedItem && selectedItem.item_type === 'pack') {
+      state.sellerId = null;
+      state.payout = null;
+    } else if (selectedItem && state.sellerId) {
+      state.payout = Math.floor(selectedItem.price * 0.5);
+    }
   }
 
   pendingPosts.set(userId, state);
@@ -1053,6 +1130,8 @@ export async function handleShopPostReset(interaction) {
     state.description = null;
     state.imageUrl = null;
     state.overridePrice = null;
+    state.postStep = 0;
+    state.postFilter = null;
     pendingPosts.set(interaction.user.id, state);
   }
   await handleShopPostStart(interaction);
