@@ -14,7 +14,8 @@ import {
 } from 'discord.js';
 import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { scheduleMvpTimer, cancelMvpTimer, getScheduleIntervalMs } from '../mvp/award.js';
+import { cancelMvpTimer } from '../mvp/award.js';
+import { getNextCairoHourTimestamp } from '../utils/time.js';
 import { invalidateConfigCache } from '../activity/index.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -61,27 +62,8 @@ function resolveNextCheck(config) {
     return { text: '—', iso: null, unix: null };
   }
 
-  const parsedNext = Date.parse(config.next_award_at ?? '');
-  if (Number.isFinite(parsedNext)) {
-    const unix = Math.floor(parsedNext / 1000);
-    return { text: `<t:${unix}:R>`, iso: new Date(parsedNext).toISOString(), unix };
-  }
-
-  const intervalMs = getScheduleIntervalMs(config);
-  if (!intervalMs) {
-    return { text: '—', iso: null, unix: null };
-  }
-
-  const lastMs = Date.parse(config.last_award_at ?? '');
-  const activatedMs = Date.parse(config.activated_at ?? '');
-  const anchor = Number.isFinite(lastMs)
-    ? lastMs
-    : Number.isFinite(activatedMs)
-      ? activatedMs
-      : Date.now();
-  const nextMs = anchor + intervalMs;
-  const unix = Math.floor(nextMs / 1000);
-  return { text: `<t:${unix}:R>`, iso: new Date(nextMs).toISOString(), unix };
+  const unix = getNextCairoHourTimestamp();
+  return { text: `<t:${unix}:R>`, iso: new Date(unix * 1000).toISOString(), unix };
 }
 
 async function saveConfig(interaction, config, fieldsChanged = []) {
@@ -247,7 +229,7 @@ export async function showSetupPanel(interaction, config) {
   const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 MVP System Status')
+    .setTitle('⭐ MVP Configuration')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
     .addFields(
       { name: `${statusEmoji} Status`, value: statusText, inline: true },
