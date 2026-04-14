@@ -636,7 +636,7 @@ export async function runDependencySweep(userId, guildId, member, client = null)
  * @param {boolean} options.skipBalanceDeduction - If true, skip balance check/deduction (used when * @param {Object} options - Additional options including seller information and payout
  */
 export async function purchaseItem(userId, guildId, itemId, member, options = {}) {
-  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false } = options;
+  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null } = options;
   const pool = getPool();
   const client = await pool.connect();
   let transactionId = null;
@@ -703,8 +703,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         sellerMember = await member.guild.members.fetch(sellerId).catch(() => null);
     }
 
-    // Define effectivePrice (default to item price)
-    let effectivePrice = item.price;
+    // Define effectivePrice (Check for admin override first)
+    let effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
 
     // Define checkRoleSafety helper
     const botMember = member.guild.members.me;
@@ -805,8 +805,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         newCount: missingIds.length
       };
 
-      // Full price - no discount for partial ownership
-      effectivePrice = item.price;
+      // Full price (or override) - no discount for partial ownership
+      effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
 
       // Check roles of MISSING contents for safety (only check what we're adding)
       const contentItemsRes = await client.query(

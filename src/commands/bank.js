@@ -371,6 +371,8 @@ export async function handleShopBuyButton(interaction) {
     const sellerId = parts[3 + offset] || '0';
     const payoutStr = parts[4 + offset] || '0';
     const customPayout = parseInt(payoutStr) || 0;
+    const overridePriceStr = parts[5 + offset] || null;
+    const overridePrice = (overridePriceStr !== null && overridePriceStr !== '') ? parseInt(overridePriceStr) : null;
 
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
@@ -388,7 +390,7 @@ export async function handleShopBuyButton(interaction) {
         if (!prereqs.met) {
           const warnRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-              .setCustomId(`force_buy_${itemId}_${sellerId}_${payoutStr}`)
+              .setCustomId(`force_buy_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
               .setLabel('Buy Anyway')
               .setEmoji('\u26A0\uFE0F')
               .setStyle(ButtonStyle.Danger)
@@ -427,7 +429,7 @@ export async function handleShopBuyButton(interaction) {
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const { getShopItem } = await import('../economy/shop.js');
     const itemForPrice = await getShopItem(itemId);
-    const itemPrice = itemForPrice?.price || 0;
+    const itemPrice = (overridePrice !== null && overridePrice !== undefined) ? overridePrice : (itemForPrice?.price || 0);
 
     let payoutAmount = 0;
     if (hasSeller) {
@@ -443,7 +445,8 @@ export async function handleShopBuyButton(interaction) {
 
     const result = await purchaseItem(userId, guildId, itemId, member, {
       sellerId,
-      payoutAmount
+      payoutAmount,
+      overridePrice
     });
 
     // ===========================================
