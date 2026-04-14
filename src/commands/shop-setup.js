@@ -2201,10 +2201,17 @@ export async function handleEditItemStart(interaction) {
       return interaction.editReply({ content: '❌ No items found.', components: [rowBack], embeds: [] });
     }
 
+    // Filter out packs (they have their own manager)
+    const filteredItems = items.filter(i => !i.is_pack && i.item_type !== 'pack');
+
+    if (filteredItems.length === 0) {
+      return interaction.editReply({ content: '❌ No single items found.', components: [rowBack], embeds: [] });
+    }
+
     const select = new StringSelectMenuBuilder()
       .setCustomId('shop_item_edit_select')
       .setPlaceholder('Select Item to Manage')
-      .addOptions(items.slice(0, 25).map(i => ({ 
+      .addOptions(filteredItems.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
         value: i.id.toString(),
         description: `${i.price.toLocaleString()} coins`
