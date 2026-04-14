@@ -10,7 +10,8 @@ import { initializeGuildConfigs, loadGuildConfigs } from './storage/config.js';
 import { initializeColorsDB, closeColorsDB } from './storage/colors.js';
 import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking, clearStaleVoiceTracking } from './activity/index.js';
-import { scheduleAllMvpTimers } from './mvp/award.js';
+import { scheduleCairoMidnightReset } from './mvp/award.js';
+import { seedMvpCacheFromDb } from './mvp/mvpCache.js';
 import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { setupComponentHandlers } from './components/handlers.js';
@@ -205,12 +206,13 @@ client.once(Events.ClientReady, async () => {
     // Setup component handlers
     setupComponentHandlers(client);
 
-    // Schedule MVP timers for all configured guilds
-    await scheduleAllMvpTimers(client);
+    // Seed the in-memory MVP cache from the database (restores active MVP state after reboot)
+    await seedMvpCacheFromDb();
+    sysLog('Task Started', { detail: 'MVP Cache Seeded from DB' });
 
     // Start background jobs
     startQuestScheduler(client);
-    startLeaderboardScheduler(client);
+    startLeaderboardScheduler(client); // Also runs KotH every hour
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
@@ -233,7 +235,6 @@ client.once(Events.ClientReady, async () => {
 
     // ========== CAIRO MIDNIGHT STREAK RESET JOB ==========
     // Resets all stale streaks at 00:00 Cairo time (UTC+2)
-    const { scheduleCairoMidnightReset } = await import('./mvp/award.js');
     scheduleCairoMidnightReset(client);
 
   } catch (error) {
