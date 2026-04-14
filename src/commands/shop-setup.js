@@ -812,12 +812,19 @@ export async function handleShopPostStart(interaction) {
       groupPrefix = '🏷️';
     }
 
-    itemOptions = filtered.slice(0, 24).map(i => ({
-      label: `${groupPrefix} ${i.name.slice(0, 75)}`,
-      value: i.id.toString(),
-      description: `${i.is_pack ? '📦 Pack' : '🏷️ Item'} - ${i.price.toLocaleString()} coins`,
-      default: state.itemId === i.id.toString()
-    }));
+    itemOptions = filtered.slice(0, 24).map(i => {
+      const itemCount = i.is_pack ? (Array.isArray(i.contents) ? i.contents.length : 0) : 0;
+      const descText = i.is_pack 
+        ? `${itemCount} items - ${i.price.toLocaleString()} coins` 
+        : `${i.price.toLocaleString()} coins`;
+
+      return {
+        label: `${groupPrefix} ${i.name.slice(0, 75)}`,
+        value: i.id.toString(),
+        description: descText,
+        default: state.itemId === i.id.toString()
+      };
+    });
 
     itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset', description: 'Return to folder selection' });
     placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
