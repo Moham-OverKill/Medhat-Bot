@@ -254,7 +254,7 @@ export async function showSetupPanel(interaction, config) {
       { name: '⏳ Next Award', value: nextCheckText, inline: true },
       { name: '\u200B', value: '\u200B', inline: true },
       { name: '👤 Role', value: roleMention, inline: true },
-      { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins`, inline: true },
+      { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins/hr`, inline: true },
       { name: '\u200B', value: '\u200B', inline: true }
     );
 
@@ -386,10 +386,10 @@ export async function handleMvpComponent(interaction) {
         const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
         const input = new TextInputBuilder()
           .setCustomId('amount')
-          .setLabel('Amount')
+          .setLabel('Coins per hour')
           .setStyle(TextInputStyle.Short)
-          .setPlaceholder('100')
-          .setValue(String(config.mvpRewardAmount || 100))
+          .setPlaceholder('5')
+          .setValue(String(config.mvpRewardAmount || 5))
           .setRequired(false);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);

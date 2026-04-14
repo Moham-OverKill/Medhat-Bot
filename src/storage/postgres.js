@@ -207,6 +207,23 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_mvp_awards_awarded_at ON mvp_awards(awarded_at DESC);
     `);
 
+    // Table for real-time active MVP holders (King of the Hill)
+    // This is the single source of truth for "who is MVP right now"
+    // Replaced by the KotH hourly cycle — no longer tied to the daily award history
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS active_mvps (
+        guild_id TEXT NOT NULL,
+        user_id  TEXT NOT NULL,
+        rank     INTEGER NOT NULL DEFAULT 1,
+        since    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id)
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_active_mvps_guild_id ON active_mvps(guild_id);
+    `);
+
     // Table for user balances (essential data - never cleaned)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_balances (
