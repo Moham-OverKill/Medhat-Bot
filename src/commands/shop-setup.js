@@ -765,16 +765,16 @@ export async function handleShopPostStart(interaction) {
   if (state.postStep === 0) {
     // Root Folder View
     itemOptions = [
-      { label: '📂 Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
+      { label: '🗂️ Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
       { label: '📦 Uncategorized Items', value: 'folder_standalone', description: 'Show items not assigned to any category' },
-      { label: '🎒 Packs', value: 'folder_packs', description: 'Show all item packs' }
+      { label: '🎁 Item Packs', value: 'folder_packs', description: 'Show all item packs' }
     ];
-    placeholder = '📁 Browse Folders...';
+    placeholder = '🧭 Explore Folders...';
     
     // If an item is already selected, show it as a quick-pick at the top
     if (selectedItem) {
       itemOptions.unshift({
-        label: `✅ Currently: ${selectedItem.name.slice(0, 50)}`,
+        label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
         value: selectedItem.id.toString(),
         description: `Selected: ${selectedItem.price.toLocaleString()} coins`,
         default: true
@@ -788,8 +788,8 @@ export async function handleShopPostStart(interaction) {
       value: `filter_cat_${c.id}`,
       description: 'Open this category folder'
     }));
-    itemOptions.unshift({ label: '⬅️ Back to Start', value: 'folder_reset', description: 'Return to main folder view' });
-    placeholder = '📂 Choose Category Folder...';
+    itemOptions.unshift({ label: '↩️ Back to Start', value: 'folder_reset', description: 'Return to main folder view' });
+    placeholder = '📁 Browse Categories...';
   } 
   else if (state.postStep === 2) {
     // Final Item List (Filtered)
@@ -815,8 +815,8 @@ export async function handleShopPostStart(interaction) {
       default: state.itemId === i.id.toString()
     }));
 
-    itemOptions.unshift({ label: '⬅️ Back to Folders', value: 'folder_reset', description: 'Return to category selection' });
-    placeholder = `🎯 ${groupName.slice(0, 20)}: Pick an Item`;
+    itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset', description: 'Return to folder selection' });
+    placeholder = `✨ ${groupName.slice(0, 20)}: Pick one`;
   }
 
   const itemSelect = new StringSelectMenuBuilder()
