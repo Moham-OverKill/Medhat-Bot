@@ -12,6 +12,7 @@ import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking, clearStaleVoiceTracking } from './activity/index.js';
 import { scheduleAllMvpTimers } from './mvp/award.js';
 import { startQuestScheduler } from './cron/quests.js';
+import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
 import { logSystemEvent, sysLog, sysError } from './utils/logger.js';
@@ -208,8 +209,8 @@ client.once(Events.ClientReady, async () => {
     await scheduleAllMvpTimers(client);
 
     // Start background jobs
-    // startExpiryJob(client); // REMOVED: Switching to Event-Driven Purge
     startQuestScheduler(client);
+    startLeaderboardScheduler(client);
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
