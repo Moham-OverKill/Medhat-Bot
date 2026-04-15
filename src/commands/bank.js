@@ -1206,7 +1206,7 @@ export async function handleInventoryAction(interaction) {
         const publicEmbed = new EmbedBuilder()
           .setTitle('Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`${interaction.user} dropped <@&${res.item.role_id}>!\n\nExpires: <t:${expiresUnix}:R>`)
+          .setDescription(`${interaction.user} dropped <@&${res.item.role_id}>!`)
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
