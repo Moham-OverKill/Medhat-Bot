@@ -86,18 +86,47 @@ export async function runKingOfHillCycle(client, guildId) {
 
     sysLog('KotH Diff Resolved', {
       guild: guildId,
-      detail: `TopN: ${newTopUserIds.length} | Losers: ${losers.length} | ` +
+      detail: `TopN: ${newTopUserIds.length} | DB-Losers: ${losers.length} | ` +
               `Incoming: ${incoming.length} | Continuing: ${continuing.length}`
     });
 
-    // === STEP 6: LOSERS — Dethronement ===
+    // === STEP 5.5: UPDATE STATE EARLY — DB + Cache (atomic) ===
+    // CRITICAL: We update the state BEFORE the sweep so that isUserMvp() correctly returns
+    // FALSE during the dependency unequip loop.
+    const newMvpList = newTopUsers.map((u, i) => ({ userId: u.userId, rank: i + 1 }));
+    await setActiveMvps(guildId, newMvpList);
+    setMvpCache(guildId, newTopUserIds);
+
+    // === STEP 6: ACTUAL LOSERS — Full Server Role Sweep ===
+    // We look for ANYONE who has the role but isn't on the new winner list.
+    // This catches "Ghost" MVPs (manual assignments, missed runs, previous crashes).
+    let membersWithRole = [];
+    if (mvpRole) {
+      try {
+        // Fetch everyone who currently has the role in Discord (live check)
+        const fetchedMembers = await guildObj.members.fetch({ role: mvpRole.id, force: true }).catch(() => new Map());
+        membersWithRole = Array.from(fetchedMembers.values());
+      } catch (e) {
+        sysLog('KotH Role Fetch Failed', { guild: guildId, detail: e.message });
+      }
+    }
+
+    // Combine Historical Loser IDs (from DB) with Current Role-Holders who aren't winners
+    const sweepSet = new Set(losers);
+    membersWithRole.forEach(m => {
+      if (!newTopSet.has(m.id)) sweepSet.add(m.id);
+    });
+
     const { runDependencySweep } = await import('../economy/shop.js');
     const dethroned = [];
+    const ghostsRemoved = [];
 
-    for (const userId of losers) {
+    for (const userId of sweepSet) {
       try {
         const member = await guildObj.members.fetch(userId).catch(() => null);
         if (!member) continue;
+
+        const isGhost = !oldMvpSet.has(userId);
 
         // Remove MVP role
         if (mvpRole && member.roles.cache.has(mvpRole.id)) {
@@ -107,8 +136,14 @@ export async function runKingOfHillCycle(client, guildId) {
         }
 
         // Unequip any MVP-locked items
+        // Since setMvpCache was called above, isUserMvp(userId) will now return FALSE inside here.
         await runDependencySweep(userId, guildId, member);
-        dethroned.push(member.user?.username || userId);
+        
+        if (isGhost) {
+           ghostsRemoved.push(member.user?.username || userId);
+        } else {
+           dethroned.push(member.user?.username || userId);
+        }
       } catch (error) {
         sysError('KotH Dethronement Error', error, { guild: guildId, user: userId });
       }
@@ -151,15 +186,13 @@ export async function runKingOfHillCycle(client, guildId) {
       }
     }
 
-    // === STEP 8: UPDATE STATE — DB + Cache (atomic) ===
-    const newMvpList = newTopUsers.map((u, i) => ({ userId: u.userId, rank: i + 1 }));
-    await setActiveMvps(guildId, newMvpList);
-    setMvpCache(guildId, newTopUserIds);
+    // (Step 8: State update moved to Step 5.5 for atomic sweep safety)
 
     // === STEP 9: AUDIT LOG ===
     const logLines = [];
     if (crowned.length > 0) logLines.push(`👑 **Crowned:** ${crowned.map(n => `\`${n}\``).join(', ')}`);
     if (dethroned.length > 0) logLines.push(`💨 **Dethroned:** ${dethroned.map(n => `\`${n}\``).join(', ')}`);
+    if (ghostsRemoved.length > 0) logLines.push(`👻 **Ghosts Purged:** ${ghostsRemoved.length} stray MVP(s) removed`);
     if (continuing.length > 0) logLines.push(`🔄 **Continuing:** ${continuing.length} MVP(s) held their rank`);
     if (paid.length > 0) logLines.push(`${COIN_EMOJI} **Paid:** ${paid.length} MVP(s) — \`+${rewardAmount}\` each`);
 
