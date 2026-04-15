@@ -1276,8 +1276,12 @@ export async function handleItemClaim(interaction) {
   try {
     const parts = interaction.customId.split('_');
     const isForce = interaction.customId.startsWith('force_claim_');
-    // bank_item_claim_[dropId] (index 3) OR force_claim_[dropId] (index 2)
     const dropId = isForce ? parts[2] : parts[3];
+
+    // 1. Initial acknowledgment (STRICT: Ephemeral-first to protect public messages)
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    }
 
     // ===========================================
     // STEP 0: Interstitial Prerequisite Check
@@ -1306,19 +1310,13 @@ export async function handleItemClaim(interaction) {
               detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
-            return await interaction.followUp({
+            return await interaction.editReply({
               content: `\u274C You don't meet the requirements to equip this!`,
-              components: [warnRow],
-              flags: MessageFlags.Ephemeral
+              components: [warnRow]
             });
           }
         }
       }
-    }
-
-    // 1. Initial acknowledgment (STRICT: Ephemeral-first to protect public messages)
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
 
     // Attempt Claim (Atomic Transaction in shop.js)
