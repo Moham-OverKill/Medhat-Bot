@@ -1411,7 +1411,8 @@ export async function handleItemClaim(interaction) {
       await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => { });
     } else {
       // Private error response (Interaction is ephemeral-deferred)
-      await interaction.editReply({ content: errorMessage }).catch(() => { });
+      // Clear components so the "Claim Anyway" button vanishes on error
+      await interaction.editReply({ content: errorMessage, components: [] }).catch(() => { });
     }
   }
 }
