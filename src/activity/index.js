@@ -189,9 +189,22 @@ const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 1
  */
 function isPostChannel(channel) {
   if (!channel) return false;
-  // If we're inside a Thread, check the parent
-  const typeToCheck = channel.isThread?.() ? channel.parent?.type : channel.type;
-  return POST_CHANNEL_TYPES.has(typeToCheck);
+  
+  // 1. Direct type check (for the channel itself)
+  if (POST_CHANNEL_TYPES.has(channel.type)) return true;
+
+  // 2. Parent type check (for threads inside Forum/Media channels)
+  if (channel.isThread?.()) {
+    if (channel.parent && POST_CHANNEL_TYPES.has(channel.parent.type)) return true;
+    
+    // Fallback: Check parentId if parent object is partial/missing
+    if (channel.parentId) {
+      const parent = channel.client.channels.cache.get(channel.parentId);
+      if (parent && POST_CHANNEL_TYPES.has(parent.type)) return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -228,17 +241,12 @@ async function checkQuestProgress(message) {
   const userId = message.author.id;
   const cooldownKey = `${guildId}:${userId}`;
 
-  // ── Dual-Logic Context Detection ──────────────────────────────────────────
   const inPostChannel = isPostChannel(message.channel);
   // In a Post channel, the thread starter message has id === channelId
   const isThreadStarter = inPostChannel && (message.id === message.channelId);
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Anti-spam cooldown check (once per user per guild per window)
-  const now = Date.now();
-  const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
-  if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) return;
-  questMessageCooldowns.set(cooldownKey, now);
+  let cooldownApplied = false;
 
   for (const quest of quests) {
     // 1. Channel Isolation & Container Matching (Threads/Posts/Normal)
@@ -272,7 +280,16 @@ async function checkQuestProgress(message) {
 
     if (!qualifies) continue;
 
-    // 4. Atomic Update
+    // 4. Targeted Anti-Spam (Only applies if a quest qualifies)
+    if (!cooldownApplied) {
+      const now = Date.now();
+      const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
+      if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) return; // Silent skip
+      questMessageCooldowns.set(cooldownKey, now);
+      cooldownApplied = true;
+    }
+
+    // 5. Atomic Update
     try {
         const { incrementProgressAndPayout } = await import('../quests/quests.js');
         const result = await incrementProgressAndPayout(guildId, userId, quest);
