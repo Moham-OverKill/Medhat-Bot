@@ -158,7 +158,7 @@ export async function showQuestsSchedule(interaction) {
       .setPlaceholder('Quests per Refresh...')
       .addOptions(
         Array.from({ length: 10 }, (_, i) => ({
-          label: `${i + i} Quest${i === 0 ? '' : 's'}`,
+          label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
           value: `${i + 1}`,
           default: perRefresh === (i + 1)
         }))
