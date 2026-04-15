@@ -1278,16 +1278,10 @@ export async function handleItemClaim(interaction) {
     const isForce = interaction.customId.startsWith('force_claim_');
     const dropId = isForce ? parts[2] : parts[3];
 
-    // 1. Initial acknowledgment (STRICT: Ephemeral-first to protect public messages)
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    }
-
     // ===========================================
     // STEP 0: Interstitial Prerequisite Check
     // ===========================================
     if (!isForce) {
-      // (Security check: ephemeral reply will be handled at line 1308)
       const { checkPrerequisites } = await import('../economy/shop.js');
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
 
@@ -1310,13 +1304,21 @@ export async function handleItemClaim(interaction) {
               detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
-            return await interaction.editReply({
+            return await interaction.reply({
               content: `\u274C You don't meet the requirements to equip this!`,
-              components: [warnRow]
+              components: [warnRow],
+              flags: MessageFlags.Ephemeral
             });
           }
         }
       }
+    }
+
+    // 1. Initial acknowledgment (STRICT: Ephemeral-first to protect public messages)
+    if (isForce) {
+      await interaction.deferUpdate();
+    } else if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
 
     // Attempt Claim (Atomic Transaction in shop.js)
@@ -1388,13 +1390,14 @@ export async function handleItemClaim(interaction) {
       sendLog(interaction.guild, 'inventory', 'green', '\uD83C\uDF81 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
-    const errorMessage = `❌ ${error.message}`;
     const errorMsgStr = error.message || '';
+    const isAlreadyOwned = errorMsgStr.includes('already own');
+    const errorMessage = isAlreadyOwned ? `❕ You already have that item.` : `❌ ${error.message}`;
 
     // DISTINGUISH: Validation Errors (User fault) vs System Errors (Bot fault)
     const isValidationError = errorMsgStr.includes('server for at least') ||
       errorMsgStr.includes('already been claimed') ||
-      errorMsgStr.includes('already own');
+      isAlreadyOwned;
 
     if (isValidationError) {
       // Log as moderate warning/info to avoid "Red" logs on Railway for normal user behavior
