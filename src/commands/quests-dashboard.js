@@ -308,14 +308,13 @@ export async function handleAddQuestStart(interaction) {
 
 export async function handleAddChannelSelect(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    // CRITICAL: Do NOT defer yet. showModal() must be the FIRST response.
     const channelId = interaction.values[0];
     const guild = interaction.guild;
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
 
     if (!channel) {
-      await interaction.editReply({ content: '❌ Channel not found.', embeds: [], components: [] });
-      return;
+      return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
     }
 
     let channelType = 'text';
@@ -352,7 +351,7 @@ export async function handleAddChannelSelect(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({
+    await interaction.update({
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(actionSelect),
