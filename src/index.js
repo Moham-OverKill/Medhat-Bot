@@ -267,7 +267,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     }
 
     const { isQuestChannel } = await import('./activity/index.js');
-    if (!isQuestChannel(guildId, channelId, parentId)) return;
+    if (!await isQuestChannel(guildId, channelId, parentId)) return;
 
     // This IS a quest channel -> proceed with fetches and tracking
     if (reaction.partial) await reaction.fetch().catch(() => null);
