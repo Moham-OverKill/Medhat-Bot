@@ -205,11 +205,16 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     const justCompleted = oldProgress < quest.required_count && newProgress >= quest.required_count;
 
     if (amount > 0) {
-        sysLog('Quest Progress Upsert', { user: userId, guild: guildId, detail: `Quest: ${quest.id} | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})` });
+        sysLog('Quest Progress Upsert', { 
+            user: userId, 
+            guild: guildId, 
+            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})` 
+        });
     }
 
     // Execute Auto-Payout silently in background
     if (justCompleted) {
+      sysLog('Quest Completed', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Reward: ${quest.reward_coins}` });
       await autoPayout(guildId, userId, quest);
     }
 
@@ -219,7 +224,11 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
       justCompleted: justCompleted
     };
   } catch (error) {
-    sysError('Quest Progress Increment Failed', error, { user: userId, guild: guildId, detail: `QuestID: ${quest.id}` });
+    sysError('Quest Progress Increment Failed', error, { 
+      user: userId, 
+      guild: guildId, 
+      detail: `QuestID: ${quest.id} | Action: ${quest.action_type} | Amount: ${amount}` 
+    });
     return { progress: 0, completed: false, justCompleted: false };
   }
 }

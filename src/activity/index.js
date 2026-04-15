@@ -66,15 +66,26 @@ export async function initializeActivityTracking(discordClient) {
     const questsById = new Map();
     allQuests.rows.forEach(q => questsById.set(q.id, q));
 
-    // Map active quests per guild
-    const configResult = await pool.query(`SELECT guild_id, config FROM guild_configs WHERE (config->>'quests_enabled')::boolean = true`);
+    // NEW ROBUST QUERY: Fetch any guild that has active quest IDs synced in their config
+    const configResult = await pool.query(`
+      SELECT guild_id, config 
+      FROM guild_configs 
+      WHERE (config->>'active_quest_ids') IS NOT NULL 
+        AND jsonb_array_length((config->'active_quest_ids')::jsonb) > 0
+    `);
     
     for (const row of configResult.rows) {
       const activeIds = row.config.active_quest_ids || [];
       const activeQuests = activeIds.map(id => questsById.get(id)).filter(Boolean);
       if (activeQuests.length > 0) {
         activeQuestsCache.set(row.guild_id, activeQuests);
-        completedQuestsCache.set(row.guild_id, new Map());
+      }
+    }
+
+    // Always ensure completed cache exists for any guild with active quests
+    for (const guildId of activeQuestsCache.keys()) {
+      if (!completedQuestsCache.has(guildId)) {
+        completedQuestsCache.set(guildId, new Map());
       }
     }
 
@@ -151,7 +162,12 @@ export function invalidateConfigCache(guildId) {
 /**
  * Fast-check if a channel is active for quests
  */
-export function isQuestChannel(guildId, channelId, parentId = null) {
+export async function isQuestChannel(guildId, channelId, parentId = null) {
+  // LAZY LOAD: Ensure cache exists for validation
+  if (!activeQuestsCache.has(guildId)) {
+    await syncQuestChannelCache(guildId);
+  }
+
   const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return false;
   return quests.some(q => q.channel_id === channelId || (parentId && q.channel_id === parentId));
@@ -170,8 +186,13 @@ const MIN_MESSAGE_LENGTH = 5;
  */
 async function checkQuestProgress(message) {
   const guildId = message.guild.id;
-  const quests = activeQuestsCache.get(guildId);
   
+  // LAZY LOAD: If cache is missing, attempt one-time sync before skipping
+  if (!activeQuestsCache.has(guildId)) {
+    await syncQuestChannelCache(guildId);
+  }
+
+  const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return;
 
   const actualChannelId = message.channel.id;
@@ -277,6 +298,12 @@ export async function checkReactionQuest(reaction, user) {
   if (user.bot) return;
 
   const guildId = reaction.message.guildId;
+
+  // LAZY LOAD: Ensure cache exists
+  if (!activeQuestsCache.has(guildId)) {
+    await syncQuestChannelCache(guildId);
+  }
+
   const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return;
 
@@ -326,15 +353,25 @@ export async function checkReactionQuest(reaction, user) {
  */
 export async function checkVoiceQuest(guildId, userId, channelId, minutesAdded, voiceState) {
   try {
+    // LAZY LOAD: If cache is missing, attempt one-time sync before skipping
+    if (!activeQuestsCache.has(guildId)) {
+      await syncQuestChannelCache(guildId);
+    }
+
     const quests = activeQuestsCache.get(guildId);
     if (!quests || quests.length === 0) return;
 
     for (const quest of quests) {
       if (quest.action_type !== 'voice_minutes') continue;
-      if (quest.channel_id !== channelId) continue;
+      
+      // Robust Voice Matching: Match channel ID OR Category parent ID
+      const isChannelMatch = (quest.channel_id === channelId || (voiceState?.channel?.parentId === quest.channel_id));
+      if (!isChannelMatch) continue;
       
       const guildCompletions = completedQuestsCache.get(guildId);
       if (guildCompletions?.get(quest.id)?.has(userId)) continue;
+
+      sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Voice | QuestID: ${quest.id} | Minutes: ${minutesAdded}` });
 
       const { incrementProgressAndPayout } = await import('../quests/quests.js');
       const result = await incrementProgressAndPayout(guildId, userId, quest, minutesAdded);
