@@ -181,8 +181,22 @@ const questMessageCooldowns = new Map();
 const QUEST_MSG_COOLDOWN_MS = 10000;
 const MIN_MESSAGE_LENGTH = 5;
 
+// Discord ChannelType values for Post channels
+const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 16
+
 /**
- * Checks all active quests for a message
+ * Returns true if the channel (or its parent) is a Forum or Media "Post" channel.
+ */
+function isPostChannel(channel) {
+  if (!channel) return false;
+  // If we're inside a Thread, check the parent
+  const typeToCheck = channel.isThread?.() ? channel.parent?.type : channel.type;
+  return POST_CHANNEL_TYPES.has(typeToCheck);
+}
+
+/**
+ * Checks all active quests for a message.
+ * Applies Dual-Logic: different rules for Normal vs Post (Forum/Media) channels.
  */
 async function checkQuestProgress(message) {
   const guildId = message.guild.id;
@@ -200,7 +214,6 @@ async function checkQuestProgress(message) {
 
   // Robust Parent ID fetching for threads
   if (!actualParentId && message.channel.isThread?.()) {
-    actualParentId = message.channel.parentId; // Double check
     if (!actualParentId) {
        try {
          const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
@@ -211,9 +224,21 @@ async function checkQuestProgress(message) {
 
   const content = (message.content || '').trim();
   const hasAttachment = message.attachments.size > 0;
+  const hasSticker = message.stickers?.size > 0;
   const userId = message.author.id;
   const cooldownKey = `${guildId}:${userId}`;
-  let processedCooldown = false;
+
+  // ── Dual-Logic Context Detection ──────────────────────────────────────────
+  const inPostChannel = isPostChannel(message.channel);
+  // In a Post channel, the thread starter message has id === channelId
+  const isThreadStarter = inPostChannel && (message.id === message.channelId);
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Anti-spam cooldown check (once per user per guild per window)
+  const now = Date.now();
+  const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
+  if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) return;
+  questMessageCooldowns.set(cooldownKey, now);
 
   for (const quest of quests) {
     // 1. Channel Isolation & Container Matching (Threads/Posts/Normal)
@@ -224,31 +249,38 @@ async function checkQuestProgress(message) {
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
 
-    // 3. Action Type Check
+    // 3. Dual-Logic Action Type Qualification
     let qualifies = false;
-    if (quest.action_type === 'send_messages' && content.length >= MIN_MESSAGE_LENGTH) {
-        qualifies = true;
-    } else if (quest.action_type === 'upload_images' && hasAttachment) {
-        qualifies = true;
+
+    if (quest.action_type === 'send_messages') {
+      if (inPostChannel) {
+        // POST CHANNEL: Only comments qualify (NOT the new-post starter message)
+        qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker);
+      } else {
+        // NORMAL CHANNEL: Any message with text, sticker, or custom emoji counts
+        qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker;
+      }
+    } else if (quest.action_type === 'upload_images') {
+      if (inPostChannel) {
+        // POST CHANNEL: Only New Posts (thread starter with attachment) qualify
+        qualifies = isThreadStarter && hasAttachment;
+      } else {
+        // NORMAL CHANNEL: Any message with an attachment counts — double-dip allowed
+        qualifies = hasAttachment;
+      }
     }
 
     if (!qualifies) continue;
 
-    // 4. Anti-Spam Cooldown
-    if (!processedCooldown) {
-      const now = Date.now();
-      const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
-      if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) return; 
-      questMessageCooldowns.set(cooldownKey, now);
-      processedCooldown = true;
-    }
-
-    // 5. Atomic Update
+    // 4. Atomic Update
     try {
         const { incrementProgressAndPayout } = await import('../quests/quests.js');
         const result = await incrementProgressAndPayout(guildId, userId, quest);
         
-        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Type: ${quest.action_type}` });
+        const context = inPostChannel
+          ? (isThreadStarter ? 'New Post' : 'Comment')
+          : 'Message';
+        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Type: ${quest.action_type} | Context: ${context}` });
 
         if (result.justCompleted) {
           if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
@@ -323,9 +355,21 @@ export async function checkReactionQuest(reaction, user) {
 
   const userId = user.id;
 
+  // ── Dual-Logic: Determine if this reaction is on the Original Post ─────────
+  const reactChannel = reaction.message.channel;
+  const inPostChannel = isPostChannel(reactChannel);
+  // In a Post channel, the thread starter message has id === channelId
+  const isOriginalPost = inPostChannel
+    ? (reaction.message.id === reaction.message.channelId)
+    : true; // Normal channels: any message qualifies
+  // ──────────────────────────────────────────────────────────────────────────
+
   for (const quest of quests) {
     if (quest.action_type !== 'react_images') continue;
     if (quest.channel_id !== channelId && quest.channel_id !== parentId) continue;
+
+    // POST CHANNEL: Only reactions on the Original Post count
+    if (inPostChannel && !isOriginalPost) continue;
     
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
@@ -334,7 +378,8 @@ export async function checkReactionQuest(reaction, user) {
         const { incrementProgressAndPayout } = await import('../quests/quests.js');
         const result = await incrementProgressAndPayout(guildId, userId, quest);
         
-        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Reaction | QuestID: ${quest.id}` });
+        const context = inPostChannel ? 'Original Post' : 'Message';
+        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Reaction | Context: ${context} | QuestID: ${quest.id}` });
 
         if (result.justCompleted) {
           if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
