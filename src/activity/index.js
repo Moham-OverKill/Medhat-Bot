@@ -312,12 +312,15 @@ async function checkQuestProgress(message) {
 }
 
 /**
- * Cache sync helper
+ * Cache sync helper — called when config changes.
+ * SAFE: Never wipes an active cache unless quests are explicitly disabled.
  */
 export async function syncQuestChannelCache(guildId) {
   try {
     const config = await getGuildConfig(guildId);
-    if (!config?.quests_enabled || !config?.active_quest_ids) {
+
+    // Only wipe the cache if quests are explicitly turned OFF
+    if (!config?.quests_enabled) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
       sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache: quests disabled' });
@@ -326,17 +329,29 @@ export async function syncQuestChannelCache(guildId) {
 
     const { getQuests } = await import('../quests/quests.js');
     const allQuests = await getQuests(guildId);
-    
-    // Strict Guild-Isolated ID Matching
-    const activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
-    activeQuestsCache.set(guildId, activeQuests);
-    
-    // Reset completed state for today (or partial reload)
+
+    // If we have active_quest_ids, filter to just those. Otherwise fall back
+    // to ALL quests so tracking never silently dies during a config transition.
+    let activeQuests;
+    if (config.active_quest_ids && config.active_quest_ids.length > 0) {
+      activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
+    } else {
+      // Fallback: track all pool quests so progress never gets stuck at 0
+      activeQuests = allQuests;
+      sysLog('Quest Cache Fallback', { guild: guildId, detail: `No active_quest_ids in config — watching all ${allQuests.length} pool quest(s)` });
+    }
+
+    if (activeQuests.length > 0) {
+      activeQuestsCache.set(guildId, activeQuests);
+    }
+
+    // Ensure completed cache always exists
     if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
-    
-    sysLog('Quest Cache Sync', { guild: guildId, detail: `Tracking ${activeQuests.length} quests` });
+
+    sysLog('Quest Cache Sync', { guild: guildId, detail: `Tracking ${activeQuests.length} quest(s)` });
   } catch (e) {
     sysError('Quest Cache Sync Failed', e, { guild: guildId });
+    // On error, never wipe the existing cache — stale is safer than empty
   }
 }
 
