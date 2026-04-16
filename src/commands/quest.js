@@ -63,7 +63,9 @@ export async function renderQuests(interaction, page = 0) {
         await rotateGuildQuests(guildId, config, null);
         const { syncQuestChannelCache } = await import('../activity/index.js');
         await syncQuestChannelCache(guildId);
-        activeQuestIds = config.active_quest_ids || [];
+        // Re-fetch fresh config from DB — the in-memory object won't have new IDs yet
+        const freshConfig = await getGuildConfig(guildId) || {};
+        activeQuestIds = freshConfig.active_quest_ids || [];
       }
     }
 
@@ -71,6 +73,7 @@ export async function renderQuests(interaction, page = 0) {
       const msg = '📝 There are currently no active quests. Please check back later!';
       return isButton ? interaction.editReply({ content: msg, embeds: [], components: [] }) : interaction.editReply({ content: msg });
     }
+
 
     // Pagination Logic: 3 quests per page
     const totalQuests = activeQuestIds.length;
