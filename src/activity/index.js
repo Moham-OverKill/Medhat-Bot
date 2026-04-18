@@ -144,7 +144,8 @@ async function handleMessage(message) {
   try {
     await checkQuestProgress(message);
   } catch (error) {
-    // Silent fail — never crash the bot for tracking
+    // Log — do NOT silently swallow. Silent failures make bugs invisible.
+    sysError('Quest Progress Check Failed', error, { guild: message.guild?.id, user: message.author?.id });
   }
 }
 
@@ -242,8 +243,9 @@ async function checkQuestProgress(message) {
   const cooldownKey = `${guildId}:${userId}`;
 
   const inPostChannel = isPostChannel(message.channel);
-  // In a Post channel, the thread starter message has id === channelId
-  const isThreadStarter = inPostChannel && (message.id === message.channelId);
+  // In a Post channel, the thread starter message has id === channel.id
+  // NOTE: message.channelId does NOT exist in discord.js v14 — use message.channel.id
+  const isThreadStarter = inPostChannel && (message.id === message.channel.id);
   // ──────────────────────────────────────────────────────────────────────────
 
   let cooldownApplied = false;
@@ -305,7 +307,8 @@ async function checkQuestProgress(message) {
         sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Type: ${quest.action_type} | Context: ${context}` });
 
         if (result.justCompleted) {
-          if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
+          // Re-fetch the map in case it was just created in this cycle
+          if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
           const map = completedQuestsCache.get(guildId);
           if (!map.has(quest.id)) map.set(quest.id, new Set());
           map.get(quest.id).add(userId);
@@ -396,9 +399,9 @@ export async function checkReactionQuest(reaction, user) {
   // ── Dual-Logic: Determine if this reaction is on the Original Post ─────────
   const reactChannel = reaction.message.channel;
   const inPostChannel = isPostChannel(reactChannel);
-  // In a Post channel, the thread starter message has id === channelId
+  // NOTE: reaction.message.channelId does NOT exist in discord.js v14 — use .channel?.id
   const isOriginalPost = inPostChannel
-    ? (reaction.message.id === reaction.message.channelId)
+    ? (reaction.message.id === reaction.message.channel?.id)
     : true; // Normal channels: any message qualifies
   // ──────────────────────────────────────────────────────────────────────────
 
