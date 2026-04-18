@@ -211,6 +211,8 @@ export async function handleQuestsScheduleUpdate(interaction) {
     }
 
     await setGuildConfig(guildId, config);
+    const { syncQuestChannelCache } = await import('../activity/index.js');
+    await syncQuestChannelCache(guildId);
     await showQuestsSchedule(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Quest schedule update');

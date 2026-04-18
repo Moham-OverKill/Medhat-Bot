@@ -178,8 +178,8 @@ export async function isQuestChannel(guildId, channelId, parentId = null) {
 // ============================================
 
 const questMessageCooldowns = new Map();
-const QUEST_MSG_COOLDOWN_MS = 10000;
-const MIN_MESSAGE_LENGTH = 5;
+const QUEST_MSG_COOLDOWN_MS = 3000; // 3 seconds (Reduced from 10s for better feel)
+const MIN_MESSAGE_LENGTH = 3;
 
 // Discord ChannelType values for Post channels
 const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 16
@@ -284,7 +284,12 @@ async function checkQuestProgress(message) {
     if (!cooldownApplied) {
       const now = Date.now();
       const lastCounted = questMessageCooldowns.get(cooldownKey) || 0;
-      if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) return; // Silent skip
+      if (now - lastCounted < QUEST_MSG_COOLDOWN_MS) {
+        // Descriptive log for debugging "stuck" progress
+        const remaining = Math.ceil((QUEST_MSG_COOLDOWN_MS - (now - lastCounted)) / 1000);
+        sysLog('Quest Progress Skipped', { user: userId, guild: guildId, detail: `Rate-limited: ${remaining}s left | QuestID: ${quest.id}` });
+        return; 
+      }
       questMessageCooldowns.set(cooldownKey, now);
       cooldownApplied = true;
     }
@@ -319,11 +324,12 @@ export async function syncQuestChannelCache(guildId) {
   try {
     const config = await getGuildConfig(guildId);
 
-    // Only wipe the cache if quests are explicitly turned OFF
-    if (!config?.quests_enabled) {
+    // Only wipe the cache if quests are EXPLICITLY turned OFF
+    // If config is missing/null (transient error), we KEEP existing cache for safety.
+    if (config?.quests_enabled === false || config?.missions_enabled === false) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
-      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache: quests disabled' });
+      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache: quests explicitly disabled' });
       return;
     }
 
