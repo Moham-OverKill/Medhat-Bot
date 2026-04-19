@@ -6,7 +6,7 @@ import {
   ButtonBuilder,
   ButtonStyle
 } from 'discord.js';
-import { getGuildConfig } from '../storage/config.js';
+import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import {
   getQuest,
   getProgress,
@@ -55,55 +55,82 @@ export async function renderQuests(interaction, page = 0) {
 
     let activeQuestIds = config.active_quest_ids || [];
 
-    // Initialization: If pool has quests but active list is empty, trigger ONE rotation and save
-    if (activeQuestIds.length === 0) {
+    // --- VALIDATION & CLEANUP ---
+    // Fetch all quests to see which ones are actually valid
+    const validQuests = [];
+    const missingIds = [];
+
+    for (const questId of activeQuestIds) {
+      const q = await getQuest(questId);
+      if (q) {
+        validQuests.push(q);
+      } else {
+        missingIds.push(questId);
+      }
+    }
+
+    // If we found orphan IDs (deleted quests), update the config immediately
+    if (missingIds.length > 0) {
+      config.active_quest_ids = validQuests.map(q => q.id);
+      await setGuildConfig(guildId, config);
+      const { syncQuestChannelCache } = await import('../activity/index.js');
+      await syncQuestChannelCache(interaction.guildId);
+      sysLog('Quest Cleanup', { guild: guildId, detail: `Removed ${missingIds.length} orphaned quest(s): [${missingIds.join(', ')}]` });
+    }
+
+    // Initialization / Auto-Recovery: 
+    // If pool has quests but valid active list is empty, trigger ONE rotation
+    if (validQuests.length === 0) {
       const poolQuests = await getQuests(guildId);
       if (poolQuests.length > 0) {
         const { rotateGuildQuests } = await import('../cron/quests.js');
         await rotateGuildQuests(guildId, config, null);
         const { syncQuestChannelCache } = await import('../activity/index.js');
         await syncQuestChannelCache(guildId);
-        // Re-fetch fresh config from DB — the in-memory object won't have new IDs yet
+        
+        // Final re-fetch to get the new rotation
         const freshConfig = await getGuildConfig(guildId) || {};
-        activeQuestIds = freshConfig.active_quest_ids || [];
+        const freshQuests = [];
+        for (const id of (freshConfig.active_quest_ids || [])) {
+          const q = await getQuest(id);
+          if (q) freshQuests.push(q);
+        }
+        
+        validQuests.push(...freshQuests);
       }
     }
 
-    if (activeQuestIds.length === 0) {
+    if (validQuests.length === 0) {
       const msg = '📝 There are currently no active quests. Please check back later!';
       return isButton ? interaction.editReply({ content: msg, embeds: [], components: [] }) : interaction.editReply({ content: msg });
     }
 
-
-    // Pagination Logic: 3 quests per page
-    const totalQuests = activeQuestIds.length;
+    // --- PAGINATION ---
+    const totalQuests = validQuests.length;
     const itemsPerPage = 3;
     const totalPages = Math.ceil(totalQuests / itemsPerPage);
     const currentPage = Math.max(0, Math.min(page, totalPages - 1));
     
     const startIdx = currentPage * itemsPerPage;
-    const pageQuests = activeQuestIds.slice(startIdx, startIdx + itemsPerPage);
+    const pageQuests = validQuests.slice(startIdx, startIdx + itemsPerPage);
 
     // Track total completions for Title
     let completedCount = 0;
     const questEntries = [];
 
-    for (const questId of activeQuestIds) {
-      const quest = await getQuest(questId);
-      if (!quest) continue;
-
+    // We still need to check completion for ALL quests even if not on page to get total count
+    for (const quest of validQuests) {
       const progress = await getProgress(guildId, user.id, quest.id);
       const currentCount = progress?.progress || 0;
       const isCompleted = progress?.completed || currentCount >= quest.required_count;
       
       if (isCompleted) completedCount++;
 
-      // Only format entries for current page
-      if (activeQuestIds.indexOf(questId) >= startIdx && activeQuestIds.indexOf(questId) < startIdx + itemsPerPage) {
+      // Only format entries for the current page
+      if (validQuests.indexOf(quest) >= startIdx && validQuests.indexOf(quest) < startIdx + itemsPerPage) {
         const questInfo = formatQuestTask(quest);
         const progressBar = generateProgressBar(currentCount, quest.required_count);
         
-        // If completed, replace progress line with Claimed status
         const progressLine = isCompleted 
           ? `✅ Claimed **${quest.reward_coins}** ${COIN_EMOJI}`
           : `Progress: \`${currentCount}\` / \`${quest.required_count}\` ${questInfo.unit}`;
