@@ -254,16 +254,24 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     if (user.bot) return;
 
     // Direct check on partial message data to avoid API calls for non-quest channels
-    // reaction.message.channelId and guildId are available without fetching
     const guildId = reaction.message.guildId;
     const channelId = reaction.message.channelId;
     if (!guildId || !channelId) return;
 
-    // Get parent ID for threads/posts
+    // Get parent ID for threads/posts (Robust lookup)
     let parentId = reaction.message.channel?.parentId;
     if (!parentId && reaction.message.guild) {
+        // Attempt cache lookup
         const cached = reaction.message.guild.channels.cache.get(channelId);
-        if (cached?.parentId) parentId = cached.parentId;
+        if (cached?.parentId) {
+            parentId = cached.parentId;
+        } else {
+            // Proactive fetch for threads (needed for Forum/Media visibility)
+            try {
+              const fetched = await client.channels.fetch(channelId).catch(() => null);
+              if (fetched?.parentId) parentId = fetched.parentId;
+            } catch (err) {}
+        }
     }
 
     const { isQuestChannel } = await import('./activity/index.js');
@@ -276,7 +284,8 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     const { checkReactionQuest } = await import('./activity/index.js');
     await checkReactionQuest(reaction, user);
   } catch (error) {
-    // Silent fail
+    // STOP SILENT FAIL: Log for debugging if quest tracking crashes
+    sysError('Reaction Quest Failure', error, { guild: reaction.message?.guildId, user: user?.id });
   }
 });
 
