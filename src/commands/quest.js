@@ -207,9 +207,17 @@ export async function handleQuestInteraction(interaction) {
     const customId = interaction.customId;
     
     if (customId === 'quest_refresh') {
-        // The Refresh button triggers a total re-render.
-        // renderQuests() always calls getGuildConfig(guildId) which performs a fresh DB query.
-        // This ensures the user sees new quests immediately after a rotation cycle.
+        // The Refresh button now triggers a DEEP sync.
+        // 1. Force the activity tracker to rebuild its channel watch-list
+        try {
+            const { syncQuestChannelCache } = await import('../activity/index.js');
+            await syncQuestChannelCache(interaction.guildId);
+            sysLog('Quest Refresh Triggered', { user: interaction.user.id, guild: interaction.guildId, detail: 'Manual deep-sync performed' });
+        } catch (err) {
+            sysError('Quest Cache Refresh Failed', err, { guild: interaction.guildId });
+        }
+
+        // 2. Re-render the UI (fetches fresh config from DB)
         await renderQuests(interaction, 0);
         return;
     }

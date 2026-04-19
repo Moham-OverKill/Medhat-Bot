@@ -25,6 +25,9 @@ let client = null;
 let tickInterval = null;
 let handlersInitialized = false;
 
+// Set of guild IDs currently being sync'd to avoid race conditions
+const syncingGuilds = new Set();
+
 export async function initializeActivityTracking(discordClient) {
   if (handlersInitialized) {
     return;
@@ -187,18 +190,26 @@ const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 1
 
 /**
  * Returns true if the channel (or its parent) is a Forum or Media "Post" channel.
+ * Robust implementation that handles partial caches.
  */
-function isPostChannel(channel) {
+async function isPostChannel(channel) {
   if (!channel) return false;
   
   // 1. Direct type check (for the channel itself)
   if (POST_CHANNEL_TYPES.has(channel.type)) return true;
 
-  // 2. Parent type check (for threads inside Forum/Media channels)
+  // 2. Thread check (Threads in Forum/Media share parent type)
   if (channel.isThread?.()) {
+    // Proactive Parent Fetch: If parent is missing from cache, fetch it once
+    if (!channel.parent && channel.parentId) {
+      try {
+        await channel.client.channels.fetch(channel.parentId).catch(() => null);
+      } catch {}
+    }
+
     if (channel.parent && POST_CHANNEL_TYPES.has(channel.parent.type)) return true;
     
-    // Fallback: Check parentId if parent object is partial/missing
+    // Final fallback: try fetching the parent type directly from ID
     if (channel.parentId) {
       const parent = channel.client.channels.cache.get(channel.parentId);
       if (parent && POST_CHANNEL_TYPES.has(parent.type)) return true;
@@ -215,13 +226,20 @@ function isPostChannel(channel) {
 async function checkQuestProgress(message) {
   const guildId = message.guild.id;
   
-  // LAZY LOAD: If cache is missing, attempt one-time sync before skipping
-  if (!activeQuestsCache.has(guildId)) {
-    await syncQuestChannelCache(guildId);
+  const quests = activeQuestsCache.get(guildId);
+  if (!quests || quests.length === 0) {
+    // LAZY LOAD: If cache is empty, attempt one-time sync before skipping
+    if (syncingGuilds.has(guildId)) return; // Wait for current sync
+    syncingGuilds.add(guildId);
+    try {
+        await syncQuestChannelCache(guildId);
+    } finally {
+        syncingGuilds.delete(guildId);
+    }
   }
 
-  const quests = activeQuestsCache.get(guildId);
-  if (!quests || quests.length === 0) return;
+  const finalQuests = activeQuestsCache.get(guildId);
+  if (!finalQuests || finalQuests.length === 0) return;
 
   const actualChannelId = message.channel.id;
   let actualParentId = message.channel.parentId;
@@ -242,7 +260,7 @@ async function checkQuestProgress(message) {
   const userId = message.author.id;
   const cooldownKey = `${guildId}:${userId}`;
 
-  const inPostChannel = isPostChannel(message.channel);
+  const inPostChannel = await isPostChannel(message.channel);
   // In a Post channel, the thread starter message has id === channel.id
   // NOTE: message.channelId does NOT exist in discord.js v14 — use message.channel.id
   const isThreadStarter = inPostChannel && (message.id === message.channel.id);
@@ -372,12 +390,18 @@ export async function checkReactionQuest(reaction, user) {
 
   const guildId = reaction.message.guildId;
 
-  // LAZY LOAD: Ensure cache exists
-  if (!activeQuestsCache.has(guildId)) {
-    await syncQuestChannelCache(guildId);
+  let quests = activeQuestsCache.get(guildId);
+  if (!quests || quests.length === 0) {
+    if (syncingGuilds.has(guildId)) return;
+    syncingGuilds.add(guildId);
+    try {
+        await syncQuestChannelCache(guildId);
+    } finally {
+        syncingGuilds.delete(guildId);
+    }
+    quests = activeQuestsCache.get(guildId);
   }
 
-  const quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) return;
 
   const channelId = reaction.message.channelId;
@@ -398,7 +422,7 @@ export async function checkReactionQuest(reaction, user) {
 
   // ── Dual-Logic: Determine if this reaction is on the Original Post ─────────
   const reactChannel = reaction.message.channel;
-  const inPostChannel = isPostChannel(reactChannel);
+  const inPostChannel = await isPostChannel(reactChannel);
   // NOTE: reaction.message.channelId does NOT exist in discord.js v14 — use .channel?.id
   const isOriginalPost = inPostChannel
     ? (reaction.message.id === reaction.message.channel?.id)
