@@ -138,8 +138,9 @@ export function cleanup() {
 }
 
 async function handleMessage(message) {
-  // Ignore bots, webhooks, and DMs
-  if (message.author.bot || message.webhookId || !message.guild) return;
+  // Ignore bots, webhooks, and DMs, and safely handle partials missing authors
+  if (!message.author || message.author.bot || message.webhookId || !message.guild) return;
+
 
   addMessagePoint(message.guild, message.author.id, message.author.username, message.content);
 
@@ -254,16 +255,27 @@ async function checkQuestProgress(message) {
     }
   }
 
-  const content = (message.content || '').trim();
-  const hasAttachment = message.attachments.size > 0;
-  const hasSticker = message.stickers?.size > 0;
+  let content = '';
+  let hasAttachment = false;
+  let hasSticker = false;
+  let isThreadStarter = false;
+  let inPostChannel = false;
+
   const userId = message.author.id;
   const cooldownKey = `${guildId}:${userId}`;
 
-  const inPostChannel = await isPostChannel(message.channel);
-  // In a Post channel, the thread starter message has id === channel.id
-  // NOTE: message.channelId does NOT exist in discord.js v14 — use message.channel.id
-  const isThreadStarter = inPostChannel && (message.id === message.channel.id);
+  try {
+    content = (message.content || '').trim();
+    hasAttachment = (message.attachments?.size || 0) > 0;
+    hasSticker = (message.stickers?.size || 0) > 0;
+
+    inPostChannel = await isPostChannel(message.channel);
+    isThreadStarter = inPostChannel && (message.id === message.channel?.id);
+  } catch (error) {
+    sysError('Message Parse Error (Quest Engine)', error, { user: userId, guild: guildId, detail: 'Failed to read message properties' });
+    return; // Fast fail
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
 
   let cooldownApplied = false;
@@ -386,9 +398,11 @@ export async function syncQuestChannelCache(guildId) {
  * Check reaction-based quest progress.
  */
 export async function checkReactionQuest(reaction, user) {
-  if (user.bot) return;
+  if (!user || user.bot) return;
 
-  const guildId = reaction.message.guildId;
+  const guildId = reaction.message?.guildId;
+  if (!guildId) return;
+
 
   let quests = activeQuestsCache.get(guildId);
   if (!quests || quests.length === 0) {
@@ -421,12 +435,19 @@ export async function checkReactionQuest(reaction, user) {
   const userId = user.id;
 
   // ── Dual-Logic: Determine if this reaction is on the Original Post ─────────
-  const reactChannel = reaction.message.channel;
-  const inPostChannel = await isPostChannel(reactChannel);
-  // NOTE: reaction.message.channelId does NOT exist in discord.js v14 — use .channel?.id
-  const isOriginalPost = inPostChannel
-    ? (reaction.message.id === reaction.message.channel?.id)
-    : true; // Normal channels: any message qualifies
+  let inPostChannel = false;
+  let isOriginalPost = false;
+  
+  try {
+    const reactChannel = reaction.message.channel;
+    inPostChannel = await isPostChannel(reactChannel);
+    isOriginalPost = inPostChannel
+      ? (reaction.message.id === reactChannel?.id)
+      : true; // Normal channels: any message qualifies
+  } catch (err) {
+    sysError('Reaction Parse Error (Quest Engine)', err, { user: userId, guild: guildId });
+    return; // Fast fail
+  }
   // ──────────────────────────────────────────────────────────────────────────
 
   for (const quest of quests) {
