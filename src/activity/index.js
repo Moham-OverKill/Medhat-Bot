@@ -372,7 +372,7 @@ export async function syncQuestChannelCache(guildId) {
     // If we have active_quest_ids, filter to just those. Otherwise fall back
     // to ALL quests so tracking never silently dies during a config transition.
     let activeQuests;
-    if (config.active_quest_ids && config.active_quest_ids.length > 0) {
+    if (config?.active_quest_ids && config.active_quest_ids.length > 0) {
       activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
     } else {
       // Fallback: track all pool quests so progress never gets stuck at 0

@@ -17,7 +17,7 @@ import {
 } from '../quests/quests.js';
 import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { getNextQuestRefresh } from '../utils/time.js';
-import { sysError } from '../utils/logger.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('quest')
