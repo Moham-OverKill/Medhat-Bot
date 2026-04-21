@@ -526,9 +526,10 @@ export async function handleDeleteQuest(interaction, questId) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     const config = await getGuildConfig(interaction.guildId) || {};
+    const wasActive = config.active_quest_ids && config.active_quest_ids.includes(questId);
 
     // If the active Quest is the one being deleted, clear it
-    if (config.active_quest_ids && config.active_quest_ids.includes(questId)) {
+    if (wasActive) {
       config.active_quest_ids = config.active_quest_ids.filter(id => id !== questId);
       await setGuildConfig(interaction.guildId, config);
       const { syncQuestChannelCache } = await import('../activity/index.js');
@@ -538,6 +539,12 @@ export async function handleDeleteQuest(interaction, questId) {
     const success = await deleteQuest(questId);
     if (!success) {
       await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
+    } else if (wasActive) {
+      // Preventative Sweeping: Trigger an instant cycle rotation since an active quest was deleted mid-cycle
+      const freshConfig = await getGuildConfig(interaction.guildId) || {};
+      const { rotateGuildQuests } = await import('../cron/quests.js');
+      const { getPool } = await import('../storage/postgres.js');
+      await rotateGuildQuests(interaction.guildId, freshConfig, getPool());
     }
 
     await showQuestsDashboard(interaction);
