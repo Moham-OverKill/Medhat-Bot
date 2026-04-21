@@ -69,34 +69,38 @@ export async function renderQuests(interaction, page = 0) {
       }
     }
 
-    // If we found orphan IDs (deleted quests), update the config immediately
-    if (missingIds.length > 0) {
-      config.active_quest_ids = validQuests.map(q => q.id);
-      await setGuildConfig(guildId, config);
-      const { syncQuestChannelCache } = await import('../activity/index.js');
-      await syncQuestChannelCache(interaction.guildId);
-      sysLog('Quest Cleanup', { guild: guildId, detail: `Removed ${missingIds.length} orphaned quest(s): [${missingIds.join(', ')}]` });
-    }
-
-    // Initialization / Auto-Recovery: 
-    // If pool has quests but valid active list is empty, trigger ONE rotation
-    if (validQuests.length === 0) {
-      const poolQuests = await getQuests(guildId);
+    // If we found orphan IDs (deleted quests), we should trigger an auto-recovery rotation immediately.
+    // Initialization: Also trigger if the active list is empty but we have available quests in pool.
+    const poolQuests = await getQuests(guildId);
+    
+    if (missingIds.length > 0 || (validQuests.length === 0 && poolQuests.length > 0)) {
       if (poolQuests.length > 0) {
         const { rotateGuildQuests } = await import('../cron/quests.js');
-        await rotateGuildQuests(guildId, config, null);
+        const { getPool } = await import('../storage/postgres.js');
+        
+        // Trigger emergency self-healing rotation
+        await rotateGuildQuests(guildId, config, getPool());
         const { syncQuestChannelCache } = await import('../activity/index.js');
         await syncQuestChannelCache(guildId);
         
-        // Final re-fetch to get the new rotation
+        // Wipe and re-fetch validQuests completely after rotation
+        validQuests.length = 0; 
         const freshConfig = await getGuildConfig(guildId) || {};
-        const freshQuests = [];
         for (const id of (freshConfig.active_quest_ids || [])) {
           const q = await getQuest(id);
-          if (q) freshQuests.push(q);
+          if (q) validQuests.push(q);
         }
         
-        validQuests.push(...freshQuests);
+        sysLog('Quest Auto-Repair', { guild: guildId, detail: `Triggered cycle recovery due to missing/deleted IDs.` });
+      } else {
+        // If pool is totally empty, just clean the orphans so the UI shows "No active quests" cleanly
+        if (missingIds.length > 0) {
+          config.active_quest_ids = validQuests.map(q => q.id);
+          await setGuildConfig(guildId, config);
+          const { syncQuestChannelCache } = await import('../activity/index.js');
+          await syncQuestChannelCache(guildId);
+          sysLog('Quest Cleanup', { guild: guildId, detail: `Removed ${missingIds.length} orphaned quest(s).` });
+        }
       }
     }
 
