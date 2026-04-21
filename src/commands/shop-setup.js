@@ -1781,12 +1781,17 @@ export async function handleEditCategoryStart(interaction) {
         value: c.id.toString() 
       })));
 
+    const embed = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle('📂 Category Management')
+      .setDescription('**Select a category to manage:**');
+
     const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ content: '**Select a category to manage:**', components: [row, rowBack], embeds: [] });
+    await interaction.editReply({ content: null, embeds: [embed], components: [row, rowBack] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category start');
   }
@@ -2171,11 +2176,16 @@ export async function handleDeleteCategoryStart(interaction) {
         value: c.id.toString() 
       })));
 
+    const embed = new EmbedBuilder()
+      .setColor('#E74C3C')
+      .setTitle('🗑️ Delete Category')
+      .setDescription('**Select a category to delete:**');
+
     const row = new ActionRowBuilder().addComponents(select);
 
     await interaction.editReply({
-      content: '**Select a category to delete:**',
-      embeds: [],
+      content: null,
+      embeds: [embed],
       components: [row, rowBack]
     });
   } catch (error) {
@@ -2256,6 +2266,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
       new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
+    // Standardized Embed Style
+    const embed = new EmbedBuilder()
+      .setColor(isEdit ? '#3498DB' : '#E74C3C')
+      .setTitle(isItem ? '🎭 Item Management' : '📦 Pack Management');
+
     // Fetch items mapping to current folder (if item mode) or just list packs (if pack mode)
     if (isItem) {
       const items = await getShopItems(interaction.guildId, null, 'name', true);
@@ -2291,10 +2306,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(options);
 
+        embed.setDescription(`**Select an item to ${isEdit ? 'manage' : 'delete'}:**`);
+
         return interaction.editReply({
-          content: message || `**Select an item to ${isEdit ? 'manage' : 'delete'}:**`,
+          content: message || null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
-          embeds: []
+          embeds: [embed]
         });
       }
 
@@ -2321,10 +2338,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
             ...options
           ]);
 
+        embed.setDescription(`**Select a category to ${isEdit ? 'manage' : 'delete'}:**`);
+
         return interaction.editReply({
-          content: message || `**Select a category to ${isEdit ? 'manage' : 'delete'}:**`,
+          content: message || null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
-          embeds: []
+          embeds: [embed]
         });
       }
 
@@ -2353,10 +2372,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
           ...itemOptions
         ]);
 
+      embed.setDescription(`**Select an item to ${isEdit ? 'manage' : 'delete'}:**`);
+
       return interaction.editReply({
-         content: message || `**Select an item to ${isEdit ? 'manage' : 'delete'}:**`,
+         content: message || null,
          components: [new ActionRowBuilder().addComponents(select), rowBack],
-         embeds: []
+         embeds: [embed]
       });
     }
 
@@ -2380,10 +2401,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(packOptions);
 
+        embed.setDescription(`**Select a pack to ${isEdit ? 'manage' : 'delete'}:**`);
+
         return interaction.editReply({
-          content: message || `**Select a pack to ${isEdit ? 'manage' : 'delete'}:**`,
+          content: message || null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
-          embeds: []
+          embeds: [embed]
         });
     }
   } catch (error) {
