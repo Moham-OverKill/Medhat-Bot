@@ -1775,7 +1775,7 @@ export async function handleEditCategoryStart(interaction) {
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('shop_select_cat_edit_rename')
-      .setPlaceholder('Select Category to Edit')
+      .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
         label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
         value: c.id.toString() 
@@ -1786,7 +1786,7 @@ export async function handleEditCategoryStart(interaction) {
       new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ content: '**Choose a category to manage:**', components: [row, rowBack], embeds: [] });
+    await interaction.editReply({ content: '**Select a category to manage:**', components: [row, rowBack], embeds: [] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category start');
   }
@@ -2165,7 +2165,7 @@ export async function handleDeleteCategoryStart(interaction) {
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('shop_select_cat_delete_confirm')
-      .setPlaceholder('Select Category to Delete')
+      .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
         label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
         value: c.id.toString() 
@@ -2174,7 +2174,7 @@ export async function handleDeleteCategoryStart(interaction) {
     const row = new ActionRowBuilder().addComponents(select);
 
     await interaction.editReply({
-      content: 'Select the category you want to remove.',
+      content: '**Select a category to delete:**',
       embeds: [],
       components: [row, rowBack]
     });
@@ -2288,11 +2288,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select Collection Type')
+          .setPlaceholder('Select')
           .addOptions(options);
 
         return interaction.editReply({
-          content: message || `**Choose how you want to browse items to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+          content: message || `**Select an item to ${isEdit ? 'manage' : 'delete'}:**`,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: []
         });
@@ -2315,14 +2315,14 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select a Category')
+          .setPlaceholder('Select')
           .addOptions([
             { label: '⬅️ Back', value: 'action_back_root' },
             ...options
           ]);
 
         return interaction.editReply({
-          content: message || `**Select a category to browse:**`,
+          content: message || `**Select a category to ${isEdit ? 'manage' : 'delete'}:**`,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: []
         });
@@ -2347,14 +2347,14 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
       const select = new StringSelectMenuBuilder()
         .setCustomId('shop_admin_browser_select')
-        .setPlaceholder('Select Item to Manage')
+        .setPlaceholder('Select')
         .addOptions([
           { label: '⬅️ Back', value: backValue },
           ...itemOptions
         ]);
 
       return interaction.editReply({
-         content: message || `**Select an item to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+         content: message || `**Select an item to ${isEdit ? 'manage' : 'delete'}:**`,
          components: [new ActionRowBuilder().addComponents(select), rowBack],
          embeds: []
       });
@@ -2377,11 +2377,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select Pack to Manage')
+          .setPlaceholder('Select')
           .addOptions(packOptions);
 
         return interaction.editReply({
-          content: message || `**Select a pack to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+          content: message || `**Select a pack to ${isEdit ? 'manage' : 'delete'}:**`,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: []
         });
