@@ -2261,62 +2261,95 @@ export async function renderAdminBrowser(interaction, contextMap) {
       const items = await getShopItems(interaction.guildId, null, 'name', true);
       const singleItems = items.filter(i => !i.is_pack && i.item_type !== 'pack');
 
-      // Top-level View (Folder Selection)
+      // 1. ROOT VIEW - Show Categorized vs Uncategorized (Matches Post flow)
       if (folder === 'root') {
-        const categories = await getShopCategories(interaction.guildId);
-        // Only return folders that actually contain standard items
-        const usedCategoryIds = new Set(singleItems.map(i => i.category_id));
-        const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
-        const uncategorizedItems = singleItems.filter(i => !i.category_id);
+        const hasCategorized = singleItems.some(i => i.category_id);
+        const hasUncategorized = singleItems.some(i => !i.category_id);
 
-        if (activeCategories.length === 0 && uncategorizedItems.length === 0) {
+        if (!hasCategorized && !hasUncategorized) {
           return interaction.editReply({ content: '❌ No items available.', components: [rowBack], embeds: [] });
         }
 
         const options = [];
-        if (uncategorizedItems.length > 0) {
-          options.push({ label: '🏷️ Uncategorized Items', value: 'cat_null', description: `${uncategorizedItems.length} standalone item(s)` });
+        if (hasCategorized) {
+          options.push({ 
+            label: '📂 Categorized Items', 
+            value: 'action_browse_categorized', 
+            description: 'Browse items by category folders' 
+          });
         }
-        for (const cat of activeCategories.slice(0, 24)) {
-          const count = singleItems.filter(i => i.category_id === cat.id).length;
-          options.push({ label: `📂 ${cat.name || `Category #${cat.id}`}`.slice(0, 100), value: `cat_${cat.id}`, description: `${count} item(s)` });
+        if (hasUncategorized) {
+          options.push({ 
+            label: '🏷️ Uncategorized Items', 
+            value: 'cat_null', 
+            description: 'Show items not assigned to any category' 
+          });
         }
 
         const select = new StringSelectMenuBuilder()
           .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select a Folder')
+          .setPlaceholder('Select Collection Type')
           .addOptions(options);
 
         return interaction.editReply({
-          content: message || `**Choose a folder to browse items to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+          content: message || `**Choose how you want to browse items to ${isEdit ? 'manage' : 'permanently delete'}:**`,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: []
         });
       }
 
-      // Folder-level View (Item Selection inside specific Category or Uncategorized)
+      // 2. CATEGORY LIST VIEW - Show specific Category folders
+      if (folder === 'browse_categories') {
+        const categories = await getShopCategories(interaction.guildId);
+        const usedCategoryIds = new Set(singleItems.map(i => i.category_id));
+        const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
+
+        const options = activeCategories.slice(0, 24).map(cat => {
+          const count = singleItems.filter(i => i.category_id === cat.id).length;
+          return { 
+            label: `📂 ${cat.name || `Category #${cat.id}`}`.slice(0, 100), 
+            value: `cat_${cat.id}`, 
+            description: `${count} item(s)` 
+          };
+        });
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId('shop_admin_browser_select')
+          .setPlaceholder('Select a Category')
+          .addOptions([
+            { label: '⬅️ Back', value: 'action_back_root' },
+            ...options
+          ]);
+
+        return interaction.editReply({
+          content: message || `**Select a category to browse:**`,
+          components: [new ActionRowBuilder().addComponents(select), rowBack],
+          embeds: []
+        });
+      }
+
+      // 3. ITEM VIEW - List items inside a specific Category or Uncategorized
       const targetCategoryId = folder === 'cat_null' ? null : parseInt(folder.replace('cat_', ''), 10);
       const folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
 
       if (folderItems.length === 0) {
-         // Should not happen, but a safe fallback
          pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root' });
          return renderAdminBrowser(interaction, pendingAdminBrowser.get(interaction.user.id));
       }
 
-      // 25 limit max per discord UI 
-      const itemOptions = folderItems.slice(0, 25).map(i => ({
+      const itemOptions = folderItems.slice(0, 24).map(i => ({
         label: `🏷️ ${(i.name || `Item #${i.id}`).slice(0, 80)}`,
         value: `item_${i.id}`,
         description: `${i.price.toLocaleString()} coins`
       }));
 
-      // Add a back to folders button at the end if we have room, otherwise it goes on the action row
+      const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
+
       const select = new StringSelectMenuBuilder()
         .setCustomId('shop_admin_browser_select')
         .setPlaceholder('Select Item to Manage')
         .addOptions([
-          { label: '⬅️ Back to Folders', value: 'action_back_root' },
+          { label: '⬅️ Back', value: backValue },
           ...itemOptions
         ]);
 
@@ -2367,15 +2400,23 @@ export async function handleAdminBrowserSelect(interaction) {
      return interaction.editReply({ content: '❌ Your session expired. Please start over.', embeds: [], components: [] });
   }
 
-  // Handle navigating back up to the folder layer
+  // Handle navigating back up to the root layer
   if (selection === 'action_back_root') {
      context.folder = 'root';
-     context.message = null; // Clear any success messages
+     context.message = null;
      pendingAdminBrowser.set(interaction.user.id, context);
      return renderAdminBrowser(interaction, context);
   }
 
-  // Handle drilling into a folder
+  // Handle navigating to the categories list
+  if (selection === 'action_browse_categorized') {
+     context.folder = 'browse_categories';
+     context.message = null;
+     pendingAdminBrowser.set(interaction.user.id, context);
+     return renderAdminBrowser(interaction, context);
+  }
+
+  // Handle drilling into a specific Category folder
   if (selection.startsWith('cat_')) {
       context.folder = selection;
       context.message = null;
