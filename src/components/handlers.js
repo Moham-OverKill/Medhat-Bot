@@ -43,6 +43,7 @@ import {
   handleEditPackSelect,
   handleEditItemDetails,
   handleEditPackDetails,
+  handleAdminBrowserSelect,
   handleManageTiers,
   handleAddTierModal,
   handleTierModalSubmit,
@@ -248,6 +249,8 @@ export function setupComponentHandlers(client) {
         await handleEditPackStart(interaction);
       } else if (customId === 'shop_edit_item') {
         await handleEditItemStart(interaction);
+      } else if (customId === 'shop_admin_browser_select') {
+        await handleAdminBrowserSelect(interaction);
       } else if (customId.startsWith('shop_item_edit_details_')) {
         await handleEditItemDetails(interaction);
       } else if (customId.startsWith('shop_pack_edit_')) {

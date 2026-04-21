@@ -39,6 +39,10 @@ import {
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
 const pendingPosts = new Map();
 
+// Temporary storage for edit/delete flows to isolate state from Post flow.
+// (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
+export const pendingAdminBrowser = new Map();
+
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
   .setName('shop')
@@ -1535,40 +1539,9 @@ export async function handleTierModalSubmit(interaction) {
 export async function handleDeleteItemStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-    // Get ALL items directly
-    const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (allItems.length === 0) {
-      return interaction.editReply({ content: '❌ No items found to delete.', components: [rowBack], embeds: [] });
-    }
-
-    // Filter out packs
-    const items = allItems.filter(i => {
-      if (i.item_type === 'pack' || i.is_pack) return false;
-      return true;
-    });
-
-    if (items.length === 0) {
-      return interaction.editReply({ content: '❌ No valid items found.', components: [rowBack], embeds: [] });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_item_delete')
-      .setPlaceholder('Select Item to Delete')
-      .addOptions(items.slice(0, 25).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: i.id.toString(),
-        description: `${i.price.toLocaleString()} coins`
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
-
-    await interaction.editReply({ content: 'Select item to delete:', components: [row, rowBack], embeds: [] });
+    const context = { action: 'delete_item', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete item start');
   }
@@ -1645,30 +1618,9 @@ export async function handleDeleteItemSelect(interaction) {
 export async function handleDeletePackStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    // Fetch all packs
-    const items = await getShopItems(interaction.guildId, null, 'name', true);
-    const packs = items.filter(i => i.item_type === 'pack' || i.is_pack);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (packs.length === 0) {
-      // If no packs found initially, show message and back button (don't spam new message)
-      return interaction.editReply({ content: '❌ No packs found.', components: [rowBack], embeds: [] });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_pack_delete')
-      .setPlaceholder('Select Pack to Delete')
-      .addOptions(packs.slice(0, 25).map(p => ({ 
-        label: (p.name && p.name.trim().length > 0) ? p.name.slice(0, 80) : `Unnamed Pack #${p.id}`, 
-        value: p.id.toString() 
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
-
-    await interaction.editReply({ content: 'Select pack to delete:', components: [row, rowBack], embeds: [] });
+    const context = { action: 'delete_pack', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete pack start');
   }
@@ -2291,44 +2243,174 @@ export async function handleDeleteCategoryConfirm(interaction) {
   }
 }
 
+// --- Admin Smart Folders (Isolated State) ---
+export async function renderAdminBrowser(interaction, contextMap) {
+  try {
+    const { action, folder, message } = contextMap;
+    // Map contexts back to text/routes.
+    const isEdit = action.startsWith('edit');
+    const isItem = action.endsWith('item');
+    const backRoute = isEdit ? 'shop_admin_edit' : 'shop_admin_delete';
+    
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    );
+
+    // Fetch items mapping to current folder (if item mode) or just list packs (if pack mode)
+    if (isItem) {
+      const items = await getShopItems(interaction.guildId, null, 'name', true);
+      const singleItems = items.filter(i => !i.is_pack && i.item_type !== 'pack');
+
+      // Top-level View (Folder Selection)
+      if (folder === 'root') {
+        const categories = await getShopCategories(interaction.guildId);
+        // Only return folders that actually contain standard items
+        const usedCategoryIds = new Set(singleItems.map(i => i.category_id));
+        const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
+        const uncategorizedItems = singleItems.filter(i => !i.category_id);
+
+        if (activeCategories.length === 0 && uncategorizedItems.length === 0) {
+          return interaction.editReply({ content: '❌ No items available.', components: [rowBack], embeds: [] });
+        }
+
+        const options = [];
+        if (uncategorizedItems.length > 0) {
+          options.push({ label: '🏷️ Uncategorized Items', value: 'cat_null', description: `${uncategorizedItems.length} standalone item(s)` });
+        }
+        for (const cat of activeCategories.slice(0, 24)) {
+          const count = singleItems.filter(i => i.category_id === cat.id).length;
+          options.push({ label: `📂 ${cat.name || `Category #${cat.id}`}`.slice(0, 100), value: `cat_${cat.id}`, description: `${count} item(s)` });
+        }
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId('shop_admin_browser_select')
+          .setPlaceholder('Select a Folder')
+          .addOptions(options);
+
+        return interaction.editReply({
+          content: message || `**Choose a folder to browse items to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+          components: [new ActionRowBuilder().addComponents(select), rowBack],
+          embeds: []
+        });
+      }
+
+      // Folder-level View (Item Selection inside specific Category or Uncategorized)
+      const targetCategoryId = folder === 'cat_null' ? null : parseInt(folder.replace('cat_', ''), 10);
+      const folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
+
+      if (folderItems.length === 0) {
+         // Should not happen, but a safe fallback
+         pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root' });
+         return renderAdminBrowser(interaction, pendingAdminBrowser.get(interaction.user.id));
+      }
+
+      // 25 limit max per discord UI 
+      const itemOptions = folderItems.slice(0, 25).map(i => ({
+        label: `🏷️ ${(i.name || `Item #${i.id}`).slice(0, 80)}`,
+        value: `item_${i.id}`,
+        description: `${i.price.toLocaleString()} coins`
+      }));
+
+      // Add a back to folders button at the end if we have room, otherwise it goes on the action row
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('shop_admin_browser_select')
+        .setPlaceholder('Select Item to Manage')
+        .addOptions([
+          { label: '⬅️ Back to Folders', value: 'action_back_root' },
+          ...itemOptions
+        ]);
+
+      return interaction.editReply({
+         content: message || `**Select an item to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+         components: [new ActionRowBuilder().addComponents(select), rowBack],
+         embeds: []
+      });
+    }
+
+    // PACKS logic (no categories for packs currently, so they display flat)
+    if (!isItem) {
+        const items = await getShopItems(interaction.guildId, null, 'name', true);
+        const packs = items.filter(i => i.is_pack || i.item_type === 'pack');
+        
+        if (packs.length === 0) {
+           return interaction.editReply({ content: '❌ No packs found.', components: [rowBack], embeds: [] });
+        }
+
+        const packOptions = packs.slice(0, 25).map(p => ({
+           label: `📦 ${(p.name || `Pack #${p.id}`).slice(0, 80)}`,
+           value: `item_${p.id}`,
+           description: `${p.price.toLocaleString()} coins`
+        }));
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId('shop_admin_browser_select')
+          .setPlaceholder('Select Pack to Manage')
+          .addOptions(packOptions);
+
+        return interaction.editReply({
+          content: message || `**Select a pack to ${isEdit ? 'manage' : 'permanently delete'}:**`,
+          components: [new ActionRowBuilder().addComponents(select), rowBack],
+          embeds: []
+        });
+    }
+  } catch (error) {
+     await handleInteractionError(interaction, error, 'admin browser render');
+  }
+}
+
+export async function handleAdminBrowserSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+  const selection = interaction.values[0];
+  const context = pendingAdminBrowser.get(interaction.user.id);
+  
+  if (!context) {
+     return interaction.editReply({ content: '❌ Your session expired. Please start over.', embeds: [], components: [] });
+  }
+
+  // Handle navigating back up to the folder layer
+  if (selection === 'action_back_root') {
+     context.folder = 'root';
+     context.message = null; // Clear any success messages
+     pendingAdminBrowser.set(interaction.user.id, context);
+     return renderAdminBrowser(interaction, context);
+  }
+
+  // Handle drilling into a folder
+  if (selection.startsWith('cat_')) {
+      context.folder = selection;
+      context.message = null;
+      pendingAdminBrowser.set(interaction.user.id, context);
+      return renderAdminBrowser(interaction, context);
+  }
+
+  // Handle selecting the actual item/pack
+  if (selection.startsWith('item_')) {
+      const itemId = selection.replace('item_', '');
+      
+      // Clear the map context *before* passing off the flow
+      // since the deep handlers don't know about it.
+      const action = context.action;
+      pendingAdminBrowser.delete(interaction.user.id);
+      
+      // Inject the choice into the interaction object so the older handlers pick it up correctly
+      interaction.values = [itemId];
+      
+      // Route it to the original handlers exactly as if they clicked a direct menu in the old system
+      if (action === 'edit_item') return handleEditItemSelect(interaction);
+      if (action === 'delete_item') return handleDeleteItemSelect(interaction);
+      if (action === 'edit_pack') return handleEditPackSelect(interaction);
+      if (action === 'delete_pack') return handleDeletePackSelect(interaction);
+  }
+}
+
 // --- Edit Item Handlers ---
 
 export async function handleEditItemStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    const items = await getShopItems(interaction.guildId, null, 'name', true);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (items.length === 0) {
-      return interaction.editReply({ content: '❌ No items found.', components: [rowBack], embeds: [] });
-    }
-
-    // Filter out packs (they have their own manager)
-    const filteredItems = items.filter(i => !i.is_pack && i.item_type !== 'pack');
-
-    if (filteredItems.length === 0) {
-      return interaction.editReply({ content: '❌ No single items found.', components: [rowBack], embeds: [] });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_item_edit_select')
-      .setPlaceholder('Select Item to Manage')
-      .addOptions(filteredItems.slice(0, 25).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: i.id.toString(),
-        description: `${i.price.toLocaleString()} coins`
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
-
-    await interaction.editReply({
-      content: '**Choose an item to manage:**',
-      components: [row, rowBack],
-      embeds: []
-    });
+    const context = { action: 'edit_item', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit item start');
   }
@@ -2555,31 +2637,13 @@ export async function handleEditPackDetails(interaction) {
 }
 
 export async function handleEditPackStart(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   try {
-    const items = await getShopItems(interaction.guildId, null, 'name', true);
-    const packs = items.filter(i => i.item_type === 'pack' || i.is_pack);
-
-    if (packs.length === 0) {
-      return interaction.followUp({ content: '❌ No packs found.', flags: MessageFlags.Ephemeral });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_pack_edit')
-      .setPlaceholder('Select Pack to Edit')
-      .addOptions(packs.slice(0, 25).map(p => ({ 
-        label: (p.name && p.name.trim().length > 0) ? p.name.slice(0, 80) : `Unnamed Pack #${p.id}`, 
-        value: p.id.toString() 
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.editReply({ content: '**Choose a pack to manage:**', components: [row, rowBack], embeds: [] });
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const context = { action: 'edit_pack', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'edit pack start');
+    await handleInteractionError(interaction, error, 'shop edit pack start');
   }
 }
 
