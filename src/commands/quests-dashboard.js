@@ -157,12 +157,13 @@ export async function showQuestsSchedule(interaction) {
                      `*Note: If "Quests per Refresh" is higher than your pool, the engine will simply show all available quests and wait for more.*`)
       .setColor('#3498DB');
 
-    // Dropdown for Quests Per Refresh (1-10)
+    // Dropdown for Quests Per Refresh (1-10, limited by pool size)
+    const maxOptions = Math.max(1, Math.min(10, totalQuests));
     const perRefreshMenu = new StringSelectMenuBuilder()
       .setCustomId('quests_setting_per_refresh')
       .setPlaceholder('Quests per Refresh...')
       .addOptions(
-        Array.from({ length: 10 }, (_, i) => ({
+        Array.from({ length: maxOptions }, (_, i) => ({
           label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
           value: `${i + 1}`,
           default: perRefresh === (i + 1)
