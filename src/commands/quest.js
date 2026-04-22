@@ -73,35 +73,58 @@ export async function renderQuests(interaction, page = 0) {
     // Initialization: Also trigger if the active list is empty but we have available quests in pool.
     const poolQuests = await getQuests(guildId);
     
-    if (missingIds.length > 0 || (validQuests.length === 0 && poolQuests.length > 0)) {
-      if (poolQuests.length > 0) {
-        const { rotateGuildQuests } = await import('../cron/quests.js');
-        const { getPool } = await import('../storage/postgres.js');
-        
-        // Trigger emergency self-healing rotation
-        await rotateGuildQuests(guildId, config, getPool());
-        const { syncQuestChannelCache } = await import('../activity/index.js');
-        await syncQuestChannelCache(guildId);
-        
-        // Wipe and re-fetch validQuests completely after rotation
-        validQuests.length = 0; 
-        const freshConfig = await getGuildConfig(guildId) || {};
-        for (const id of (freshConfig.active_quest_ids || [])) {
-          const q = await getQuest(id);
-          if (q) validQuests.push(q);
-        }
-        
-        sysLog('Quest Auto-Repair', { guild: guildId, detail: `Triggered cycle recovery due to missing/deleted IDs.` });
-      } else {
-        // If pool is totally empty, just clean the orphans so the UI shows "No active quests" cleanly
-        if (missingIds.length > 0) {
+    // -- ENHANCED SAFE AUTO-REPAIR MODULE --
+    // We strictly throttle automatic board-cycles to once per 60 seconds per guild
+    // to prevent any obscure database inconsistencies from creating an infinite loop.
+    let needsFullCycle = false;
+
+    if (missingIds.length > 0) {
+        // If there are still SOME valid quests, we simply prune the missing ones to save the UI.
+        if (validQuests.length > 0) {
           config.active_quest_ids = validQuests.map(q => q.id);
           await setGuildConfig(guildId, config);
           const { syncQuestChannelCache } = await import('../activity/index.js');
           await syncQuestChannelCache(guildId);
           sysLog('Quest Cleanup', { guild: guildId, detail: `Removed ${missingIds.length} orphaned quest(s).` });
+        } else {
+          // If the board is ENTIRELY populated with missing/deleted IDs, we MUST cycle.
+          needsFullCycle = (poolQuests.length > 0);
         }
-      }
+    } else if (validQuests.length === 0 && poolQuests.length > 0) {
+        // Initialization: No active board, but pool has stuff.
+        needsFullCycle = true;
+    }
+
+    if (needsFullCycle) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        const { getPool } = await import('../storage/postgres.js');
+
+        // Throttle check
+        if (!global.questCycleThrottle) global.questCycleThrottle = new Map();
+        const lastCycle = global.questCycleThrottle.get(guildId) || 0;
+        
+        if (Date.now() - lastCycle < 60000) {
+            sysLog('Quest Cycle Prevented', { guild: guildId, detail: 'Throttled to prevent infinite loop.' });
+        } else {
+            global.questCycleThrottle.set(guildId, Date.now());
+            
+            // Trigger emergency self-healing rotation
+            await rotateGuildQuests(guildId, config, getPool());
+            
+            // Deep Sync!
+            const { syncQuestChannelCache } = await import('../activity/index.js');
+            await syncQuestChannelCache(guildId);
+            
+            // Wipe and re-fetch validQuests completely after rotation
+            validQuests.length = 0; 
+            const freshConfig = await getGuildConfig(guildId) || {};
+            for (const id of (freshConfig.active_quest_ids || [])) {
+              const q = await getQuest(id);
+              if (q) validQuests.push(q);
+            }
+            
+            sysLog('Quest Auto-Repair', { guild: guildId, detail: `Board cycled cleanly.` });
+        }
     }
 
     if (validQuests.length === 0) {
