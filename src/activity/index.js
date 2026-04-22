@@ -78,10 +78,17 @@ export async function initializeActivityTracking(discordClient) {
     `);
     
     for (const row of configResult.rows) {
-      const activeIds = row.config.active_quest_ids || [];
-      const activeQuests = activeIds.map(id => questsById.get(id)).filter(Boolean);
-      if (activeQuests.length > 0) {
-        activeQuestsCache.set(row.guild_id, activeQuests);
+      const snapshot = row.config.active_quest_snapshot;
+      if (snapshot && Array.isArray(snapshot) && snapshot.length > 0) {
+        // Snapshot Architecture: Prioritize the frozen snapshot from config
+        activeQuestsCache.set(row.guild_id, snapshot);
+      } else {
+        // Fallback for legacy configs that only have IDs
+        const activeIds = row.config.active_quest_ids || [];
+        const activeQuests = activeIds.map(id => questsById.get(id)).filter(Boolean);
+        if (activeQuests.length > 0) {
+          activeQuestsCache.set(row.guild_id, activeQuests);
+        }
       }
     }
 
@@ -362,22 +369,28 @@ export async function syncQuestChannelCache(guildId) {
     if (config?.quests_enabled === false || config?.missions_enabled === false) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
-      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache: quests explicitly disabled' });
+      
+      // 'Disable' Override: Instantly clear the snapshot to render board inactive
+      if (config.active_quest_snapshot) {
+          config.active_quest_snapshot = null;
+          const { setGuildConfig } = await import('../storage/config.js');
+          await setGuildConfig(guildId, config);
+      }
+
+      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache & snapshot: quests explicitly disabled' });
       return;
     }
 
-    const { getQuests } = await import('../quests/quests.js');
-    const allQuests = await getQuests(guildId);
-
-    // If we have active_quest_ids, filter to just those. Otherwise fall back
-    // to ALL quests so tracking never silently dies during a config transition.
-    let activeQuests;
-    if (config?.active_quest_ids && config.active_quest_ids.length > 0) {
+    // Snapshot Architecture: Prioritize the frozen snapshot from config
+    let activeQuests = [];
+    if (config?.active_quest_snapshot && Array.isArray(config.active_quest_snapshot) && config.active_quest_snapshot.length > 0) {
+      activeQuests = config.active_quest_snapshot;
+    } else if (config?.active_quest_ids && config.active_quest_ids.length > 0) {
+      // Fallback: Use master pool if snapshot is missing (legacy support)
+      const { getQuests } = await import('../quests/quests.js');
+      const allQuests = await getQuests(guildId);
       activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
-    } else {
-      // Fallback: track all pool quests so progress never gets stuck at 0
-      activeQuests = allQuests;
-      sysLog('Quest Cache Fallback', { guild: guildId, detail: `No active_quest_ids in config — watching all ${allQuests.length} pool quest(s)` });
+      sysLog('Quest Cache Fallback', { guild: guildId, detail: 'Snapshot missing, loaded from master pool' });
     }
 
     if (activeQuests.length > 0) {

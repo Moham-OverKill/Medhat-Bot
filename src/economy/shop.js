@@ -7,6 +7,17 @@ import { isMemberBooster } from '../commands/colors.js';
 import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 
 /**
+ * Get the display image for a shop item.
+ * Returns the item's default_image_url if set, otherwise null.
+ * Use this everywhere an item image is needed so fallback logic is centralised.
+ * @param {object|null} item - A shop_items row
+ * @returns {string|null}
+ */
+export function getItemImage(item) {
+  return item?.default_image_url || null;
+}
+
+/**
  * Validate that a role ID is not already linked to another shop item
  * @param {string} guildId - The guild ID
  * @param {string} roleId - The role ID to check
@@ -77,7 +88,7 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
     if (sortBy === 'name') {
       sql += ' ORDER BY si.name ASC';
     } else {
-      sql += ' ORDER BY si.price ASC';
+      sql += ' ORDER BY si.price ASC NULLS LAST';
     }
 
     const result = await query(sql, params);
@@ -276,7 +287,7 @@ export async function getItemUsageCount(itemId) {
 /**
  * Add a new item to the shop
  */
-export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = []) {
+export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null) {
   try {
     // Map itemType to is_pack
     const isPack = itemType === 'pack';
@@ -284,10 +295,10 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
     const contentsJson = JSON.stringify(contents || []);
 
     const result = await query(
-      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
+      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13)
        RETURNING *`,
-      [guildId, categoryId, roleId, name, description, price, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || [])]
+      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), defaultImageUrl || null]
     );
 
     return result.rows[0];
@@ -302,7 +313,7 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
  */
 export async function updateShopItem(itemId, updates) {
   try {
-    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items'];
+    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url'];
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
@@ -664,6 +675,15 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     }
 
     const item = itemResult.rows[0];
+
+    // ========== NULL-PRICE GUARD ==========
+    // Items are now created with NULL price. A price MUST be set at post-time via the
+    // shop post panel. If something bypasses that gate, we hard-block the purchase here.
+    if (item.price === null || item.price === undefined) {
+      await client.query('ROLLBACK');
+      sysLog('Purchase Blocked', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: NULL price — price not set by admin` });
+      return { success: false, error: 'This item does not have a price set yet. Contact an admin.' };
+    }
 
     // ========== PREREQUISITE CHECK (Informational Only) ==========
     // We NO LONGER block purchases based on prerequisites.
@@ -1328,7 +1348,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     await purgeUserInventory(userId, guildId, member);
 
     const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url
        FROM user_inventory ui
        LEFT JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,

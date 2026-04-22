@@ -21,6 +21,7 @@ import {
   getShopCategories,
   getShopItems,
   getShopItem,
+  getItemImage,
   purchaseItem,
   getUserInventory,
   syncInventoryWithDiscord,
@@ -1034,7 +1035,9 @@ export async function handleInventoryItemSelect(interaction) {
       .setColor(embedColor)
       .setDescription(desc);
 
-    // Description set, footer removed as requested for cleaner UI
+    // Show item image as small thumbnail (corner) in the management embed
+    const itemImg = getItemImage(item);
+    if (itemImg) embed.setThumbnail(itemImg);
 
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
@@ -1203,11 +1206,19 @@ export async function handleInventoryAction(interaction) {
       if (res.success) {
         // Post PUBLIC claim message
         const expiresUnix = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
+
+        // Fetch full shop item to get image
+        const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
+        const dropImg = getItemImage(droppedShopItem);
+
         const publicEmbed = new EmbedBuilder()
           .setTitle('Item Dropped!')
           .setColor('#F1C40F')
           .setDescription(`${interaction.user} dropped <@&${res.item.role_id}>!`)
           .setTimestamp();
+
+        // LARGE image for the publicly posted drop embed
+        if (dropImg) publicEmbed.setImage(dropImg);
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
