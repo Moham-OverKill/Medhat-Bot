@@ -177,11 +177,23 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
   
   // Safety: Prevent math loops or invalid goal edge cases
   const requiredCount = parseInt(quest.required_count) || 1;
-  const rewardAmt = parseInt(quest.reward_coins) || 0;
 
   if (requiredCount <= 0 || amount <= 0) return { progress: 0, completed: false, justCompleted: false };
 
   try {
+    // ── PRE-FLIGHT CHECK ───────────────────────────────────────────────────────
+    // Query directly before touching anything. If the row already has
+    // completed = true, bail out immediately - no progress, no payout.
+    const preCheck = await pool.query(
+      `SELECT completed, progress FROM quest_progress
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4`,
+      [guildId, userId, quest.id, date]
+    );
+    if (preCheck.rows.length > 0 && preCheck.rows[0].completed === true) {
+      return { progress: parseInt(preCheck.rows[0].progress), completed: true, justCompleted: false };
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     // Atomic Upsert: Will only mark completed=true ONCE
     const result = await pool.query(
       `INSERT INTO quest_progress (guild_id, user_id, quest_id, quest_date, progress, completed, active_tracking, is_claimed, completed_at)
@@ -217,7 +229,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
         sysLog('Quest Progress Upsert', { 
             user: userId, 
             guild: guildId, 
-            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count}) | JustDone: ${justCompleted}` 
+            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${requiredCount}) | JustDone: ${justCompleted}` 
         });
     }
 

@@ -23,7 +23,7 @@ import {
   formatQuestTask,
   formatCompactQuest
 } from '../quests/quests.js';
-import { sysError } from '../utils/logger.js';
+import { sysError, sysLog } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
@@ -567,29 +567,43 @@ export async function handleToggleQuests(interaction) {
     const config = await getGuildConfig(guildId) || {};
     config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
     const isEnabled = config.quests_enabled;
-    
+
     if (!isEnabled) {
-        // DISABLING: Wipe current cycle state so it starts fresh next time
-        config.active_quest_snapshot = null;
-        config.active_quest_ids = [];
-        sysLog('Quest Cycle Wiped', { guildId, detail: 'System disabled by admin' });
+      // ── DISABLE: Full nuclear wipe ────────────────────────────────────────
+      config.active_quest_snapshot = null;
+      config.active_quest_ids = [];
+      await setGuildConfig(guildId, config);
+
+      // Wipe in-memory tracking caches immediately
+      const { syncQuestChannelCache } = await import('../activity/index.js');
+      await syncQuestChannelCache(guildId);
+
+      // Hard-delete ALL quest_progress rows for this guild so the background
+      // engine has zero rows to pay out against.
+      const { getPool } = await import('../storage/postgres.js');
+      await getPool().query('DELETE FROM quest_progress WHERE guild_id = $1', [guildId]);
+
+      sysLog('Quest System Disabled', { guild: guildId, detail: 'Snapshot wiped, DB progress purged, caches cleared' });
+    } else {
+      // ── ENABLE: Fresh rotation right now ─────────────────────────────────
+      config.active_quest_snapshot = null;
+      config.active_quest_ids = [];
+      await setGuildConfig(guildId, config);
+
+      const poolQuests = await getQuests(guildId);
+      if (poolQuests.length > 0) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        const { getPool } = await import('../storage/postgres.js');
+        // rotateGuildQuests saves the new snapshot and calls syncQuestChannelCache internally
+        await rotateGuildQuests(guildId, config, getPool());
+      } else {
+        // No quests in pool – still sync so cache is clean
+        const { syncQuestChannelCache } = await import('../activity/index.js');
+        await syncQuestChannelCache(guildId);
+      }
+
+      sysLog('Quest System Enabled', { guild: guildId, detail: 'Fresh rotation triggered immediately' });
     }
-
-    await setGuildConfig(guildId, config);
-
-    // ENABLING: Trigger an immediate fresh rotation if snapshot is empty (which it is now)
-    if (isEnabled) {
-        const { getQuests } = await import('../quests/quests.js');
-        const poolQuests = await getQuests(guildId);
-        if (poolQuests.length > 0) {
-            const { rotateGuildQuests } = await import('../cron/quests.js');
-            const { getPool } = await import('../storage/postgres.js');
-            await rotateGuildQuests(guildId, config, getPool());
-        }
-    }
-
-    const { syncQuestChannelCache } = await import('../activity/index.js');
-    await syncQuestChannelCache(guildId);
 
     await showQuestsDashboard(interaction);
   } catch (error) {
