@@ -35,11 +35,6 @@ export const itemMassCommand = new SlashCommandBuilder()
                .setDescription('Role IDs separated by space, comma, or newline')
                .setRequired(true)
        )
-       .addIntegerOption(option => 
-         option.setName('price')
-               .setDescription('Price for all items')
-               .setRequired(false)
-       )
   )
   .addSubcommand(sub =>
     sub.setName('color')
@@ -91,7 +86,7 @@ export async function handleItemMassCommand(interaction) {
 
 async function handleMassItemSubcommand(interaction) {
     const input = interaction.options.getString('input');
-    const price = interaction.options.getInteger('price') || 0;
+    // Price is no longer set during mass import — must be set at post time.
     
     // Validate input (basic check)
     // Allow generic separators
@@ -101,17 +96,13 @@ async function handleMassItemSubcommand(interaction) {
     if (ids.length === 0) {
       return interaction.reply({ content: '❌ No valid Role IDs found in input.', flags: MessageFlags.Ephemeral });
     }
-
-    if (price !== 0 && !isValidEconomyAmount(price, true)) {
-      return interaction.reply({ content: '❌ Invalid price. Maximum allowed is **700,000,000,000**.', flags: MessageFlags.Ephemeral });
-    }
     
     // Init State
     pendingMassOps.set(interaction.user.id, {
         ids: ids,
         categoryId: null,
         packId: null,
-        price: price
+        price: null  // Always null - set at post time
     });
     
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -378,7 +369,8 @@ export async function handleMassSave(interaction) {
                     
                     const role = guild.roles.cache.get(roleId);
                     const name = role ? role.name : `Role ${roleId}`;
-                    const newItem = await addShopItem(guild.id, categoryId, roleId, name, '', price, null, null, 'role');
+                    // Price is null — must be set at post time via the Post panel
+                    const newItem = await addShopItem(guild.id, categoryId, roleId, name, '', null, null, null, 'role');
                     created++;
                     if (categoryId) addedToCategory++;
                     processedItemIds.push(newItem.id);

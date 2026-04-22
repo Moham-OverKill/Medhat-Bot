@@ -156,6 +156,11 @@ export async function rotateGuildQuests(guildId, config, pool) {
     config.last_quest_ids = lastIds;
     config.active_quest_ids = selectedIds;
     config.current_quest_cycle = currentCycle;
+
+    // Snapshot Architecture: Capture full objects to freeze the cycle
+    const selectedQuests = allQuests.filter(q => selectedIds.includes(q.id));
+    config.active_quest_snapshot = selectedQuests;
+
     await setGuildConfig(guildId, config);
     
     // Update the DB last_active_at for the picked quests to cement their history
@@ -167,11 +172,12 @@ export async function rotateGuildQuests(guildId, config, pool) {
         ).catch(e => sysError('Quest History Update Failed', e, { guild: guildId }));
     }
 
-    // Atomic Wipe of All User Progress for this guild on refresh
+    // Atomic Wipe of All User Progress for this guild on refresh (Garbage Collection)
+    // This prevents database bloat now that the FK cascade is removed.
     await resetGuildQuestProgress(guildId);
     
     // Broadcast to tracking engine memory
     await syncQuestChannelCache(guildId);
 
-    sysLog('Quest Smart Rotation Complete', { guild: guildId, detail: `Cycle: ${currentCycle} | Quests: ${selectedIds.length}` });
+    sysLog('Quest Smart Rotation Complete', { guild: guildId, detail: `Cycle: ${currentCycle} | Quests: ${selectedIds.length} | Snapshot Saved` });
 }

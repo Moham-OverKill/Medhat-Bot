@@ -459,6 +459,25 @@ async function createTables() {
         END $$;
       `);
 
+      // Unified Image System: Store item default image at creation time
+      await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS default_image_url TEXT`);
+
+      // Null-Price System: Price is now set at post-time, not creation-time
+      // This drops the NOT NULL constraint so new items can be created without a price.
+      // Existing items keep their prices untouched.
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'shop_items' AND column_name = 'price'
+              AND is_nullable = 'NO'
+          ) THEN
+            ALTER TABLE shop_items ALTER COLUMN price DROP NOT NULL;
+          END IF;
+        END $$;
+      `);
+
     } catch (e) {
       sysLog('Migration Notice', { detail: `Status: ${e.message}` });
     }
@@ -526,12 +545,13 @@ async function createTables() {
     `);
 
     // Table for daily quest progress per user
+    // Snapshot Architecture: quest_id is now decoupled from the master table to support immutability
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quest_progress (
         id SERIAL PRIMARY KEY,
         guild_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
-        quest_id INTEGER REFERENCES quests(id) ON DELETE CASCADE,
+        quest_id INTEGER,
         quest_date DATE NOT NULL,
         progress INTEGER NOT NULL DEFAULT 0,
         completed BOOLEAN NOT NULL DEFAULT FALSE,
@@ -540,6 +560,16 @@ async function createTables() {
         completed_at TIMESTAMP WITH TIME ZONE,
         UNIQUE(guild_id, user_id, quest_id, quest_date)
       );
+    `);
+
+    // Migration: Remove Foreign Key constraint to support Snapshot Architecture
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE table_name='quest_progress' AND constraint_type='FOREIGN KEY') THEN 
+           ALTER TABLE quest_progress DROP CONSTRAINT IF EXISTS quest_progress_quest_id_fkey;
+        END IF; 
+      END $$;
     `);
 
     await pool.query(`
