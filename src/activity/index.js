@@ -384,8 +384,22 @@ export async function syncQuestChannelCache(guildId) {
       activeQuestsCache.set(guildId, activeQuests);
     }
 
-    // Ensure completed cache always exists
-    if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
+    // Rebuild completed cache directly from DB to clear stale ghosts from previous cycles
+    const { getPool } = await import('../storage/postgres.js');
+    const pool = getPool();
+    
+    const statusResult = await pool.query(`
+      SELECT user_id, quest_id 
+      FROM quest_progress 
+      WHERE guild_id = $1 AND completed = true AND quest_date = $2
+    `, [guildId, getTodayCairo()]);
+
+    const newCompletionMap = new Map();
+    for (const row of statusResult.rows) {
+      if (!newCompletionMap.has(row.quest_id)) newCompletionMap.set(row.quest_id, new Set());
+      newCompletionMap.get(row.quest_id).add(row.user_id);
+    }
+    completedQuestsCache.set(guildId, newCompletionMap);
 
     sysLog('Quest Cache Sync', { guild: guildId, detail: `Tracking ${activeQuests.length} quest(s)` });
   } catch (e) {
