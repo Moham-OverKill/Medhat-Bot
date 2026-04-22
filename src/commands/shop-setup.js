@@ -310,14 +310,14 @@ export async function handleAddTypeSelect(interaction) {
       .setCustomId('item_image_url')
       .setLabel('Image URL')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('https://example.com/image.png (leave empty for none)')
+      .setPlaceholder('https://example.com/image.png')
       .setRequired(false);
 
     const durInput = new TextInputBuilder()
       .setCustomId('item_duration')
       .setLabel('Duration (Days)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Leave empty for permanent')
+      .setPlaceholder('30')
       .setRequired(false);
 
     const reqInput = new TextInputBuilder()
@@ -2650,7 +2650,7 @@ export async function handleEditItemDetails(interaction) {
       .setLabel('Image URL')
       .setStyle(TextInputStyle.Short)
       .setValue(item.default_image_url || '')
-      .setPlaceholder('https://example.com/image.png (leave empty for none)')
+      .setPlaceholder('https://example.com/image.png')
       .setRequired(false);
     const roleInput = new TextInputBuilder().setCustomId('item_role').setLabel('Role ID').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
     const durInput = new TextInputBuilder().setCustomId('item_duration').setLabel('Duration (Days)').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setRequired(false);
