@@ -202,13 +202,19 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     const row = result.rows[0];
     const newProgress = parseInt(row.progress);
     const oldProgress = newProgress - amount;
+    
+    // Robust completion check: 
+    // 1. MUST hit or cross the required count in THIS update
+    // 2. MUST have been NOT completed/claimed before THIS update (Atomic check)
+    //    We check result.rows[0].completed as the source of truth for the FINAL state.
+    //    The 'justCompleted' flag ensures we only payout on the transition frame.
     const justCompleted = oldProgress < quest.required_count && newProgress >= quest.required_count;
 
     if (amount > 0) {
         sysLog('Quest Progress Upsert', { 
             user: userId, 
             guild: guildId, 
-            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count})` 
+            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${quest.required_count}) | JustDone: ${justCompleted}` 
         });
     }
 

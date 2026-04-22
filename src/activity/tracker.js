@@ -423,9 +423,6 @@ export async function voicePointsTick(client) {
     );
 
     for (const row of result.rows) {
-      const { purgeUserInventory } = await import('../economy/shop.js');
-      await purgeUserInventory(row.user_id, row.guild_id, null);
-
       const validStart = parseInt(row.voice_valid_start);
       if (!validStart || validStart <= 0) continue;
 
