@@ -566,7 +566,21 @@ export async function handleToggleQuests(interaction) {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
     config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
+    const isEnabled = config.quests_enabled;
     await setGuildConfig(guildId, config);
+
+    // EMERGENCY REPAIR: If enabled but snapshot is missing, trigger a rotation immediately
+    // so the user doesn't see an "empty board" message.
+    if (isEnabled && (!config.active_quest_snapshot || config.active_quest_snapshot.length === 0)) {
+        const { getQuests } = await import('../quests/quests.js');
+        const poolQuests = await getQuests(guildId);
+        if (poolQuests.length > 0) {
+            const { rotateGuildQuests } = await import('../cron/quests.js');
+            const { getPool } = await import('../storage/postgres.js');
+            await rotateGuildQuests(guildId, config, getPool());
+        }
+    }
+
     const { syncQuestChannelCache } = await import('../activity/index.js');
     await syncQuestChannelCache(guildId);
 
