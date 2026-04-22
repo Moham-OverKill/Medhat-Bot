@@ -877,12 +877,9 @@ export async function handleShopPostStart(interaction) {
 
     itemOptions = filtered.slice(0, 24).map(i => {
       const itemCount = i.is_pack ? (Array.isArray(i.contents) ? i.contents.length : 0) : 0;
-      const priceStr = i.price !== null && i.price !== undefined
-        ? i.price.toLocaleString() + ' coins'
-        : 'Price not set';
       const descText = i.is_pack 
-        ? `${itemCount} items - ${priceStr}` 
-        : priceStr;
+        ? `${itemCount} items | Price set at post` 
+        : `Role: <@&${i.role_id}>`;
 
       return {
         label: `${groupPrefix} ${i.name.slice(0, 75)}`,
@@ -1648,7 +1645,7 @@ export async function handleDeleteItemSelect(interaction) {
         return { 
           label: isGhost ? `👻 [GHOST] ${i.name}` : `🏷️ ${i.name}`, 
           value: i.id.toString(),
-          description: isGhost ? 'Role was deleted from server' : (i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set')
+          description: isGhost ? 'Role was deleted from server' : `ID: ${i.id}`
         };
       }));
 
@@ -2057,8 +2054,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .setPlaceholder('Select Item to Add to Category')
         .addOptions(standalone.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString(), 
-          description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
+          value: i.id.toString()
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2150,7 +2146,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .addOptions(items.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString(),
-          description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
+          description: `ID: ${i.id}`
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2597,7 +2593,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Price: **${item.price === null || item.price === undefined ? '⚠️ Not Set' : (item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins')}**\nRole: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}`)
+      .setDescription(`Role: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}`)
       .setColor('#3498DB');
 
     // Show item image as thumbnail if available
