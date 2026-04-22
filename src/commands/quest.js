@@ -53,24 +53,8 @@ export async function renderQuests(interaction, page = 0) {
     }
 
     // Snapshot Architecture: Render directly from the immutable snapshot
-    let validQuests = config.active_quest_snapshot || [];
-
-    // Failsafe: If snapshot is missing but pool has quests, trigger an initial rotation
-    if (validQuests.length === 0) {
-        const poolQuests = await getQuests(guildId);
-        if (poolQuests.length > 0) {
-            const { rotateGuildQuests } = await import('../cron/quests.js');
-            const { getPool } = await import('../storage/postgres.js');
-            
-            // Trigger emergency/initial rotation
-            await rotateGuildQuests(guildId, config, getPool());
-            
-            // Re-fetch config to get the newly created snapshot
-            const freshConfig = await getGuildConfig(guildId) || {};
-            validQuests = freshConfig.active_quest_snapshot || [];
-        }
-    }
-
+    const validQuests = config.active_quest_snapshot || [];
+    
     if (validQuests.length === 0) {
       const msg = '📝 There are currently no active quests. Please check back later!';
       return isButton ? interaction.editReply({ content: msg, embeds: [], components: [] }) : interaction.editReply({ content: msg });
