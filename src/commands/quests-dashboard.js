@@ -148,8 +148,13 @@ export async function showQuestsSchedule(interaction) {
     const refreshes = config.quests_refreshes_per_day || 1;
     const perRefresh = config.quests_per_refresh || 3;
 
+    const quests = await getQuests(guildId);
+    const totalQuests = quests.length;
+
     const embed = new EmbedBuilder()
       .setTitle('📅 Quest Rotation Schedule')
+      .setDescription(`Current Pool: **${totalQuests} quest(s)** available.\n\n` + 
+                     `*Note: If "Quests per Refresh" is higher than your pool, the engine will simply show all available quests and wait for more.*`)
       .setColor('#3498DB');
 
     // Dropdown for Quests Per Refresh (1-10)
