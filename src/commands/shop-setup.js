@@ -27,6 +27,7 @@ import {
   getShopCategories,
   getShopItems,
   getShopItem,
+  getItemImage,
   getItemTiers,
   addItemTier,
   deleteShopCategory,
@@ -305,10 +306,11 @@ export async function handleAddTypeSelect(interaction) {
       .setPlaceholder('123456789012345678')
       .setRequired(true);
 
-    const priceInput = new TextInputBuilder()
-      .setCustomId('item_price')
-      .setLabel('Price')
+    const imageInput = new TextInputBuilder()
+      .setCustomId('item_image_url')
+      .setLabel('Image URL')
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder('https://example.com/image.png (leave empty for none)')
       .setRequired(false);
 
     const durInput = new TextInputBuilder()
@@ -320,14 +322,14 @@ export async function handleAddTypeSelect(interaction) {
 
     const reqInput = new TextInputBuilder()
       .setCustomId('item_required')
-      .setLabel('Required Items (Role IDs)')
+      .setLabel('Required Roles (Role IDs)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('separate IDs by "-" or "," or space')
       .setRequired(false);
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(roleInput),
-      new ActionRowBuilder().addComponents(priceInput),
+      new ActionRowBuilder().addComponents(imageInput),
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
     );
@@ -472,18 +474,21 @@ export async function handleItemModalSubmit(interaction) {
     }
 
     const name = interaction.fields.getTextInputValue('item_name');
-    const priceRaw = interaction.fields.getTextInputValue('item_price').trim();
-    const price = priceRaw ? (/^\d+$/.test(priceRaw) ? Math.floor(Math.abs(Number(priceRaw))) : -1) : 0;
 
-    if (price < 0 || !isValidEconomyAmount(price, true)) {
-      return interaction.followUp({ content: '❌ Invalid price. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
-    }
+    // Price is only read for PACKS (items no longer have a price field in the modal)
+    // Item price is set at post-time via the Post panel.
 
     if (action === 'add') {
       // ========== ADD FLOW ==========
       if (type === 'item') {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
         const durationRaw = interaction.fields.getTextInputValue('item_duration');
+        // Read image URL (new field replacing Price)
+        let itemImageUrl = null;
+        try {
+          const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
+          if (rawImg && rawImg.toLowerCase() !== 'none') itemImageUrl = rawImg;
+        } catch (e) { /* field may be absent on old interactions */ }
 
         if (!/^\d{17,20}$/.test(roleId)) return interaction.followUp({ content: '❌ Invalid Role ID.', flags: MessageFlags.Ephemeral });
         
@@ -530,16 +535,16 @@ export async function handleItemModalSubmit(interaction) {
           sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during add' });
         }
 
-        const item = await addShopItem(interaction.guildId, null, roleId, name, '', price, durationSeconds, null, 'role', [], requiredItems);
+        const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl);
         
-        let successMsg = `✅ Item **${name}** added!`;
+        let successMsg = `✅ Item **${name}** added! Use the **Post** panel to set a price and publish it.`;
         if (reqValidation.hasBooster) {
           successMsg += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
         }
         if (reqValidation.hasMvp) {
           successMsg += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
         }
-        sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: ${price})`);
+        sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
 
         const categories = await getShopCategories(interaction.guildId);
         const select = new StringSelectMenuBuilder().setCustomId(`shop_assign_cat_select_${item.id}`).setPlaceholder('Assign to Category')
@@ -550,11 +555,27 @@ export async function handleItemModalSubmit(interaction) {
               value: c.id.toString() 
             }))
           ]);
-        await interaction.editReply({ content: successMsg + (reqValidation.hasBooster ? '' : ' Assign category?'), components: [new ActionRowBuilder().addComponents(select)] });
+
+        // Show confirmation embed with item image if set
+        const confirmEmbed = new EmbedBuilder()
+          .setColor('#2ECC71')
+          .setTitle(`✅ Item Created: ${name}`)
+          .setDescription(successMsg + (reqValidation.hasBooster ? '' : '\nAssign category?'));
+        const img = getItemImage(item);
+        if (img) confirmEmbed.setThumbnail(img);
+
+        await interaction.editReply({ content: null, embeds: [confirmEmbed], components: [new ActionRowBuilder().addComponents(select)] });
+        return;
 
       } else if (type === 'pack') {
-        await addShopItem(interaction.guildId, null, '', name, '', price, null, null, 'pack');
-        sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: ${price})`);
+        // Packs still have a price field (packs need a price at creation time)
+        const packPriceRaw = (() => { try { return interaction.fields.getTextInputValue('item_price').trim(); } catch(e) { return '0'; } })();
+        const packPrice = packPriceRaw ? (/^\d+$/.test(packPriceRaw) ? Math.floor(Math.abs(Number(packPriceRaw))) : -1) : 0;
+        if (packPrice < 0 || !isValidEconomyAmount(packPrice, true)) {
+          return interaction.followUp({ content: '❌ Invalid price. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
+        }
+        await addShopItem(interaction.guildId, null, '', name, '', packPrice, null, null, 'pack');
+        sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: ${packPrice})`);
         await interaction.followUp({ content: `✅ Pack **${name}** created!`, flags: MessageFlags.Ephemeral });
         await handleShopAdminAdd(interaction);
       }
@@ -563,13 +584,26 @@ export async function handleItemModalSubmit(interaction) {
       const oldItem = await getShopItem(itemId, interaction.guildId);
       if (!oldItem) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-      let updates = { name, price };
+      let updates = { name };
       let reqValidation = { resolved: [], errors: [], hasBooster: false, hasMvp: false };
 
       if (type === 'item') {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
         const durationRaw = interaction.fields.getTextInputValue('item_duration').trim();
-        const reqRaw = interaction.fields.getTextInputValue('item_required');
+        // Read image URL (new field replacing Price)
+        let editImageUrl;
+        try {
+          const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
+          // Empty string = keep existing. 'none'/'clear' = clear it.
+          if (rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
+            editImageUrl = null;
+            updates.default_image_url = null;
+          } else if (rawImg !== '') {
+            editImageUrl = rawImg;
+            updates.default_image_url = rawImg;
+          }
+          // If field is empty, do NOT touch existing image
+        } catch (e) { /* field may be absent */ }
 
         if (roleId && roleId.toLowerCase() !== 'none') {
           // Block Booster Role as main Item Role
@@ -613,6 +647,15 @@ export async function handleItemModalSubmit(interaction) {
           sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during edit' });
         }
       } else if (type === 'pack') {
+        // Pack edit still reads a price from the modal if provided
+        const packPriceRaw = (() => { try { return interaction.fields.getTextInputValue('item_price').trim(); } catch(e) { return ''; } })();
+        if (packPriceRaw !== '') {
+          const packPrice = /^\d+$/.test(packPriceRaw) ? Math.floor(Math.abs(Number(packPriceRaw))) : -1;
+          if (packPrice < 0 || !isValidEconomyAmount(packPrice, true)) {
+            return interaction.followUp({ content: '❌ Invalid price. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
+          }
+          updates.price = packPrice;
+        }
         updates.item_type = 'pack';
         updates.is_pack = true;
       }
@@ -739,7 +782,7 @@ export async function handleShopPostStart(interaction) {
   const isPack = selectedItem && (selectedItem.item_type === 'pack' || selectedItem.is_pack);
 
   // Validation for button states
-  const canPublish = state.itemId && state.channelId;
+  const canPublish = state.itemId && state.channelId && state.overridePrice !== null;
   const canSetPayout = selectedItem && !isPack && state.sellerId;
 
   // Determine seller display
@@ -751,15 +794,29 @@ export async function handleShopPostStart(interaction) {
   }
 
   // Determine payout display (just the amount, no percentage)
+  // Uses overridePrice (the post-time price) since item.price may be NULL
   let payoutDisplay = 'N/A';
   if (!isPack && state.sellerId) {
-    const payoutAmount = (state.payout !== null && state.payout !== undefined) ? state.payout : (selectedItem ? Math.floor(selectedItem.price * 0.5) : 0);
+    const payoutAmount = (state.payout !== null && state.payout !== undefined) ? state.payout : 0;
     payoutDisplay = payoutAmount.toString();
   }
 
   const embed = new EmbedBuilder()
     .setTitle('📢 Post an Item/Pack To The Shop!')
     .setColor(0x9B59B6);
+
+  // Show item image as small thumbnail preview in the staging embed
+  if (selectedItem) {
+    const previewImg = getItemImage(selectedItem);
+    if (previewImg) embed.setThumbnail(previewImg);
+  }
+
+  // Price gate warning
+  if (state.itemId && !isPack && state.overridePrice === null) {
+    embed.setDescription('⚠️ **Price not set** — click **Set Price** before publishing.');
+  } else if (state.itemId && state.overridePrice !== null) {
+    embed.setDescription(`🏷️ **Price:** ${Number(state.overridePrice).toLocaleString()} coins`);
+  }
 
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
@@ -782,7 +839,7 @@ export async function handleShopPostStart(interaction) {
       itemOptions.unshift({
         label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
         value: selectedItem.id.toString(),
-        description: `Selected: ${selectedItem.price.toLocaleString()} coins`,
+        description: state.overridePrice !== null ? `Price set: ${Number(state.overridePrice).toLocaleString()} coins` : 'Price not yet set',
         default: true
       });
     }
@@ -820,9 +877,12 @@ export async function handleShopPostStart(interaction) {
 
     itemOptions = filtered.slice(0, 24).map(i => {
       const itemCount = i.is_pack ? (Array.isArray(i.contents) ? i.contents.length : 0) : 0;
+      const priceStr = i.price !== null && i.price !== undefined
+        ? i.price.toLocaleString() + ' coins'
+        : 'Price not set';
       const descText = i.is_pack 
-        ? `${itemCount} items - ${i.price.toLocaleString()} coins` 
-        : `${i.price.toLocaleString()} coins`;
+        ? `${itemCount} items - ${priceStr}` 
+        : priceStr;
 
       return {
         label: `${groupPrefix} ${i.name.slice(0, 75)}`,
@@ -898,7 +958,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_price_btn')
       .setLabel('Set Price')
       .setEmoji('🏷️')
-      .setStyle((state.overridePrice !== null && selectedItem && state.overridePrice !== Number(selectedItem.price)) ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle(state.overridePrice !== null ? ButtonStyle.Primary : ButtonStyle.Danger)
       .setDisabled(!isItemSelected)
   );
 
@@ -979,7 +1039,8 @@ export async function handleShopPostItemSelect(interaction) {
       state.sellerId = null;
       state.payout = null;
     } else if (selectedItem && state.sellerId) {
-      state.payout = Math.floor(selectedItem.price * 0.5);
+      // Auto-default payout to 0 when item selected (price set later via Set Price)
+      state.payout = 0;
     }
   }
 
@@ -1018,22 +1079,18 @@ export async function handleShopPostSellerSelect(interaction) {
     state.payout = null;
   } else {
     state.sellerId = selectedUserId;
-    if (state.itemId) {
-      const items = await getShopItems(interaction.guildId, null, 'name', true);
-      const selectedItem = items.find(i => i.id === parseInt(state.itemId));
-      if (selectedItem) {
-        const maxCap = Math.floor(selectedItem.price * 0.5);
+    // Use overridePrice (post-time price) for payout cap — item.price may be NULL
+    const priceForCap = state.overridePrice !== null && state.overridePrice !== undefined
+      ? Number(state.overridePrice)
+      : 0;
+    const maxCap = Math.floor(priceForCap * 0.5);
 
-        if (state.payout !== null && state.payout !== undefined && state.payout > 0) {
-          // Payout already set - clamp if exceeds max, otherwise keep
-          if (state.payout > maxCap) {
-            state.payout = maxCap; // Clamp down to max
-          }
-        } else {
-          // Payout not set - default to 0
-          state.payout = 0;
-        }
-      }
+    if (state.payout !== null && state.payout !== undefined && state.payout > 0) {
+      // Payout already set — clamp if it exceeds max
+      if (state.payout > maxCap) state.payout = maxCap;
+    } else {
+      // Default to 0 (admin can set it manually via Set Payout)
+      state.payout = 0;
     }
   }
 
@@ -1072,19 +1129,15 @@ export async function handleShopPostPriceBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_price_modal')
-    .setTitle('🏷️ Set Custom Price');
-
-  const items = await getShopItems(interaction.guildId, null, 'name', true);
-  const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
-  const originalPrice = selectedItem ? selectedItem.price : 0;
+    .setTitle('🏷️ Set Item Price');
 
   const priceInput = new TextInputBuilder()
     .setCustomId('price_input')
-    .setLabel('Override Default Price')
+    .setLabel('Price (coins)')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder(`Original: ${originalPrice}`)
+    .setPlaceholder('Enter price (coins)...')
     .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
-    .setRequired(false);
+    .setRequired(true);
 
   modal.addComponents(new ActionRowBuilder().addComponents(priceInput));
   await interaction.showModal(modal);
@@ -1098,11 +1151,10 @@ export async function handleShopPostPayoutBtn(interaction) {
   // Calculate recommended 50%
   try {
     let suggestedCut = 0;
-    if (state.itemId) {
-      const items = await getShopItems(interaction.guildId, null, 'name', true);
-      const selectedItem = items.find(i => i.id === parseInt(state.itemId));
-      if (selectedItem) suggestedCut = Math.floor(selectedItem.price * 0.5);
-    }
+      // Suggested cut is based on overridePrice (the post-time price), not the stored null price
+      if (state.itemId && state.overridePrice !== null) {
+        suggestedCut = Math.floor(Number(state.overridePrice) * 0.5);
+      }
 
     const modal = new ModalBuilder()
       .setCustomId('shop_post_payout_modal')
@@ -1211,18 +1263,14 @@ export async function handleShopPostModalSubmit(interaction) {
         inputAmount = parseInt(val, 10);
       }
 
-      // Validate 50% cap
-      if (inputAmount > 0 && state.itemId) {
-        const items = await getShopItems(interaction.guildId, null, 'name', true);
-        const selectedItem = items.find(i => i.id === parseInt(state.itemId));
-        if (selectedItem) {
-          const maxPayout = Math.floor(selectedItem.price * 0.5);
-          if (inputAmount > maxPayout) {
-            return interaction.followUp({
-              content: `⛔ Seller earnings cannot exceed 50% of the item price (Max: ${maxPayout}).`,
-              flags: MessageFlags.Ephemeral
-            });
-          }
+  // Payout cap validation: use overridePrice (the posting price), not item.price
+      if (inputAmount > 0 && state.overridePrice !== null) {
+        const maxPayout = Math.floor(Number(state.overridePrice) * 0.5);
+        if (inputAmount > maxPayout) {
+          return interaction.followUp({
+            content: `⛔ Seller earnings cannot exceed 50% of the item price (Max: ${maxPayout}).`,
+            flags: MessageFlags.Ephemeral
+          });
         }
       }
       state.payout = inputAmount;
@@ -1241,22 +1289,17 @@ export async function handleShopPostModalSubmit(interaction) {
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim();
       
-      const items = await getShopItems(interaction.guildId, null, 'name', true);
-      const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
-      const originalPrice = selectedItem ? selectedItem.price : null;
-
       if (val === '') {
-        state.overridePrice = null; // Revert to Default
-      } else {
-        const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
-        
-        if (newPrice < 0) {
-          return interaction.followUp({ content: '❌ Please enter a valid non-negative whole number.', flags: MessageFlags.Ephemeral });
-        }
-        
-        // If it matches base price, revert state (cleanup)
-        state.overridePrice = (newPrice === Number(originalPrice)) ? null : newPrice;
+        // User cleared the price field — keep existing or null
+        // Do not allow clearing once required
+        return interaction.followUp({ content: '❌ Price is required. Please enter a valid price (0 for free).', flags: MessageFlags.Ephemeral });
       }
+
+      const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
+      if (newPrice < 0) {
+        return interaction.followUp({ content: '❌ Please enter a valid non-negative whole number.', flags: MessageFlags.Ephemeral });
+      }
+      state.overridePrice = newPrice;
     }
 
     pendingPosts.set(userId, state);
@@ -1288,7 +1331,15 @@ export async function handleShopPostPublish(interaction) {
       return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
     }
 
-    const effectivePrice = Number(overridePrice !== null ? overridePrice : item.price);
+    // Price is now always provided via overridePrice (required before publishing)
+    const effectivePrice = state.overridePrice !== null && state.overridePrice !== undefined
+      ? Number(state.overridePrice)
+      : null;
+
+    if (effectivePrice === null) {
+      return interaction.followUp({ content: '❌ You must set a price using the **Set Price** button before publishing.', flags: MessageFlags.Ephemeral });
+    }
+
     const isFree = effectivePrice === 0;
 
     const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
@@ -1305,10 +1356,10 @@ export async function handleShopPostPublish(interaction) {
     await updateShopItem(itemId, { stock }); 
     item.stock = stock;
 
-    // Image Fallback: Private custom image > Default shop image
-    const finalImage = imageUrl || item.image_url;
+    // Image: instance-specific override takes priority, then item's default image
+    const finalImage = imageUrl || getItemImage(item);
     if (finalImage) {
-      embed.setImage(finalImage);
+      embed.setImage(finalImage); // LARGE banner image for publicly posted shop embeds
     }
 
     // Use custom description if set, otherwise item's default description
@@ -1597,7 +1648,7 @@ export async function handleDeleteItemSelect(interaction) {
         return { 
           label: isGhost ? `👻 [GHOST] ${i.name}` : `🏷️ ${i.name}`, 
           value: i.id.toString(),
-          description: isGhost ? 'Role was deleted from server' : `${i.price.toLocaleString()} coins`
+          description: isGhost ? 'Role was deleted from server' : (i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set')
         };
       }));
 
@@ -2007,7 +2058,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .addOptions(standalone.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString(), 
-          description: i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins` 
+          description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2099,7 +2150,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .addOptions(items.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString(),
-          description: `${i.price.toLocaleString()} coins`
+          description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2359,7 +2410,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
       const itemOptions = folderItems.slice(0, 24).map(i => ({
         label: `🏷️ ${(i.name || `Item #${i.id}`).slice(0, 80)}`,
         value: `item_${i.id}`,
-        description: `${i.price.toLocaleString()} coins`
+        description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
       }));
 
       const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
@@ -2393,7 +2444,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const packOptions = packs.slice(0, 25).map(p => ({
            label: `📦 ${(p.name || `Pack #${p.id}`).slice(0, 80)}`,
            value: `item_${p.id}`,
-           description: `${p.price.toLocaleString()} coins`
+           description: p.price !== null && p.price !== undefined ? `${p.price.toLocaleString()} coins` : 'Price not set'
         }));
 
         const select = new StringSelectMenuBuilder()
@@ -2546,8 +2597,12 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Price: **${item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins'}**\nRole: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}`)
+      .setDescription(`Price: **${item.price === null || item.price === undefined ? '⚠️ Not Set' : (item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins')}**\nRole: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}`)
       .setColor('#3498DB');
+
+    // Show item image as thumbnail if available
+    const itemImg = getItemImage(item);
+    if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
       { label: 'No Category', value: 'null', description: 'Remove from Category' },
@@ -2615,7 +2670,13 @@ export async function handleEditItemDetails(interaction) {
       .setTitle('Edit Shop Item');
 
     const nameInput = new TextInputBuilder().setCustomId('item_name').setLabel('Name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
-    const priceInput = new TextInputBuilder().setCustomId('item_price').setLabel('Price').setStyle(TextInputStyle.Short).setValue(String(item.price)).setRequired(true);
+    const imageInput = new TextInputBuilder()
+      .setCustomId('item_image_url')
+      .setLabel('Image URL (leave empty to keep current)')
+      .setStyle(TextInputStyle.Short)
+      .setValue(item.default_image_url || '')
+      .setPlaceholder('https://... | Type "none" to clear')
+      .setRequired(false);
     const roleInput = new TextInputBuilder().setCustomId('item_role').setLabel('Role ID').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
     const durInput = new TextInputBuilder().setCustomId('item_duration').setLabel('Duration (Days)').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setRequired(false);
 
@@ -2646,7 +2707,7 @@ export async function handleEditItemDetails(interaction) {
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(nameInput),
-      new ActionRowBuilder().addComponents(priceInput),
+      new ActionRowBuilder().addComponents(imageInput),
       new ActionRowBuilder().addComponents(roleInput),
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
@@ -2758,7 +2819,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
-      .setDescription(`Price: **${item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins'}**\nContents: ${contentsDisplay}`)
+      .setDescription(`Price: **${item.price === null || item.price === undefined ? '⚠️ Not Set' : (item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins')}**\nContents: ${contentsDisplay}`)
       .setColor('#8E44AD'); // Purple for packs
 
     const actionRow = new ActionRowBuilder().addComponents(
@@ -2824,7 +2885,7 @@ export async function handlePackAddContentStart(interaction) {
       .addOptions(availableItems.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
         value: i.id.toString(), 
-        description: i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins` 
+        description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -2920,7 +2981,7 @@ export async function handlePackAddContentSelect(interaction) {
         .addOptions(availableItems.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString(), 
-          description: i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins` 
+          description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -3068,7 +3129,7 @@ export async function handlePackRemoveContentSelect(interaction) {
       const options = remainingPackItems.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
         value: i.id.toString(),
-        description: `${i.price.toLocaleString()} coins`
+        description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
       }));
 
       const select = new StringSelectMenuBuilder()
