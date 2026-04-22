@@ -370,14 +370,7 @@ export async function syncQuestChannelCache(guildId) {
       activeQuestsCache.delete(guildId);
       completedQuestsCache.delete(guildId);
       
-      // 'Disable' Override: Instantly clear the snapshot to render board inactive
-      if (config.active_quest_snapshot) {
-          config.active_quest_snapshot = null;
-          const { setGuildConfig } = await import('../storage/config.js');
-          await setGuildConfig(guildId, config);
-      }
-
-      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared cache & snapshot: quests explicitly disabled' });
+      sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared memory cache: quests explicitly disabled' });
       return;
     }
 
