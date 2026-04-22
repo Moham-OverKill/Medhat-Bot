@@ -591,18 +591,14 @@ export async function handleItemModalSubmit(interaction) {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
         const durationRaw = interaction.fields.getTextInputValue('item_duration').trim();
         // Read image URL (new field replacing Price)
-        let editImageUrl;
         try {
           const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
-          // Empty string = keep existing. 'none'/'clear' = clear it.
-          if (rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
-            editImageUrl = null;
+          // Empty string or 'none' = clear image
+          if (rawImg === '' || rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
             updates.default_image_url = null;
-          } else if (rawImg !== '') {
-            editImageUrl = rawImg;
+          } else {
             updates.default_image_url = rawImg;
           }
-          // If field is empty, do NOT touch existing image
         } catch (e) { /* field may be absent */ }
 
         if (roleId && roleId.toLowerCase() !== 'none') {
@@ -946,7 +942,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_price_btn')
       .setLabel('Set Price')
       .setEmoji('🏷️')
-      .setStyle(state.overridePrice !== null ? ButtonStyle.Primary : ButtonStyle.Danger)
+      .setStyle(state.overridePrice !== null ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
@@ -2651,10 +2647,10 @@ export async function handleEditItemDetails(interaction) {
     const nameInput = new TextInputBuilder().setCustomId('item_name').setLabel('Name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
     const imageInput = new TextInputBuilder()
       .setCustomId('item_image_url')
-      .setLabel('Image URL (leave empty to keep current)')
+      .setLabel('Image URL')
       .setStyle(TextInputStyle.Short)
       .setValue(item.default_image_url || '')
-      .setPlaceholder('https://... | Type "none" to clear')
+      .setPlaceholder('https://example.com/image.png (leave empty for none)')
       .setRequired(false);
     const roleInput = new TextInputBuilder().setCustomId('item_role').setLabel('Role ID').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
     const durInput = new TextInputBuilder().setCustomId('item_duration').setLabel('Duration (Days)').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setRequired(false);
