@@ -386,6 +386,9 @@ export async function syncQuestChannelCache(guildId) {
 
     if (activeQuests.length > 0) {
       activeQuestsCache.set(guildId, activeQuests);
+    } else {
+      // Explicitly clear stale cache — do not leave old quests in memory
+      activeQuestsCache.delete(guildId);
     }
 
     // Rebuild completed cache directly from DB to clear stale ghosts from previous cycles
