@@ -217,12 +217,14 @@ export async function handleQuestsScheduleUpdate(interaction) {
   try {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
-    const value = parseInt(interaction.values[0]);
+    const quests = await getQuests(guildId);
+    const maxAllowed = Math.max(1, quests.length);
 
     if (interaction.customId === 'quests_setting_per_refresh') {
-      config.quests_per_refresh = value;
+      const perRefresh = parseInt(interaction.values[0], 10);
+      config.quests_per_refresh = Math.min(perRefresh, maxAllowed);
     } else if (interaction.customId === 'quests_setting_refreshes') {
-      config.quests_refreshes_per_day = value;
+      config.quests_refreshes_per_day = parseInt(interaction.values[0], 10);
     }
 
     await setGuildConfig(guildId, config);
