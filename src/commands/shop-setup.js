@@ -317,7 +317,7 @@ export async function handleAddTypeSelect(interaction) {
       .setCustomId('item_duration')
       .setLabel('Duration (Days)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('30')
+      .setPlaceholder('Leave empty for permanent')
       .setRequired(false);
 
     const reqInput = new TextInputBuilder()
