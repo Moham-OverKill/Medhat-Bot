@@ -526,11 +526,13 @@ export async function handleDeleteQuest(interaction, questId) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     const config = await getGuildConfig(interaction.guildId) || {};
-    const wasActive = config.active_quest_ids && config.active_quest_ids.includes(questId);
+    // Ensure we handle numeric/string conversions safely
+    const questIdInt = parseInt(questId, 10);
+    const wasActive = config.active_quest_ids && config.active_quest_ids.includes(questIdInt);
 
     // If the active Quest is the one being deleted, clear it
     if (wasActive) {
-      config.active_quest_ids = config.active_quest_ids.filter(id => id !== questId);
+      config.active_quest_ids = config.active_quest_ids.filter(id => id !== questIdInt);
       await setGuildConfig(interaction.guildId, config);
       const { syncQuestChannelCache } = await import('../activity/index.js');
       await syncQuestChannelCache(interaction.guildId);
