@@ -146,10 +146,19 @@ export async function showQuestsSchedule(interaction) {
     const config = await getGuildConfig(guildId) || {};
 
     const refreshes = config.quests_refreshes_per_day || 1;
-    const perRefresh = config.quests_per_refresh || 3;
-
+    let perRefresh = config.quests_per_refresh || 3;
+    
     const quests = await getQuests(guildId);
     const totalQuests = quests.length;
+
+    // AUTO-SHRINK: If pool is now smaller than the setting (e.g. after deletion), 
+    // cap the setting at the max available pool size to keep UI consistent.
+    if (totalQuests > 0 && perRefresh > totalQuests) {
+        perRefresh = totalQuests;
+        config.quests_per_refresh = perRefresh;
+        await setGuildConfig(guildId, config);
+        sysLog('Quest Setting Auto-Shrink', { guild: guildId, detail: `Capped per_refresh at ${perRefresh} due to pool size` });
+    }
 
     const embed = new EmbedBuilder()
       .setTitle('📅 Quest Rotation Schedule')
