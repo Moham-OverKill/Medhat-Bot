@@ -96,7 +96,7 @@ function buildBankUI(userData, member) {
 
   const embed = new EmbedBuilder()
     .setColor(0xFFD700) // Gold
-    .setTitle('🏛️ OverKill Bank')
+    .setTitle('🏛️ Bank')
     .setDescription(`Welcome to your personal bank account, <@${member.id}>!`)
     .setThumbnail(BANK_THUMBNAIL_URL)
     .addFields(
