@@ -174,6 +174,13 @@ export async function resetGuildQuestProgress(guildId) {
 export async function incrementProgressAndPayout(guildId, userId, quest, amount = 1) {
   const pool = getPool();
   const date = getTodayCairo();
+  
+  // Safety: Prevent math loops or invalid goal edge cases
+  const requiredCount = parseInt(quest.required_count) || 1;
+  const rewardAmt = parseInt(quest.reward_coins) || 0;
+
+  if (requiredCount <= 0 || amount <= 0) return { progress: 0, completed: false, justCompleted: false };
+
   try {
     // Atomic Upsert: Will only mark completed=true ONCE
     const result = await pool.query(
@@ -196,19 +203,15 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
            ELSE FALSE 
          END
        RETURNING *`,
-      [guildId, userId, quest.id, date, amount, quest.required_count]
+      [guildId, userId, quest.id, date, amount, requiredCount]
     );
 
     const row = result.rows[0];
     const newProgress = parseInt(row.progress);
     const oldProgress = newProgress - amount;
     
-    // Robust completion check: 
-    // 1. MUST hit or cross the required count in THIS update
-    // 2. MUST have been NOT completed/claimed before THIS update (Atomic check)
-    //    We check result.rows[0].completed as the source of truth for the FINAL state.
-    //    The 'justCompleted' flag ensures we only payout on the transition frame.
-    const justCompleted = oldProgress < quest.required_count && newProgress >= quest.required_count;
+    // Robust completion check
+    const justCompleted = oldProgress < requiredCount && newProgress >= requiredCount;
 
     if (amount > 0) {
         sysLog('Quest Progress Upsert', { 
