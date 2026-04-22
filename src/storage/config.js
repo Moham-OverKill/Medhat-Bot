@@ -26,6 +26,9 @@ const CONFIG_SCHEMA = {
   quests_refreshes_per_day: { type: 'number', min: 1, max: 4, required: false },
   quests_per_refresh: { type: 'number', min: 1, max: 5, required: false },
   active_quest_ids: { type: 'object', required: false }, // Store as array
+  active_quest_snapshot: { type: 'object', required: false }, // Frozen quest objects for the current cycle
+  current_quest_cycle: { type: 'number', min: 0, required: false }, // Monotonic cycle counter
+  last_quest_ids: { type: 'object', required: false }, // Previous cycle's IDs
   // Legacy Missions module (for migration)
   missions_enabled: { type: 'boolean', required: false },
   missions_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
