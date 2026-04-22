@@ -1464,12 +1464,9 @@ export async function handleBankHistory(interaction) {
       await interaction.editReply({ content: null, embeds: [emptyEmbed], components: [navRow, backRow] });
       return;
     }
+    const { getCairoDateString } = await import('../utils/time.js');
     const lines = result.rows.map(tx => {
-      const d = new Date(tx.created_at);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const date = `${year}/${month}/${day}`;
+      const date = getCairoDateString(new Date(tx.created_at)).replace(/-/g, '/');
 
       const amountVal = parseInt(tx.amount);
       let amountDisplay;
