@@ -828,9 +828,9 @@ export async function handleShopPostStart(interaction) {
   if (state.postStep === 0) {
     // Root Folder View
     itemOptions = [
-      { label: '📂 Categorized Items', value: 'folder_categorized', description: 'Browse items by category folders' },
-      { label: '🏷️ Uncategorized Items', value: 'folder_standalone', description: 'Show items not assigned to any category' },
-      { label: '📦 Item Packs', value: 'folder_packs', description: 'Show all item packs' }
+      { label: '📂 Categorized Items', value: 'folder_categorized' },
+      { label: '🏷️ Uncategorized Items', value: 'folder_standalone' },
+      { label: '📦 Item Packs', value: 'folder_packs' }
     ];
     placeholder = '📦 Select Item/Pack (Required)';
     
@@ -839,7 +839,6 @@ export async function handleShopPostStart(interaction) {
       itemOptions.unshift({
         label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
         value: selectedItem.id.toString(),
-        description: state.overridePrice !== null ? `Price set: ${Number(state.overridePrice).toLocaleString()} coins` : 'Price not yet set',
         default: true
       });
     }
@@ -848,10 +847,9 @@ export async function handleShopPostStart(interaction) {
     // Category Folder List
     itemOptions = categories.map(c => ({
       label: `📂 ${c.name.slice(0, 50)}`,
-      value: `filter_cat_${c.id}`,
-      description: 'Open this category folder'
+      value: `filter_cat_${c.id}`
     }));
-    itemOptions.unshift({ label: '↩️ Back to Start', value: 'folder_reset', description: 'Return to main folder view' });
+    itemOptions.unshift({ label: '↩️ Back to Start', value: 'folder_reset' });
     placeholder = '📂 Choose Category Folder...';
   } 
   else if (state.postStep === 2) {
@@ -876,20 +874,14 @@ export async function handleShopPostStart(interaction) {
     }
 
     itemOptions = filtered.slice(0, 24).map(i => {
-      const itemCount = i.is_pack ? (Array.isArray(i.contents) ? i.contents.length : 0) : 0;
-      const descText = i.is_pack 
-        ? `${itemCount} items | Price set at post` 
-        : `Role: <@&${i.role_id}>`;
-
       return {
         label: `${groupPrefix} ${i.name.slice(0, 75)}`,
         value: i.id.toString(),
-        description: descText,
         default: state.itemId === i.id.toString()
       };
     });
 
-    itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset', description: 'Return to folder selection' });
+    itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset' });
     placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
   }
 
@@ -897,8 +889,7 @@ export async function handleShopPostStart(interaction) {
   if (itemOptions.length === 0) {
     itemOptions.push({
       label: '📂 Folder is empty',
-      value: 'folder_reset',
-      description: 'Check back later or choose another folder'
+      value: 'folder_reset'
     });
   }
 
@@ -1644,8 +1635,7 @@ export async function handleDeleteItemSelect(interaction) {
         const isGhost = roleId && !interaction.guild.roles.cache.has(roleId);
         return { 
           label: isGhost ? `👻 [GHOST] ${i.name}` : `🏷️ ${i.name}`, 
-          value: i.id.toString(),
-          description: isGhost ? 'Role was deleted from server' : `ID: ${i.id}`
+          value: i.id.toString()
         };
       }));
 
@@ -2145,8 +2135,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .setPlaceholder('Select Item to Remove from Category')
         .addOptions(items.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString(),
-          description: `ID: ${i.id}`
+          value: i.id.toString()
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2336,15 +2325,13 @@ export async function renderAdminBrowser(interaction, contextMap) {
         if (hasCategorized) {
           options.push({ 
             label: '📂 Categorized Items', 
-            value: 'action_browse_categorized', 
-            description: 'Browse items by category folders' 
+            value: 'action_browse_categorized'
           });
         }
         if (hasUncategorized) {
           options.push({ 
             label: '🏷️ Uncategorized Items', 
-            value: 'cat_null', 
-            description: 'Show items not assigned to any category' 
+            value: 'cat_null'
           });
         }
 
@@ -2369,11 +2356,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
         const options = activeCategories.slice(0, 24).map(cat => {
-          const count = singleItems.filter(i => i.category_id === cat.id).length;
           return { 
             label: `📂 ${cat.name || `Category #${cat.id}`}`.slice(0, 100), 
-            value: `cat_${cat.id}`, 
-            description: `${count} item(s)` 
+            value: `cat_${cat.id}`
           };
         });
 
@@ -2405,8 +2390,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
       const itemOptions = folderItems.slice(0, 24).map(i => ({
         label: `🏷️ ${(i.name || `Item #${i.id}`).slice(0, 80)}`,
-        value: `item_${i.id}`,
-        description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
+        value: `item_${i.id}`
       }));
 
       const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
@@ -2439,8 +2423,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
         const packOptions = packs.slice(0, 25).map(p => ({
            label: `📦 ${(p.name || `Pack #${p.id}`).slice(0, 80)}`,
-           value: `item_${p.id}`,
-           description: p.price !== null && p.price !== undefined ? `${p.price.toLocaleString()} coins` : 'Price not set'
+           value: `item_${p.id}`
         }));
 
         const select = new StringSelectMenuBuilder()
@@ -2601,7 +2584,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
-      { label: 'No Category', value: 'null', description: 'Remove from Category' },
+      { label: 'No Category', value: 'null' }, 
       ...categories.map(c => ({ 
         label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
         value: c.id.toString(), 
@@ -2880,8 +2863,7 @@ export async function handlePackAddContentStart(interaction) {
       .setPlaceholder('Select Item to Add to Pack')
       .addOptions(availableItems.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString(), 
-        description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
+        value: i.id.toString()
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -2976,8 +2958,7 @@ export async function handlePackAddContentSelect(interaction) {
         .setPlaceholder('Select Item to Add to Pack')
         .addOptions(availableItems.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString(), 
-          description: i.price === null || i.price === undefined ? 'Price not set' : (i.price === 0 ? 'FREE' : `${i.price.toLocaleString()} coins`) 
+          value: i.id.toString()
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -3124,8 +3105,7 @@ export async function handlePackRemoveContentSelect(interaction) {
     } else {
       const options = remainingPackItems.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString(),
-        description: i.price !== null && i.price !== undefined ? `${i.price.toLocaleString()} coins` : 'Price not set'
+        value: i.id.toString()
       }));
 
       const select = new StringSelectMenuBuilder()
