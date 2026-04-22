@@ -378,12 +378,10 @@ export async function syncQuestChannelCache(guildId) {
     let activeQuests = [];
     if (config?.active_quest_snapshot && Array.isArray(config.active_quest_snapshot) && config.active_quest_snapshot.length > 0) {
       activeQuests = config.active_quest_snapshot;
-    } else if (config?.active_quest_ids && config.active_quest_ids.length > 0) {
-      // Fallback: Use master pool if snapshot is missing (legacy support)
-      const { getQuests } = await import('../quests/quests.js');
-      const allQuests = await getQuests(guildId);
-      activeQuests = allQuests.filter(q => config.active_quest_ids.includes(q.id));
-      sysLog('Quest Cache Fallback', { guild: guildId, detail: 'Snapshot missing, loaded from master pool' });
+    } else {
+        // No snapshot = no active quests. 
+        // We do NOT fall back to active_quest_ids anymore to prevent "Hidden Quests" 
+        // from tracking in the background after a manual pool modification.
     }
 
     if (activeQuests.length > 0) {
