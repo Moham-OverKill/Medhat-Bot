@@ -567,11 +567,18 @@ export async function handleToggleQuests(interaction) {
     const config = await getGuildConfig(guildId) || {};
     config.quests_enabled = !(config.quests_enabled ?? config.missions_enabled ?? false);
     const isEnabled = config.quests_enabled;
+    
+    if (!isEnabled) {
+        // DISABLING: Wipe current cycle state so it starts fresh next time
+        config.active_quest_snapshot = null;
+        config.active_quest_ids = [];
+        sysLog('Quest Cycle Wiped', { guildId, detail: 'System disabled by admin' });
+    }
+
     await setGuildConfig(guildId, config);
 
-    // EMERGENCY REPAIR: If enabled but snapshot is missing, trigger a rotation immediately
-    // so the user doesn't see an "empty board" message.
-    if (isEnabled && (!config.active_quest_snapshot || config.active_quest_snapshot.length === 0)) {
+    // ENABLING: Trigger an immediate fresh rotation if snapshot is empty (which it is now)
+    if (isEnabled) {
         const { getQuests } = await import('../quests/quests.js');
         const poolQuests = await getQuests(guildId);
         if (poolQuests.length > 0) {
