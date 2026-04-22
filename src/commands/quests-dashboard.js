@@ -162,8 +162,7 @@ export async function showQuestsSchedule(interaction) {
 
     const embed = new EmbedBuilder()
       .setTitle('📅 Quest Rotation Schedule')
-      .setDescription(`Current Pool: **${totalQuests} quest(s)** available.\n\n` + 
-                     `*Note: If "Quests per Refresh" is higher than your pool, the engine will simply show all available quests and wait for more.*`)
+      .setDescription(`Current Pool: **${totalQuests} quest(s)** available.`)
       .setColor('#3498DB');
 
     // Dropdown for Quests Per Refresh (1-10, limited by pool size)
