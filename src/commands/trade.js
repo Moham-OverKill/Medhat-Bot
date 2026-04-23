@@ -10,7 +10,8 @@ import {
     TextInputStyle,
     StringSelectMenuBuilder,
     ComponentType,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    InteractionType
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount } from '../shared.js';
@@ -815,6 +816,9 @@ async function finalizeTradePosting(interaction, setup) {
         );
 
         // 5. Set Expiration Timeout (Garbage Collector)
+        const channelId = interaction.channelId;
+        const msgId = publicMsg.id;
+        
         const timeoutId = setTimeout(async () => {
             try {
                 // Check if still pending
@@ -843,15 +847,15 @@ async function finalizeTradePosting(interaction, setup) {
                     );
 
                     // Fetch fresh message object to ensure edit succeeds
-                    const channel = await interaction.client.channels.fetch(interaction.channelId).catch(() => null);
+                    const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
                     if (channel) {
-                        const targetMsg = await channel.messages.fetch(publicMsg.id).catch(() => null);
+                        const targetMsg = await channel.messages.fetch(msgId).catch(() => null);
                         if (targetMsg) {
                             await targetMsg.edit({
                                 content: `<@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
                                 embeds: [expiredEmbed],
                                 components: [disabledRow]
-                            }).catch(() => { });
+                            }).catch((e) => sysError('Trade auto-expire edit fail', e));
                         }
                     }
                 }
