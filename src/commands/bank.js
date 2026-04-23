@@ -1137,12 +1137,14 @@ export async function handleInventoryAction(interaction) {
     if (action === 'drop' || action === 'dropconfirm') {
       const { query } = await import('../storage/postgres.js');
       const tradeCheck = await query(
-        `SELECT id FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
+        `SELECT message_url FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
         [interaction.user.id, interaction.guildId]
       );
       
       if (tradeCheck.rows.length > 0) {
-        const lockMsg = "❌ You can't drop items when you have a pending trade.";
+        const trade = tradeCheck.rows[0];
+        const tradeLink = trade.message_url ? `[pending trade](${trade.message_url})` : 'pending trade';
+        const lockMsg = `❌ You can't drop items when you have a ${tradeLink} .`;
         if (interaction.deferred || interaction.replied) return interaction.followUp({ content: lockMsg, flags: 64 });
         return interaction.reply({ content: lockMsg, flags: 64 });
       }
