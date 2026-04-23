@@ -400,7 +400,7 @@ export function setupComponentHandlers(client) {
       } else if (customId.startsWith('quest_')) {
         await handleQuestInteraction(interaction);
       } else if (interaction.customId.startsWith('trade_')) {
-        if (customId.startsWith('trade_setup_')) {
+        if (customId.startsWith('trade_setup_') || customId.startsWith('trade_cat_')) {
           await handleTradeSetupInteraction(interaction);
         } else if (customId.startsWith('trade_select_')) {
           await handleTradeSelect(interaction);
