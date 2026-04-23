@@ -1144,7 +1144,7 @@ export async function handleInventoryAction(interaction) {
       if (tradeCheck.rows.length > 0) {
         const trade = tradeCheck.rows[0];
         const tradeLink = trade.message_url ? `[pending trade](${trade.message_url})` : 'pending trade';
-        const lockMsg = `❌ You can't drop items when you have a ${tradeLink} .`;
+        const lockMsg = `❌ You can't drop items when you have a ${tradeLink}.`;
         if (interaction.deferred || interaction.replied) return interaction.followUp({ content: lockMsg, flags: 64 });
         return interaction.reply({ content: lockMsg, flags: 64 });
       }
