@@ -49,48 +49,69 @@ const SINGLE_TX_CAP = 100000;
 
 /**
  * STARTUP JANITOR: Recovers stale trades after a bot restart
+ * Also schedules future timeouts for trades that are still alive!
  */
 export async function initializeTradeJanitor(client) {
-    try {
-        const staleRes = await query(
-            `SELECT id, guild_id, message_id, channel_id, sender_id, target_id, expires_at 
-             FROM trades 
-             WHERE status = 'pending' AND expires_at < NOW()`
-        );
+    const sweep = async () => {
+        try {
+            // 1. Cleanup ALREADY expired trades
+            const staleRes = await query(
+                `SELECT id, guild_id, message_id, channel_id, sender_id, target_id, expires_at 
+                 FROM trades 
+                 WHERE status = 'pending' AND expires_at < NOW()`
+            );
 
-        if (staleRes.rows.length === 0) return;
+            if (staleRes.rows.length > 0) {
+                sysLog('Trade Janitor: Cleaning up stale trades', { count: staleRes.rows.length });
+                for (const trade of staleRes.rows) {
+                    await query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', trade.id]).catch(() => {});
+                    
+                    const channel = await client.channels.fetch(trade.channel_id).catch(() => null);
+                    if (channel) {
+                        const msg = await channel.messages.fetch(trade.message_id).catch(() => null);
+                        if (msg) {
+                            const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
+                                .setColor(0x95A5A6)
+                                .setFooter({ text: 'Trade Expired (Recovery Audit)' })
+                                .setTimestamp();
 
-        sysLog('Trade Janitor: Cleaning up stale trades', { count: staleRes.rows.length });
-
-        for (const trade of staleRes.rows) {
-            try {
-                // 1. Update DB
-                await query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', trade.id]);
-
-                // 2. Clear UI (Try-Catch as channel/message might be deleted)
-                const channel = await client.channels.fetch(trade.channel_id).catch(() => null);
-                if (channel) {
-                    const msg = await channel.messages.fetch(trade.message_id).catch(() => null);
-                    if (msg) {
-                        const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
-                            .setColor(0x95A5A6)
-                            .setFooter({ text: 'Trade Expired (Offline Recovery)' })
-                            .setTimestamp();
-
-                        await msg.edit({
-                            content: '',
-                            embeds: [expiredEmbed],
-                            components: []
-                        }).catch(() => { });
+                            await msg.edit({ content: '', embeds: [expiredEmbed], components: [] }).catch(() => {});
+                        }
                     }
                 }
-            } catch (err) {
-                sysError(`Janitor failed to clean trade ${trade.id}`, err);
             }
+
+            // 2. Reschedule FUTURE timeouts for trades that were caught in a restart
+            const aliveRes = await query(
+                `SELECT id, guild_id, message_id, channel_id, expires_at 
+                 FROM trades 
+                 WHERE status = 'pending' AND expires_at > NOW()`
+            );
+
+            for (const trade of aliveRes.rows) {
+                // If we don't already have a timer running for this trade
+                if (!TRADE_TIMEOUTS.has(trade.id)) {
+                    const remainingMs = new Date(trade.expires_at).getTime() - Date.now();
+                    
+                    if (remainingMs > 0) {
+                        const timeoutId = setTimeout(async () => {
+                            await initializeTradeJanitor(client); // Just run a sweep when it's time
+                        }, remainingMs);
+                        
+                        TRADE_TIMEOUTS.set(trade.id, timeoutId);
+                    }
+                }
+            }
+        } catch (err) {
+            sysError('Trade Janitor Sweep Failure', err);
         }
-    } catch (err) {
-        sysError('Trade Janitor Global Failure', err);
-    }
+    };
+
+    // Initial run
+    await sweep();
+
+    // Setup periodic sweep every 60 seconds as a final failsafe
+    setInterval(sweep, 60000);
 }
 
 
