@@ -1095,13 +1095,13 @@ export async function handleShopPostDescBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_desc_modal')
-    .setTitle('Set Item Description');
+    .setTitle('Description');
 
   const descInput = new TextInputBuilder()
     .setCustomId('description')
     .setLabel('Description')
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Leave empty to use default description...')
+    .setPlaceholder('A very cool item that makes you look even cooler!')
     .setValue(state.description ?? '')
     .setRequired(false)
     .setMaxLength(1000);
@@ -1118,13 +1118,13 @@ export async function handleShopPostPriceBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_price_modal')
-    .setTitle('🏷️ Set Item Price');
+    .setTitle('Price');
 
   const priceInput = new TextInputBuilder()
     .setCustomId('price_input')
-    .setLabel('Price (coins)')
+    .setLabel('Price')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Enter price (coins)...')
+    .setPlaceholder('1000')
     .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
     .setRequired(true);
 
@@ -1147,13 +1147,13 @@ export async function handleShopPostPayoutBtn(interaction) {
 
     const modal = new ModalBuilder()
       .setCustomId('shop_post_payout_modal')
-      .setTitle('Seller Earnings Each Sale');
+      .setTitle('Seller payout (0 or empty for none)');
 
     const payoutInput = new TextInputBuilder()
       .setCustomId('payout')
       .setLabel('Amount')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Enter payout amount (0 or empty for none)')
+      .setPlaceholder('100')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
       .setRequired(false);
 
@@ -1210,11 +1210,11 @@ export async function handleShopPostImageBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_image_modal')
-    .setTitle('Set Custom Image URL');
+    .setTitle('Image URL (Leave empty to use default)');
 
   const urlInput = new TextInputBuilder()
     .setCustomId('image_url')
-    .setLabel('Image URL (leave empty to use default)')
+    .setLabel('Image URL')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('https://example.com/image.png')
     .setValue(state.imageUrl || '')
