@@ -829,7 +829,8 @@ async function finalizeTradePosting(interaction, setup) {
                     // Edit original message to show expired state
                     const expiredEmbed = EmbedBuilder.from(embed)
                         .setColor(0x95A5A6) // Gray
-                        .setFooter({ text: 'Trade Expired' });
+                        .setFooter({ text: 'Trade Expired' })
+                        .setTimestamp();
                     
                     const disabledRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -923,7 +924,7 @@ export async function handleTradeExecution(interaction) {
         await interaction.editReply({
             content: '',
             components: [],
-            embeds: [declinedEmbed.setFooter({ text: `Trade Declined • Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` })]
+            embeds: [declinedEmbed.setFooter({ text: 'Trade Declined' }).setTimestamp()]
         });
         return;
     }
@@ -1254,7 +1255,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         await interaction.editReply({
             content: '',
             components: [],
-            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: `Trade Successful • Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` })]
+            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' }).setTimestamp()]
         });
 
         // 9. Clear Garbage Collector
