@@ -188,16 +188,16 @@ export async function handleTradeCommand(interaction) {
 
         if (activeCheck.rows.length > 0) {
             const busyTrade = activeCheck.rows[0];
-            const tradeLink = busyTrade.message_url ? `[active trade](${busyTrade.message_url})` : 'active trade';
-            
+            const tradeLink = busyTrade.message_url ? `[pending trade](${busyTrade.message_url})` : 'pending trade';
+
             if (busyTrade.sender_id === sender.id || busyTrade.target_id === sender.id) {
                 return interaction.reply({ 
-                    content: `❌ You already have an ${tradeLink} pending.`, 
+                    content: `❌ You already have a ${tradeLink} .`, 
                     flags: MessageFlags.Ephemeral 
                 });
             } else {
                 return interaction.reply({ 
-                    content: `❌ This user is currently in another ${tradeLink}.`, 
+                    content: `❌ This user is currently in another ${tradeLink} .`, 
                     flags: MessageFlags.Ephemeral 
                 });
             }
@@ -788,15 +788,15 @@ async function finalizeTradePosting(interaction, setup) {
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`trade_accept_${tradeId}`)
-                .setLabel('Accept')
-                .setEmoji('✅')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
                 .setCustomId(`trade_decline_${tradeId}`)
                 .setLabel('Decline')
                 .setEmoji('✖️')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId(`trade_accept_${tradeId}`)
+                .setLabel('Accept')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success)
         );
 
         // 3. Post Publicly
@@ -840,11 +840,18 @@ async function finalizeTradePosting(interaction, setup) {
                             .setDisabled(true)
                     );
 
-                    await publicMsg.edit({
-                        content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
-                        embeds: [expiredEmbed],
-                        components: [disabledRow]
-                    }).catch(() => { }); // Ignore Unknown Message errors
+                    // Fetch fresh message object to ensure edit succeeds
+                    const channel = await interaction.client.channels.fetch(interaction.channelId).catch(() => null);
+                    if (channel) {
+                        const targetMsg = await channel.messages.fetch(publicMsg.id).catch(() => null);
+                        if (targetMsg) {
+                            await targetMsg.edit({
+                                content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
+                                embeds: [expiredEmbed],
+                                components: [disabledRow]
+                            }).catch(() => { });
+                        }
+                    }
                 }
             } catch (err) {
                 sysError('Trade timeout error', err, { guild: setup.guildId, detail: `TradeID: ${tradeId}` });
