@@ -427,7 +427,7 @@ export async function handleTradeSetupInteraction(interaction) {
         }
 
         // List Inventory to Give (FOLDER SYSTEM)
-        if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select') {
+        if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select' || (customId === 'trade_select_give_item' && interaction.values[0]?.startsWith('trade_folder_back_'))) {
             const selectedCatId = setup.givingFolder;
             sysLog('Building Give Item List', { folder: selectedCatId });
             
@@ -452,7 +452,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 return interaction.editReply({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', components: [], embeds: [] });
             }
 
-            if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select')) {
+            if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select' || (customId === 'trade_select_give_item' && interaction.values[0]?.startsWith('trade_folder_back_')))) {
                 const categories = await getShopCategories(setup.guildId);
                 const validCatIds = new Set(tradableItems.map(i => i.category_id));
                 const availableCats = categories.filter(c => validCatIds.has(c.id));
@@ -498,7 +498,7 @@ export async function handleTradeSetupInteraction(interaction) {
         }
 
         // List Target Inventory to Request (FOLDER SYSTEM)
-        if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select') {
+        if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select' || (customId === 'trade_select_request_item' && interaction.values[0]?.startsWith('trade_folder_back_'))) {
             const selectedCatId = setup.requestingFolder;
             const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
             if (!member) return interaction.editReply({ content: '❌ Target member not found.', components: [], embeds: [] });
@@ -523,7 +523,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 return interaction.editReply({ content: '❌ The target user does not have any tradable items that you don\'t already own.', components: [], embeds: [] });
             }
 
-            if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select')) {
+            if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select' || (customId === 'trade_select_request_item' && interaction.values[0]?.startsWith('trade_folder_back_')))) {
                 const categories = await getShopCategories(setup.guildId);
                 const validCatIds = new Set(tradableItems.map(i => i.category_id));
                 const availableCats = categories.filter(c => validCatIds.has(c.id));
