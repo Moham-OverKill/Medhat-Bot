@@ -17,7 +17,7 @@ import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount } f
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance, updateBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
-import { syncInventoryWithDiscord, runDependencySweep } from '../economy/shop.js';
+import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 /**
@@ -423,7 +423,6 @@ export async function handleTradeSetupInteraction(interaction) {
         const targetRoleIds = targetMember ? targetMember.roles.cache.map(r => r.id) : [];
 
         if (targetMember) {
-            const { getUserInventory } = await import('../economy/shop.js');
             const targetInv = await getUserInventory(setup.targetId, setup.guildId);
             targetInv.forEach(i => targetOwnedItemIds.push(i.shop_item_id));
         }
@@ -449,9 +448,8 @@ export async function handleTradeSetupInteraction(interaction) {
         }
 
         // 4. Folder Logic
-        if (!selectedCatId && customId === 'trade_setup_give_item') {
+        if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select')) {
             // STEP A: Show category folders
-            const { getShopCategories } = await import('../economy/shop.js');
             const categories = await getShopCategories(setup.guildId);
             
             // Only show categories that have items the user actually owns and can trade
@@ -474,7 +472,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
                 const catSelect = new StringSelectMenuBuilder()
                     .setCustomId('trade_cat_give_select')
-                    .setPlaceholder('Select items to give/request')
+                    .setPlaceholder('Select item(s) to give')
                     .addOptions(options);
 
                 return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
@@ -520,7 +518,6 @@ export async function handleTradeSetupInteraction(interaction) {
         // 2. Fetch Requester (Sender) state for filtering
         const senderMember = interaction.member;
         const senderRoleIds = senderMember.roles.cache.map(r => r.id);
-        const { getUserInventory } = await import('../economy/shop.js');
         const senderInv = await getUserInventory(setup.senderId, setup.guildId);
         const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
 
@@ -545,9 +542,8 @@ export async function handleTradeSetupInteraction(interaction) {
         }
 
         // 4. Folder Logic
-        if (!selectedCatId && customId === 'trade_setup_request_item') {
+        if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select')) {
             // STEP A: Show category folders
-            const { getShopCategories } = await import('../economy/shop.js');
             const categories = await getShopCategories(setup.guildId);
             
             // Only show categories that have items the user actually owns and can trade
@@ -570,7 +566,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
                 const catSelect = new StringSelectMenuBuilder()
                     .setCustomId('trade_cat_req_select')
-                    .setPlaceholder('Select items to give/request')
+                    .setPlaceholder('Select item(s) to request')
                     .addOptions(options);
 
                 return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
