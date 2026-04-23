@@ -635,6 +635,8 @@ export async function handleTradeSetupInteraction(interaction) {
         setup.targetCoins = 0;
         setup.senderItems = [];
         setup.targetItems = [];
+        setup.givingFolder = null;
+        setup.requestingFolder = null;
         return showTradeSetup(interaction, setup);
     }
 }
