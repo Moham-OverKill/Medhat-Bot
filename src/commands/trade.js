@@ -477,7 +477,7 @@ export async function handleTradeSetupInteraction(interaction) {
             }
 
             const options = folderItems.slice(0, 25).map(row => ({
-                label: row.name,
+                label: `🏷️ ${row.name}`,
                 value: row.id.toString()
             }));
 
@@ -551,7 +551,7 @@ export async function handleTradeSetupInteraction(interaction) {
             }
 
             const options = folderItems.slice(0, 25).map(row => ({
-                label: row.name,
+                label: `🏷️ ${row.name}`,
                 value: row.id.toString()
             }));
 
