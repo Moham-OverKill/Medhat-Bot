@@ -850,7 +850,7 @@ export async function handleShopPostStart(interaction) {
       label: `📂 ${c.name.slice(0, 50)}`,
       value: `filter_cat_${c.id}`
     }));
-    itemOptions.unshift({ label: '↩️ Back to Start', value: 'folder_reset' });
+    itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
     placeholder = '📂 Choose Category Folder...';
   } 
   else if (state.postStep === 2) {
@@ -882,7 +882,7 @@ export async function handleShopPostStart(interaction) {
       };
     });
 
-    itemOptions.unshift({ label: '↩️ Back to Folders', value: 'folder_reset' });
+    itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
     placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
   }
 
