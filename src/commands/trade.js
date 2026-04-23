@@ -943,10 +943,26 @@ export async function handleTradeExecution(interaction) {
         return interaction.reply({ content: `❌ This trade has already been ${trade.status}.`, flags: MessageFlags.Ephemeral });
     }
 
-    // Expiry Check
+    // Expiry Check (JIT Cleanup)
     if (new Date() > new Date(trade.expires_at)) {
         await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, interaction.guildId]);
-        return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
+        
+        // Clean up the message visually so it doesn't look like a "Zombie"
+        try {
+            const expiredEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor(0x95A5A6)
+                .setFooter({ text: 'Trade Expired' })
+                .setTimestamp();
+
+            await interaction.update({
+                content: '',
+                embeds: [expiredEmbed],
+                components: []
+            }).catch(() => { });
+        } catch (e) {
+            return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
+        }
+        return;
     }
 
     // ONLY target can accept/decline
