@@ -16,7 +16,7 @@ import {
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
-import { getUserBalance, updateBalance } from '../economy/service.js';
+import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -1102,15 +1102,18 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         }
 
         // 4. ATOMIC SWAP - Coins (FEE-FIRST MODEL)
+        // IMPORTANT: All queries use the existing `client` (same connection, same transaction).
+        // Never call updateBalance() here — it opens a NEW connection which deadlocks against
+        // the FOR UPDATE locks already held by this transaction.
         const processCoinSwap = async (giverId, receiverId, rawAmount, giverMember, receiverMember) => {
             const amount = parseInt(rawAmount, 10) || 0;
-            if (amount <= 0) return;
+            if (amount <= 0) return null;
 
             const isGiverBooster = await isMemberBooster(giverMember);
-            const { fee, recipientGets, senderPaysExtra } = calculateTradeTax(amount, isGiverBooster);
-            
+            const { fee, senderPaysExtra } = calculateTradeTax(amount, isGiverBooster);
+
             const gBalRes = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE', [giverId, trade.guild_id]);
-            const currentGiverBal = parseInt(gBalRes.rows[0].balance);
+            const currentGiverBal = parseInt(gBalRes.rows[0]?.balance ?? 0);
 
             let finalSenderDeduction = amount;
             let finalRecipientIntake = amount;
@@ -1118,57 +1121,58 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             let phase = 1;
 
             if (currentGiverBal >= amount + senderPaysExtra) {
-                // PHASE 1: Sender pays the fee
                 finalSenderDeduction = amount + senderPaysExtra;
                 finalRecipientIntake = amount;
                 phase = 1;
             } else if (currentGiverBal >= amount) {
-                // PHASE 2: Fallback - Recipient pays the fee
                 finalSenderDeduction = amount;
                 finalRecipientIntake = amount - fee;
+                finalFee = fee;
                 phase = 2;
             } else {
                 throw new Error('Giver has insufficient balance to cover the base amount.');
             }
 
-            // 1. DUAL-ENTRY UPDATE (Giver & Receiver)
-            const gName = getUserDisplayName(giverMember);
-            const rName = getUserDisplayName(receiverMember);
+            const gName = getUserDisplayName(giverMember) || giverId;
+            const rName = getUserDisplayName(receiverMember) || receiverId;
 
-            // Giver Deduction (Centralized)
-            const gRes = await updateBalance(
-                giverId, 
-                trade.guild_id, 
-                -amount, 
-                'trade', 
-                `P2P Trade to ${rName}`, 
-                tradeId
+            // Deduct from giver (inline — same transaction, no deadlock)
+            await client.query(
+                `UPDATE user_balances SET balance = balance - $1, total_spent = total_spent + $1, updated_at = NOW()
+                 WHERE user_id = $2 AND guild_id = $3`,
+                [finalSenderDeduction, giverId, trade.guild_id]
+            );
+            await client.query(
+                `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+                 SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+                [giverId, trade.guild_id, -finalSenderDeduction, `P2P Trade to ${rName}`, tradeId]
             );
 
-            // Receiver Grant (Centralized)
-            const rRes = await updateBalance(
-                receiverId, 
-                trade.guild_id, 
-                finalRecipientIntake, 
-                'trade', 
-                `P2P Trade from ${gName}${phase === 2 && finalFee > 0 ? ` (after ${finalFee} fee)` : ''}`, 
-                tradeId
+            // Credit receiver (inline)
+            await client.query(
+                `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+                 VALUES ($1, $2, $3, $3)
+                 ON CONFLICT (user_id, guild_id) DO UPDATE
+                 SET balance = user_balances.balance + $3, total_earned = user_balances.total_earned + $3, updated_at = NOW()`,
+                [receiverId, trade.guild_id, finalRecipientIntake]
+            );
+            await client.query(
+                `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+                 SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+                [receiverId, trade.guild_id, finalRecipientIntake,
+                 `P2P Trade from ${gName}${phase === 2 && finalFee > 0 ? ` (after ${finalFee} fee)` : ''}`, tradeId]
             );
 
-            // Log for Giver (Fee Entry) if applied to them (Centralized)
+            // Log fee entry separately if sender paid it on top
             if (finalSenderDeduction > amount) {
-                await updateBalance(
-                    giverId, 
-                    trade.guild_id, 
-                    -(finalSenderDeduction - amount), 
-                    'fee', 
-                    `Trade Service Fee`, 
-                    tradeId
+                await client.query(
+                    `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+                     SELECT $1, $2, $3, balance, 'fee', 'Trade Service Fee', $4 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+                    [giverId, trade.guild_id, -(finalSenderDeduction - amount), tradeId]
                 );
             }
 
             return { senderDeduction: finalSenderDeduction, recipientIntake: finalRecipientIntake, fee: finalFee, phase };
-
         };
 
         // Capture pre-trade balances for logging
