@@ -434,11 +434,19 @@ export async function handleTradeSetupInteraction(interaction) {
 
         // 3. Layer 1: Core Tradeability Filter
         const tradableItems = allItems.filter(i => {
-           if (i.source !== 'SHOP' || i.item_type === 'pack') return false; // NO Packs, NO Admin items
+           // RESTRICTION: Only SHOP-purchased and non-temporary items are tradable
+           const source = (i.purchase_source || '').toLowerCase();
+           if (source !== 'shop' || i.item_type === 'pack') {
+                sysLog('Skipping Item (Not Shop/Is Pack)', { name: i.name, source, type: i.item_type });
+                return false; 
+           }
            
            // Hide temporary items
-           const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
-           if (isTemp) return false;
+           const isTemp = i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
+           if (isTemp) {
+                sysLog('Skipping Item (Temp)', { name: i.name });
+                return false;
+           }
 
            // Hide if recipient already POSSESSES this item/role (Soulbound block)
            const firstRole = i.role_id?.split(/[,\s]+/)[0];
@@ -531,11 +539,19 @@ export async function handleTradeSetupInteraction(interaction) {
 
         // 3. Layer 1: Core Tradeability Filter
         const tradableItems = allItems.filter(i => {
-            if (i.source !== 'SHOP' || i.item_type === 'pack') return false; // NO Packs, NO Admin items
+            // RESTRICTION: Only SHOP-purchased and non-temporary items are tradable
+            const source = (i.purchase_source || '').toLowerCase();
+            if (source !== 'shop' || i.item_type === 'pack') {
+                 sysLog('Skipping Request Item (Not Shop/Is Pack)', { name: i.name, source, type: i.item_type });
+                 return false; 
+            }
 
             // Hide temporary items
-            const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
-            if (isTemp) return false;
+            const isTemp = i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
+            if (isTemp) {
+                 sysLog('Skipping Request Item (Temp)', { name: i.name });
+                 return false;
+            }
 
             // Hide if requester (YOU) already POSSESSES this item/role
             const firstRole = i.role_id?.split(/[,\s]+/)[0];
