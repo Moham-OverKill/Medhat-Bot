@@ -369,14 +369,17 @@ export async function handleTradeSetupInteraction(interaction) {
         }
 
         // 2. Routing & State Management (Handles category picking & navigation)
-        if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select' || customId.startsWith('trade_folder_back_')) {
-            const isBack = customId.startsWith('trade_folder_back_');
-            const isGive = customId.includes('give');
+        if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select' || 
+            customId.startsWith('trade_folder_back_') || (interaction.isAnySelectMenu() && interaction.values[0]?.startsWith('trade_folder_back_'))) {
+            
+            const isBack = customId.startsWith('trade_folder_back_') || interaction.values[0]?.startsWith('trade_folder_back_');
+            const isGive = customId.includes('give') || interaction.values[0]?.includes('give');
             
             if (isBack) {
                 if (isGive) setup.givingFolder = null;
                 else setup.requestingFolder = null;
                 sysLog('Folder Back Navigation', { aspect: isGive ? 'give' : 'req' });
+                // If it was a select menu choice, we handle it here, but let the UI rebuild
             } else {
                 const val = interaction.values[0]; 
                 const catId = val.split('_').pop();
@@ -482,11 +485,8 @@ export async function handleTradeSetupInteraction(interaction) {
                 value: row.id.toString()
             }));
 
-            const backBtn = new ButtonBuilder()
-                .setCustomId('trade_folder_back_give')
-                .setLabel('Back to Folders')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Danger);
+            // Add integrated BACK option at the top of the list
+            options.unshift({ label: '⬅️ Back', value: 'trade_folder_back_give' });
 
             const select = new StringSelectMenuBuilder()
                 .setCustomId('trade_select_give_item')
@@ -494,7 +494,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 .addOptions(options);
 
             setup.givingFolder = finalCatId;
-            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select), new ActionRowBuilder().addComponents(backBtn));
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
         }
 
         // List Target Inventory to Request (FOLDER SYSTEM)
@@ -556,11 +556,8 @@ export async function handleTradeSetupInteraction(interaction) {
                 value: row.id.toString()
             }));
 
-            const backBtn = new ButtonBuilder()
-                .setCustomId('trade_folder_back_req')
-                .setLabel('Back to Folders')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Danger);
+            // Add integrated BACK option at the top of the list
+            options.unshift({ label: '⬅️ Back', value: 'trade_folder_back_req' });
 
             const select = new StringSelectMenuBuilder()
                 .setCustomId('trade_select_request_item')
@@ -568,7 +565,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 .addOptions(options);
 
             setup.requestingFolder = finalCatId;
-            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select), new ActionRowBuilder().addComponents(backBtn));
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
         }
 
         // Post Trade (Making it public)
