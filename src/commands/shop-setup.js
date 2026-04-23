@@ -1147,7 +1147,7 @@ export async function handleShopPostPayoutBtn(interaction) {
 
     const modal = new ModalBuilder()
       .setCustomId('shop_post_payout_modal')
-      .setTitle('Seller payout');
+      .setTitle('Seller Payout');
 
     const payoutInput = new TextInputBuilder()
       .setCustomId('payout')
