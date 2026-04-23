@@ -14,7 +14,7 @@ import {
     InteractionType
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance, updateBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -1303,13 +1303,15 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         // Update public message if it's a verification failure
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]);
-           await interaction.update({
+           await interaction.editReply({
                 content: '',
                 components: [],
-                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled' })]
-           });
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled: Assets Missing' })]
+           }).catch(() => { });
         } else {
-            await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
+            const finalMsg = errorMessage;
+            if (interaction.deferred || interaction.replied) await interaction.followUp({ content: finalMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
+            else await interaction.reply({ content: finalMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
         }
     } finally {
         client.release();
