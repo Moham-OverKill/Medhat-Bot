@@ -1132,6 +1132,22 @@ export async function handleInventoryAction(interaction) {
     const catIdStr = parts[4] || 'null';
     const currentIndex = parseInt(parts[5]) || 0;
 
+    // --- SECURITY LOCK: Trade Concurrency ---
+    // Prevent dropping items if the user is in a pending trade (prevents duplication/ghost trades)
+    if (action === 'drop' || action === 'dropconfirm') {
+      const { query } = await import('../storage/postgres.js');
+      const tradeCheck = await query(
+        `SELECT id FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
+        [interaction.user.id, interaction.guildId]
+      );
+      
+      if (tradeCheck.rows.length > 0) {
+        const lockMsg = "❌ You can't drop items when you have a pending trade.";
+        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: lockMsg, flags: 64 });
+        return interaction.reply({ content: lockMsg, flags: 64 });
+      }
+    }
+
     // --- 1. DROP (Step 1: Ephemeral Confirmation) ---
     if (action === 'drop') {
       if (!interaction.deferred && !interaction.replied) {
