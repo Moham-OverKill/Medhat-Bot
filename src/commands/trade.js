@@ -926,7 +926,7 @@ export async function handleTradeExecution(interaction) {
     // ACCEPT -> Execute immediately (no modal)
     if (customId.startsWith('trade_accept_')) {
         await interaction.deferUpdate().catch(() => { });
-        return handleTradeFinalConfirmation(interaction, trade, tradeId);
+        return handleTradeFinalConfirmation(interaction, trade);
     }
 }
 
@@ -937,6 +937,14 @@ export async function handleTradeExecution(interaction) {
 export async function handleTradeFinalConfirmation(interaction, tradeData = null, tradeIdOverride = null) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const tradeId = tradeIdOverride ?? parseInt(interaction.customId.split('_')[2], 10);
+
+    // If it's a modal, we check the field. Otherwise (direct click), we skip it.
+    if (interaction.type === InteractionType.ModalSubmit) {
+        const confirmText = interaction.fields.getTextInputValue('confirm');
+        if (confirmText.toUpperCase() !== 'CONFIRM') {
+            return interaction.editReply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
+        }
+    }
 
     // Fetch trade again to be sure
     const pool = getPool();
