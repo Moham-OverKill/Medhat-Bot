@@ -1325,43 +1325,52 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         }
 
         // 10. Standardized Economy Log
-        const senderUsername = getUserLogName(senderMember);
-        const targetUsername = getUserLogName(targetMember);
-        const offerText = `${Number(trade.sender_coins) > 0 ? `**${Number(trade.sender_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${sItems.length > 0 ? (Number(trade.sender_coins) > 0 ? ' and ' : '') + `**${sItems.length} items**` : ''}` || 'Nothing';
-        const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItems.length > 0 ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItems.length} items**` : ''}` || 'Nothing';
+        // 10. Standardized Economy Log
+        try {
+            const senderUsername = getUserLogName(senderMember);
+            const targetUsername = getUserLogName(targetMember);
+            const offerText = `${Number(trade.sender_coins) > 0 ? `**${Number(trade.sender_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${sItems.length > 0 ? (Number(trade.sender_coins) > 0 ? ' and ' : '') + `**${sItems.length} items**` : ''}` || 'Nothing';
+            const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItems.length > 0 ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItems.length} items**` : ''}` || 'Nothing';
 
-        let impactDetails = `**Financial Impact:**\n` +
-          `• **${senderUsername}:** \`${initialSenderBal.toLocaleString()}\` ➡️ \`${finalSenderBal.toLocaleString()}\` ${COIN_EMOJI}`;
-        
-        if (sOutcome && sOutcome.fee > 0) {
-            impactDetails += ` (Incl. \`${sOutcome.fee.toLocaleString()}\` Tax)`;
+            let impactDetails = `**Financial Impact:**\n` +
+              `• **${senderUsername}:** \`${initialSenderBal.toLocaleString()}\` ➡️ \`${finalSenderBal.toLocaleString()}\` ${COIN_EMOJI}`;
+            
+            if (sOutcome && sOutcome.fee > 0) {
+                impactDetails += ` (Incl. \`${sOutcome.fee.toLocaleString()}\` Tax)`;
+            }
+
+            impactDetails += `\n• **${targetUsername}:** \`${initialTargetBal.toLocaleString()}\` ➡️ \`${finalTargetBal.toLocaleString()}\` ${COIN_EMOJI}`;
+            
+            if (tOutcome && tOutcome.fee > 0) {
+                impactDetails += ` (Incl. \`${tOutcome.fee.toLocaleString()}\` Tax)`;
+            }
+
+            sendLog(interaction.guild, 'inventory', 'purple', '🤝 P2P Trade Completed', 
+              `**Participants:** \`${senderUsername}\` 🤝 \`${targetUsername}\`\n\n` +
+              `**${senderUsername} Gave:** ${offerText}\n` +
+              `**${targetUsername} Gave:** ${requestText}\n\n` +
+              impactDetails
+            );
+        } catch (logErr) {
+            sysError('Post-trade log error', logErr);
         }
-
-        impactDetails += `\n• **${targetUsername}:** \`${initialTargetBal.toLocaleString()}\` ➡️ \`${finalTargetBal.toLocaleString()}\` ${COIN_EMOJI}`;
-        
-        if (tOutcome && tOutcome.fee > 0) {
-            impactDetails += ` (Incl. \`${tOutcome.fee.toLocaleString()}\` Tax)`;
-        }
-
-        sendLog(interaction.guild, 'inventory', 'purple', '🤝 P2P Trade Completed', 
-          `**Participants:** \`${senderUsername}\` 🤝 \`${targetUsername}\`\n\n` +
-          `**${senderUsername} Gave:** ${offerText}\n` +
-          `**${targetUsername} Gave:** ${requestText}\n\n` +
-          impactDetails
-        );
 
     } catch (err) {
-        await client.query('ROLLBACK');
+        // Safe Rollback
+        try { if (client) await client.query('ROLLBACK'); } catch (rbErr) { }
+
         let errorMessage = `❌ Trade Failed: ${err.message.includes('insufficient') || err.message.includes('missing') ? err.message : 'Database error occurred during execution.'}`;
         
-        // CATCH: Security Cap Violation (500k limit)
+        // CATCH: Security Cap Violation
         if (err.message.includes('exceeds the safety cap')) {
             errorMessage = `❌ **Security Error:** ${err.message}`;
         }
         
+        sysError('Atomic Swap Failure', err, { user: interaction.user.id, guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
+
         // Update public message if it's a verification failure
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
-           await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]);
+           await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]).catch(() => {});
            await interaction.editReply({
                 content: '',
                 components: [],
@@ -1369,10 +1378,10 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
            }).catch(() => { });
         } else {
             const finalMsg = errorMessage;
-            if (interaction.deferred || interaction.replied) await interaction.followUp({ content: finalMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
-            else await interaction.reply({ content: finalMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
+            if (interaction.deferred || interaction.replied) await interaction.editReply({ content: finalMsg, components: [], embeds: [] }).catch(() => { });
+            else await interaction.reply({ content: finalMsg, flags: MessageFlags.Ephemeral, components: [], embeds: [] }).catch(() => { });
         }
     } finally {
-        client.release();
+        if (client) client.release();
     }
 }
