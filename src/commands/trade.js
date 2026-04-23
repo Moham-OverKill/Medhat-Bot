@@ -414,9 +414,13 @@ export async function handleTradeSetupInteraction(interaction) {
             targetInv.forEach(i => targetOwnedItemIds.push(i.shop_item_id));
         }
 
-        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, and NOT already owned by recipient)
+        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, non-temp, and NOT already owned by recipient)
         items = items.filter(i => {
            if (i.source !== 'SHOP') return false;
+           
+           // Hide temporary items
+           const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
+           if (isTemp) return false;
 
            // Hide if recipient already POSSESSES this item/role
            const firstRole = i.role_id?.split(/[,\s]+/)[0];
@@ -458,9 +462,13 @@ export async function handleTradeSetupInteraction(interaction) {
         const senderInv = await syncInventoryWithDiscord(setup.senderId, setup.guildId, senderMember);
         const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
 
-        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, and NOT already owned by requester)
+        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, non-temp, and NOT already owned by requester)
         items = items.filter(i => {
             if (i.source !== 'SHOP') return false;
+
+            // Hide temporary items
+            const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
+            if (isTemp) return false;
 
             // Hide if requester (YOU) already POSSESSES this item/role
             const firstRole = i.role_id?.split(/[,\s]+/)[0];
