@@ -1137,7 +1137,7 @@ export async function handleInventoryAction(interaction) {
     if (action === 'drop' || action === 'dropconfirm') {
       const { query } = await import('../storage/postgres.js');
       const tradeCheck = await query(
-        `SELECT message_url FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
+        `SELECT id, message_url FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
         [interaction.user.id, interaction.guildId]
       );
       

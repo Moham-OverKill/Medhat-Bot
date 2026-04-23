@@ -798,6 +798,7 @@ async function finalizeTradePosting(interaction, setup) {
                 .setEmoji('✅')
                 .setStyle(ButtonStyle.Success)
         );
+        // Note: Decline is left, Accept is right (matching button order)
 
         // 3. Post Publicly
         const publicMsg = await interaction.channel.send({
@@ -827,16 +828,16 @@ async function finalizeTradePosting(interaction, setup) {
                     
                     const disabledRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
-                            .setCustomId(`expired_accept_${tradeId}`)
-                            .setLabel('Accept')
-                            .setEmoji('✅')
-                            .setStyle(ButtonStyle.Success)
-                            .setDisabled(true),
-                        new ButtonBuilder()
                             .setCustomId(`expired_decline_${tradeId}`)
                             .setLabel('Decline')
                             .setEmoji('✖️')
                             .setStyle(ButtonStyle.Danger)
+                            .setDisabled(true),
+                        new ButtonBuilder()
+                            .setCustomId(`expired_accept_${tradeId}`)
+                            .setLabel('Accept')
+                            .setEmoji('✅')
+                            .setStyle(ButtonStyle.Success)
                             .setDisabled(true)
                     );
 
@@ -875,73 +876,68 @@ async function finalizeTradePosting(interaction, setup) {
  */
 export async function handleTradeExecution(interaction) {
     const customId = interaction.customId;
-
-    // DO NOT defer here if we are going to show a modal (Accept flow)
-    if (customId.startsWith('trade_decline_')) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-    }
-    
     const tradeId = parseInt(customId.split('_')[2], 10);
 
-    // Fetch trade from DB
+    // Fetch trade from DB — no deferral yet so we can reply() or update() freely
     const res = await query('SELECT * FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, interaction.guildId]);
-    if (res.rows.length === 0) return interaction.editReply({ content: '❌ Trade not found.', components: [], embeds: [] });
+    if (res.rows.length === 0) {
+        return interaction.reply({ content: '❌ Trade not found.', flags: MessageFlags.Ephemeral });
+    }
 
     const trade = res.rows[0];
 
     // Status Check
     if (trade.status !== 'pending') {
-        const msg = `❌ This trade has already been ${trade.status}.`;
-        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: `❌ This trade has already been ${trade.status}.`, flags: MessageFlags.Ephemeral });
     }
 
     // Expiry Check
     if (new Date() > new Date(trade.expires_at)) {
         await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, interaction.guildId]);
-        const msg = '❌ This trade offer has expired.';
-        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
     }
 
     // ONLY target can accept/decline
     if (interaction.user.id !== trade.target_id) {
-        const msg = '❌ Only the target user can respond to this offer.';
-        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ Only the target user can respond to this offer.', flags: MessageFlags.Ephemeral });
     }
 
     // DECLINE
     if (customId.startsWith('trade_decline_')) {
+        await interaction.deferUpdate().catch(() => { });
         await query('UPDATE trades SET status = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3', ['declined', tradeId, interaction.guildId]);
-        
+
         // Clear Garbage Collector
         const timeoutId = TRADE_TIMEOUTS.get(tradeId);
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-            TRADE_TIMEOUTS.delete(tradeId);
-        }
+        if (timeoutId) { clearTimeout(timeoutId); TRADE_TIMEOUTS.delete(tradeId); }
+
+        const declinedEmbed = interaction.message.embeds.length > 0
+            ? EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)
+            : new EmbedBuilder().setColor(0xEE4444);
 
         await interaction.editReply({
             content: `❌ Trade was declined by <@${trade.target_id}>.`,
             components: [],
-            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
+            embeds: [declinedEmbed]
         });
         return;
     }
 
-    // ACCEPT -> Execute Immediately (Removed Modal per request)
+    // ACCEPT -> Execute immediately (no modal)
     if (customId.startsWith('trade_accept_')) {
-        return executeAtomicTradeSwap(interaction, tradeId);
+        await interaction.deferUpdate().catch(() => { });
+        return handleTradeFinalConfirmation(interaction, trade, tradeId);
     }
 }
 
 /**
  * ATOMIC SWAP EXECUTION (The Fortress)
+ * Can be called directly from Accept (no modal) or from modal confirmation.
  */
-export async function executeAtomicTradeSwap(interaction, tradeId) {
+export async function handleTradeFinalConfirmation(interaction, tradeData = null, tradeIdOverride = null) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-    
+    const tradeId = tradeIdOverride ?? parseInt(interaction.customId.split('_')[2], 10);
+
     // Fetch trade again to be sure
     const pool = getPool();
     const client = await pool.connect();
@@ -1242,7 +1238,7 @@ export async function executeAtomicTradeSwap(interaction, tradeId) {
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
-        await interaction.editReply({
+        await interaction.update({
             content: completionDesc,
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' })]
@@ -1293,13 +1289,13 @@ export async function executeAtomicTradeSwap(interaction, tradeId) {
         // Update public message if it's a verification failure
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]);
-           await interaction.editReply({
+           await interaction.update({
                 content: `❌ **Trade Canceled: Assets Missing.**\nOne of the participants no longer has the required coins/items.`,
                 components: [],
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
            });
         } else {
-            await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
+            await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
         }
     } finally {
         client.release();
