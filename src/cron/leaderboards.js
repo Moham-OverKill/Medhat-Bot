@@ -26,6 +26,10 @@ export async function startLeaderboardScheduler(client) {
         }, delay);
     };
 
+    // --- STARTUP CATCH-UP ---
+    // Perform an immediate initial check in case we missed midnight due to maintenance
+    runHourlyRefresh(client).catch(err => sysError('Initial Leaderboard Check Failed', err));
+
     scheduleNext();
 }
 
@@ -36,6 +40,8 @@ export async function startLeaderboardScheduler(client) {
  */
 async function runHourlyRefresh(client) {
     const isMidnight = getCairoHour() === 0;
+    const todayStr = (await import('../utils/time.js')).getTodayCairo();
+
     sysLog('Leaderboard Hourly Refresh Started', {
         detail: `Syncing all configured guilds${isMidnight ? ' [MIDNIGHT — Honors Hour]' : ''}`
     });
@@ -76,16 +82,27 @@ async function runHourlyRefresh(client) {
     }
 
     // ── MIDNIGHT STEP 4: Reset activity AFTER KotH pays out final scores ──
-    if (isMidnight) {
-        for (const guildId of guildIds) {
-            try {
+    for (const guildId of guildIds) {
+        try {
+            const config = configs[guildId] || {};
+            const lastReset = config.last_mvp_reset;
+            const needsReset = isMidnight || (lastReset !== todayStr);
+
+            if (needsReset) {
                 const { resetGuildActivity } = await import('../activity/tracker.js');
                 await resetGuildActivity(guildId);
-            } catch (err) {
-                sysError('Midnight Activity Reset Failed', err, { guild: guildId });
+                
+                // Track reset persistently
+                const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+                const fresh = await getGuildConfig(guildId) || config;
+                fresh.last_mvp_reset = todayStr;
+                await setGuildConfig(guildId, fresh);
+
+                sysLog('Activity Reset Performed', { guild: guildId, detail: isMidnight ? 'Midnight Reset' : 'Catch-up Reset' });
             }
+        } catch (err) {
+            sysError('Activity Reset Processing Failed', err, { guild: guildId });
         }
-        sysLog('Midnight Post-Processing', { detail: `Activity reset for ${guildIds.length} guild(s)` });
     }
     
     sysLog('Leaderboard Hourly Refresh Complete', { detail: `Processed ${guildIds.length} guild(s)` });
