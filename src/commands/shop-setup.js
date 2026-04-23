@@ -1095,7 +1095,7 @@ export async function handleShopPostDescBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_desc_modal')
-    .setTitle('Description');
+    .setTitle('Item Description');
 
   const descInput = new TextInputBuilder()
     .setCustomId('description')
@@ -1118,13 +1118,13 @@ export async function handleShopPostPriceBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_price_modal')
-    .setTitle('Price');
+    .setTitle('Item Price');
 
   const priceInput = new TextInputBuilder()
     .setCustomId('price_input')
     .setLabel('Price')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('1000')
+    .setPlaceholder('0000')
     .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
     .setRequired(true);
 
@@ -1147,13 +1147,13 @@ export async function handleShopPostPayoutBtn(interaction) {
 
     const modal = new ModalBuilder()
       .setCustomId('shop_post_payout_modal')
-      .setTitle('Seller payout (0 or empty for none)');
+      .setTitle('Seller payout');
 
     const payoutInput = new TextInputBuilder()
       .setCustomId('payout')
-      .setLabel('Amount')
+      .setLabel('Payout')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('100')
+      .setPlaceholder('0000')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
       .setRequired(false);
 
@@ -1170,13 +1170,13 @@ export async function handleShopPostStockBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_stock_modal')
-    .setTitle('Set Stock Limit');
+    .setTitle('Item Stocks');
 
   const stockInput = new TextInputBuilder()
     .setCustomId('stock')
-    .setLabel('Total Supply')
+    .setLabel('Stocks')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Leave empty for unlimited')
+    .setPlaceholder('0000')
     .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
     .setRequired(false);
 
@@ -1210,11 +1210,11 @@ export async function handleShopPostImageBtn(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_image_modal')
-    .setTitle('Image URL (Leave empty to use default)');
+    .setTitle('Item Image');
 
   const urlInput = new TextInputBuilder()
     .setCustomId('image_url')
-    .setLabel('Image URL')
+    .setLabel('Image URL (Leave empty to use default)')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('https://example.com/image.png')
     .setValue(state.imageUrl || '')
