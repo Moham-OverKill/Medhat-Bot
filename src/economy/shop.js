@@ -1676,8 +1676,8 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     // ========== CONSUMABLE TIMER LOGIC ==========
     // Check if this is a temporary item
-    const durationSeconds = item.duration_seconds || (item.duration_hours ? item.duration_hours * 3600 : null);
-    const isTemp = !!durationSeconds;
+    const durationSeconds = item.duration_seconds;
+    const isTemp = !!durationSeconds && durationSeconds > 0;
 
     if (newStatus && isTemp) {
       // Trying to ACTIVATE a temporary item
