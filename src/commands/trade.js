@@ -647,6 +647,12 @@ export async function handleTradeModal(interaction) {
  */
 export async function handleTradeSelect(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+
+    // INTEGRATED BACK NAVIGATION: If the user picked "Back" from the menu, reroute to setup
+    if (interaction.values[0]?.startsWith('trade_folder_back_')) {
+        return handleTradeSetupInteraction(interaction);
+    }
+
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
     if (!setup) return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
