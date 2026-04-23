@@ -367,15 +367,23 @@ export async function handleTradeSetupInteraction(interaction) {
             }
         }
 
-        // 2. Routing & State Management (Handles category picking before UI rebuild)
-        if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
-            const val = interaction.values[0]; 
-            const catId = val.split('_').pop();
+        // 2. Routing & State Management (Handles category picking & navigation)
+        if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select' || customId.startsWith('trade_folder_back_')) {
+            const isBack = customId.startsWith('trade_folder_back_');
             const isGive = customId.includes('give');
             
-            if (isGive) setup.givingFolder = parseInt(catId);
-            else setup.requestingFolder = parseInt(catId);
-            sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
+            if (isBack) {
+                if (isGive) setup.givingFolder = null;
+                else setup.requestingFolder = null;
+                sysLog('Folder Back Navigation', { aspect: isGive ? 'give' : 'req' });
+            } else {
+                const val = interaction.values[0]; 
+                const catId = val.split('_').pop();
+                
+                if (isGive) setup.givingFolder = parseInt(catId);
+                else setup.requestingFolder = parseInt(catId);
+                sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
+            }
         }
 
         // --- INTERACTION BRANCHES ---
@@ -448,8 +456,8 @@ export async function handleTradeSetupInteraction(interaction) {
                 if (availableCats.length === 0) {
                     setup.givingFolder = -1;
                 } else {
-                    const options = availableCats.map(c => ({ label: c.name, value: `trade_cat_give_${c.id}` }));
-                    if (tradableItems.some(i => !i.category_id)) options.push({ label: 'Uncategorized', value: 'trade_cat_give_-1' });
+                    const options = availableCats.map(c => ({ label: `📁 ${c.name}`, value: `trade_cat_give_${c.id}` }));
+                    if (tradableItems.some(i => !i.category_id)) options.push({ label: '📁 Uncategorized', value: 'trade_cat_give_-1' });
 
                     const catSelect = new StringSelectMenuBuilder()
                         .setCustomId('trade_cat_give_select')
@@ -470,9 +478,14 @@ export async function handleTradeSetupInteraction(interaction) {
 
             const options = folderItems.slice(0, 25).map(row => ({
                 label: row.name,
-                description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
                 value: row.id.toString()
             }));
+
+            const backBtn = new ButtonBuilder()
+                .setCustomId('trade_folder_back_give')
+                .setLabel('Back to Folders')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Danger);
 
             const select = new StringSelectMenuBuilder()
                 .setCustomId('trade_select_give_item')
@@ -480,7 +493,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 .addOptions(options);
 
             setup.givingFolder = finalCatId;
-            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select), new ActionRowBuilder().addComponents(backBtn));
         }
 
         // List Target Inventory to Request (FOLDER SYSTEM)
@@ -517,8 +530,8 @@ export async function handleTradeSetupInteraction(interaction) {
                 if (availableCats.length === 0) {
                     setup.requestingFolder = -1;
                 } else {
-                    const options = availableCats.map(c => ({ label: c.name, value: `trade_cat_req_${c.id}` }));
-                    if (tradableItems.some(i => !i.category_id)) options.push({ label: 'Uncategorized', value: 'trade_cat_req_-1' });
+                    const options = availableCats.map(c => ({ label: `📁 ${c.name}`, value: `trade_cat_req_${c.id}` }));
+                    if (tradableItems.some(i => !i.category_id)) options.push({ label: '📁 Uncategorized', value: 'trade_cat_req_-1' });
 
                     const catSelect = new StringSelectMenuBuilder()
                         .setCustomId('trade_cat_req_select')
@@ -539,9 +552,14 @@ export async function handleTradeSetupInteraction(interaction) {
 
             const options = folderItems.slice(0, 25).map(row => ({
                 label: row.name,
-                description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
                 value: row.id.toString()
             }));
+
+            const backBtn = new ButtonBuilder()
+                .setCustomId('trade_folder_back_req')
+                .setLabel('Back to Folders')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Danger);
 
             const select = new StringSelectMenuBuilder()
                 .setCustomId('trade_select_request_item')
@@ -549,7 +567,7 @@ export async function handleTradeSetupInteraction(interaction) {
                 .addOptions(options);
 
             setup.requestingFolder = finalCatId;
-            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select), new ActionRowBuilder().addComponents(backBtn));
         }
 
         // Post Trade (Making it public)
