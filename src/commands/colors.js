@@ -900,7 +900,7 @@ export async function auditAllGuilds(client) {
 export async function handleColorButton(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
     const [, type, roleId] = interaction.customId.split('_');
     const isBooster = type === 'booster';
@@ -923,12 +923,12 @@ export async function handleColorButton(interaction) {
 
     if (hasRole) {
       // Check hierarchy before removing
-      const botMember = interaction.guild.members.me;
+      const botMember = await interaction.guild.members.fetchMe().catch(() => null);
       const targetRole = interaction.guild.roles.cache.get(roleId);
       
-      if (targetRole && targetRole.position >= botMember.roles.highest.position) {
+      if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
         return interaction.editReply({
-          content: '❌ I cannot remove this role because it is positioned above me in the hierarchy.',
+          content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!',
         });
       }
 
@@ -944,9 +944,9 @@ export async function handleColorButton(interaction) {
       });
     } else {
       // Remove all other color roles first (ONLY if manageable)
-      const botMember = interaction.guild.members.me;
+      const botMember = await interaction.guild.members.fetchMe().catch(() => null);
       const rolesToRemove = member.roles.cache
-        .filter(role => allColorRoleIds.includes(role.id) && role.position < botMember.roles.highest.position)
+        .filter(role => allColorRoleIds.includes(role.id) && (!botMember || role.position < botMember.roles.highest.position))
         .map(role => role.id);
 
       if (rolesToRemove.length > 0) {
@@ -959,7 +959,7 @@ export async function handleColorButton(interaction) {
 
       // Add the new color role (Check hierarchy first)
       const targetRole = interaction.guild.roles.cache.get(roleId);
-      if (targetRole && targetRole.position >= botMember.roles.highest.position) {
+      if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
         return interaction.editReply({
           content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.',
         });
@@ -976,6 +976,9 @@ export async function handleColorButton(interaction) {
       });
     }
   } catch (error) {
+    if (error.message?.includes('already been sent') || error.message?.includes('Unknown interaction')) {
+        return; // Ignore harmless noise
+    }
     sysError('Error handling color button', error, { user: interaction.user.id, guild: interaction.guildId });
 
     let errorMsg = 'Failed to update your color role.';
@@ -989,10 +992,10 @@ export async function handleColorButton(interaction) {
       errorMsg = `❌ Failed to update color role: ${error.message || 'Unknown error'}`;
     }
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: errorMsg }).catch(() => { });
     } else {
-      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
     }
   }
 }
