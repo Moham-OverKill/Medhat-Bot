@@ -359,304 +359,203 @@ export async function handleTradeSetupInteraction(interaction) {
 
     const { customId } = interaction;
 
-    // IMPORTANT: Modals cannot be shown if an interaction is deferred.
-    // For coins buttons, we skip deferUpdate.
-    if (!customId.includes('_coins')) {
-        if (interaction.isButton() || interaction.isAnySelectMenu()) {
-            sysLog('Trade Component Clicked', { user: interaction.user.id, customId: customId, value: interaction.values?.[0] });
-            
-            // Handle category routing BEFORE deferUpdate to keep state fresh
-            if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
-                const val = interaction.values[0]; 
-                const catId = val.split('_').pop();
-                const isGive = customId.includes('give');
-                
-                if (isGive) setup.givingFolder = parseInt(catId);
-                else setup.requestingFolder = parseInt(catId);
-                sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
+    try {
+        // 1. Immediate Proactive Deferral for all component interactions (except modals)
+        if (!customId.includes('_coins')) {
+            if (interaction.isButton() || interaction.isAnySelectMenu()) {
+                await interaction.deferUpdate().catch(() => {});
             }
-            await interaction.deferUpdate().catch(() => {});
-        }
-    }
-
-    // Coins Give Modal
-    if (customId === 'trade_setup_give_coins') {
-        const modal = new ModalBuilder()
-            .setCustomId('trade_modal_give_coins')
-            .setTitle('Amount to Give');
-
-        const input = new TextInputBuilder()
-            .setCustomId('amount')
-            .setLabel('How many coins are you giving?')
-            .setPlaceholder('Enter a positive number...')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return interaction.showModal(modal);
-    }
-
-    // Coins Request Modal
-    if (customId === 'trade_setup_request_coins') {
-        const modal = new ModalBuilder()
-            .setCustomId('trade_modal_request_coins')
-            .setTitle('Amount to Request');
-
-        const input = new TextInputBuilder()
-            .setCustomId('amount')
-            .setLabel('How many coins are you requesting?')
-            .setPlaceholder('Enter a positive number...')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return interaction.showModal(modal);
-    }
-
-    // List Inventory to Give (FOLDER SYSTEM)
-    if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select') {
-        const selectedCatId = setup.givingFolder;
-        sysLog('Building Give Item List', { folder: selectedCatId });
-        
-        // 1. Fetch from DB
-        const allItems = await getUserInventory(setup.senderId, setup.guildId);
-        sysLog('Sender Inventory Fetched', { count: allItems.length });
-
-        // 2. Fetch Recipient state for filtering
-        const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
-        const targetOwnedItemIds = [];
-        const targetRoleIds = targetMember ? targetMember.roles.cache.map(r => r.id) : [];
-
-        if (targetMember) {
-            const targetInv = await getUserInventory(setup.targetId, setup.guildId);
-            targetInv.forEach(i => targetOwnedItemIds.push(i.shop_item_id));
         }
 
-        // 3. Layer 1: Core Tradeability Filter
-        const tradableItems = allItems.filter(i => {
-           // RESTRICTION: Only SHOP-purchased and non-temporary items are tradable
-           const source = (i.purchase_source || '').toLowerCase();
-           if (source !== 'shop' || i.item_type === 'pack') {
-                sysLog('Skipping Item (Not Shop/Is Pack)', { name: i.name, source, type: i.item_type });
-                return false; 
-           }
-           
-           // Hide temporary items
-           const isTemp = i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
-           if (isTemp) {
-                sysLog('Skipping Item (Temp)', { name: i.name });
-                return false;
-           }
-
-           // Hide if recipient already POSSESSES this item/role (Soulbound block)
-           const firstRole = i.role_id?.split(/[,\s]+/)[0];
-           const recipientHasRole = firstRole && targetRoleIds.includes(firstRole);
-           const recipientHasItem = targetOwnedItemIds.includes(i.shop_item_id);
-
-           return !recipientHasRole && !recipientHasItem;
-        });
-
-        if (tradableItems.length === 0) {
-            return interaction.followUp({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
-        }
-
-        // 4. Folder Logic
-        if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select')) {
-            // STEP A: Show category folders
-            const categories = await getShopCategories(setup.guildId);
+        // 2. Routing & State Management (Handles category picking before UI rebuild)
+        if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
+            const val = interaction.values[0]; 
+            const catId = val.split('_').pop();
+            const isGive = customId.includes('give');
             
-            // Only show categories that have items the user actually owns and can trade
-            const validCatIds = new Set(tradableItems.map(i => i.category_id));
-            const availableCats = categories.filter(c => validCatIds.has(c.id));
+            if (isGive) setup.givingFolder = parseInt(catId);
+            else setup.requestingFolder = parseInt(catId);
+            sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
+        }
 
-            if (availableCats.length === 0) {
-                // All tradable items are currently "Uncategorized"
-                setup.givingFolder = -1; // Special ID for Uncategorized
-            } else {
-                const options = availableCats.map(c => ({
-                    label: c.name,
-                    value: `trade_cat_give_${c.id}`
-                }));
-                
-                // Add Uncategorized if present
-                if (tradableItems.some(i => !i.category_id)) {
-                    options.push({ label: 'Uncategorized', value: 'trade_cat_give_-1' });
+        // --- INTERACTION BRANCHES ---
+
+        // Coins Give Modal
+        if (customId === 'trade_setup_give_coins') {
+            const modal = new ModalBuilder()
+                .setCustomId('trade_modal_give_coins')
+                .setTitle('Amount to Give');
+
+            const input = new TextInputBuilder()
+                .setCustomId('amount')
+                .setLabel('How many coins are you giving?')
+                .setPlaceholder('Enter a positive number...')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
+
+        // Coins Request Modal
+        if (customId === 'trade_setup_request_coins') {
+            const modal = new ModalBuilder()
+                .setCustomId('trade_modal_request_coins')
+                .setTitle('Amount to Request');
+
+            const input = new TextInputBuilder()
+                .setCustomId('amount')
+                .setLabel('How many coins are you requesting?')
+                .setPlaceholder('Enter a positive number...')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
+
+        // List Inventory to Give (FOLDER SYSTEM)
+        if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select') {
+            const selectedCatId = setup.givingFolder;
+            sysLog('Building Give Item List', { folder: selectedCatId });
+            
+            const allItems = await getUserInventory(setup.senderId, setup.guildId);
+            const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
+            const targetRoleIds = targetMember ? targetMember.roles.cache.map(r => r.id) : [];
+            const targetInv = targetMember ? await getUserInventory(setup.targetId, setup.guildId) : [];
+            const targetOwnedItemIds = targetInv.map(i => i.shop_item_id);
+
+            const tradableItems = allItems.filter(i => {
+               const source = (i.purchase_source || '').toLowerCase();
+               if (source !== 'shop' || i.item_type === 'pack') return false; 
+               if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
+
+               const firstRole = i.role_id?.split(/[,\s]+/)[0];
+               const recipientHasRole = firstRole && targetRoleIds.includes(firstRole);
+               const recipientHasItem = targetOwnedItemIds.includes(i.shop_item_id);
+               return !recipientHasRole && !recipientHasItem;
+            });
+
+            if (tradableItems.length === 0) {
+                return interaction.editReply({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', components: [], embeds: [] });
+            }
+
+            if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select')) {
+                const categories = await getShopCategories(setup.guildId);
+                const validCatIds = new Set(tradableItems.map(i => i.category_id));
+                const availableCats = categories.filter(c => validCatIds.has(c.id));
+
+                if (availableCats.length === 0) {
+                    setup.givingFolder = -1;
+                } else {
+                    const options = availableCats.map(c => ({ label: c.name, value: `trade_cat_give_${c.id}` }));
+                    if (tradableItems.some(i => !i.category_id)) options.push({ label: 'Uncategorized', value: 'trade_cat_give_-1' });
+
+                    const catSelect = new StringSelectMenuBuilder()
+                        .setCustomId('trade_cat_give_select')
+                        .setPlaceholder('Select item(s) to give')
+                        .addOptions(options);
+
+                    return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
                 }
-
-                const catSelect = new StringSelectMenuBuilder()
-                    .setCustomId('trade_cat_give_select')
-                    .setPlaceholder('Select item(s) to give')
-                    .addOptions(options);
-
-                return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
-            }
-        }
-
-        // STEP B: Show items in selected folder
-        const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.givingFolder);
-        const folderItems = tradableItems.filter(i => {
-           if (finalCatId === -1) return !i.category_id;
-           return i.category_id === finalCatId;
-        });
-
-        if (folderItems.length === 0) {
-            setup.givingFolder = null; // Reset folder
-            return interaction.followUp({ content: '❌ No tradable items found in this folder.', flags: MessageFlags.Ephemeral });
-        }
-
-        const options = folderItems.slice(0, 25).map(row => ({
-            label: row.name,
-            description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
-            value: row.id.toString()
-        }));
-
-        const select = new StringSelectMenuBuilder()
-            .setCustomId('trade_select_give_item')
-            .setPlaceholder('Select an item to give...')
-            .addOptions(options);
-
-        setup.givingFolder = finalCatId;
-        return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
-    }
-
-    // List Target Inventory to Request (FOLDER SYSTEM)
-    if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select') {
-        const selectedCatId = setup.requestingFolder;
-        sysLog('Building Request Item List', { folder: selectedCatId });
-
-        const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
-        if (!member) return interaction.followUp({ content: '❌ Target member not found.', flags: MessageFlags.Ephemeral });
-        
-        // 1. Fetch from DB
-        const allItems = await getUserInventory(setup.targetId, setup.guildId);
-        sysLog('Target Inventory Fetched', { count: allItems.length });
-
-        // 2. Fetch Requester (Sender) state for filtering
-        const senderMember = interaction.member;
-        const senderRoleIds = senderMember.roles.cache.map(r => r.id);
-        const senderInv = await getUserInventory(setup.senderId, setup.guildId);
-        const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
-
-        // 3. Layer 1: Core Tradeability Filter
-        const tradableItems = allItems.filter(i => {
-            // RESTRICTION: Only SHOP-purchased and non-temporary items are tradable
-            const source = (i.purchase_source || '').toLowerCase();
-            if (source !== 'shop' || i.item_type === 'pack') {
-                 sysLog('Skipping Request Item (Not Shop/Is Pack)', { name: i.name, source, type: i.item_type });
-                 return false; 
             }
 
-            // Hide temporary items
-            const isTemp = i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
-            if (isTemp) {
-                 sysLog('Skipping Request Item (Temp)', { name: i.name });
-                 return false;
+            const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.givingFolder);
+            const folderItems = tradableItems.filter(i => (finalCatId === -1 ? !i.category_id : i.category_id === finalCatId));
+
+            if (folderItems.length === 0) {
+                setup.givingFolder = null;
+                return interaction.editReply({ content: '❌ No tradable items found in this folder.', components: [], embeds: [] });
             }
 
-            // Hide if requester (YOU) already POSSESSES this item/role
-            const firstRole = i.role_id?.split(/[,\s]+/)[0];
-            const requesterHasRole = firstRole && senderRoleIds.includes(firstRole);
-            const requesterHasItem = senderOwnedItemIds.includes(i.shop_item_id);
+            const options = folderItems.slice(0, 25).map(row => ({
+                label: row.name,
+                description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
+                value: row.id.toString()
+            }));
 
-            return !requesterHasRole && !requesterHasItem;
-        });
+            const select = new StringSelectMenuBuilder()
+                .setCustomId('trade_select_give_item')
+                .setPlaceholder('Select an item to give...')
+                .addOptions(options);
 
-        if (tradableItems.length === 0) {
-            return interaction.followUp({ content: '❌ The target user does not have any tradable items that you don\'t already own.', flags: MessageFlags.Ephemeral });
+            setup.givingFolder = finalCatId;
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
         }
 
-        // 4. Folder Logic
-        if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select')) {
-            // STEP A: Show category folders
-            const categories = await getShopCategories(setup.guildId);
+        // List Target Inventory to Request (FOLDER SYSTEM)
+        if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select') {
+            const selectedCatId = setup.requestingFolder;
+            const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
+            if (!member) return interaction.editReply({ content: '❌ Target member not found.', components: [], embeds: [] });
             
-            // Only show categories that have items the user actually owns and can trade
-            const validCatIds = new Set(tradableItems.map(i => i.category_id));
-            const availableCats = categories.filter(c => validCatIds.has(c.id));
+            const allItems = await getUserInventory(setup.targetId, setup.guildId);
+            const senderRoleIds = interaction.member.roles.cache.map(r => r.id);
+            const senderInv = await getUserInventory(setup.senderId, setup.guildId);
+            const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
 
-            if (availableCats.length === 0) {
-                // All tradable items are currently "Uncategorized"
-                setup.requestingFolder = -1;
-            } else {
-                const options = availableCats.map(c => ({
-                    label: c.name,
-                    value: `trade_cat_req_${c.id}`
-                }));
-                
-                // Add Uncategorized if present
-                if (tradableItems.some(i => !i.category_id)) {
-                    options.push({ label: 'Uncategorized', value: 'trade_cat_req_-1' });
-                }
+            const tradableItems = allItems.filter(i => {
+                const source = (i.purchase_source || '').toLowerCase();
+                if (source !== 'shop' || i.item_type === 'pack') return false;
+                if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
 
-                const catSelect = new StringSelectMenuBuilder()
-                    .setCustomId('trade_cat_req_select')
-                    .setPlaceholder('Select item(s) to request')
-                    .addOptions(options);
+                const firstRole = i.role_id?.split(/[,\s]+/)[0];
+                const requesterHasRole = firstRole && senderRoleIds.includes(firstRole);
+                const requesterHasItem = senderOwnedItemIds.includes(i.shop_item_id);
+                return !requesterHasRole && !requesterHasItem;
+            });
 
-                return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+            if (tradableItems.length === 0) {
+                return interaction.editReply({ content: '❌ The target user does not have any tradable items that you don\'t already own.', components: [], embeds: [] });
             }
+
+            if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select')) {
+                const categories = await getShopCategories(setup.guildId);
+                const validCatIds = new Set(tradableItems.map(i => i.category_id));
+                const availableCats = categories.filter(c => validCatIds.has(c.id));
+
+                if (availableCats.length === 0) {
+                    setup.requestingFolder = -1;
+                } else {
+                    const options = availableCats.map(c => ({ label: c.name, value: `trade_cat_req_${c.id}` }));
+                    if (tradableItems.some(i => !i.category_id)) options.push({ label: 'Uncategorized', value: 'trade_cat_req_-1' });
+
+                    const catSelect = new StringSelectMenuBuilder()
+                        .setCustomId('trade_cat_req_select')
+                        .setPlaceholder('Select item(s) to request')
+                        .addOptions(options);
+
+                    return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+                }
+            }
+
+            const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.requestingFolder);
+            const folderItems = tradableItems.filter(i => (finalCatId === -1 ? !i.category_id : i.category_id === finalCatId));
+
+            if (folderItems.length === 0) {
+                setup.requestingFolder = null;
+                return interaction.editReply({ content: '❌ No tradable items found in this folder.', components: [], embeds: [] });
+            }
+
+            const options = folderItems.slice(0, 25).map(row => ({
+                label: row.name,
+                description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
+                value: row.id.toString()
+            }));
+
+            const select = new StringSelectMenuBuilder()
+                .setCustomId('trade_select_request_item')
+                .setPlaceholder('Select an item to request...')
+                .addOptions(options);
+
+            setup.requestingFolder = finalCatId;
+            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
         }
 
-        // STEP B: Show items in selected folder
-        const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.requestingFolder);
-        const folderItems = tradableItems.filter(i => {
-           if (finalCatId === -1) return !i.category_id;
-           return i.category_id === finalCatId;
-        });
-
-        if (folderItems.length === 0) {
-            setup.requestingFolder = null;
-            return interaction.followUp({ content: '❌ No tradable items found in this folder.', flags: MessageFlags.Ephemeral });
-        }
-
-        const options = folderItems.slice(0, 25).map(row => ({
-            label: row.name,
-            description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
-            value: row.id.toString()
-        }));
-
-        const select = new StringSelectMenuBuilder()
-            .setCustomId('trade_select_request_item')
-            .setPlaceholder('Select an item to request...')
-            .addOptions(options);
-
-        setup.requestingFolder = finalCatId;
-        return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
-    }
-
-    // Post Trade (Making it public)
-    if (customId === 'trade_setup_post') {
-        try {
+        // Post Trade (Making it public)
+        if (customId === 'trade_setup_post') {
             await finalizeTradePosting(interaction, setup);
-        } catch (error) {
-            sysError('Finalize trade posting failed', error, { user: interaction.user.id, guild: interaction.guildId });
-            // ROLLBACK: Remove setup lock so user isn't stuck in a "Ghost Trade"
             ACTIVE_SETUPS.delete(setupId);
-            
-            const isPermissionError = error.code === 50013 || error.code === 50001;
-            const errorMsg = isPermissionError 
-                ? '❌ **Permission Error:** I lost permission to send messages in this channel. Trade canceled to prevent state lock.'
-                : '❌ **Failed to post trade:** An unexpected error occurred. Your trade lock has been cleared.';
-            
-            if (interaction.deferred || interaction.replied) {
-                return interaction.editReply({ content: errorMsg, components: [], embeds: [] });
-            } else {
-                return interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral });
-            }
-        }
-        
-        ACTIVE_SETUPS.delete(setupId);
-        return;
-    }
-
-    // Reset
-    if (customId === 'trade_setup_reset') {
-        setup.senderCoins = 0;
-        setup.targetCoins = 0;
-        setup.senderItems = [];
-        setup.targetItems = [];
-        setup.givingFolder = null;
-        setup.requestingFolder = null;
         return showTradeSetup(interaction, setup);
     }
 }
