@@ -234,7 +234,9 @@ export async function handleTradeCommand(interaction) {
             targetCoins: 0,
             senderItems: [], // Array of inventory objects {id, name}
             targetItems: [], // Array of inventory objects {id, name}
-            lastMessage: null
+            lastMessage: null,
+            givingFolder: null,
+            requestingFolder: null
         });
 
         await showTradeSetup(interaction);
@@ -361,6 +363,16 @@ export async function handleTradeSetupInteraction(interaction) {
     // For coins buttons, we skip deferUpdate.
     if (!customId.includes('_coins')) {
         if (interaction.isButton() || interaction.isAnySelectMenu()) {
+            // Handle category routing BEFORE deferUpdate to keep state fresh
+            if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
+                const catId = interaction.values[0].split('_').pop();
+                const isGive = customId.includes('give');
+                
+                if (isGive) setup.givingFolder = parseInt(catId);
+                else setup.requestingFolder = parseInt(catId);
+                
+                // Continue to the logic below which will trigger showTradeSetup
+            }
             await interaction.deferUpdate().catch(() => {});
         }
     }
@@ -399,30 +411,33 @@ export async function handleTradeSetupInteraction(interaction) {
         return interaction.showModal(modal);
     }
 
-    // List Inventory to Give
-    if (customId === 'trade_setup_give_item') {
-        // Sync and fetch items
-        let items = await syncInventoryWithDiscord(setup.senderId, setup.guildId, interaction.member);
+    // List Inventory to Give (FOLDER SYSTEM)
+    if (customId === 'trade_setup_give_item' || customId.startsWith('trade_cat_give_')) {
+        const selectedCatId = customId.startsWith('trade_cat_give_') ? parseInt(customId.split('_').pop()) : setup.givingFolder;
+        
+        // 1. Sync and fetch all items
+        let allItems = await syncInventoryWithDiscord(setup.senderId, setup.guildId, interaction.member);
 
-        // Fetch Recipient state for filtering
+        // 2. Fetch Recipient state for filtering
         const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
         const targetOwnedItemIds = [];
         const targetRoleIds = targetMember ? targetMember.roles.cache.map(r => r.id) : [];
 
         if (targetMember) {
-            const targetInv = await syncInventoryWithDiscord(setup.targetId, setup.guildId, targetMember);
+            const { getUserInventory } = await import('../economy/shop.js');
+            const targetInv = await getUserInventory(setup.targetId, setup.guildId);
             targetInv.forEach(i => targetOwnedItemIds.push(i.shop_item_id));
         }
 
-        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, non-temp, and NOT already owned by recipient)
-        items = items.filter(i => {
-           if (i.source !== 'SHOP') return false;
+        // 3. Layer 1: Core Tradeability Filter
+        const tradableItems = allItems.filter(i => {
+           if (i.source !== 'SHOP' || i.item_type === 'pack') return false; // NO Packs, NO Admin items
            
            // Hide temporary items
            const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
            if (isTemp) return false;
 
-           // Hide if recipient already POSSESSES this item/role
+           // Hide if recipient already POSSESSES this item/role (Soulbound block)
            const firstRole = i.role_id?.split(/[,\s]+/)[0];
            const recipientHasRole = firstRole && targetRoleIds.includes(firstRole);
            const recipientHasItem = targetOwnedItemIds.includes(i.shop_item_id);
@@ -430,13 +445,58 @@ export async function handleTradeSetupInteraction(interaction) {
            return !recipientHasRole && !recipientHasItem;
         });
 
-        if (!items || items.length === 0) {
+        if (tradableItems.length === 0) {
             return interaction.followUp({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
         }
 
-        const options = items.slice(0, 25).map(row => ({
+        // 4. Folder Logic
+        if (!selectedCatId && customId === 'trade_setup_give_item') {
+            // STEP A: Show category folders
+            const { getShopCategories } = await import('../economy/shop.js');
+            const categories = await getShopCategories(setup.guildId);
+            
+            // Only show categories that have items the user actually owns and can trade
+            const validCatIds = new Set(tradableItems.map(i => i.category_id));
+            const availableCats = categories.filter(c => validCatIds.has(c.id));
+
+            if (availableCats.length === 0) {
+                // All tradable items are currently "Uncategorized"
+                setup.givingFolder = -1; // Special ID for Uncategorized
+            } else {
+                const options = availableCats.map(c => ({
+                    label: c.name,
+                    value: `trade_cat_give_${c.id}`
+                }));
+                
+                // Add Uncategorized if present
+                if (tradableItems.some(i => !i.category_id)) {
+                    options.push({ label: 'Uncategorized', value: 'trade_cat_give_-1' });
+                }
+
+                const catSelect = new StringSelectMenuBuilder()
+                    .setCustomId('trade_cat_give_select')
+                    .setPlaceholder('Select a folder...')
+                    .addOptions(options);
+
+                return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+            }
+        }
+
+        // STEP B: Show items in selected folder
+        const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.givingFolder);
+        const folderItems = tradableItems.filter(i => {
+           if (finalCatId === -1) return !i.category_id;
+           return i.category_id === finalCatId;
+        });
+
+        if (folderItems.length === 0) {
+            setup.givingFolder = null; // Reset folder
+            return interaction.followUp({ content: '❌ No tradable items found in this folder.', flags: MessageFlags.Ephemeral });
+        }
+
+        const options = folderItems.slice(0, 25).map(row => ({
             label: row.name,
-            description: `Value: ${row.price.toLocaleString()} coins`,
+            description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
             value: row.id.toString()
         }));
 
@@ -445,26 +505,29 @@ export async function handleTradeSetupInteraction(interaction) {
             .setPlaceholder('Select an item to give...')
             .addOptions(options);
 
-        // Update the main menu to include the select menu (One message flow)
+        setup.givingFolder = finalCatId;
         return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
     }
 
-    // List Target Inventory to Request
-    if (customId === 'trade_setup_request_item') {
+    // List Target Inventory to Request (FOLDER SYSTEM)
+    if (customId === 'trade_setup_request_item' || customId.startsWith('trade_cat_req_')) {
+        const selectedCatId = customId.startsWith('trade_cat_req_') ? parseInt(customId.split('_').pop()) : setup.requestingFolder;
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
         if (!member) return interaction.followUp({ content: '❌ Target member not found.', flags: MessageFlags.Ephemeral });
         
-        let items = await syncInventoryWithDiscord(setup.targetId, setup.guildId, member);
+        // 1. Sync and fetch all items
+        let allItems = await syncInventoryWithDiscord(setup.targetId, setup.guildId, member);
 
-        // Fetch Requester (Sender) state for filtering
+        // 2. Fetch Requester (Sender) state for filtering
         const senderMember = interaction.member;
         const senderRoleIds = senderMember.roles.cache.map(r => r.id);
-        const senderInv = await syncInventoryWithDiscord(setup.senderId, setup.guildId, senderMember);
+        const { getUserInventory } = await import('../economy/shop.js');
+        const senderInv = await getUserInventory(setup.senderId, setup.guildId);
         const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
 
-        // Layer 1: UI Filter (Only SHOP-sourced, non-expired, non-temp, and NOT already owned by requester)
-        items = items.filter(i => {
-            if (i.source !== 'SHOP') return false;
+        // 3. Layer 1: Core Tradeability Filter
+        const tradableItems = allItems.filter(i => {
+            if (i.source !== 'SHOP' || i.item_type === 'pack') return false; // NO Packs, NO Admin items
 
             // Hide temporary items
             const isTemp = (i.expires_at !== null) || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0);
@@ -478,13 +541,58 @@ export async function handleTradeSetupInteraction(interaction) {
             return !requesterHasRole && !requesterHasItem;
         });
 
-        if (!items || items.length === 0) {
+        if (tradableItems.length === 0) {
             return interaction.followUp({ content: '❌ The target user does not have any tradable items that you don\'t already own.', flags: MessageFlags.Ephemeral });
         }
 
-        const options = items.slice(0, 25).map(row => ({
+        // 4. Folder Logic
+        if (!selectedCatId && customId === 'trade_setup_request_item') {
+            // STEP A: Show category folders
+            const { getShopCategories } = await import('../economy/shop.js');
+            const categories = await getShopCategories(setup.guildId);
+            
+            // Only show categories that have items the user actually owns and can trade
+            const validCatIds = new Set(tradableItems.map(i => i.category_id));
+            const availableCats = categories.filter(c => validCatIds.has(c.id));
+
+            if (availableCats.length === 0) {
+                // All tradable items are currently "Uncategorized"
+                setup.requestingFolder = -1;
+            } else {
+                const options = availableCats.map(c => ({
+                    label: c.name,
+                    value: `trade_cat_req_${c.id}`
+                }));
+                
+                // Add Uncategorized if present
+                if (tradableItems.some(i => !i.category_id)) {
+                    options.push({ label: 'Uncategorized', value: 'trade_cat_req_-1' });
+                }
+
+                const catSelect = new StringSelectMenuBuilder()
+                    .setCustomId('trade_cat_req_select')
+                    .setPlaceholder('Select a folder...')
+                    .addOptions(options);
+
+                return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+            }
+        }
+
+        // STEP B: Show items in selected folder
+        const finalCatId = selectedCatId === -1 ? null : (selectedCatId || setup.requestingFolder);
+        const folderItems = tradableItems.filter(i => {
+           if (finalCatId === -1) return !i.category_id;
+           return i.category_id === finalCatId;
+        });
+
+        if (folderItems.length === 0) {
+            setup.requestingFolder = null;
+            return interaction.followUp({ content: '❌ No tradable items found in this folder.', flags: MessageFlags.Ephemeral });
+        }
+
+        const options = folderItems.slice(0, 25).map(row => ({
             label: row.name,
-            description: `Value: ${row.price.toLocaleString()} coins`,
+            description: `Value: ${Number(row.price || 0).toLocaleString()} coins`,
             value: row.id.toString()
         }));
 
@@ -493,7 +601,7 @@ export async function handleTradeSetupInteraction(interaction) {
             .setPlaceholder('Select an item to request...')
             .addOptions(options);
 
-        // Update the main menu to include the select menu (One message flow)
+        setup.requestingFolder = finalCatId;
         return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
     }
 
