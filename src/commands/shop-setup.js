@@ -807,12 +807,19 @@ export async function handleShopPostStart(interaction) {
     if (previewImg) embed.setThumbnail(previewImg);
   }
 
-  // Price gate warning
-  if (state.itemId && !isPack && state.overridePrice === null) {
-    embed.setDescription('⚠️ **Price not set** — click **Set Price** before publishing.');
-  } else if (state.itemId && state.overridePrice !== null) {
-    embed.setDescription(`🏷️ **Price:** ${Number(state.overridePrice).toLocaleString()} coins`);
+  // Prioritized status description
+  let statusDesc = '';
+  if (!state.itemId) {
+    statusDesc = '⚠️ **No item selected** — choose an item or pack to begin.';
+  } else if (!state.channelId) {
+    statusDesc = '⚠️ **Channel not set** — select which channel to post in.';
+  } else if (!isPack && state.overridePrice === null) {
+    statusDesc = '⚠️ **Price not set** — click **Set Price** before publishing.';
+  } else if (state.overridePrice !== null) {
+    statusDesc = `🏷️ **Price:** ${Number(state.overridePrice).toLocaleString()} coins`;
   }
+  
+  embed.setDescription(statusDesc);
 
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
