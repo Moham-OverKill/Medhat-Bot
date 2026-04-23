@@ -1153,7 +1153,7 @@ export async function handleShopPostPayoutBtn(interaction) {
       .setCustomId('payout')
       .setLabel('Amount')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder(suggestedCut > 0 ? `Max/Suggested cut: ${suggestedCut}` : 'Max 50% of original price')
+      .setPlaceholder('Enter payout amount (0 or empty for none)')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
       .setRequired(false);
 
@@ -1252,17 +1252,7 @@ export async function handleShopPostModalSubmit(interaction) {
         inputAmount = parseInt(val, 10);
       }
 
-  // Payout cap validation: use overridePrice (the posting price), not item.price
-      if (inputAmount > 0 && state.overridePrice !== null) {
-        const maxPayout = Math.floor(Number(state.overridePrice) * 0.5);
-        if (inputAmount > maxPayout) {
-          return interaction.followUp({
-            content: `⛔ Seller earnings cannot exceed 50% of the item price (Max: ${maxPayout}).`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
-      }
-      state.payout = inputAmount;
+      state.payout = (inputAmount > 0) ? inputAmount : null;
     } else if (customId === 'shop_post_stock_modal') {
       const val = (interaction.fields.getTextInputValue('stock') || '').trim().toLowerCase();
       // 0 or empty or 'unlimited' all mean Unlimited
