@@ -868,10 +868,13 @@ async function finalizeTradePosting(interaction, setup) {
  * Handle Public Trade Button clicks (Accept/Decline)
  */
 export async function handleTradeExecution(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const customId = interaction.customId;
 
-
+    // DO NOT defer here if we are going to show a modal (Accept flow)
+    if (customId.startsWith('trade_decline_')) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+    }
+    
     const tradeId = parseInt(customId.split('_')[2], 10);
 
     // Fetch trade from DB
@@ -882,18 +885,24 @@ export async function handleTradeExecution(interaction) {
 
     // Status Check
     if (trade.status !== 'pending') {
-        return interaction.reply({ content: `❌ This trade has already been ${trade.status}.`, flags: MessageFlags.Ephemeral });
+        const msg = `❌ This trade has already been ${trade.status}.`;
+        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     }
 
     // Expiry Check
     if (new Date() > new Date(trade.expires_at)) {
         await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, interaction.guildId]);
-        return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
+        const msg = '❌ This trade offer has expired.';
+        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     }
 
     // ONLY target can accept/decline
     if (interaction.user.id !== trade.target_id) {
-        return interaction.reply({ content: '❌ Only the target user can respond to this offer.', flags: MessageFlags.Ephemeral });
+        const msg = '❌ Only the target user can respond to this offer.';
+        if (interaction.deferred || interaction.replied) return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
     }
 
     // DECLINE
@@ -907,7 +916,7 @@ export async function handleTradeExecution(interaction) {
             TRADE_TIMEOUTS.delete(tradeId);
         }
 
-        await interaction.update({
+        await interaction.editReply({
             content: `❌ Trade was declined by <@${trade.target_id}>.`,
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
