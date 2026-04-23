@@ -556,7 +556,29 @@ export async function handleTradeSetupInteraction(interaction) {
         if (customId === 'trade_setup_post') {
             await finalizeTradePosting(interaction, setup);
             ACTIVE_SETUPS.delete(setupId);
-        return showTradeSetup(interaction, setup);
+            return;
+        }
+
+        // Reset
+        if (customId === 'trade_setup_reset') {
+            setup.senderCoins = 0;
+            setup.targetCoins = 0;
+            setup.senderItems = [];
+            setup.targetItems = [];
+            setup.givingFolder = null;
+            setup.requestingFolder = null;
+            return showTradeSetup(interaction, setup);
+        }
+
+    } catch (error) {
+        sysError('Trade Setup Interaction Handler Crashed', error, { user: interaction.user.id, guild: interaction.guildId });
+        const errorContent = `❌ **Error:** ${error.message || 'An unexpected error occurred during trade setup.'}`;
+        
+        if (interaction.deferred || interaction.replied) {
+            return interaction.editReply({ content: errorContent, components: [], embeds: [] }).catch(() => {});
+        } else {
+            return interaction.reply({ content: errorContent, flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
     }
 }
 
