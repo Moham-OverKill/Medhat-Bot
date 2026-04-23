@@ -810,16 +810,14 @@ export async function handleShopPostStart(interaction) {
   // Prioritized status description
   let statusDesc = '';
   if (!state.itemId) {
-    statusDesc = '⚠️ **No item selected** — choose an item or pack to begin.';
+    statusDesc = '⚠️ Select an Item to post';
   } else if (!state.channelId) {
-    statusDesc = '⚠️ **Channel not set** — select which channel to post in.';
+    statusDesc = '⚠️ Set a channel to post the item to';
   } else if (!isPack && state.overridePrice === null) {
-    statusDesc = '⚠️ **Price not set** — click **Set Price** before publishing.';
-  } else if (state.overridePrice !== null) {
-    statusDesc = `🏷️ **Price:** ${Number(state.overridePrice).toLocaleString()} coins`;
+    statusDesc = '⚠️ Set a price for that item';
   }
   
-  embed.setDescription(statusDesc);
+  embed.setDescription(statusDesc || null);
 
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
