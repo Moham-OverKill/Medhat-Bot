@@ -365,13 +365,12 @@ export async function handleTradeSetupInteraction(interaction) {
         if (interaction.isButton() || interaction.isAnySelectMenu()) {
             // Handle category routing BEFORE deferUpdate to keep state fresh
             if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
-                const catId = interaction.values[0].split('_').pop();
+                const val = interaction.values[0]; // e.g., "trade_cat_give_123"
+                const catId = val.split('_').pop();
                 const isGive = customId.includes('give');
                 
                 if (isGive) setup.givingFolder = parseInt(catId);
                 else setup.requestingFolder = parseInt(catId);
-                
-                // Continue to the logic below which will trigger showTradeSetup
             }
             await interaction.deferUpdate().catch(() => {});
         }
@@ -412,8 +411,8 @@ export async function handleTradeSetupInteraction(interaction) {
     }
 
     // List Inventory to Give (FOLDER SYSTEM)
-    if (customId === 'trade_setup_give_item' || customId.startsWith('trade_cat_give_')) {
-        const selectedCatId = customId.startsWith('trade_cat_give_') ? parseInt(customId.split('_').pop()) : setup.givingFolder;
+    if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select') {
+        const selectedCatId = setup.givingFolder;
         
         // 1. Sync and fetch all items
         let allItems = await syncInventoryWithDiscord(setup.senderId, setup.guildId, interaction.member);
@@ -475,7 +474,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
                 const catSelect = new StringSelectMenuBuilder()
                     .setCustomId('trade_cat_give_select')
-                    .setPlaceholder('Select a folder...')
+                    .setPlaceholder('Select items to give/request')
                     .addOptions(options);
 
                 return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
@@ -510,8 +509,8 @@ export async function handleTradeSetupInteraction(interaction) {
     }
 
     // List Target Inventory to Request (FOLDER SYSTEM)
-    if (customId === 'trade_setup_request_item' || customId.startsWith('trade_cat_req_')) {
-        const selectedCatId = customId.startsWith('trade_cat_req_') ? parseInt(customId.split('_').pop()) : setup.requestingFolder;
+    if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select') {
+        const selectedCatId = setup.requestingFolder;
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
         if (!member) return interaction.followUp({ content: '❌ Target member not found.', flags: MessageFlags.Ephemeral });
         
@@ -571,7 +570,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
                 const catSelect = new StringSelectMenuBuilder()
                     .setCustomId('trade_cat_req_select')
-                    .setPlaceholder('Select a folder...')
+                    .setPlaceholder('Select items to give/request')
                     .addOptions(options);
 
                 return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
