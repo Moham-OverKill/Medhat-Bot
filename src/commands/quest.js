@@ -76,8 +76,8 @@ export async function renderQuests(interaction, page = 0) {
     // We still need to check completion for ALL quests even if not on page to get total count
     for (const quest of validQuests) {
       const progress = await getProgress(guildId, user.id, quest.id);
+      const isCompleted = progress?.is_claimed === true;
       const currentCount = progress?.progress || 0;
-      const isCompleted = progress?.completed || currentCount >= quest.required_count;
       
       if (isCompleted) completedCount++;
 

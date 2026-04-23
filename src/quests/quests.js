@@ -169,112 +169,139 @@ export async function resetGuildQuestProgress(guildId) {
 
 /**
  * Increment progress and securely auto-payout if completed.
- * active_tracking is always TRUE.
+ * Now performs ATOMIC payouts within a transaction to prevent 'burned' quests.
  */
 export async function incrementProgressAndPayout(guildId, userId, quest, amount = 1) {
   const pool = getPool();
+  const client = await pool.connect();
   const date = getTodayCairo();
   
-  // Safety: Prevent math loops or invalid goal edge cases
   const requiredCount = parseInt(quest.required_count) || 1;
+  const reward = parseInt(quest.reward_coins) || 0;
 
-  if (requiredCount <= 0 || amount <= 0) return { progress: 0, completed: false, justCompleted: false };
+  if (requiredCount <= 0 || amount <= 0) {
+    client.release();
+    return { progress: 0, completed: false, justCompleted: false };
+  }
 
   try {
-    // ── PRE-FLIGHT CHECK ───────────────────────────────────────────────────────
-    // Query directly before touching anything. If the row already has
-    // completed = true, bail out immediately - no progress, no payout.
-    const preCheck = await pool.query(
-      `SELECT completed, progress FROM quest_progress
-       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4`,
+    await client.query('BEGIN');
+
+    // 1. Lock and Check current progress (FOR UPDATE prevents race conditions)
+    const res = await client.query(
+      `SELECT progress, completed, is_claimed FROM quest_progress 
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 FOR UPDATE`,
       [guildId, userId, quest.id, date]
     );
-    if (preCheck.rows.length > 0 && preCheck.rows[0].completed === true) {
-      return { progress: parseInt(preCheck.rows[0].progress), completed: true, justCompleted: false };
-    }
-    // ──────────────────────────────────────────────────────────────────────────
 
-    // Atomic Upsert: Will only mark completed=true ONCE
-    const result = await pool.query(
+    let currentProgress = 0;
+    let alreadyCompleted = false;
+    let alreadyClaimed = false;
+
+    if (res.rows.length > 0) {
+      currentProgress = parseInt(res.rows[0].progress);
+      alreadyCompleted = res.rows[0].completed;
+      alreadyClaimed = res.rows[0].is_claimed;
+    }
+
+    if (alreadyCompleted || alreadyClaimed) {
+      await client.query('ROLLBACK');
+      client.release();
+      return { progress: currentProgress, completed: true, justCompleted: false };
+    }
+
+    const newProgress = currentProgress + amount;
+    const justCompleted = newProgress >= requiredCount;
+
+    // 2. Perform UPSERT with updated stats
+    const upsertRes = await client.query(
       `INSERT INTO quest_progress (guild_id, user_id, quest_id, quest_date, progress, completed, active_tracking, is_claimed, completed_at)
-       VALUES ($1::varchar, $2::varchar, $3::integer, $4::date, $5::integer, ($5::integer >= $6::integer), TRUE, ($5::integer >= $6::integer), CASE WHEN $5::integer >= $6::integer THEN NOW() ELSE NULL END)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE, $6, CASE WHEN $6 THEN NOW() ELSE NULL END)
        ON CONFLICT (guild_id, user_id, quest_id, quest_date)
        DO UPDATE SET 
-         progress = quest_progress.progress + EXCLUDED.progress,
-         completed_at = CASE 
-           WHEN NOT quest_progress.completed AND (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN NOW() 
-           ELSE quest_progress.completed_at 
-         END,
-         is_claimed = CASE
-           WHEN NOT quest_progress.completed AND (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN TRUE
-           ELSE quest_progress.is_claimed
-         END,
-         completed = CASE 
-           WHEN quest_progress.completed THEN TRUE 
-           WHEN (quest_progress.progress + EXCLUDED.progress) >= $6::integer THEN TRUE 
-           ELSE FALSE 
-         END
+         progress = $5,
+         completed = $6,
+         is_claimed = $6,
+         completed_at = CASE WHEN NOT quest_progress.completed AND $6 THEN NOW() ELSE quest_progress.completed_at END
        RETURNING *`,
-      [guildId, userId, quest.id, date, amount, requiredCount]
+      [guildId, userId, quest.id, date, newProgress, justCompleted]
     );
 
-    const row = result.rows[0];
-    const newProgress = parseInt(row.progress);
-    const oldProgress = newProgress - amount;
-    
-    // Robust completion check
-    const justCompleted = oldProgress < requiredCount && newProgress >= requiredCount;
+    // 3. ATOMIC PAYOUT: If just completed, give the reward NOW inside the transaction
+    if (justCompleted && reward > 0) {
+      // NOTE: We don't call updateBalance() here because it manages its own transaction.
+      // We perform the balance update manually within THIS transaction for true atomicity.
+      
+      // Update Balance
+      await client.query(
+        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+         VALUES ($1, $2, $3, $3)
+         ON CONFLICT (user_id, guild_id) DO UPDATE
+         SET balance = user_balances.balance + $3, total_earned = user_balances.total_earned + $3, updated_at = NOW()`,
+        [userId, guildId, reward]
+      );
 
-    if (amount > 0) {
-        sysLog('Quest Progress Upsert', { 
-            user: userId, 
-            guild: guildId, 
-            detail: `Quest: ${quest.id} (${quest.action_type}) | Progress: ${oldProgress} -> ${newProgress} (Goal: ${requiredCount}) | JustDone: ${justCompleted}` 
-        });
+      // Log Transaction
+      await client.query(
+        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+         SELECT $1, $2, $3, balance, 'quest_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+        [userId, guildId, reward, `Completed quest: ${quest.id}`, quest.id]
+      );
+      
+      sysLog('Quest Atomic Payout', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Amount: ${reward}` });
     }
 
-    // Execute Auto-Payout silently in background
+    await client.query('COMMIT');
+    client.release();
+
+    if (amount > 0) {
+      sysLog('Quest Progress Captured', { 
+          user: userId, 
+          guild: guildId, 
+          detail: `Quest: ${quest.id} | Progress: ${currentProgress} -> ${newProgress} (Goal: ${requiredCount})${justCompleted ? ' | COMPLETE' : ''}` 
+      });
+    }
+
+    // Trigger log notification (non-critical, can be async)
     if (justCompleted) {
-      sysLog('Quest Completed', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Reward: ${quest.reward_coins}` });
-      await autoPayout(guildId, userId, quest);
+        triggerQuestLog(guildId, userId, quest).catch(() => {});
     }
 
     return { 
       progress: newProgress, 
-      completed: row.completed, 
+      completed: justCompleted, 
       justCompleted: justCompleted
     };
   } catch (error) {
-    sysError('Quest Progress Increment Failed', error, { 
+    if (client) {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+    }
+    sysError('Quest Atomic Increment Failed', error, { 
       user: userId, 
       guild: guildId, 
-      detail: `QuestID: ${quest.id} | Action: ${quest.action_type} | Amount: ${amount}` 
+      detail: `QuestID: ${quest.id} | Amount: ${amount}` 
     });
     return { progress: 0, completed: false, justCompleted: false };
   }
 }
 
 /**
- * Silent bank deposit and logging when a quest is completed
+ * Separate log trigger to keep main logic fast.
  */
-async function autoPayout(guildId, userId, quest) {
-  try {
-    await updateBalance(userId, guildId, quest.reward_coins, 'quest_reward', `Completed quest`);
-    
-    // Log silently to eco logs
-    const { client } = await import('../index.js');
-    if (client) {
-        const guild = client.guilds.cache.get(guildId);
-        if (guild) {
-             const user = await client.users.fetch(userId).catch(()=>null);
-             const tag = user ? user.tag : userId;
-             sendLog(guild, 'economy', 'green', 'Quest Auto-Payout', 
-                `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` Coins`);
+async function triggerQuestLog(guildId, userId, quest) {
+    try {
+        const { client } = await import('../index.js');
+        if (client) {
+            const guild = client.guilds.cache.get(guildId);
+            if (guild) {
+                 const user = await client.users.fetch(userId).catch(()=>null);
+                 const tag = user ? user.tag : userId;
+                 sendLog(guild, 'economy', 'green', 'Quest Completed', 
+                    `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` ${COIN_EMOJI}`);
+            }
         }
-    }
-  } catch (err) {
-    sysError('Quest Auto-Payout Failed', err, { user: userId, guild: guildId, detail: `QuestID: ${quest.id}` });
-  }
+    } catch {}
 }
 
 /**
