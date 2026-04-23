@@ -363,14 +363,17 @@ export async function handleTradeSetupInteraction(interaction) {
     // For coins buttons, we skip deferUpdate.
     if (!customId.includes('_coins')) {
         if (interaction.isButton() || interaction.isAnySelectMenu()) {
+            sysLog('Trade Component Clicked', { user: interaction.user.id, customId: customId, value: interaction.values?.[0] });
+            
             // Handle category routing BEFORE deferUpdate to keep state fresh
             if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select') {
-                const val = interaction.values[0]; // e.g., "trade_cat_give_123"
+                const val = interaction.values[0]; 
                 const catId = val.split('_').pop();
                 const isGive = customId.includes('give');
                 
                 if (isGive) setup.givingFolder = parseInt(catId);
                 else setup.requestingFolder = parseInt(catId);
+                sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
             }
             await interaction.deferUpdate().catch(() => {});
         }
@@ -413,9 +416,11 @@ export async function handleTradeSetupInteraction(interaction) {
     // List Inventory to Give (FOLDER SYSTEM)
     if (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select') {
         const selectedCatId = setup.givingFolder;
+        sysLog('Building Give Item List', { folder: selectedCatId });
         
-        // 1. Sync and fetch all items
-        let allItems = await syncInventoryWithDiscord(setup.senderId, setup.guildId, interaction.member);
+        // 1. Fetch from DB
+        const allItems = await getUserInventory(setup.senderId, setup.guildId);
+        sysLog('Sender Inventory Fetched', { count: allItems.length });
 
         // 2. Fetch Recipient state for filtering
         const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
@@ -509,11 +514,14 @@ export async function handleTradeSetupInteraction(interaction) {
     // List Target Inventory to Request (FOLDER SYSTEM)
     if (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select') {
         const selectedCatId = setup.requestingFolder;
+        sysLog('Building Request Item List', { folder: selectedCatId });
+
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
         if (!member) return interaction.followUp({ content: '❌ Target member not found.', flags: MessageFlags.Ephemeral });
         
-        // 1. Sync and fetch all items
-        let allItems = await syncInventoryWithDiscord(setup.targetId, setup.guildId, member);
+        // 1. Fetch from DB
+        const allItems = await getUserInventory(setup.targetId, setup.guildId);
+        sysLog('Target Inventory Fetched', { count: allItems.length });
 
         // 2. Fetch Requester (Sender) state for filtering
         const senderMember = interaction.member;
