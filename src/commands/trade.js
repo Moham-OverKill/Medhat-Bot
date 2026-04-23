@@ -47,6 +47,52 @@ import { handleInteractionError } from '../utils/errors.js';
 // Define single transaction cap limit
 const SINGLE_TX_CAP = 100000;
 
+/**
+ * STARTUP JANITOR: Recovers stale trades after a bot restart
+ */
+export async function initializeTradeJanitor(client) {
+    try {
+        const staleRes = await query(
+            `SELECT id, guild_id, message_id, channel_id, sender_id, target_id, expires_at 
+             FROM trades 
+             WHERE status = 'pending' AND expires_at < NOW()`
+        );
+
+        if (staleRes.rows.length === 0) return;
+
+        sysLog('Trade Janitor: Cleaning up stale trades', { count: staleRes.rows.length });
+
+        for (const trade of staleRes.rows) {
+            try {
+                // 1. Update DB
+                await query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', trade.id]);
+
+                // 2. Clear UI (Try-Catch as channel/message might be deleted)
+                const channel = await client.channels.fetch(trade.channel_id).catch(() => null);
+                if (channel) {
+                    const msg = await channel.messages.fetch(trade.message_id).catch(() => null);
+                    if (msg) {
+                        const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
+                            .setColor(0x95A5A6)
+                            .setFooter({ text: 'Trade Expired (Offline Recovery)' })
+                            .setTimestamp();
+
+                        await msg.edit({
+                            content: '',
+                            embeds: [expiredEmbed],
+                            components: []
+                        }).catch(() => { });
+                    }
+                }
+            } catch (err) {
+                sysError(`Janitor failed to clean trade ${trade.id}`, err);
+            }
+        }
+    } catch (err) {
+        sysError('Trade Janitor Global Failure', err);
+    }
+}
+
 
 /**
  * Calculates trade tax (e.g. 10%)
@@ -965,6 +1011,19 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         const trade = tradeRes.rows[0];
 
         if (trade.status !== 'pending') throw new Error(`Trade already ${trade.status}`);
+
+        // JIT EXPIRATION CHECK: If we missed the timeout due to restart
+        if (trade.expires_at && new Date(trade.expires_at) < new Date()) {
+            await client.query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', tradeId]);
+            await client.query('COMMIT');
+            
+            await interaction.editReply({
+                content: '',
+                components: [],
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x95A5A6).setFooter({ text: 'Trade Expired' }).setTimestamp()]
+            });
+            return;
+        }
 
         // 2. JIT Verification - Check Balances
         const senderBal = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE', [trade.sender_id, trade.guild_id]);
