@@ -432,11 +432,7 @@ export async function handleShopBuyButton(interaction) {
     const itemForPrice = await getShopItem(itemId);
     const itemPrice = (overridePrice !== null && overridePrice !== undefined) ? overridePrice : (itemForPrice?.price || 0);
 
-    let payoutAmount = 0;
-    if (hasSeller) {
-      const maxPayout = Math.floor(itemPrice * 0.5);
-      payoutAmount = customPayout > 0 ? Math.min(customPayout, maxPayout) : maxPayout;
-    }
+    let payoutAmount = hasSeller ? customPayout : 0;
 
     // ===========================================
     // STEP 2: Call purchaseItem (handles ALL validation + item granting + payout)
