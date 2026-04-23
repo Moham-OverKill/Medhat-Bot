@@ -852,9 +852,9 @@ async function finalizeTradePosting(interaction, setup) {
                         const targetMsg = await channel.messages.fetch(msgId).catch(() => null);
                         if (targetMsg) {
                             await targetMsg.edit({
-                                content: `<@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
+                                content: '',
                                 embeds: [expiredEmbed],
-                                components: [disabledRow]
+                                components: []
                             }).catch((e) => sysError('Trade auto-expire edit fail', e));
                         }
                     }
@@ -921,9 +921,9 @@ export async function handleTradeExecution(interaction) {
             : new EmbedBuilder().setColor(0xEE4444);
 
         await interaction.editReply({
-            content: `❌ Trade was declined by <@${trade.target_id}>.`,
+            content: '',
             components: [],
-            embeds: [declinedEmbed]
+            embeds: [declinedEmbed.setFooter({ text: `Trade Declined • Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` })]
         });
         return;
     }
@@ -1251,10 +1251,10 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
-        await interaction.update({
-            content: completionDesc,
+        await interaction.editReply({
+            content: '',
             components: [],
-            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' })]
+            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: `Trade Successful • Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` })]
         });
 
         // 9. Clear Garbage Collector
@@ -1303,9 +1303,9 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]);
            await interaction.update({
-                content: `❌ **Trade Canceled: Assets Missing.**\nOne of the participants no longer has the required coins/items.`,
+                content: '',
                 components: [],
-                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled' })]
            });
         } else {
             await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
