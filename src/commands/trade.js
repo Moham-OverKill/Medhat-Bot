@@ -801,7 +801,7 @@ async function finalizeTradePosting(interaction, setup) {
 
         // 3. Post Publicly
         const publicMsg = await interaction.channel.send({
-            content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n⏳ **Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
+            content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
             embeds: [embed],
             components: [row]
         });
@@ -841,7 +841,7 @@ async function finalizeTradePosting(interaction, setup) {
                     );
 
                     await publicMsg.edit({
-                        content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n⏳ **Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
+                        content: `🤝 **Trade Offer:** <@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expired:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
                         embeds: [expiredEmbed],
                         components: [disabledRow]
                     }).catch(() => { }); // Ignore Unknown Message errors
