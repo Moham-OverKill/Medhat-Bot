@@ -192,12 +192,12 @@ export async function handleTradeCommand(interaction) {
 
             if (busyTrade.sender_id === sender.id || busyTrade.target_id === sender.id) {
                 return interaction.reply({ 
-                    content: `❌ You already have a ${tradeLink} .`, 
+                    content: `❌ You already have a ${tradeLink}.`, 
                     flags: MessageFlags.Ephemeral 
                 });
             } else {
                 return interaction.reply({ 
-                    content: `❌ This user is currently in another ${tradeLink} .`, 
+                    content: `❌ This user is currently in another ${tradeLink}.`, 
                     flags: MessageFlags.Ephemeral 
                 });
             }
@@ -930,39 +930,18 @@ export async function handleTradeExecution(interaction) {
         return;
     }
 
-    // ACCEPT -> Final Confirmation Modal
+    // ACCEPT -> Execute Immediately (Removed Modal per request)
     if (customId.startsWith('trade_accept_')) {
-        const modal = new ModalBuilder()
-            .setCustomId(`trade_confirm_${tradeId}`)
-            .setTitle('Finalize Trade?');
-
-        const input = new TextInputBuilder()
-            .setCustomId('confirm')
-            .setLabel('Type "CONFIRM" to finalize this trade')
-            .setPlaceholder('CONFIRM')
-            .setStyle(TextInputStyle.Short)
-            .setMaxLength(7)
-            .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return interaction.showModal(modal);
+        return executeAtomicTradeSwap(interaction, tradeId);
     }
 }
 
 /**
  * ATOMIC SWAP EXECUTION (The Fortress)
  */
-export async function handleTradeFinalConfirmation(interaction) {
+export async function executeAtomicTradeSwap(interaction, tradeId) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-    const tradeId = parseInt(interaction.customId.split('_')[2], 10);
-
-
-    const confirmText = interaction.fields.getTextInputValue('confirm');
-
-    if (confirmText.toUpperCase() !== 'CONFIRM') {
-        return interaction.editReply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
-    }
-
+    
     // Fetch trade again to be sure
     const pool = getPool();
     const client = await pool.connect();
@@ -1263,7 +1242,7 @@ export async function handleTradeFinalConfirmation(interaction) {
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
-        await interaction.update({
+        await interaction.editReply({
             content: completionDesc,
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' })]
@@ -1314,13 +1293,13 @@ export async function handleTradeFinalConfirmation(interaction) {
         // Update public message if it's a verification failure
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]);
-           await interaction.update({
+           await interaction.editReply({
                 content: `❌ **Trade Canceled: Assets Missing.**\nOne of the participants no longer has the required coins/items.`,
                 components: [],
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)]
            });
         } else {
-            await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
+            await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
         }
     } finally {
         client.release();
