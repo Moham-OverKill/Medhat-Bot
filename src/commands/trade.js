@@ -248,7 +248,7 @@ export async function handleTradeCommand(interaction) {
 /**
  * Show the ephemeral trade configuration UI
  */
-export async function showTradeSetup(interaction, setupInfo = null, activeSelect = null) {
+export async function showTradeSetup(interaction, setupInfo = null, ...extraComponents) {
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = setupInfo || ACTIVE_SETUPS.get(setupId);
 
@@ -322,8 +322,9 @@ export async function showTradeSetup(interaction, setupInfo = null, activeSelect
     );
 
     const components = [row1, row2, row3];
-    if (activeSelect) {
-        components.splice(2, 0, activeSelect); // Insert select menu above finalize row
+    if (extraComponents && extraComponents.length > 0) {
+        // Insert extra components (like select menus or back buttons) above the finalize row
+        components.splice(2, 0, ...extraComponents);
     }
 
     // Smart response handling
