@@ -411,11 +411,13 @@ async function findLastPanelNumber(channel, botId) {
  * Handle color react (create button panels)
  */
 async function handleColorReact(interaction, guildId, isBooster) {
-  // Defer without touching the control panel
-  if (interaction.isAnySelectMenu()) {
-    await interaction.deferUpdate(); // Keep control panel visible
-  } else if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  // Ensure interaction is deferred exactly once
+  if (!interaction.deferred && !interaction.replied) {
+    if (interaction.isAnySelectMenu() || interaction.isButton()) {
+      await interaction.deferUpdate().catch(() => {});
+    } else {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
   }
 
   const colors = await getColorRoles(guildId, isBooster);
@@ -503,10 +505,25 @@ async function handleColorReact(interaction, guildId, isBooster) {
       }
     }
 
-    await channel.send({
-      content: content,
-      components: rows
-    });
+    try {
+      await channel.send({
+        content: content,
+        components: rows
+      });
+    } catch (error) {
+      sysError('Failed to send color panel message', error, { guild: guildId, channel: channel.id });
+      
+      const errorMsg = error.code === 50013 || error.code === 50007
+        ? '❌ **Missing Permissions:** I do not have permission to send messages in this channel.'
+        : '❌ **Error:** I could not send the color panel to this channel.';
+
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
+      } else {
+        await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+      return; // Stop processing further panels if one fails
+    }
   }
 
   // Send quiet confirmation without touching control panel
@@ -522,23 +539,42 @@ async function handleColorReact(interaction, guildId, isBooster) {
  */
 export async function handleColorsComponent(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    // Safety deferral - handle both buttons and menus
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
-    const [, category, action] = interaction.customId.split('_');
-    const selectedAction = interaction.values[0];
+    const customId = interaction.customId;
+    let selectedAction;
+
+    // Handle Select Menu Choice
+    if (interaction.isAnySelectMenu()) {
+      selectedAction = interaction.values[0];
+    } 
+    // Handle Button Click (if migrated to buttons)
+    else if (interaction.isButton()) {
+      // Button IDs should be 'colors_action_VALUE' (e.g. colors_action_react_normal)
+      const parts = customId.split('_');
+      selectedAction = parts[parts.length - 1]; 
+      
+      // If color_type was split off, reconstruct it
+      if (customId.includes('normal') || customId.includes('booster')) {
+         const type = customId.includes('booster') ? 'booster' : 'normal';
+         if (!selectedAction.endsWith(type)) selectedAction += `_${type}`;
+      }
+    }
+
+    if (!selectedAction) throw new Error(`Unknown interaction source: ${customId}`);
+
     const guildId = interaction.guildId;
-
-    // Parse action
     const [actionType, colorType] = selectedAction.split('_');
     const isBooster = colorType === 'booster';
 
     switch (actionType) {
       case 'add':
-        // Show role select menu for adding
         await showRoleSelector(interaction, isBooster, 'add');
         break;
       case 'remove':
-        // Show role select menu for removing
         await showRoleSelector(interaction, isBooster, 'remove');
         break;
       case 'list':
@@ -547,16 +583,19 @@ export async function handleColorsComponent(interaction) {
       case 'react':
         await handleColorReact(interaction, guildId, isBooster);
         break;
+      default:
+        sysLog('Unknown color action', { action: selectedAction, guild: guildId });
+        await showColorPanel(interaction);
     }
   } catch (error) {
     sysError('Colors component router failed', error, { user: interaction.user.id, guild: interaction.guildId });
 
-    const errorMsg = 'An error occurred while processing your selection.';
+    const errorMsg = '❌ **Error:** Failed to process color settings. Please try closing and re-opening the menu.';
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral });
+      await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
-      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 }
