@@ -274,7 +274,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     };
   } catch (error) {
     if (client) {
-      await client.query('ROLLBACK').catch(() => {});
+      try { await client.query('ROLLBACK'); } catch {}
       client.release();
     }
     sysError('Quest Atomic Increment Failed', error, { 
