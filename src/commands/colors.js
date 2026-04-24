@@ -185,8 +185,7 @@ export async function showColorPanel(interaction, type = 'normal') {
   const isBoosterTab = type === 'booster';
   const colors = await getColorRoles(guildId, isBoosterTab);
 
-  // Fetch guild roles to get mentions and names
-  const guild = await interaction.client.guilds.fetch(guildId);
+  const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
   const allRoles = await guild.roles.fetch();
 
   const sortedColors = colors
@@ -198,23 +197,22 @@ export async function showColorPanel(interaction, type = 'normal') {
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
   const embed = new EmbedBuilder()
-    .setTitle(`${titlePrefix} Colors (${sortedColors.length} configured)`)
+    .setTitle(`${titlePrefix} Colors`) // Removed (X configured)
     .setDescription(sortedColors.length > 0 
       ? sortedColors.map((c, i) => `**${i + 1} |** <@&${c.roleId}>`).join('\n')
       : '_No colors configured yet._')
-    .setColor(colorHex)
-    .setFooter({ text: 'Use the tools below to manage this list' });
+    .setColor(colorHex);
+    // Removed Footer/Footer description
 
   const components = [];
 
-  // Row 1: Add Role (Searchable Selector)
+  // Row 1: Add Role
   const addSelector = new RoleSelectMenuBuilder()
     .setCustomId(`colors_add_${type}`)
     .setPlaceholder(`➕ Add a color to the ${titlePrefix} list...`);
-  
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
-  // Row 2: Remove Role (populated with current colors)
+  // Row 2: Remove Role
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}`)
     .setPlaceholder(`➖ Remove a color from the ${titlePrefix} list...`)
@@ -231,11 +229,10 @@ export async function showColorPanel(interaction, type = 'normal') {
   } else {
     removeSelector.addOptions([{ label: 'No roles to remove', value: 'none' }]);
   }
-
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
-  // Row 3: Navigation & Global Actions
-  const navRow = new ActionRowBuilder().addComponents(
+  // Row 3: The Tabs (Strict layout requested)
+  const tabsRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('colors_tab_normal')
       .setLabel('Normal Colors')
@@ -245,20 +242,24 @@ export async function showColorPanel(interaction, type = 'normal') {
       .setCustomId('colors_tab_booster')
       .setLabel('Booster Colors')
       .setEmoji('⭐')
-      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`colors_create_${type}`)
-      .setLabel('Create Panel')
-      .setEmoji('🖼️')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  components.push(tabsRow);
+
+  // Row 4: Navigation/Actions (Strict layout requested)
+  const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Danger) // Using Danger as requested for contrast
+      .setStyle(ButtonStyle.Secondary), // Secondary/Gray as requested
+    new ButtonBuilder()
+      .setCustomId(`colors_create_${type}`)
+      .setLabel('Create Panel')
+      .setEmoji('🖼️')
+      .setStyle(ButtonStyle.Success) // Success/Green as requested
   );
-
-  components.push(navRow);
+  components.push(actionRow);
 
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
@@ -552,47 +553,48 @@ async function handleColorReact(interaction, guildId, isBooster) {
  */
 export async function handleColorsComponent(interaction) {
   try {
+    const customId = interaction.customId;
+    const guildId = interaction.guildId;
+
+    // Safety deferral for all dashboard actions
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => {});
     }
 
-    const customId = interaction.customId;
-    const guildId = interaction.guildId;
-
-    // 1. Handle Tab Switching
-    if (customId.startsWith('colors_tab_')) {
-      const type = customId.split('_')[2];
-      return await showColorPanel(interaction, type);
+    // 1. Handle Tab Switching (Hardcoded check for zero ambiguity)
+    if (customId === 'colors_tab_normal') {
+      return await showColorPanel(interaction, 'normal');
+    }
+    if (customId === 'colors_tab_booster') {
+      return await showColorPanel(interaction, 'booster');
     }
 
     // 2. Handle Add/Remove via Select Menus
     if (interaction.isAnySelectMenu()) {
-      const parts = customId.split('_'); // [colors, action, type]
-      const action = parts[1];
-      const type = parts[2];
-      const isBooster = type === 'booster';
-
-      if (action === 'add') {
+      if (customId.startsWith('colors_add_')) {
+        const type = customId.endsWith('booster') ? 'booster' : 'normal';
         const roleId = interaction.values[0];
-        return await processRoleAddition(interaction, guildId, roleId, isBooster);
+        return await processRoleAddition(interaction, guildId, roleId, type === 'booster');
       }
 
-      if (action === 'remove') {
+      if (customId.startsWith('colors_remove_')) {
+        const type = customId.endsWith('booster') ? 'booster' : 'normal';
         const roleId = interaction.values[0];
-        return await processRoleRemoval(interaction, guildId, roleId, isBooster);
+        return await processRoleRemoval(interaction, guildId, roleId, type === 'booster');
       }
     }
 
-    // 3. Handle Create Panel Button
-    if (customId.startsWith('colors_create_')) {
-      const type = customId.split('_')[2];
-      const isBooster = type === 'booster';
-      return await handleColorReact(interaction, guildId, isBooster);
+    // 3. Handle Create Panel Buttons (Hardcoded check)
+    if (customId === 'colors_create_normal') {
+      return await handleColorReact(interaction, guildId, false);
+    }
+    if (customId === 'colors_create_booster') {
+      return await handleColorReact(interaction, guildId, true);
     }
 
   } catch (error) {
-    sysError('Colors dashboard component failed', error, { user: interaction.user.id, guild: interaction.guildId });
-    const errorMsg = '❌ **Internal Error:** Failed to process dashboard action.';
+    sysError('Colors dashboard route failed', error, { user: interaction.user.id, guild: interaction.guildId, customId: interaction.customId });
+    const errorMsg = '❌ **Failed to process action.** Try refreshing /settings.';
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
