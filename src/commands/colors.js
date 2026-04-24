@@ -553,16 +553,20 @@ async function handleColorReact(interaction, guildId, isBooster) {
  * Handle colors component (menu selections)
  */
 export async function handleColorsComponent(interaction) {
+  const customId = interaction.customId;
+  const guildId = interaction.guildId;
+
   try {
-    const customId = interaction.customId;
-    const guildId = interaction.guildId;
+    sysLog('Color Dashboard Interaction', { id: customId, guild: guildId, user: interaction.user.id });
 
     // Safety deferral for all dashboard actions
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
+      await interaction.deferUpdate().catch(e => {
+        sysError('Failed to defer color interaction', e, { id: customId });
+      });
     }
 
-    // 1. Handle Tab Switching (Hardcoded check for zero ambiguity)
+    // 1. Handle Tab Switching
     if (customId === 'colors_tab_normal') {
       return await showColorPanel(interaction, 'normal');
     }
@@ -575,17 +579,19 @@ export async function handleColorsComponent(interaction) {
       if (customId.startsWith('colors_add_')) {
         const type = customId.endsWith('booster') ? 'booster' : 'normal';
         const roleId = interaction.values[0];
+        sysLog('Adding color role', { roleId, type, guild: guildId });
         return await processRoleAddition(interaction, guildId, roleId, type === 'booster');
       }
 
       if (customId.startsWith('colors_remove_')) {
         const type = customId.endsWith('booster') ? 'booster' : 'normal';
         const roleId = interaction.values[0];
+        sysLog('Removing color role', { roleId, type, guild: guildId });
         return await processRoleRemoval(interaction, guildId, roleId, type === 'booster');
       }
     }
 
-    // 3. Handle Create Panel Buttons (Hardcoded check)
+    // 3. Handle Create Panel Buttons
     if (customId === 'colors_create_normal') {
       return await handleColorReact(interaction, guildId, false);
     }
@@ -593,9 +599,19 @@ export async function handleColorsComponent(interaction) {
       return await handleColorReact(interaction, guildId, true);
     }
 
+    sysLog('Unmatched color interaction', { id: customId });
+    // If nothing matched, refresh the dashboard as a fallback
+    return await showColorPanel(interaction, 'normal');
+
   } catch (error) {
-    sysError('Colors dashboard route failed', error, { user: interaction.user.id, guild: interaction.guildId, customId: interaction.customId });
-    const errorMsg = '❌ **Failed to process action.** Try refreshing /settings.';
+    sysError('Colors dashboard route failed', error, { 
+      user: interaction.user.id, 
+      guild: guildId, 
+      customId: customId,
+      stack: error.stack 
+    });
+
+    const errorMsg = '❌ **Failed to process action.** The dashboard encountered an error.';
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {

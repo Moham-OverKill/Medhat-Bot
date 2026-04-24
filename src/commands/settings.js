@@ -308,7 +308,25 @@ export async function handleSettingsComponent(interaction) {
         // Default: Return to main menu if no module matches (or unknown interaction)
         await showMainMenu(interaction);
     } catch (error) {
-        sysError('Settings fatal component error', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error);
+        sysError('Settings fatal component error', error, { 
+            user: interaction.user.id, 
+            guild: interaction.guildId,
+            id: interaction.customId,
+            deferred: interaction.deferred,
+            replied: interaction.replied,
+            stack: error.stack 
+        });
+
+        // Fallback: If it's not deferred, try to reply to stop the "Interaction Failed" red text
+        try {
+          if (!interaction.deferred && !interaction.replied) {
+              await interaction.reply({ content: '❌ **Dashboard Error:** Internal routing failure. Try /settings again.', flags: MessageFlags.Ephemeral }).catch(() => {});
+          } else {
+              await interaction.followUp({ content: '❌ **Dashboard Error:** Something went wrong while loading this module.', flags: MessageFlags.Ephemeral }).catch(() => {});
+          }
+        } catch (e) {
+          // Final safety if even the reply fails
+          sysError('Critical: Settings fallback failed', e);
+        }
     }
 }
