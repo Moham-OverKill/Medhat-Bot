@@ -212,23 +212,10 @@ export async function showColorPanel(interaction, type = 'normal') {
     .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
-  // Row 2: Remove Role
-  const removeSelector = new StringSelectMenuBuilder()
+  // Row 2: Remove Role (Native Searchable Selector for perfect symmetry)
+  const removeSelector = new RoleSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}`)
-    .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`) 
-    .setDisabled(sortedColors.length === 0);
-
-  if (sortedColors.length > 0) {
-    removeSelector.addOptions(
-      sortedColors.slice(0, 25).map(c => ({
-        label: c.role.name,
-        value: c.roleId,
-        emoji: '🗑️'
-      }))
-    );
-  } else {
-    removeSelector.addOptions([{ label: 'No roles to remove', value: 'none' }]);
-  }
+    .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
   // Row 3: The Tabs (Strict layout requested)
@@ -680,7 +667,10 @@ async function processRoleRemoval(interaction, guildId, roleId, isBooster) {
     // Refresh dashboard
     return await showColorPanel(interaction, isBooster ? 'booster' : 'normal');
   } else {
-    return interaction.followUp({ content: '❌ This role was not in the list.', flags: MessageFlags.Ephemeral });
+    return interaction.followUp({ 
+      content: `❌ That role is not in the ${isBooster ? 'Booster' : 'Normal'} color list.`, 
+      flags: MessageFlags.Ephemeral 
+    });
   }
 }
 
