@@ -209,13 +209,13 @@ export async function showColorPanel(interaction, type = 'normal') {
   // Row 1: Add Role
   const addSelector = new RoleSelectMenuBuilder()
     .setCustomId(`colors_add_${type}`)
-    .setPlaceholder(`➕ Add a color to the ${titlePrefix} list...`);
+    .setPlaceholder(`Add a color to the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
   // Row 2: Remove Role
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}`)
-    .setPlaceholder(`➖ Remove ${titlePrefix} Color...`) // Shortened for perfect alignment
+    .setPlaceholder(`Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`)
     .setDisabled(sortedColors.length === 0);
 
   if (sortedColors.length > 0) {
@@ -241,7 +241,7 @@ export async function showColorPanel(interaction, type = 'normal') {
     new ButtonBuilder()
       .setCustomId('colors_tab_booster')
       .setLabel('Booster Colors')
-      .setEmoji('⭐')
+      .setEmoji('🚀')
       .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
   components.push(tabsRow);
