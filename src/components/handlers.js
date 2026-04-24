@@ -385,15 +385,16 @@ export function setupComponentHandlers(client) {
       else if (customId.startsWith('quests_')) {
         await handleQuestsComponent(interaction);
       }
-      // Colors Components
-      else if (customId === 'colors:back' || customId === 'boosters:back') {
-        const { handleColorsCommand } = await import('../commands/colors.js');
-        await handleColorsCommand(interaction);
-      } else if (customId.startsWith('colors_')) {
-        if (customId.startsWith('colors_normal_') || customId.startsWith('colors_booster_')) {
-          await handleColorsComponent(interaction);
+      // Colors Components (Unified Routing)
+      else if (customId.startsWith('colors_')) {
+        if (customId === 'colors:back' || customId === 'boosters:back') {
+          const { handleColorsCommand } = await import('../commands/colors.js');
+          await handleColorsCommand(interaction);
         } else if (customId.startsWith('colors_role_')) {
           await handleRoleSelection(interaction);
+        } else {
+          // Standard Dashboard handling (tabs, creation, menu selections)
+          await handleColorsComponent(interaction);
         }
       } else if (customId.startsWith('color_')) {
         await handleColorButton(interaction);
