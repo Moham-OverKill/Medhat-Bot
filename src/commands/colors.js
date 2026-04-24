@@ -261,9 +261,12 @@ export async function showColorPanel(interaction, type = 'normal') {
   );
   components.push(actionRow);
 
-  // CRITICAL FIX: After deferUpdate in handleColorsComponent, we MUST use editReply.
-  // showColorPanel is now strictly an editReply function when used in the dashboard.
-  await interaction.editReply({
+  // Determine the correct response method based on the interaction state
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
     content: '',
     embeds: [embed],
     components: components
