@@ -215,7 +215,7 @@ export async function showColorPanel(interaction, type = 'normal') {
   // Row 2: Remove Role
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}`)
-    .setPlaceholder(`➖ Remove a color from the ${titlePrefix} list...`)
+    .setPlaceholder(`➖ Remove a color from the ${titlePrefix} list...`) // Aligned placeholder
     .setDisabled(sortedColors.length === 0);
 
   if (sortedColors.length > 0) {
@@ -250,22 +250,20 @@ export async function showColorPanel(interaction, type = 'normal') {
   const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
-      .setLabel('Back')
+      .setLabel('Back to Settings') // Updated label
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary), // Secondary/Gray as requested
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`colors_create_${type}`)
       .setLabel('Create Panel')
       .setEmoji('🖼️')
-      .setStyle(ButtonStyle.Success) // Success/Green as requested
+      .setStyle(ButtonStyle.Success)
   );
   components.push(actionRow);
 
-  const responseMethod = (interaction.deferred || interaction.replied)
-    ? 'editReply'
-    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-
-  await interaction[responseMethod]({
+  // CRITICAL FIX: After deferUpdate in handleColorsComponent, we MUST use editReply.
+  // showColorPanel is now strictly an editReply function when used in the dashboard.
+  await interaction.editReply({
     content: '',
     embeds: [embed],
     components: components
