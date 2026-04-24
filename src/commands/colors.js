@@ -215,7 +215,7 @@ export async function showColorPanel(interaction, type = 'normal') {
   // Row 2: Remove Role
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}`)
-    .setPlaceholder(`➖ Remove a color from the ${titlePrefix} list...`) // Aligned placeholder
+    .setPlaceholder(`➖ Remove ${titlePrefix} Color...`) // Shortened for perfect alignment
     .setDisabled(sortedColors.length === 0);
 
   if (sortedColors.length > 0) {
@@ -556,14 +556,15 @@ export async function handleColorsComponent(interaction) {
   const customId = interaction.customId;
   const guildId = interaction.guildId;
 
+  // IMPORTANT: Immediate console trace to verify the handler is being reached
+  console.log(`[TRACE] Color Component Entry: ${customId} | Guild: ${guildId}`);
+
   try {
     sysLog('Color Dashboard Interaction', { id: customId, guild: guildId, user: interaction.user.id });
 
-    // Safety deferral for all dashboard actions
+    // Forced immediate acknowledgment to kill "Interaction Failed" errors
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(e => {
-        sysError('Failed to defer color interaction', e, { id: customId });
-      });
+      await interaction.deferUpdate().catch(() => {});
     }
 
     // 1. Handle Tab Switching
