@@ -676,12 +676,14 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     const item = itemResult.rows[0];
 
+    // Define effectivePrice (Check for admin override from button first)
+    const effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
+
     // ========== NULL-PRICE GUARD ==========
-    // Items are now created with NULL price. A price MUST be set at post-time via the
-    // shop post panel. If something bypasses that gate, we hard-block the purchase here.
-    if (item.price === null || item.price === undefined) {
+    // Use effectivePrice for the safety check. Hard-block if no global or button price exists.
+    if (effectivePrice === null || effectivePrice === undefined) {
       await client.query('ROLLBACK');
-      sysLog('Purchase Blocked', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: NULL price — price not set by admin` });
+      sysLog('Purchase Blocked', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Price not set` });
       return { success: false, error: 'This item does not have a price set yet. Contact an admin.' };
     }
 
@@ -724,7 +726,6 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     }
 
     // Define effectivePrice (Check for admin override first)
-    let effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
 
     // Define checkRoleSafety helper
     const botMember = member.guild.members.me;
