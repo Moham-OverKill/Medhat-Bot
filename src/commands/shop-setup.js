@@ -1331,8 +1331,9 @@ export async function handleShopPostPublish(interaction) {
       .setTitle(item.name)
       .setColor('#3498DB'); 
 
-    // JIT Sync: Always update global stock in DB before publishing to ensure state consistency
-    await updateShopItem(itemId, { stock }); 
+    // JIT Sync: Always update global price and stock in DB before publishing to ensure state consistency
+    await updateShopItem(itemId, { price: effectivePrice, stock }); 
+    item.price = effectivePrice;
     item.stock = stock;
 
     // Image: instance-specific override takes priority, then item's default image
