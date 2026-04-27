@@ -677,7 +677,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     const item = itemResult.rows[0];
 
     // Define effectivePrice (Check for admin override from button first)
-    const effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
+    let effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
 
     // ========== NULL-PRICE GUARD ==========
     // Use effectivePrice for the safety check. Hard-block if no global or button price exists.
