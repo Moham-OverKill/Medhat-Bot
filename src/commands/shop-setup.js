@@ -1151,7 +1151,7 @@ export async function handleShopPostPayoutBtn(interaction) {
 
     const payoutInput = new TextInputBuilder()
       .setCustomId('payout')
-      .setLabel('Payout')
+      .setLabel('Payout (Per purchase)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('0000')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
