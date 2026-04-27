@@ -990,8 +990,7 @@ export async function handleInventoryItemSelect(interaction) {
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
-    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}\n` +
-      `**Value:** ${item.price} ${COIN_EMOJI}`;
+    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
 
     // Show acquisition info (Purchased vs Admin-Granted)
     if (isAdminGranted) {
