@@ -11,7 +11,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 
@@ -55,7 +55,8 @@ export async function showUserDashboard(interaction, targetUserId) {
     const pool = getPool();
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    const displayName = targetMember ? targetMember.displayName : targetUserId;
+    const rawName = targetMember ? targetMember.displayName : targetUserId;
+    const displayName = safeTruncate(rawName, 30);
 
     sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Opening user management dashboard for ${targetUserId}` });
     
@@ -89,7 +90,7 @@ export async function showUserDashboard(interaction, targetUserId) {
         sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Building management UI for ${targetUserId}` });
 
         const embed = new EmbedBuilder()
-            .setTitle(`⚙️ Managing: ${displayName}`)
+            .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
             .setDescription(`> Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} | Items: **${itemCount}**`)
             .setColor(0x5865F2);
 
@@ -139,7 +140,7 @@ export async function handleBalanceAction(interaction, targetUserId) {
 
     const modal = new ModalBuilder()
         .setCustomId(`admin_user_balmod_${targetUserId}`)
-        .setTitle(`Adjust Balance: ${displayName}`);
+        .setTitle(safeTruncate(`Adjust Balance: ${displayName}`, 45));
 
     const input = new TextInputBuilder()
         .setCustomId('new_balance')
@@ -237,7 +238,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
     if (categoryId === null) {
         // Show category selection view
         const embed = new EmbedBuilder()
-            .setTitle(`🎒 Managing Inventory: ${targetMember.displayName}`)
+            .setTitle(safeTruncate(`🎒 Managing Inventory: ${targetMember.displayName}`, 256))
             .setColor(0x2ECC71);
 
         if (visibleItems.length === 0) {
@@ -296,7 +297,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
         let catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
         const embed = new EmbedBuilder()
-            .setTitle(`📂 ${catName}: ${targetMember.displayName}`)
+            .setTitle(safeTruncate(`📂 ${catName}: ${targetMember.displayName}`, 256))
             .setColor(0x2ECC71);
 
         // Standardize: Use shared formatting (removes bullets, matches emojis)
@@ -384,7 +385,7 @@ export async function showItemRevokePanel(interaction, targetUserId, invId, cate
     const displayName = targetMember ? targetMember.displayName : targetUserId;
 
     const embed = new EmbedBuilder()
-        .setTitle(`Revoke Item: ${item.name}`)
+        .setTitle(safeTruncate(`Revoke Item: ${item.name}`, 256))
         .setDescription(
             isAdminGranted 
             ? `This is an **Admin-Granted** item (Discord Role).\n\n` +
@@ -527,7 +528,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
     const displayName = targetMember ? targetMember.displayName : targetUserId;
 
     const embed = new EmbedBuilder()
-        .setTitle(`📜 History: ${displayName}`)
+        .setTitle(safeTruncate(`📜 History: ${displayName}`, 256))
         .setColor(0x808080)
         .setFooter({ text: `Page ${page + 1}` });
 
@@ -547,8 +548,8 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             else if (amountVal < 0) amountDisplay = `**${amountVal}**`;
             else amountDisplay = `**0**`;
 
-            // Format IDs to mentions if they look like User IDs (17-19 digits) and aren't already mentioned
-            let description = tx.description.replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
+            // Fallback matching without lookbehinds to prevent string length/surrogate pair crash
+            let description = tx.description.replace(/(^|[^<@&\d])(\d{17,19})(?!\d|>)/g, '$1<@$2>');
             // Normalize legacy MVP text to generic form
             description = description.replace(/Won MVP of the Day/gi, 'Won the MVP award')
                 .replace(/MVP of the Day reward/gi, 'Won the MVP award');
