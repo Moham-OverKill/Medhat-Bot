@@ -1867,7 +1867,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
+    await interaction.editReply({ content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category select');
   }
@@ -2370,7 +2370,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
 
         return interaction.editReply({
-          content: message || null,
+          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: [embed]
         });
@@ -2400,7 +2400,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
 
         return interaction.editReply({
-          content: message || null,
+          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: [embed]
         });
@@ -2433,7 +2433,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
 
       return interaction.editReply({
-         content: message || null,
+         content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
          components: [new ActionRowBuilder().addComponents(select), rowBack],
          embeds: [embed]
       });
@@ -2466,7 +2466,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
 
         return interaction.editReply({
-          content: message || null,
+          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: [embed]
         });
@@ -2649,7 +2649,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     );
 
     await interaction.editReply({
-      content: successHeader || '**Manage items and settings for this item:**',
+      content: successHeader || null,
       embeds: [embed],
       components: [rowCat, actionRow, backRow]
     });
@@ -2831,7 +2831,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
 
     await interaction.editReply({ 
-      content: successHeader || '**Manage items and settings for this pack:**', 
+      content: successHeader || null, 
       embeds: [embed], 
       components: [actionRow, backRow] 
     });
@@ -2840,7 +2840,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
   }
 }
 
-export async function handlePackAddContentStart(interaction, layer = 'root', messageStr = `**Choose a section to add items from:**`) {
+export async function handlePackAddContentStart(interaction, layer = 'root', messageStr = null) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -2870,7 +2870,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         .setDescription('No items found.');
 
       return interaction.editReply({ 
-        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
+        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
         embeds: [emptyEmbed] 
       });
@@ -2946,7 +2946,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
     if (options.length === 0 || (options.length === 1 && options[0].value.includes('back'))) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
       return interaction.editReply({ 
-        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
+        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [rowBack], 
         embeds: [emptyEmbed] 
       });
@@ -2964,7 +2964,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       .setTitle('Select Item(s) to Add to Pack');
 
     await interaction.editReply({
-        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
+        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
         embeds: [embedPrompt]
     });
@@ -2994,7 +2994,7 @@ export async function handlePackAddContentSelect(interaction) {
     }
     if (selection.startsWith('cat_')) {
       const categoryId = parseInt(selection.replace('cat_', ''));
-      return handlePackAddContentStart(interaction, categoryId, `**Choose an item from the folder:**`);
+      return handlePackAddContentStart(interaction, categoryId);
     }
     if (selection === 'empty_layer') {
       return; // Do nothing
@@ -3046,7 +3046,7 @@ export async function handlePackAddContentSelect(interaction) {
   }
 }
 
-export async function handlePackRemoveContentStart(interaction, messageStr = `**Choose an item to remove from this pack:**`) {
+export async function handlePackRemoveContentStart(interaction, messageStr = null) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -3071,7 +3071,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = `**
         .setDescription('No items found.');
 
       return interaction.editReply({ 
-        content: messageStr !== `**Choose an item to remove from this pack:**` ? messageStr : null,
+        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
         embeds: [emptyEmbed] 
       });
@@ -3114,7 +3114,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = `**
       .setTitle('Select Item(s) to Remove from Pack');
 
     await interaction.editReply({
-        content: messageStr !== `**Choose an item to remove from this pack:**` ? messageStr : null,
+        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
         embeds: [embedPrompt]
     });
