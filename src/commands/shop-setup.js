@@ -2925,8 +2925,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
         value: `item_${i.id}`
       })));
-
-      }
     }
 
     const rowBack = new ActionRowBuilder().addComponents(
