@@ -527,13 +527,17 @@ export async function handleItemModalSubmit(interaction) {
 
         const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl);
         
-        let successMsg = `✅ Item **${name}** added! Use the **Post** panel to set a price and publish it.`;
+        // Success message formatting
+        const successHeader = `✅ **Item Created: ${name}**`;
+        let successDescription = `Use the **Post** panel to set a price and publish it.`;
+        
         if (reqValidation.hasBooster) {
-          successMsg += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+          successDescription += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
         }
         if (reqValidation.hasMvp) {
-          successMsg += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
+          successDescription += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
         }
+
         sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
 
         const categories = await getShopCategories(interaction.guildId);
@@ -546,15 +550,28 @@ export async function handleItemModalSubmit(interaction) {
             }))
           ]);
 
-        // Show confirmation embed with item image if set
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
-          .setTitle(`✅ Item Created: ${name}`)
-          .setDescription(successMsg + (reqValidation.hasBooster ? '' : '\nAssign category?'));
+          .setTitle(name)
+          .setDescription(successDescription);
+        
         const img = getItemImage(item);
         if (img) confirmEmbed.setThumbnail(img);
 
-        await interaction.editReply({ content: null, embeds: [confirmEmbed], components: [new ActionRowBuilder().addComponents(select)] });
+        const rowSelect = new ActionRowBuilder().addComponents(select);
+        const rowBack = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('shop_admin_add')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.editReply({ 
+          content: successHeader, 
+          embeds: [confirmEmbed], 
+          components: [rowSelect, rowBack] 
+        });
         return;
 
       } else if (type === 'pack') {
