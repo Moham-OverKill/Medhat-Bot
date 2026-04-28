@@ -541,14 +541,18 @@ export async function handleItemModalSubmit(interaction) {
         sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
 
         const categories = await getShopCategories(interaction.guildId);
-        const select = new StringSelectMenuBuilder().setCustomId(`shop_assign_cat_select_${item.id}`).setPlaceholder('Assign to Category')
-          .addOptions([
-            { label: 'No Category', value: 'null' }, 
-            ...categories.map(c => ({ 
-              label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
-              value: c.id.toString() 
-            }))
-          ]);
+        const catOptions = [
+          { label: 'No Category', value: 'null' }, 
+          ...categories.slice(0, 24).map(c => ({ 
+            label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
+            value: c.id.toString() 
+          }))
+        ];
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId(`shop_assign_cat_select_${item.id}`)
+          .setPlaceholder('Assign to Category')
+          .addOptions(catOptions);
 
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
