@@ -2861,7 +2861,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         if (itemsInCat.length > 0) {
           options.push({
             label: `📂 ${cat.name.slice(0, 70)}`,
-            description: `${itemsInCat.length} items`,
             value: `cat_${cat.id}`
           });
         }
