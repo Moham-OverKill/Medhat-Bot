@@ -294,7 +294,7 @@ export async function handleAddTypeSelect(interaction) {
     .setCustomId('item_name')
     .setLabel('Name')
     .setStyle(TextInputStyle.Short)
-    .setRequired(false);
+    .setRequired(true);
 
   modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
 
@@ -477,7 +477,14 @@ export async function handleItemModalSubmit(interaction) {
         let itemImageUrl = null;
         try {
           const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
-          if (rawImg && rawImg.toLowerCase() !== 'none') itemImageUrl = rawImg;
+          if (rawImg && rawImg.toLowerCase() !== 'none') {
+            // Basic URL validation to prevent Discord API errors (one or more errors)
+            if (/^https?:\/\/.+\..+/i.test(rawImg)) {
+              itemImageUrl = rawImg;
+            } else {
+              return interaction.followUp({ content: '❌ Invalid Image URL. Please provide a valid http/https link or leave it empty.', flags: MessageFlags.Ephemeral });
+            }
+          }
         } catch (e) { /* field may be absent on old interactions */ }
 
         if (!/^\d{17,20}$/.test(roleId)) return interaction.followUp({ content: '❌ Invalid Role ID.', flags: MessageFlags.Ephemeral });
@@ -527,6 +534,10 @@ export async function handleItemModalSubmit(interaction) {
 
         const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl);
         
+        if (!item) {
+          throw new Error('Database failed to return created item record.');
+        }
+
         // Success message formatting
         const successHeader = `✅ **Item Created: ${name}**`;
         let successDescription = `Use the **Post** panel to set a price and publish it.`;
@@ -556,7 +567,7 @@ export async function handleItemModalSubmit(interaction) {
 
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
-          .setTitle(name)
+          .setTitle(name || 'New Item')
           .setDescription(successDescription);
         
         const img = getItemImage(item);
