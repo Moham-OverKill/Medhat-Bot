@@ -581,9 +581,9 @@ export async function handleItemModalSubmit(interaction) {
 
         const categories = await getShopCategories(interaction.guildId);
         const catOptions = [
-          { label: 'No Category', value: 'null' }, 
+          { label: '🏷️ No Category', value: 'null' }, 
           ...categories.slice(0, 24).map(c => ({ 
-            label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
+            label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
             value: c.id.toString() 
           }))
         ];
@@ -790,7 +790,11 @@ export async function handleShopPostStart(interaction) {
   const items = await getShopItems(guildId, null, 'name', true);
 
   if (items.length === 0) {
-    return interaction.editReply({ content: '❌ No items found in shop. Create items first.', embeds: [], components: [] });
+    const emptyRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('shop_admin_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    );
+    const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+    return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
   }
 
   // Get current pending state or initialize
@@ -864,12 +868,13 @@ export async function handleShopPostStart(interaction) {
   let placeholder = '📦 Select Item/Pack (Required)';
 
   if (state.postStep === 0) {
-    // Root Folder View
-    itemOptions = [
-      { label: '📂 Categorized Items', value: 'folder_categorized' },
-      { label: '🏷️ Uncategorized Items', value: 'folder_standalone' },
-      { label: '📦 Item Packs', value: 'folder_packs' }
-    ];
+    const hasCategorized = itemsAll.some(i => i.category_id && !i.is_pack && i.item_type !== 'pack');
+    const hasUncategorized = itemsAll.some(i => !i.category_id && !i.is_pack && i.item_type !== 'pack');
+    const hasPacks = itemsAll.some(i => i.is_pack || i.item_type === 'pack');
+
+    if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
+    if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
+    if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
     placeholder = '📦 Select Item/Pack (Required)';
     
     // If an item is already selected, show it as a quick-pick at the top
@@ -882,8 +887,11 @@ export async function handleShopPostStart(interaction) {
     }
   } 
   else if (state.postStep === 1) {
-    // Category Folder List
-    itemOptions = categories.map(c => ({
+    // Category Folder List - Hide Empty Folders
+    const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.category_id).map(i => i.category_id));
+    const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
+
+    itemOptions = activeCategories.map(c => ({
       label: `📂 ${c.name.slice(0, 50)}`,
       value: `filter_cat_${c.id}`
     }));
@@ -923,12 +931,13 @@ export async function handleShopPostStart(interaction) {
     placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
   }
 
-  // CRITICAL: Prevent Discord BASE_TYPE_BAD_LENGTH error (0 options)
-  if (itemOptions.length === 0) {
-    itemOptions.push({
-      label: '📂 Folder is empty',
-      value: 'folder_reset'
-    });
+  // Unified Empty State Fallback
+  if (itemOptions.length === 0 || (itemOptions.length === 1 && itemOptions[0].value === 'folder_reset')) {
+    const emptyRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    );
+    const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+    return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
   }
 
   const itemSelect = new StringSelectMenuBuilder()
@@ -1772,16 +1781,20 @@ export async function handleEditCategoryStart(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categories = await getShopCategories(interaction.guildId);
 
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    );
+
     if (categories.length === 0) {
-      await handleShopAdminEdit(interaction);
-      return interaction.followUp({ content: '❌ No categories found.', flags: MessageFlags.Ephemeral });
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('shop_select_cat_edit_rename')
       .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
-        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
+        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
         value: c.id.toString() 
       })));
 
@@ -1791,9 +1804,6 @@ export async function handleEditCategoryStart(interaction) {
       .setDescription('**Select a category to manage:**');
 
     const row = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
 
     await interaction.editReply({ content: null, embeds: [embed], components: [row, rowBack] });
   } catch (error) {
@@ -1921,25 +1931,27 @@ export async function handleEditCategoryAddItemsStart(interaction) {
       return interaction.guild.roles.cache.has(roleId); // Role must exist
     });
 
-    if (standalone.length === 0) {
-      return interaction.followUp({ content: '❌ No available items found to add.', flags: MessageFlags.Ephemeral });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-      .setPlaceholder('Select')
-      .addOptions(standalone.slice(0, 25).map(i => ({ 
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString() 
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
+
+    if (standalone.length === 0) {
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+    }
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
+      .setPlaceholder('Select')
+      .addOptions(standalone.slice(0, 25).map(i => ({ 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+        value: i.id.toString() 
+      })));
+
+    const row = new ActionRowBuilder().addComponents(select);
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#2ECC71')
@@ -2007,7 +2019,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       // No more items - Standardized Empty State
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
-        .setDescription('No more items found.');
+        .setDescription('No items found.');
 
       await interaction.editReply({
         content: `✅ **${addedItemName}** added to **${categoryName}**.`,
@@ -2020,7 +2032,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
         .setPlaceholder('Select')
         .addOptions(standalone.slice(0, 25).map(i => ({ 
-          label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
+          label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
           value: i.id.toString()
         })));
 
@@ -2048,25 +2060,27 @@ export async function handleEditCategoryRemoveItemsStart(interaction) {
 
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
 
-    if (items.length === 0) {
-      return interaction.followUp({ content: '❌ This category is empty.', flags: MessageFlags.Ephemeral });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-      .setPlaceholder('Select')
-      .addOptions(items.slice(0, 25).map(i => ({ 
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-        value: i.id.toString() 
-      })));
-
-    const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
+
+    if (items.length === 0) {
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+    }
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
+      .setPlaceholder('Select')
+      .addOptions(items.slice(0, 25).map(i => ({ 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+        value: i.id.toString() 
+      })));
+
+    const row = new ActionRowBuilder().addComponents(select);
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#3498DB')
@@ -2116,7 +2130,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
       // Standardized Empty State
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
-        .setDescription('No more items found.');
+        .setDescription('No items found.');
 
       await interaction.editReply({
         content: `✅ **${removedItemName}** removed from **${categoryName}**.`,
@@ -2199,15 +2213,15 @@ export async function handleDeleteCategoryStart(interaction) {
     );
 
     if (categories.length === 0) {
-      await handleShopAdminDelete(interaction);
-      return interaction.followUp({ content: '❌ No categories found.', flags: MessageFlags.Ephemeral });
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('shop_select_cat_delete_confirm')
       .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
-        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
+        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
         value: c.id.toString() 
       })));
 
@@ -2261,10 +2275,11 @@ export async function handleDeleteCategoryConfirm(interaction) {
     );
 
     if (categories.length === 0) {
-      await interaction.editReply({
-        content: `✅ Category **${categoryName}** deleted.\n\n❌ No categories left to delete.`,
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({
+        content: `✅ Category **${categoryName}** deleted.`,
         components: [rowBack],
-        embeds: []
+        embeds: [emptyEmbed]
       });
     } else {
       const select = new StringSelectMenuBuilder()
@@ -2593,9 +2608,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
-      { label: 'No Category', value: 'null' }, 
+      { label: '🏷️ No Category', value: 'null' }, 
       ...categories.map(c => ({ 
-        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
+        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
         value: c.id.toString(), 
         default: c.id == item.category_id 
       }))
@@ -2844,7 +2859,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
 
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
-        .setDescription('No more items found.');
+        .setDescription('No items found.');
 
       return interaction.editReply({ 
         content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
@@ -2857,14 +2872,11 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
 
     if (layer === 'root') {
       // --- LAYER 0: ROOT SELECTION ---
-      options.push({
-        label: '📂 Categorized Items',
-        value: 'layer_browse_categorized'
-      });
-      options.push({
-        label: '📂 Uncategorized Items',
-        value: 'layer_browse_uncategorized'
-      });
+      const hasCategorized = availableItems.some(i => i.category_id);
+      const hasUncategorized = availableItems.some(i => !i.category_id);
+      
+      if (hasCategorized) options.push({ label: '📂 Categorized Items', value: 'layer_browse_categorized' });
+      if (hasUncategorized) options.push({ label: '📂 Uncategorized Items', value: 'layer_browse_uncategorized' });
     } 
     else if (layer === 'browse_categorized') {
       // --- LAYER 1: CATEGORY LIST ---
@@ -2883,10 +2895,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
             value: `cat_${cat.id}`
           });
         }
-      }
-
-      if (options.length === 1) {
-        options.push({ label: 'No categorized items available', value: 'empty_layer', description: 'All available items are uncategorized.' });
       }
     }
     else if (layer === 'browse_uncategorized') {
@@ -2918,9 +2926,24 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         value: `item_${i.id}`
       })));
 
-      if (options.length === 1) {
-        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No items left to add in this folder.' });
       }
+    }
+
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Unified Empty State Fallback
+    if (options.length === 0 || (options.length === 1 && options[0].value.includes('back'))) {
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ 
+        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
+        components: [rowBack], 
+        embeds: [emptyEmbed] 
+      });
     }
 
     const select = new StringSelectMenuBuilder()
@@ -2929,12 +2952,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       .addOptions(options.slice(0, 25));
 
     const row = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#3498DB')
@@ -3045,7 +3062,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = `**
 
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
-        .setDescription('No more items found.');
+        .setDescription('No items found.');
 
       return interaction.editReply({ 
         content: messageStr !== `**Choose an item to remove from this pack:**` ? messageStr : null,
