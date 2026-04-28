@@ -163,8 +163,15 @@ function startHealthCheck() {
 
     try {
       await pool.query('SELECT 1');
+      if (!databaseConnected) {
+        databaseConnected = true;
+        sysLog('Database Connection Restored', { detail: 'Link re-established' });
+      }
     } catch (error) {
-      sysLog('Database Health Warning', { detail: `Check failed: ${error.message}` });
+      if (databaseConnected) {
+        databaseConnected = false;
+        sysLog('Database Health Warning', { detail: `Check failed: ${error.message}` });
+      }
       // Pool will auto-reconnect on next query
     }
   }, 30000); // Every 30 seconds
@@ -776,6 +783,7 @@ export async function closeDatabase() {
 export async function query(text, params) {
   try {
     const result = await pool.query(text, params);
+    databaseConnected = true;
     return result;
   } catch (error) {
     sysError('Database Query Error', error, { detail: text.substring(0, 100) });
