@@ -1608,47 +1608,10 @@ export async function handleDeleteItemSelect(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'red', '🗑️ Item Deleted', `Admin **<@${interaction.user.id}>** deleted item **${itemName}** from the Shop.`);
 
-    // 3. Fetch remaining items - filter out packs AND invalid roles
-    const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-    const remainingItems = allItems.filter(i => {
-      if (i.item_type === 'pack' || i.is_pack) return false;
-      if (i.id === itemId) return false;
-      return true;
-    });
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (remainingItems.length === 0) {
-      return interaction.editReply({
-        content: `✅ Item **${itemName}** deleted.\n\n❌ No items left to delete.`,
-        components: [rowBack],
-        embeds: []
-      });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_item_delete')
-      .setPlaceholder('Select Item to Delete')
-      .addOptions(remainingItems.slice(0, 25).map(i => {
-        const roleId = i.role_id ? i.role_id.split(/[,\s]+/)[0] : null;
-        const isGhost = roleId && !interaction.guild.roles.cache.has(roleId);
-        return { 
-          label: isGhost ? `👻 [GHOST] ${i.name}` : `🏷️ ${i.name}`, 
-          value: i.id.toString()
-        };
-      }));
-
-    const row = new ActionRowBuilder().addComponents(select);
-    const successHeader = `✅ Item **${itemName}** deleted.`;
-
-    // 4. Update Interface
-    await interaction.editReply({
-      content: remainingItems.length > 0 ? successHeader : `✅ Item **${itemName}** deleted.\n\n❌ No items left to delete.`,
-      components: remainingItems.length > 0 ? [row, rowBack] : [rowBack],
-      embeds: []
-    });
+    // 3. Return to Browser with Success Message
+    const context = { action: 'delete_item', folder: 'root', message: `✅ Item **${itemName}** deleted.` };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete item select');
   }
@@ -1680,37 +1643,10 @@ export async function handleDeletePackSelect(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'red', '📦 Pack Deleted', `Admin **<@${interaction.user.id}>** deleted pack **${packName}**.`);
 
-    // Fetch remaining packs
-    const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-    const packs = allItems.filter(i => i.item_type === 'pack' || i.is_pack);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (packs.length === 0) {
-      await interaction.editReply({
-        content: `✅ Pack **${packName}** deleted.\n\n❌ No packs left to delete.`,
-        components: [rowBack],
-        embeds: []
-      });
-    } else {
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('shop_select_pack_delete')
-        .setPlaceholder('Select Pack to Delete')
-        .addOptions(packs.slice(0, 25).map(p => ({ 
-          label: (p.name && p.name.trim().length > 0) ? p.name.slice(0, 80) : `Unnamed Pack #${p.id}`, 
-          value: p.id.toString() 
-        })));
-
-      const row = new ActionRowBuilder().addComponents(select);
-
-      await interaction.editReply({
-        content: `✅ Pack **${packName}** deleted. Select another to delete:`,
-        components: [row, rowBack],
-        embeds: []
-      });
-    }
+    // 3. Return to Browser with Success Message
+    const context = { action: 'delete_pack', folder: 'root', message: `✅ Pack **${packName}** deleted.` };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete pack select');
   }
@@ -2413,7 +2349,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
       }
 
       const itemOptions = folderItems.slice(0, 24).map(i => ({
-        label: `🏷️ ${(i.name || `Item #${i.id}`).slice(0, 80)}`,
+        label: `🏷️ ${(i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 80)}`,
         value: `item_${i.id}`
       }));
 
@@ -2446,7 +2382,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         }
 
         const packOptions = packs.slice(0, 25).map(p => ({
-           label: `📦 ${(p.name || `Pack #${p.id}`).slice(0, 80)}`,
+           label: `📦 ${(p.name && p.name.trim().length > 0 ? p.name : `Unnamed Pack #${p.id}`).slice(0, 80)}`,
            value: `item_${p.id}`
         }));
 
