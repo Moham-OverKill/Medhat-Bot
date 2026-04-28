@@ -138,9 +138,13 @@ export async function handleBalanceAction(interaction, targetUserId) {
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     const displayName = targetMember ? targetMember.displayName : targetUserId;
 
+    // Use a safer title for modals. Some Unicode characters (like mathematical script) 
+    // can cause serialization issues in specific Discord API versions for Modals.
+    const safeTitle = `Adjust Balance: ${targetMember?.user.username || targetUserId}`;
+
     const modal = new ModalBuilder()
         .setCustomId(`admin_user_balmod_${targetUserId}`)
-        .setTitle(safeTruncate(`Adjust Balance: ${displayName}`, 45));
+        .setTitle(safeTruncate(safeTitle, 45));
 
     const input = new TextInputBuilder()
         .setCustomId('new_balance')
@@ -650,6 +654,7 @@ export async function handleAdminUserComponent(interaction) {
             }
         }
     } catch (error) {
+        console.error('CRITICAL ADMIN ERROR DETAILS:', error);
         sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Admin user component handler' });
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
