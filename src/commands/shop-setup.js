@@ -2756,40 +2756,18 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
     const item = await getShopItem(packId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Pack not found.', flags: MessageFlags.Ephemeral });
 
-    // Resolve Content Names
-    let contentsDisplay = 'None';
-    let contentIds = item.contents;
-
-    // Robust parsing
-    if (typeof contentIds === 'string') {
-      try { contentIds = JSON.parse(contentIds); } catch (e) { contentIds = []; }
-    }
-    if (!Array.isArray(contentIds)) contentIds = [];
-
-    if (contentIds.length > 0) {
-      const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-
-      // Filter out ghost/unknown items - only show valid items with names and roles
-      const validContents = contentIds
-        .map(id => allItems.find(i => i.id === id))
-        .filter(item => item && item.name && item.role_id);
-
-      const contentNames = validContents.map(item => item.name);
-
-      if (contentNames.length === 0) {
-        contentsDisplay = '**None**';
-      } else if (contentNames.length <= 30) {
-        contentsDisplay = contentNames.join(', ');
-      } else {
-        contentsDisplay = contentNames.slice(0, 30).join(', ') + `... and ${contentNames.length - 30} more`;
+    // Resolve Role Mentions for display
+    let contentsDisplay = '**None**';
+    if (item.role_id) {
+      const roles = item.role_id.split(/[,\s]+/).filter(r => r.trim().length > 0);
+      if (roles.length > 0) {
+        contentsDisplay = roles.map(id => `<@&${id}>`).join(' ');
       }
-    } else {
-        contentsDisplay = '**None**';
     }
 
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
-      .setDescription(`Price: **${item.price === null || item.price === undefined ? '⚠️ Not Set' : (item.price === 0 ? 'FREE' : item.price.toLocaleString() + ' coins')}**\nContents: ${contentsDisplay}`)
+      .setDescription(`**Contents:** ${contentsDisplay}`)
       .setColor('#8E44AD'); // Purple for packs
 
     const actionRow = new ActionRowBuilder().addComponents(
@@ -2862,12 +2840,10 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       // --- LAYER 0: ROOT SELECTION ---
       options.push({
         label: '📂 Categorized Items',
-        description: 'Browse items organized in folders',
         value: 'layer_browse_categorized'
       });
       options.push({
         label: '📂 Uncategorized Items',
-        description: 'Browse items without a folder',
         value: 'layer_browse_uncategorized'
       });
     } 
@@ -2877,7 +2853,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
@@ -2886,7 +2861,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         if (itemsInCat.length > 0) {
           options.push({
             label: `📂 ${cat.name.slice(0, 70)}`,
-            description: `${itemsInCat.length} available items`,
+            description: `${itemsInCat.length} items`,
             value: `cat_${cat.id}`
           });
         }
@@ -2902,7 +2877,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
@@ -2910,10 +2884,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
         value: `item_${i.id}`
       })));
-
-      if (options.length === 1) {
-        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No uncategorized items available.' });
-      }
     }
     else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
       // --- LAYER 2: ITEMS INSIDE A CATEGORY ---
@@ -2922,7 +2892,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to category list',
         value: 'layer_browse_categorized'
       });
 
@@ -3065,12 +3034,10 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
       // --- LAYER 0: ROOT ---
       options.push({
         label: '📂 Categorized Items',
-        description: 'Browse items inside folders',
         value: 'layer_browse_categorized'
       });
       options.push({
         label: '📂 Uncategorized Items',
-        description: 'Browse items without a folder',
         value: 'layer_browse_uncategorized'
       });
     }
@@ -3080,7 +3047,6 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
@@ -3089,7 +3055,7 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
         if (itemsInCat.length > 0) {
           options.push({
             label: `📂 ${cat.name.slice(0, 70)}`,
-            description: `${itemsInCat.length} items in pack`,
+            description: `${itemsInCat.length} items`,
             value: `cat_${cat.id}`
           });
         }
@@ -3105,7 +3071,6 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
@@ -3134,7 +3099,6 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
       
       options.push({
         label: '⬅️ Back',
-        description: 'Return to category list',
         value: 'layer_browse_categorized'
       });
 
