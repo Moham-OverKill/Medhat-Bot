@@ -245,7 +245,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
       await client.query(
         `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
          SELECT $1, $2, $3, balance, 'quest_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-        [userId, guildId, reward, `Completed quest: ${quest.id}`, quest.id]
+        [userId, guildId, reward, 'Completed quest', quest.id]
       );
       
       sysLog('Quest Atomic Payout', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Amount: ${reward}` });
