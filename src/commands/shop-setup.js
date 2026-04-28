@@ -590,7 +590,7 @@ export async function handleItemModalSubmit(interaction) {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId(`shop_assign_cat_select_${item.id}`)
-          .setPlaceholder('Assign to Category')
+          .setPlaceholder('Select')
           .addOptions(catOptions);
 
         const confirmEmbed = new EmbedBuilder()
@@ -1927,7 +1927,7 @@ export async function handleEditCategoryAddItemsStart(interaction) {
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-      .setPlaceholder('Select Item to Add to Category')
+      .setPlaceholder('Select')
       .addOptions(standalone.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
         value: i.id.toString() 
@@ -2014,7 +2014,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       // Update dropdown
       const select = new StringSelectMenuBuilder()
         .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-        .setPlaceholder('Select Item to Add to Category')
+        .setPlaceholder('Select')
         .addOptions(standalone.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString()
@@ -2027,7 +2027,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .setTitle('Select Item(s) to Add to Category');
 
       await interaction.editReply({
-        content: `✅ **${addedItemName}** added to **${categoryName}**.\nChoose another item to add:`,
+        content: `✅ **${addedItemName}** added to **${categoryName}**.`,
         components: [row, rowBack],
         embeds: [embedPrompt]
       });
@@ -2050,7 +2050,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction) {
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-      .setPlaceholder('Select Item to Remove from Category')
+      .setPlaceholder('Select')
       .addOptions(items.slice(0, 25).map(i => ({ 
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
         value: i.id.toString() 
@@ -2117,7 +2117,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
     } else {
       const select = new StringSelectMenuBuilder()
         .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-        .setPlaceholder('Select Item to Remove from Category')
+        .setPlaceholder('Select')
         .addOptions(items.slice(0, 25).map(i => ({ 
           label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
           value: i.id.toString()
@@ -2130,7 +2130,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .setTitle('Select Item(s) to Remove from Category');
 
       await interaction.editReply({
-        content: `✅ **${removedItemName}** removed from **${categoryName}**.\nChoose another item to remove:`,
+        content: `✅ **${removedItemName}** removed from **${categoryName}**.`,
         components: [row, rowBack],
         embeds: [embedPrompt]
       });
@@ -2594,7 +2594,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const catSelect = new StringSelectMenuBuilder()
       .setCustomId(`shop_assign_cat_select_manage_${itemId}`)
-      .setPlaceholder('Move to Category')
+      .setPlaceholder('Select')
       .addOptions(catOptions);
 
     const rowCat = new ActionRowBuilder().addComponents(catSelect);
@@ -3125,7 +3125,7 @@ export async function handlePackRemoveContentSelect(interaction) {
     sendLog(interaction.guild, 'shop', 'red', '📦 Item Removed from Pack', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from pack **${packName}**`);
 
     // Re-render the flat list
-    return handlePackRemoveContentStart(interaction, `✅ **${removedItemName}** removed from **${packName}**.\n\nChoose another item to remove:`);
+    return handlePackRemoveContentStart(interaction, `✅ **${removedItemName}** removed from **${packName}**.`);
 
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
