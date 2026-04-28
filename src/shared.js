@@ -104,6 +104,26 @@ export function getUserLogName(memberOrUser) {
 }
 
 /**
+ * Safely truncates a string, ensuring surrogate pairs are not split.
+ * Useful for Discord limits and preventing "Invalid string length" errors.
+ * @param {string} text - The input string
+ * @param {number} limit - The maximum allowed length
+ * @returns {string} The truncated string
+ */
+export function safeTruncate(text, limit) {
+  if (!text || typeof text !== 'string') return '';
+  if (text.length <= limit) return text;
+  
+  // Use spread operator to safely isolate characters (including surrogate pairs)
+  // then join the slice rather than blindly substringing which can slice bytes in half
+  const chars = [...text];
+  if (chars.length <= limit) return text; // If character count is within limit, array was just multi-byte logic
+  
+  // Account for ellipsis
+  return chars.slice(0, limit - 1).join('') + '…';
+}
+
+/**
  * Helper: Sort inventory items by Discord role position (highest first)
  * Falls back to name sort for non-role items
  */
