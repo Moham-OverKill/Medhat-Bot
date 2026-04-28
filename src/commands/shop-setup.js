@@ -2907,7 +2907,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_pack_add_content_select_${packId}`)
-      .setPlaceholder('Select a section, folder, or item')
+      .setPlaceholder('Select')
       .addOptions(options.slice(0, 25));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -3110,7 +3110,7 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_pack_remove_content_select_${packId}`)
-      .setPlaceholder('Select a section, folder, or item')
+      .setPlaceholder('Select')
       .addOptions(options.slice(0, 25));
 
     const row = new ActionRowBuilder().addComponents(select);
