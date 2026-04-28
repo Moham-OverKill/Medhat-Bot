@@ -2829,7 +2829,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
   }
 }
 
-export async function handlePackAddContentStart(interaction, categoryFilterId = null, messageStr = `**Choose an item or folder to add to this pack:**`) {
+export async function handlePackAddContentStart(interaction, layer = 'root', messageStr = `**Choose a section to add items from:**`) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -2842,11 +2842,11 @@ export async function handlePackAddContentStart(interaction, categoryFilterId = 
     }
     if (!Array.isArray(currentContentIds)) currentContentIds = [];
 
-    // Fetch all ITEMS (not packs), filter out ghost items without valid roles
+    // Fetch all ITEMS (not packs)
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
     const availableItems = allItems.filter(i => !i.is_pack && i.role_id && !currentContentIds.includes(i.id));
 
-    if (availableItems.length === 0) {
+    if (availableItems.length === 0 && layer === 'root') {
       const emptyRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
           .setLabel('Back to Pack Manage')
@@ -2858,29 +2858,29 @@ export async function handlePackAddContentStart(interaction, categoryFilterId = 
 
     let options = [];
 
-    if (categoryFilterId) {
-      // 📂 Render Items IN a specific Category
-      const itemsInCat = availableItems.filter(i => i.category_id === categoryFilterId);
+    if (layer === 'root') {
+      // --- LAYER 0: ROOT SELECTION ---
+      options.push({
+        label: '📂 Categorized Items',
+        description: 'Browse items organized in folders',
+        value: 'layer_browse_categorized'
+      });
+      options.push({
+        label: '📂 Uncategorized Items',
+        description: 'Browse items without a folder',
+        value: 'layer_browse_uncategorized'
+      });
+    } 
+    else if (layer === 'browse_categorized') {
+      // --- LAYER 1: CATEGORY LIST ---
+      const categories = await getShopCategories(interaction.guildId);
       
       options.push({
-        label: '⬅️ Back to Folders',
-        description: 'Return to the main item list',
+        label: '⬅️ Back',
+        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
-      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}`
-      })));
-
-      if (itemsInCat.length === 0) {
-        options.push({ label: 'No items left in this folder', value: 'empty_folder' });
-      }
-    } else {
-      // 📂 Render Root View (Categories + Uncategorized Items)
-      const categories = await getShopCategories(interaction.guildId);
-      
-      // Add valid categories
       for (const cat of categories) {
         const itemsInCat = availableItems.filter(i => i.category_id === cat.id);
         if (itemsInCat.length > 0) {
@@ -2892,22 +2892,58 @@ export async function handlePackAddContentStart(interaction, categoryFilterId = 
         }
       }
 
-      // Add standalone items
+      if (options.length === 1) {
+        options.push({ label: 'No categorized items available', value: 'empty_layer', description: 'All available items are uncategorized.' });
+      }
+    }
+    else if (layer === 'browse_uncategorized') {
+      // --- LAYER 1: UN-CATEGORIZED ITEMS ---
       const standaloneItems = availableItems.filter(i => !i.category_id);
-      options.push(...standaloneItems.slice(0, 25 - options.length).map(i => ({
+      
+      options.push({
+        label: '⬅️ Back',
+        description: 'Return to section selection',
+        value: 'action_back_root'
+      });
+
+      options.push(...standaloneItems.slice(0, 24).map(i => ({
         label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
         value: `item_${i.id}`
       })));
+
+      if (options.length === 1) {
+        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No uncategorized items available.' });
+      }
+    }
+    else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
+      // --- LAYER 2: ITEMS INSIDE A CATEGORY ---
+      const categoryId = parseInt(layer);
+      const itemsInCat = availableItems.filter(i => i.category_id === categoryId);
+      
+      options.push({
+        label: '⬅️ Back',
+        description: 'Return to category list',
+        value: 'layer_browse_categorized'
+      });
+
+      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+        value: `item_${i.id}`
+      })));
+
+      if (options.length === 1) {
+        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No items left to add in this folder.' });
+      }
     }
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_pack_add_content_select_${packId}`)
-      .setPlaceholder(categoryFilterId ? 'Select an item to add' : 'Select a Folder or Item to Add')
+      .setPlaceholder('Select a section, folder, or item')
       .addOptions(options.slice(0, 25));
 
     const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`) // Return to Pack Manage
+      new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
         .setLabel('Cancel / Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
@@ -2936,14 +2972,18 @@ export async function handlePackAddContentSelect(interaction) {
 
     // Handle Folder Navigation
     if (selection === 'action_back_root') {
-      return handlePackAddContentStart(interaction, null);
+      return handlePackAddContentStart(interaction, 'root');
+    }
+    if (selection.startsWith('layer_')) {
+      const layer = selection.replace('layer_', '');
+      return handlePackAddContentStart(interaction, layer);
     }
     if (selection.startsWith('cat_')) {
       const categoryId = parseInt(selection.replace('cat_', ''));
       return handlePackAddContentStart(interaction, categoryId, `**Choose an item from the folder:**`);
     }
-    if (selection === 'empty_folder') {
-      return interaction.followUp({ content: '❌ This folder is empty.', flags: MessageFlags.Ephemeral });
+    if (selection === 'empty_layer') {
+      return; // Do nothing
     }
 
     // Handle Item Selection
@@ -2957,7 +2997,7 @@ export async function handlePackAddContentSelect(interaction) {
       return interaction.followUp({ content: '❌ Pack not found.', flags: MessageFlags.Ephemeral });
     }
 
-    // 1. Update contents array
+    // Update contents array
     let currentContents = pack.contents;
     if (typeof currentContents === 'string') {
       try { currentContents = JSON.parse(currentContents); } catch (e) { currentContents = []; }
@@ -2965,7 +3005,7 @@ export async function handlePackAddContentSelect(interaction) {
     if (!Array.isArray(currentContents)) currentContents = [];
     const newContents = [...new Set([...currentContents, itemId])];
 
-    // 2. Update role_ids
+    // Update role_ids
     let currentRoles = pack.role_id ? pack.role_id.split(/[,\s]+/) : [];
     if (item && item.role_id) {
       const newRoles = item.role_id.split(/[,\s]+/);
@@ -2982,8 +3022,9 @@ export async function handlePackAddContentSelect(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'blue', '📦 Item Added to Pack', `Admin **<@${interaction.user.id}>** added item **${addedItemName}** to pack **${packName}**`);
 
-    // Call Root View again with success message
-    return handlePackAddContentStart(interaction, null, `✅ **${addedItemName}** added to **${packName}**.\n\nChoose another item or folder to add:`);
+    // Call current layer again with success message
+    const currentLayer = item.category_id || 'browse_uncategorized';
+    return handlePackAddContentStart(interaction, currentLayer, `✅ **${addedItemName}** added to **${packName}**.`);
 
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
@@ -2991,7 +3032,7 @@ export async function handlePackAddContentSelect(interaction) {
   }
 }
 
-export async function handlePackRemoveContentStart(interaction, categoryFilterId = null, messageStr = `**Choose an item or folder to remove from this pack:**`) {
+export async function handlePackRemoveContentStart(interaction, layer = 'root', messageStr = `**Choose a section to remove items from:**`) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -3003,7 +3044,7 @@ export async function handlePackRemoveContentStart(interaction, categoryFilterId
     }
     if (!Array.isArray(currentContentIds)) currentContentIds = [];
 
-    if (currentContentIds.length === 0) {
+    if (currentContentIds.length === 0 && layer === 'root') {
       const emptyRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
           .setLabel('Back to Pack Manage')
@@ -3015,36 +3056,34 @@ export async function handlePackRemoveContentStart(interaction, categoryFilterId
 
     // Need to fetch names of items in pack
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-
-    // Ensure type safety for content IDs
     const contentIds = currentContentIds.map(id => parseInt(id));
     const packItems = allItems.filter(i => contentIds.includes(i.id));
 
     let options = [];
 
-    if (categoryFilterId) {
-      // 📂 Render Items IN a specific Category (that are also inside this pack)
-      const itemsInCat = packItems.filter(i => i.category_id === categoryFilterId);
+    if (layer === 'root') {
+      // --- LAYER 0: ROOT ---
+      options.push({
+        label: '📂 Categorized Items',
+        description: 'Browse items inside folders',
+        value: 'layer_browse_categorized'
+      });
+      options.push({
+        label: '📂 Uncategorized Items',
+        description: 'Browse items without a folder',
+        value: 'layer_browse_uncategorized'
+      });
+    }
+    else if (layer === 'browse_categorized') {
+      // --- LAYER 1: CATEGORY LIST ---
+      const categories = await getShopCategories(interaction.guildId);
       
       options.push({
-        label: '⬅️ Back to Folders',
-        description: 'Return to the main item list',
+        label: '⬅️ Back',
+        description: 'Return to section selection',
         value: 'action_back_root'
       });
 
-      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}` 
-      })));
-
-      if (itemsInCat.length === 0) {
-        options.push({ label: 'No items left in this folder', value: 'empty_folder' });
-      }
-    } else {
-      // 📂 Render Root View (Categories + Uncategorized Items)
-      const categories = await getShopCategories(interaction.guildId);
-      
-      // Add valid categories
       for (const cat of categories) {
         const itemsInCat = packItems.filter(i => i.category_id === cat.id);
         if (itemsInCat.length > 0) {
@@ -3056,9 +3095,21 @@ export async function handlePackRemoveContentStart(interaction, categoryFilterId
         }
       }
 
-      // Add standalone items and any ghost items (not found in DB)
+      if (options.length === 1) {
+        options.push({ label: 'No categorized items', value: 'empty_layer', description: 'All items in this pack are uncategorized.' });
+      }
+    }
+    else if (layer === 'browse_uncategorized') {
+      // --- LAYER 1: UN-CATEGORIZED ---
       const standaloneItems = packItems.filter(i => !i.category_id);
-      options.push(...standaloneItems.slice(0, 25 - options.length).map(i => ({
+      
+      options.push({
+        label: '⬅️ Back',
+        description: 'Return to section selection',
+        value: 'action_back_root'
+      });
+
+      options.push(...standaloneItems.slice(0, 24).map(i => ({
         label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
         value: `item_${i.id}` 
       })));
@@ -3071,11 +3122,31 @@ export async function handlePackRemoveContentStart(interaction, categoryFilterId
           value: `item_${id}` 
         })));
       }
+
+      if (options.length === 1) {
+        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No uncategorized items in this pack.' });
+      }
+    }
+    else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
+      // --- LAYER 2: ITEMS IN FOLDER ---
+      const categoryId = parseInt(layer);
+      const itemsInCat = packItems.filter(i => i.category_id === categoryId);
+      
+      options.push({
+        label: '⬅️ Back',
+        description: 'Return to category list',
+        value: 'layer_browse_categorized'
+      });
+
+      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
+        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+        value: `item_${i.id}` 
+      })));
     }
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_pack_remove_content_select_${packId}`)
-      .setPlaceholder(categoryFilterId ? 'Select an item to remove' : 'Select a Folder or Item to Remove')
+      .setPlaceholder('Select a section, folder, or item')
       .addOptions(options.slice(0, 25));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -3109,14 +3180,18 @@ export async function handlePackRemoveContentSelect(interaction) {
 
     // Handle Folder Navigation
     if (selection === 'action_back_root') {
-      return handlePackRemoveContentStart(interaction, null);
+      return handlePackRemoveContentStart(interaction, 'root');
+    }
+    if (selection.startsWith('layer_')) {
+      const layer = selection.replace('layer_', '');
+      return handlePackRemoveContentStart(interaction, layer);
     }
     if (selection.startsWith('cat_')) {
       const categoryId = parseInt(selection.replace('cat_', ''));
       return handlePackRemoveContentStart(interaction, categoryId, `**Choose an item from the folder to remove:**`);
     }
-    if (selection === 'empty_folder') {
-      return interaction.followUp({ content: '❌ This folder is empty.', flags: MessageFlags.Ephemeral });
+    if (selection === 'empty_layer') {
+      return;
     }
 
     // Handle Item Selection
@@ -3137,19 +3212,17 @@ export async function handlePackRemoveContentSelect(interaction) {
 
     const newContents = currentContents.filter(id => id !== itemId);
 
-    // 2. Update role_ids (Safer approach: Rebuild role list from remaining contents)
-    let newRoleId = '';
+    // 2. Update role_ids
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-    if (newContents.length > 0) {
-      const remainingItems = allItems.filter(i => newContents.includes(i.id));
-      const allRoles = new Set();
-      remainingItems.forEach(i => {
-        if (i.role_id) {
-          i.role_id.split(/[,\s]+/).forEach(r => allRoles.add(r));
-        }
-      });
-      newRoleId = Array.from(allRoles).join(' ');
+    const newPackItems = allItems.filter(i => newContents.includes(i.id));
+    
+    let newRoles = [];
+    for (const pItem of newPackItems) {
+      if (pItem.role_id) {
+        newRoles.push(...pItem.role_id.split(/[,\s]+/));
+      }
     }
+    const newRoleId = [...new Set(newRoles)].join(' ');
 
     const itemObj = allItems.find(i => i.id === itemId);
     const removedItemName = itemObj ? itemObj.name : `Item #${itemId}`;
@@ -3161,8 +3234,9 @@ export async function handlePackRemoveContentSelect(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'red', '📦 Item Removed from Pack', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from pack **${packName}**`);
 
-    // Call Root View again with success message
-    return handlePackRemoveContentStart(interaction, null, `✅ **${removedItemName}** removed from **${packName}**.\n\nChoose another item or folder to remove:`);
+    // Call current layer again with success message
+    const currentLayer = itemObj?.category_id || 'browse_uncategorized';
+    return handlePackRemoveContentStart(interaction, currentLayer, `✅ **${removedItemName}** removed from **${packName}**.`);
 
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
