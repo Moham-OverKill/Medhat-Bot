@@ -2004,11 +2004,15 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
     );
 
     if (standalone.length === 0) {
-      // No more items
+      // No more items - Standardized Empty State
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#95A5A6')
+        .setDescription('No more items found.');
+
       await interaction.editReply({
-        content: `✅ **${addedItemName}** added to **${categoryName}**.\n\nNo more standalone items available to add.`,
+        content: `✅ **${addedItemName}** added to **${categoryName}**.`,
         components: [rowBack],
-        embeds: []
+        embeds: [emptyEmbed]
       });
     } else {
       // Update dropdown
@@ -2109,10 +2113,15 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
     );
 
     if (items.length === 0) {
+      // Standardized Empty State
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#95A5A6')
+        .setDescription('No more items found.');
+
       await interaction.editReply({
-        content: `✅ **${removedItemName}** removed from **${categoryName}**.\n\n❌ Category is now empty.`,
+        content: `✅ **${removedItemName}** removed from **${categoryName}**.`,
         components: [rowBack],
-        embeds: []
+        embeds: [emptyEmbed]
       });
     } else {
       const select = new StringSelectMenuBuilder()
@@ -2828,11 +2837,20 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
     if (availableItems.length === 0 && layer === 'root') {
       const emptyRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
-          .setLabel('Back to Pack Manage')
+          .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary)
       );
-      return interaction.editReply({ content: '✅ No more available items to add.', components: [emptyRow], embeds: [] });
+
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#95A5A6')
+        .setDescription('No more items found.');
+
+      return interaction.editReply({ 
+        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
+        components: [emptyRow], 
+        embeds: [emptyEmbed] 
+      });
     }
 
     let options = [];
@@ -3024,7 +3042,16 @@ export async function handlePackRemoveContentStart(interaction, messageStr = `**
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary)
       );
-      return interaction.editReply({ content: '✅ Pack is empty.', components: [emptyRow], embeds: [] });
+
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#95A5A6')
+        .setDescription('No more items found.');
+
+      return interaction.editReply({ 
+        content: messageStr !== `**Choose an item to remove from this pack:**` ? messageStr : null,
+        components: [emptyRow], 
+        embeds: [emptyEmbed] 
+      });
     }
 
     // Fetch names of items in pack
