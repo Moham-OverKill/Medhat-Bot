@@ -1773,6 +1773,7 @@ export async function handleEditCategoryStart(interaction) {
     const categories = await getShopCategories(interaction.guildId);
 
     if (categories.length === 0) {
+      await handleShopAdminEdit(interaction);
       return interaction.followUp({ content: '❌ No categories found.', flags: MessageFlags.Ephemeral });
     }
 
@@ -2189,7 +2190,8 @@ export async function handleDeleteCategoryStart(interaction) {
     );
 
     if (categories.length === 0) {
-      return interaction.editReply({ content: '❌ No categories found.', components: [rowBack], embeds: [] });
+      await handleShopAdminDelete(interaction);
+      return interaction.followUp({ content: '❌ No categories found.', flags: MessageFlags.Ephemeral });
     }
 
     const select = new StringSelectMenuBuilder()
@@ -2306,7 +2308,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const hasUncategorized = singleItems.some(i => !i.category_id);
 
         if (!hasCategorized && !hasUncategorized) {
-          return interaction.editReply({ content: '❌ No items available.', components: [rowBack], embeds: [] });
+          if (contextMap.action.startsWith('delete')) {
+            await handleShopAdminDelete(interaction);
+          } else {
+            await handleShopAdminEdit(interaction);
+          }
+          return interaction.followUp({ content: '❌ No items available.', flags: MessageFlags.Ephemeral });
         }
 
         const options = [];
@@ -2406,7 +2413,12 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const packs = items.filter(i => i.is_pack || i.item_type === 'pack');
         
         if (packs.length === 0) {
-           return interaction.editReply({ content: '❌ No packs found.', components: [rowBack], embeds: [] });
+           if (contextMap.action.startsWith('delete')) {
+             await handleShopAdminDelete(interaction);
+           } else {
+             await handleShopAdminEdit(interaction);
+           }
+           return interaction.followUp({ content: '❌ No packs found.', flags: MessageFlags.Ephemeral });
         }
 
         const packOptions = packs.slice(0, 25).map(p => ({
