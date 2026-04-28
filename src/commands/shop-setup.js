@@ -2913,7 +2913,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
     const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
-        .setLabel('Cancel / Back')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
@@ -3116,7 +3116,7 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
     const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
-        .setLabel('Cancel / Back')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
