@@ -590,12 +590,12 @@ export async function handleItemModalSubmit(interaction) {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId(`shop_assign_cat_select_${item.id}`)
-          .setPlaceholder('Select')
+          .setPlaceholder('Add to category')
           .addOptions(catOptions);
 
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
-          .setTitle(name || 'New Item')
+          .setTitle('Item Created')
           .setDescription(successDescription);
         
         const img = getItemImage(item);
@@ -621,7 +621,7 @@ export async function handleItemModalSubmit(interaction) {
         // Packs price is set at post time (default to 0 if not provided)
         await addShopItem(interaction.guildId, null, '', name, '', 0, null, null, 'pack');
         sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: Unset — must be set at post time)`);
-        await interaction.followUp({ content: `✅ Pack **${name}** created! Use the **Post** panel to set a price and publish it.`, flags: MessageFlags.Ephemeral });
+        await interaction.followUp({ content: `✅ Pack items created!`, flags: MessageFlags.Ephemeral });
         await handleShopAdminAdd(interaction);
       }
     } else if (action === 'edit') {
@@ -2053,7 +2053,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
   }
 }
 
-export async function handleEditCategoryRemoveItemsStart(interaction) {
+export async function handleEditCategoryRemoveItemsStart(interaction, successHeader = null) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = interaction.customId.split('_').pop();
@@ -2187,7 +2187,7 @@ export async function handleEditCategoryModalSubmit(interaction) {
     }
 
 
-    await interaction.followUp({ content: `✅ Category updated to **${name}**`, flags: MessageFlags.Ephemeral });
+    await interaction.followUp({ content: `✅ Category **${name}** updated!`, flags: MessageFlags.Ephemeral });
 
     // Reload Category Management View
     const mock = {
@@ -2316,10 +2316,18 @@ export async function renderAdminBrowser(interaction, contextMap) {
       new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
+    // Dynamic Title
+    let titleText = '';
+    if (isItem) {
+       titleText = folder === 'browse_categories' ? 'Select a category to browse' : `Select an item to ${isEdit ? 'edit' : 'delete'}`;
+    } else {
+       titleText = `Select a pack to ${isEdit ? 'edit' : 'delete'}`;
+    }
+
     // Standardized Embed Style
     const embed = new EmbedBuilder()
       .setColor(isEdit ? '#3498DB' : '#E74C3C')
-      .setTitle(isItem ? '🎭 Item Management' : '📦 Pack Management');
+      .setTitle(titleText);
 
     // Fetch items mapping to current folder (if item mode) or just list packs (if pack mode)
     if (isItem) {
@@ -2359,7 +2367,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(options);
 
-        embed.setDescription(`**Select an item to ${isEdit ? 'manage' : 'delete'}:**`);
+
 
         return interaction.editReply({
           content: message || null,
@@ -2389,7 +2397,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
             ...options
           ]);
 
-        embed.setDescription(`**Select a category to ${isEdit ? 'manage' : 'delete'}:**`);
+
 
         return interaction.editReply({
           content: message || null,
@@ -2422,7 +2430,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           ...itemOptions
         ]);
 
-      embed.setDescription(`**Select an item to ${isEdit ? 'manage' : 'delete'}:**`);
+
 
       return interaction.editReply({
          content: message || null,
@@ -2455,7 +2463,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(packOptions);
 
-        embed.setDescription(`**Select a pack to ${isEdit ? 'manage' : 'delete'}:**`);
+
 
         return interaction.editReply({
           content: message || null,
