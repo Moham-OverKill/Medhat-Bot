@@ -3001,7 +3001,7 @@ export async function handlePackAddContentSelect(interaction) {
   }
 }
 
-export async function handlePackRemoveContentStart(interaction, layer = 'root', messageStr = `**Choose a section to remove items from:**`) {
+export async function handlePackRemoveContentStart(interaction, messageStr = `**Choose an item to remove from this pack:**`) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -3013,105 +3013,39 @@ export async function handlePackRemoveContentStart(interaction, layer = 'root', 
     }
     if (!Array.isArray(currentContentIds)) currentContentIds = [];
 
-    if (currentContentIds.length === 0 && layer === 'root') {
+    if (currentContentIds.length === 0) {
       const emptyRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
-          .setLabel('Back to Pack Manage')
+          .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary)
       );
       return interaction.editReply({ content: '✅ Pack is empty.', components: [emptyRow], embeds: [] });
     }
 
-    // Need to fetch names of items in pack
+    // Fetch names of items in pack
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
     const contentIds = currentContentIds.map(id => parseInt(id));
     const packItems = allItems.filter(i => contentIds.includes(i.id));
 
-    let options = [];
+    let options = packItems.slice(0, 25).map(i => ({
+      label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
+      value: `item_${i.id}` 
+    }));
 
-    if (layer === 'root') {
-      // --- LAYER 0: ROOT ---
-      options.push({
-        label: '📂 Categorized Items',
-        value: 'layer_browse_categorized'
-      });
-      options.push({
-        label: '📂 Uncategorized Items',
-        value: 'layer_browse_uncategorized'
-      });
-    }
-    else if (layer === 'browse_categorized') {
-      // --- LAYER 1: CATEGORY LIST ---
-      const categories = await getShopCategories(interaction.guildId);
-      
-      options.push({
-        label: '⬅️ Back',
-        value: 'action_back_root'
-      });
-
-      for (const cat of categories) {
-        const itemsInCat = packItems.filter(i => i.category_id === cat.id);
-        if (itemsInCat.length > 0) {
-          options.push({
-            label: `📂 ${cat.name.slice(0, 70)}`,
-            description: `${itemsInCat.length} items`,
-            value: `cat_${cat.id}`
-          });
-        }
-      }
-
-      if (options.length === 1) {
-        options.push({ label: 'No categorized items', value: 'empty_layer', description: 'All items in this pack are uncategorized.' });
-      }
-    }
-    else if (layer === 'browse_uncategorized') {
-      // --- LAYER 1: UN-CATEGORIZED ---
-      const standaloneItems = packItems.filter(i => !i.category_id);
-      
-      options.push({
-        label: '⬅️ Back',
-        value: 'action_back_root'
-      });
-
-      options.push(...standaloneItems.slice(0, 24).map(i => ({
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}` 
-      })));
-
-      // If items exist in DB but aren't found (deleted?), show raw IDs as fallback options to allow cleanup
-      if (packItems.length < contentIds.length) {
-        const missingIds = contentIds.filter(id => !packItems.some(i => i.id === id));
-        options.push(...missingIds.slice(0, 25 - options.length).map(id => ({ 
-          label: `🏷️ Unknown Item ${id} (Deleted?)`, 
-          value: `item_${id}` 
-        })));
-      }
-
-      if (options.length === 1) {
-        options.push({ label: 'Folder is empty', value: 'empty_layer', description: 'No uncategorized items in this pack.' });
-      }
-    }
-    else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
-      // --- LAYER 2: ITEMS IN FOLDER ---
-      const categoryId = parseInt(layer);
-      const itemsInCat = packItems.filter(i => i.category_id === categoryId);
-      
-      options.push({
-        label: '⬅️ Back',
-        value: 'layer_browse_categorized'
-      });
-
-      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}` 
+    // Add fallback for deleted/missing items
+    if (options.length < 25 && packItems.length < contentIds.length) {
+      const missingIds = contentIds.filter(id => !packItems.some(i => i.id === id));
+      options.push(...missingIds.slice(0, 25 - options.length).map(id => ({ 
+        label: `🏷️ Unknown Item ${id} (Deleted?)`, 
+        value: `item_${id}` 
       })));
     }
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`shop_pack_remove_content_select_${packId}`)
       .setPlaceholder('Select')
-      .addOptions(options.slice(0, 25));
+      .addOptions(options);
 
     const row = new ActionRowBuilder().addComponents(select);
     const rowBack = new ActionRowBuilder().addComponents(
@@ -3140,22 +3074,6 @@ export async function handlePackRemoveContentSelect(interaction) {
 
     if (!packId || isNaN(parseInt(packId))) {
       return interaction.followUp({ content: '❌ Invalid Pack ID.', flags: MessageFlags.Ephemeral });
-    }
-
-    // Handle Folder Navigation
-    if (selection === 'action_back_root') {
-      return handlePackRemoveContentStart(interaction, 'root');
-    }
-    if (selection.startsWith('layer_')) {
-      const layer = selection.replace('layer_', '');
-      return handlePackRemoveContentStart(interaction, layer);
-    }
-    if (selection.startsWith('cat_')) {
-      const categoryId = parseInt(selection.replace('cat_', ''));
-      return handlePackRemoveContentStart(interaction, categoryId, `**Choose an item from the folder to remove:**`);
-    }
-    if (selection === 'empty_layer') {
-      return;
     }
 
     // Handle Item Selection
@@ -3198,9 +3116,8 @@ export async function handlePackRemoveContentSelect(interaction) {
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'red', '📦 Item Removed from Pack', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from pack **${packName}**`);
 
-    // Call current layer again with success message
-    const currentLayer = itemObj?.category_id || 'browse_uncategorized';
-    return handlePackRemoveContentStart(interaction, currentLayer, `✅ **${removedItemName}** removed from **${packName}**.`);
+    // Re-render the flat list
+    return handlePackRemoveContentStart(interaction, `✅ **${removedItemName}** removed from **${packName}**.\n\nChoose another item to remove:`);
 
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
