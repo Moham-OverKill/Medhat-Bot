@@ -333,18 +333,8 @@ export async function handleAddTypeSelect(interaction) {
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
     );
-  } else {
-    // Pack
-    const priceInput = new TextInputBuilder()
-      .setCustomId('item_price')
-      .setLabel('Price')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(priceInput)
-    );
   }
+  // Pack no longer has price field here - set at post time
 
   await interaction.showModal(modal);
 }
@@ -568,15 +558,10 @@ export async function handleItemModalSubmit(interaction) {
         return;
 
       } else if (type === 'pack') {
-        // Packs still have a price field (packs need a price at creation time)
-        const packPriceRaw = (() => { try { return interaction.fields.getTextInputValue('item_price').trim(); } catch(e) { return '0'; } })();
-        const packPrice = packPriceRaw ? (/^\d+$/.test(packPriceRaw) ? Math.floor(Math.abs(Number(packPriceRaw))) : -1) : 0;
-        if (packPrice < 0 || !isValidEconomyAmount(packPrice, true)) {
-          return interaction.followUp({ content: '❌ Invalid price. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
-        }
-        await addShopItem(interaction.guildId, null, '', name, '', packPrice, null, null, 'pack');
-        sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: ${packPrice})`);
-        await interaction.followUp({ content: `✅ Pack **${name}** created!`, flags: MessageFlags.Ephemeral });
+        // Packs price is set at post time (default to 0 if not provided)
+        await addShopItem(interaction.guildId, null, '', name, '', 0, null, null, 'pack');
+        sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: Unset — must be set at post time)`);
+        await interaction.followUp({ content: `✅ Pack **${name}** created! Use the **Post** panel to set a price and publish it.`, flags: MessageFlags.Ephemeral });
         await handleShopAdminAdd(interaction);
       }
     } else if (action === 'edit') {
@@ -643,15 +628,7 @@ export async function handleItemModalSubmit(interaction) {
           sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during edit' });
         }
       } else if (type === 'pack') {
-        // Pack edit still reads a price from the modal if provided
-        const packPriceRaw = (() => { try { return interaction.fields.getTextInputValue('item_price').trim(); } catch(e) { return ''; } })();
-        if (packPriceRaw !== '') {
-          const packPrice = /^\d+$/.test(packPriceRaw) ? Math.floor(Math.abs(Number(packPriceRaw))) : -1;
-          if (packPrice < 0 || !isValidEconomyAmount(packPrice, true)) {
-            return interaction.followUp({ content: '❌ Invalid price. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
-          }
-          updates.price = packPrice;
-        }
+        // Pack price is set at post time
         updates.item_type = 'pack';
         updates.is_pack = true;
       }
@@ -1967,7 +1944,15 @@ export async function handleEditCategoryAddItemsStart(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ content: '**Choose an item to add to this category:**', components: [row, rowBack], embeds: [] });
+    const embedPrompt = new EmbedBuilder()
+      .setColor('#2ECC71')
+      .setTitle('Select Item(s) to Add to Category');
+
+    await interaction.editReply({ 
+        content: null, 
+        components: [row, rowBack], 
+        embeds: [embedPrompt] 
+    });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category add items start');
   }
@@ -2040,10 +2025,14 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
 
       const row = new ActionRowBuilder().addComponents(select);
 
+      const embedPrompt = new EmbedBuilder()
+        .setColor('#2ECC71')
+        .setTitle('Select Item(s) to Add to Category');
+
       await interaction.editReply({
         content: `✅ **${addedItemName}** added to **${categoryName}**.\nChoose another item to add:`,
         components: [row, rowBack],
-        embeds: []
+        embeds: [embedPrompt]
       });
     }
   } catch (error) {
@@ -2078,7 +2067,15 @@ export async function handleEditCategoryRemoveItemsStart(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ content: '**Choose an item to remove:**', components: [row, rowBack], embeds: [] });
+    const embedPrompt = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle('Select Item(s) to Remove from Category');
+
+    await interaction.editReply({ 
+        content: successHeader || null, 
+        components: [row, rowBack], 
+        embeds: [embedPrompt] 
+    });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category remove items start');
   }
@@ -2131,10 +2128,14 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
 
       const row = new ActionRowBuilder().addComponents(select);
 
+      const embedPrompt = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setTitle('Select Item(s) to Remove from Category');
+
       await interaction.editReply({
         content: `✅ **${removedItemName}** removed from **${categoryName}**.\nChoose another item to remove:`,
         components: [row, rowBack],
-        embeds: []
+        embeds: [embedPrompt]
       });
     }
   } catch (error) {
@@ -2713,16 +2714,8 @@ export async function handleEditPackDetails(interaction) {
       .setValue(pack.name)
       .setRequired(true);
 
-    const priceInput = new TextInputBuilder()
-      .setCustomId('item_price')
-      .setLabel('Price')
-      .setStyle(TextInputStyle.Short)
-      .setValue(String(pack.price))
-      .setRequired(true);
-
     modal.addComponents(
-      new ActionRowBuilder().addComponents(nameInput),
-      new ActionRowBuilder().addComponents(priceInput)
+      new ActionRowBuilder().addComponents(nameInput)
     );
 
     await interaction.showModal(modal);
@@ -2917,10 +2910,14 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         .setStyle(ButtonStyle.Secondary)
     );
 
+    const embedPrompt = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle('Select Item(s) to Add to Pack');
+
     await interaction.editReply({
-        content: messageStr,
+        content: messageStr !== `**Choose a section to add items from:**` ? messageStr : null,
         components: [row, rowBack],
-        embeds: []
+        embeds: [embedPrompt]
     });
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
@@ -3054,10 +3051,14 @@ export async function handlePackRemoveContentStart(interaction, messageStr = `**
         .setStyle(ButtonStyle.Secondary)
     );
 
+    const embedPrompt = new EmbedBuilder()
+      .setColor('#E74C3C')
+      .setTitle('Select Item(s) to Remove from Pack');
+
     await interaction.editReply({
-        content: messageStr,
+        content: messageStr !== `**Choose an item to remove from this pack:**` ? messageStr : null,
         components: [row, rowBack],
-        embeds: []
+        embeds: [embedPrompt]
     });
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
