@@ -487,7 +487,17 @@ export async function handleItemModalSubmit(interaction) {
           }
         } catch (e) { /* field may be absent on old interactions */ }
 
-        if (!/^\d{17,20}$/.test(roleId)) return interaction.followUp({ content: '❌ Invalid Role ID.', flags: MessageFlags.Ephemeral });
+        if (!/^\d{17,20}$/.test(roleId)) {
+          return interaction.editReply({ 
+            content: '❌ Invalid Role ID.', 
+            embeds: [],
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
+              )
+            ]
+          });
+        }
         
         // Block Booster Role as main Item Role
         const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
@@ -502,11 +512,29 @@ export async function handleItemModalSubmit(interaction) {
           return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Required Items field to make MVP only items.", flags: MessageFlags.Ephemeral });
         }
 
-        if (!interaction.guild.roles.cache.has(roleId)) return interaction.followUp({ content: '❌ Role not found in server.', flags: MessageFlags.Ephemeral });
+        if (!interaction.guild.roles.cache.has(roleId)) {
+          return interaction.editReply({ 
+            content: '❌ Role not found in server.', 
+            embeds: [],
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
+              )
+            ]
+          });
+        }
 
-        const uniqueCheck = await validateRoleUniqueness(interaction.guild, roleId);
+        const uniqueCheck = await validateRoleUniqueness(interaction.guildId, roleId);
         if (!uniqueCheck.valid) {
-          return interaction.followUp({ content: `❌ Role already linked to **${uniqueCheck.existingItem?.name || roleId}**.`, flags: MessageFlags.Ephemeral });
+          return interaction.editReply({ 
+            content: `❌ Role already linked to **${uniqueCheck.existingItem?.name || roleId}**.`, 
+            embeds: [], 
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
+              )
+            ]
+          });
         }
 
         let durationSeconds = null;
