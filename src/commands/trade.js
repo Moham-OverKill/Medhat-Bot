@@ -727,13 +727,15 @@ export async function handleTradeSelect(interaction) {
 
     const invId = parseInt(interaction.values[0], 10);
     
+    const itemOwnerId = interaction.customId === 'trade_select_request_item' ? setup.targetId : interaction.user.id;
+
     // Fetch item details (including source and expiry to check if soulbound)
     const result = await query(
-        `SELECT i.id, i.shop_item_id, i.source, i.expires_at, s.name, s.duration_hours, s.duration_seconds 
+        `SELECT i.id, i.shop_item_id, i.source, i.expires_at, s.name, s.duration_hours, s.duration_seconds, s.role_id 
          FROM user_inventory i
          JOIN shop_items s ON i.shop_item_id = s.id 
          WHERE i.id = $1 AND i.guild_id = $2 AND i.user_id = $3`,
-        [invId, setup.guildId, interaction.user.id]
+        [invId, setup.guildId, itemOwnerId]
     );
 
     if (result.rows.length === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
