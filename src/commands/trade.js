@@ -1073,11 +1073,19 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         const sBal = parseInt(senderBal.rows[0]?.balance || 0);
         const tBal = parseInt(targetBal.rows[0]?.balance || 0);
 
-        if (sBal < trade.sender_coins) throw new Error('Sender has insufficient balance.');
-        if (tBal < trade.target_coins) throw new Error('Target has insufficient balance.');
+        if (sBal < parseInt(trade.sender_coins)) throw new Error('Sender has insufficient balance.');
+        if (tBal < parseInt(trade.target_coins)) throw new Error('Target has insufficient balance.');
 
-        const sItems = trade.sender_items || [];
-        const tItems = trade.target_items || [];
+        // BUG FIX: JSONB arrays from pg can contain strings or mixed types. Cast to integers
+        // so that ANY($1) works correctly against integer primary keys in user_inventory.
+        const sItems = (trade.sender_items || []).map(Number);
+        const tItems = (trade.target_items || []).map(Number);
+
+        // Pre-compute booster status BEFORE entering any DB query that holds a FOR UPDATE lock.
+        // Calling isMemberBooster() (a Discord API call) inside the transaction can delay
+        // lock release and cause deadlocks or lock timeout errors.
+        const senderIsBooster = senderMember ? await isMemberBooster(senderMember) : false;
+        const targetIsBooster = targetMember ? await isMemberBooster(targetMember) : false;
 
         // ========== JIT (JUST-IN-TIME) VERIFICATION ==========
         // This is THE most critical security gate. Even if the UI allowed 
@@ -1088,12 +1096,16 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         const jitVerify = async (receiverId, itemIds, roleContextMember) => {
             if (!itemIds || itemIds.length === 0) return;
             
-            // Get role info for JIT items
+            // Ensure all IDs are integers (JSONB parsing can produce strings in some pg driver versions)
+            const safeIds = itemIds.map(Number).filter(n => !isNaN(n));
+            if (safeIds.length === 0) return;
+
+            // Get role info for JIT items — use explicit ::int[] cast to prevent type inference errors
             const res = await client.query(`
                 SELECT s.role_id, s.name, s.id as shop_item_id 
                 FROM shop_items s 
-                WHERE s.id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))
-            `, [itemIds]);
+                WHERE s.id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1::int[]))
+            `, [safeIds]);
             
             // Get current receiver state
             const receiverInv = await client.query('SELECT shop_item_id FROM user_inventory WHERE user_id = $1 AND guild_id = $2', [receiverId, trade.guild_id]);
@@ -1119,7 +1131,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 `SELECT i.id, i.shop_item_id, s.name, s.duration_hours, s.duration_seconds 
                  FROM user_inventory i 
                  JOIN shop_items s ON i.shop_item_id = s.id 
-                 WHERE i.id = ANY($1) AND i.user_id = $2 AND i.guild_id = $3
+                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3
                  FOR UPDATE`,
                 [sItems, trade.sender_id, trade.guild_id]
             );
@@ -1131,7 +1143,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 `SELECT i.id, i.shop_item_id, s.name, s.duration_hours, s.duration_seconds 
                  FROM user_inventory i 
                  JOIN shop_items s ON i.shop_item_id = s.id 
-                 WHERE i.id = ANY($1) AND i.user_id = $2 AND i.guild_id = $3
+                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3
                  FOR UPDATE`,
                 [tItems, trade.target_id, trade.guild_id]
             );
@@ -1142,12 +1154,12 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         // IMPORTANT: All queries use the existing `client` (same connection, same transaction).
         // Never call updateBalance() here — it opens a NEW connection which deadlocks against
         // the FOR UPDATE locks already held by this transaction.
-        const processCoinSwap = async (giverId, receiverId, rawAmount, giverMember, receiverMember) => {
+        const processCoinSwap = async (giverId, receiverId, rawAmount, giverMember, receiverMember, isGiverBoosterPrecomputed) => {
             const amount = parseInt(rawAmount, 10) || 0;
             if (amount <= 0) return null;
 
-            const isGiverBooster = await isMemberBooster(giverMember);
-            const { fee, senderPaysExtra } = calculateTradeTax(amount, isGiverBooster);
+            // Use pre-computed booster status to avoid Discord API calls inside the transaction.
+            const { fee, senderPaysExtra } = calculateTradeTax(amount, isGiverBoosterPrecomputed);
 
             const gBalRes = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE', [giverId, trade.guild_id]);
             const currentGiverBal = parseInt(gBalRes.rows[0]?.balance ?? 0);
@@ -1217,13 +1229,13 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         const initialTargetBal = parseInt(targetBal.rows[0]?.balance || 0);
 
         let sOutcome = null;
-        if (trade.sender_coins > 0) {
-            sOutcome = await processCoinSwap(trade.sender_id, trade.target_id, trade.sender_coins, senderMember, targetMember);
+        if (parseInt(trade.sender_coins) > 0) {
+            sOutcome = await processCoinSwap(trade.sender_id, trade.target_id, trade.sender_coins, senderMember, targetMember, senderIsBooster);
         }
 
         let tOutcome = null;
-        if (trade.target_coins > 0) {
-            tOutcome = await processCoinSwap(trade.target_id, trade.sender_id, trade.target_coins, targetMember, senderMember);
+        if (parseInt(trade.target_coins) > 0) {
+            tOutcome = await processCoinSwap(trade.target_id, trade.sender_id, trade.target_coins, targetMember, senderMember, targetIsBooster);
         }
 
         // Fetch final balances after commission/fee deductions
@@ -1241,28 +1253,26 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             // Re-verify restricted items before swap (STRICT OWNERSHIP CHECK)
             const validSRes = await client.query(
                 `SELECT i.id, i.shop_item_id, i.role_id FROM user_inventory i 
-                 WHERE i.id = ANY($1) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
+                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
                 [sItems, trade.sender_id, trade.guild_id]
             );
             const validSIds = validSRes.rows.map(r => r.id);
             senderLostShopItemIds = validSRes.rows.map(r => r.shop_item_id);
             if (validSIds.length > 0) {
-                // Transfer but do NOT auto-equip for target (set is_active = false)
-                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2) AND guild_id = $3', [trade.target_id, validSIds, trade.guild_id]);
+                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2::int[]) AND guild_id = $3', [trade.target_id, validSIds, trade.guild_id]);
             }
         }
 
         if (tItems.length > 0) {
             const validTRes = await client.query(
                 `SELECT i.id, i.shop_item_id, i.role_id FROM user_inventory i 
-                 WHERE i.id = ANY($1) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
+                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
                 [tItems, trade.target_id, trade.guild_id]
             );
             const validTIds = validTRes.rows.map(r => r.id);
             targetLostShopItemIds = validTRes.rows.map(r => r.shop_item_id);
             if (validTIds.length > 0) {
-                // Transfer but do NOT auto-equip for sender (set is_active = false)
-                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2) AND guild_id = $3', [trade.sender_id, validTIds, trade.guild_id]);
+                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2::int[]) AND guild_id = $3', [trade.sender_id, validTIds, trade.guild_id]);
             }
         }
 
