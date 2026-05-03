@@ -517,7 +517,7 @@ export async function handleTradeSetupInteraction(interaction) {
             });
 
             if (tradableItems.length === 0) {
-                return interaction.editReply({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', components: [], embeds: [] });
+                return interaction.followUp({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
             }
 
             if (!selectedCatId && (customId === 'trade_setup_give_item' || customId === 'trade_cat_give_select' || (customId === 'trade_select_give_item' && interaction.values[0]?.startsWith('trade_folder_back_')))) {
@@ -588,7 +588,7 @@ export async function handleTradeSetupInteraction(interaction) {
             });
 
             if (tradableItems.length === 0) {
-                return interaction.editReply({ content: '❌ The target user does not have any tradable items that you don\'t already own.', components: [], embeds: [] });
+                return interaction.followUp({ content: '❌ The target user does not have any tradable items that you don\'t already own.', flags: MessageFlags.Ephemeral });
             }
 
             if (!selectedCatId && (customId === 'trade_setup_request_item' || customId === 'trade_cat_req_select' || (customId === 'trade_select_request_item' && interaction.values[0]?.startsWith('trade_folder_back_')))) {
