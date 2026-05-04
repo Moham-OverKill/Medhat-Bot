@@ -120,7 +120,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'trade', 'transfer_in')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY user_id
             ORDER BY earned DESC
@@ -157,7 +157,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'trade', 'transfer_in')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY type
             ORDER BY total DESC
@@ -167,7 +167,9 @@ async function showEconomyDashboard(interaction, view) {
             { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
             { id: 'daily', aliases: [], label: 'Daily Claims' },
             { id: 'quest_reward', aliases: ['mission_reward'], label: 'Quest Rewards' },
-            { id: 'admin_grant', aliases: [], label: 'Admin Grants' }
+            { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' },
+            { id: 'trade', aliases: [], label: 'P2P Trades' },
+            { id: 'transfer_in', aliases: [], label: 'Bank Transfers' }
         ];
 
         const rawTotals = {};
