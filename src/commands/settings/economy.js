@@ -80,7 +80,7 @@ async function showEconomyDashboard(interaction, view) {
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
-                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day (Max: +${streakBonus * streakCap})\n• **Quests:** ~${avgQuest} ${COIN_EMOJI} per mission (${totalQuestsPerDay} available/day)\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}`,
+                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day (Max: +${streakBonus * streakCap})\n• **Quests:** +${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day (${totalQuestsPerDay} missions total)\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}`,
                 inline: false
             },
             {
