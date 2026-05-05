@@ -171,16 +171,15 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   try {
     const pool = getPool();
     await pool.query(
-      `INSERT INTO user_activity (guild_id, user_id, username, message_count, last_message_time, last_active, last_message_content)
-       VALUES ($1, $2, $3, 1, $4, $5, $6)
+      `INSERT INTO user_activity (guild_id, user_id, username, message_count, last_message_time, last_active)
+       VALUES ($1, $2, $3, 1, $4, $5)
        ON CONFLICT (guild_id, user_id)
        DO UPDATE SET 
          message_count = user_activity.message_count + 1,
          last_message_time = $4,
          last_active = $5,
-         last_message_content = $6,
          username = $3`,
-      [guildId, userId, username, now, new Date(now), contentLower.substring(0, 500)]
+      [guildId, userId, username, now, new Date(now)]
     );
     return true;
   } catch (error) {
