@@ -316,7 +316,6 @@ async function createTables() {
         is_voice_tracking BOOLEAN NOT NULL DEFAULT FALSE,
         last_message_time BIGINT,
         last_active TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        last_message_content TEXT,
         voice_valid_start BIGINT,
         PRIMARY KEY (user_id, guild_id)
       );
@@ -325,7 +324,6 @@ async function createTables() {
     // Add new columns if they don't exist (migration for existing DBs)
     await pool.query(`
       ALTER TABLE user_activity 
-      ADD COLUMN IF NOT EXISTS last_message_content TEXT,
       ADD COLUMN IF NOT EXISTS voice_valid_start BIGINT;
     `);
 
