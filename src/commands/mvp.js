@@ -14,7 +14,7 @@ import {
 } from 'discord.js';
 import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { cancelMvpTimer } from '../mvp/award.js';
+import { cancelMvpTimer, scheduleMvpTimer } from '../mvp/award.js';
 import { getNextCairoHourTimestamp } from '../utils/time.js';
 import { invalidateConfigCache } from '../activity/index.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
