@@ -69,10 +69,13 @@ async function showEconomyDashboard(interaction, view) {
         const questRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM quests WHERE guild_id = $1`, [guildId]);
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
 
-        // 1. Casual User (Base Daily + 1 Average Quest)
-        const casualIncome = baseDaily + avgQuest;
+        // 1. Lazy User (Base Daily Only)
+        const lazyIncome = baseDaily;
 
-        // 2. Grinder User (Max Daily w/ Booster + ALL configured quests + Weekly MVP share)
+        // 2. Casual User (Base Daily + ALL configured quests)
+        const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay);
+
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Weekly MVP share)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
         const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + Math.floor(mvpReward / 7);
@@ -80,27 +83,27 @@ async function showEconomyDashboard(interaction, view) {
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
-                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day (Max: +${streakBonus * streakCap})\n• **Quests:** +${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day (${totalQuestsPerDay} missions total)\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}`,
+                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}`,
                 inline: false
             },
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n👑 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
                 inline: false
             },
             {
                 name: '🟢 Common Items (2 Days Work)',
-                value: `🔹 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
                 name: '🔵 Rare Items (1 Week Work)',
-                value: `🔹 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
                 name: '🟡 Legendary Items (1 Month Work)',
-                value: `🔹 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             }
         );
