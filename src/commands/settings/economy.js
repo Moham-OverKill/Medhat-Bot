@@ -201,8 +201,8 @@ async function showEconomyDashboard(interaction, view) {
 
         embed.addFields(
             {
-                name: 'Total Server Wealth',
-                value: `**${totalWealth.toLocaleString()}** 💰\nAverage Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
+                name: `Total Server Wealth: ${totalWealth.toLocaleString()} 💰`,
+                value: `Average Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
                 inline: false
             },
             {
