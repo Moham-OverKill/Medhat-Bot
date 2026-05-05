@@ -88,22 +88,22 @@ async function showEconomyDashboard(interaction, view) {
             },
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${COIN_EMOJI} / day\n🔸 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n👑 **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${COIN_EMOJI} / day\n💠 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
                 inline: false
             },
             {
-                name: '🟢 Common Items (2 Days Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 2).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
+                name: '📦 Common Items (2 Days Work)',
+                value: `🔹 **Lazy User:** ${(lazyIncome * 2).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
-                name: '🔵 Rare Items (1 Week Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 7).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
+                name: '✨ Rare Items (1 Week Work)',
+                value: `🔹 **Lazy User:** ${(lazyIncome * 7).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             },
             {
-                name: '🟡 Legendary Items (1 Month Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 30).toLocaleString()} ${COIN_EMOJI}\n🔸 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n👑 **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
+                name: '👑 Legendary Items (1 Month Work)',
+                value: `🔹 **Lazy User:** ${(lazyIncome * 30).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
                 inline: false
             }
         );
