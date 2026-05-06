@@ -902,6 +902,7 @@ export async function awardMvp(client, guildId, options = {}) {
 
     // ========== STEP 4: ASSIGN ROLES TO NEW WINNERS ==========
     const resultMembers = [];
+    const successfulWinnerData = [];
     const assignmentFailures = [];
 
     if (!isTest) {
@@ -919,7 +920,7 @@ export async function awardMvp(client, guildId, options = {}) {
         try {
           const member = await executeWithRetry(
             () => guild.members.fetch(winner.userId),
-            { label: `Fetch ${winner.userId}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
+            { label: `Fetch ${winner.userId}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 4 }
           );
 
           if (!member) {
@@ -934,11 +935,12 @@ export async function awardMvp(client, guildId, options = {}) {
 
           await executeWithRetry(
             () => member.roles.add(mvpRole),
-            { label: `Assign MVP to ${member.user.tag}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 2 }
+            { label: `Assign MVP to ${member.user.tag}`, timeoutMs: API_TIMEOUT_MS, maxAttempts: 4 }
           );
 
           sysLog('MVP Assigned', { user: winner.userId, guild: guildId, detail: `RoleID: ${mvpRole.id} | Score: ${winner.score}` });
           resultMembers.push(member);
+          successfulWinnerData.push(winner);
 
         } catch (error) {
           sysError('MVP Assignment Failed', error, { user: winner.userId, guild: guildId });
@@ -971,13 +973,13 @@ export async function awardMvp(client, guildId, options = {}) {
         }
       }
 
-      await announceWinners(guild, config, resultMembers, winners.slice(0, resultMembers.length), rewardAmount);
+      await announceWinners(guild, config, resultMembers, successfulWinnerData, rewardAmount);
 
       // ========== SAVE WINNERS TO MVP HISTORY ==========
       const awardedAt = new Date().toISOString();
       for (let i = 0; i < resultMembers.length; i++) {
         const member = resultMembers[i];
-        const winnerData = winners[i];
+        const winnerData = successfulWinnerData[i];
         await appendAwardRecord({
           guildId: guildId,
           userId: member.id,
