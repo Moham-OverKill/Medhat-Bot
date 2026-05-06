@@ -1,30 +1,41 @@
-# 🏆 Medhat Bot: The All-in-One Fun & Economy Bot
+# 🏆 The Ultimate Fun & Economy Bot
 
-Medhat Bot is built to keep your server alive and fun. It brings a complete money system, daily tasks, secure trading, custom shops, and color rewards. It has everything you need to build a truly active community.
-
----
-
-## 👤 For Members
-These are the primary slash commands available to all members:
-
-*   **/bank**: Check your balance, claim your **Daily Coins**, and see your transaction history.
-*   **/inventory**: See and manage the items you own, including the ability to equip or unequip them.
-*   **/quest**: See active server quests and your current progress.
-*   **/trade**: Safely swap coins or items with other members.
+Medhat Bot is designed to keep your server alive, engaging, and active by turning your server into an entire game! From a complete economy system and daily quests, to secure trading and custom shops - it has everything you need to build a thriving community.
 
 ---
 
-## ⚙️ For Admins: `/settings`
-This menu is your main control panel. You can change everything about the bot from one simple screen.
+## 👤 For Members:
 
-*   **Money & Rewards**: Set how much members get for daily rewards and server boosting.
-*   **Automatic MVP**: A "King of the Hill" mini-game where the most active user holds the title and earns a configured amount of coins per hour.
-*   **Shop Setup**: Create items, group them into categories or packs, and publish them so members can buy them with coins. Admins can restrict items to be "MVP-only" or "Booster-only," or require members to own other items first.
-*   **Color Reaction System**: Create beautiful reaction panels that allow members to pick their own name colors with a single click.
-*   **Leaderboards**: Show the richest members, the most active members, and the highest daily streaks in any channel.
-*   **Logs**: A comprehensive audit log for admin channels to monitor all bot activity.
-*   **User Tools**: Manage member balances and inventories directly.
+💳 **/bank** – Check your balance, claim Daily Coins, and track your transaction history.
+
+🎒 **/inventory** – View, manage, equip, and unequip the items you own.
+
+📜 **/quest** – Check active server quests and track your current progress.
+
+🤝 **/trade** – Safely and securely swap coins or items with other members.
 
 ---
 
-*Made With ❤️ By Moham OverKill.*
+## ⚙️ For Admins:
+
+The **/settings** Dashboard is your all-in-one control panel. Manage everything from one sleek interface without ever leaving Discord!
+
+💰 **Money & Rewards**: Configure payout amounts for daily rewards and Server Boosters.
+
+👑 **Automatic MVP**: A "King of the Hill" system where the most active user claims the title and earns a passive hourly coin income!
+
+🛒 **Advanced Shop Setup**: Create items, group them into categories or packs, and publish them to your shop channels. 
+
+Add restrictions to make items MVP-only, Booster-only, or require other items.
+
+🎨 **Color Reaction System**: Deploy beautiful, one-click reaction panels that let members choose their own custom name colors.
+
+🏆 **Leaderboards**: Display the richest members, the most active chatters, and the highest daily streaks directly in any channel.
+
+📜 **Audit Logs**: Keep your server safe with a comprehensive admin log that tracks all bot activity.
+
+🛠️ **User Tools**: Easily manage, adjust, and moderate member balances and inventories.
+
+---
+
+Made with ❤️ by Moham OverKill.
