@@ -9,7 +9,9 @@ import {
   getUserDisplayName, 
   parseIsoTimestamp,
   getUserLogName,
-  COIN_EMOJI 
+  COIN_EMOJI,
+  executeWithRetry,
+  sleep
 } from '../shared.js';
 import { getPool } from '../storage/postgres.js';
 import { updateBalance } from '../economy/service.js';
@@ -69,47 +71,6 @@ function acquireGuildLock(guildId) {
 }
 
 
-function shouldRetry(error) {
-  if (!error) return false;
-  const status = error.status ?? error.httpStatus ?? error.code;
-  if (status === 429) return true;
-  if (typeof status === 'number' && status >= 500) return true;
-  const message = String(error.message ?? '').toLowerCase();
-  if (message.includes('rate limit')) return true;
-  if (message.includes('server error')) return true;
-  if (message.includes('timed out') || message.includes('timeout')) return true;
-  if (message.includes('ecconn') || message.includes('socket hang up')) return true;
-  return false;
-}
-
-function withTimeout(promise, timeoutMs, label) {
-  let timer;
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    })
-  ]);
-}
-
-async function executeWithRetry(promiseFactory, { label, timeoutMs = API_TIMEOUT_MS, maxAttempts = 2 } = {}) {
-  let attempt = 1;
-  while (attempt <= maxAttempts) {
-    try {
-      return await withTimeout(promiseFactory(), timeoutMs, label);
-    } catch (error) {
-      if (attempt >= maxAttempts || !shouldRetry(error)) {
-        throw error;
-      }
-      sysLog('API Retry', { detail: `Attempt ${attempt} | Result: ${sanitizeError(error)}` });
-      await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
-    }
-    attempt += 1;
-  }
-  throw new Error(`${label} failed after ${maxAttempts} attempts`);
-}
 
 function chunkArray(items, size) {
   const chunks = [];
