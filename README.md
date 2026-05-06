@@ -15,7 +15,7 @@ These are the primary slash commands available to all members:
 ---
 
 ## ⚙️ For Admins: `/settings`
-The `/settings` menu is your main control panel. You can change everything about the bot from one simple screen.
+This menu is your main control panel. You can change everything about the bot from one simple screen.
 
 ### What you can manage:
 *   **Money & Rewards**: Set how much members get for daily rewards and server boosting.
