@@ -1,6 +1,6 @@
 # 🏆 Medhat Bot: The All-in-One Fun & Economy Bot
 
-Medhat Bot is built to make your server more active. It adds a fun money system, automatic rewards for active members, and a shop that's easy to manage.
+Medhat Bot is built to keep your server alive and fun. It brings a complete money system, daily tasks, secure trading, custom shops, and color rewards—all managed from one simple screen.
 
 ---
 
