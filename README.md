@@ -17,7 +17,6 @@ These are the primary slash commands available to all members:
 ## ⚙️ For Admins: `/settings`
 This menu is your main control panel. You can change everything about the bot from one simple screen.
 
-### What you can manage:
 *   **Money & Rewards**: Set how much members get for daily rewards and server boosting.
 *   **Automatic MVP**: A "King of the Hill" mini-game where the most active user holds the title and earns a configured amount of coins per hour.
 *   **Shop Setup**: Create items, group them into categories or packs, and publish them so members can buy them with coins. Admins can restrict items to be "MVP-only" or "Booster-only," or require members to own other items first.
@@ -28,4 +27,4 @@ This menu is your main control panel. You can change everything about the bot fr
 
 ---
 
-*Made with ❤️ for the community.*
+*Made with ❤️*
