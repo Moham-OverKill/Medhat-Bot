@@ -27,4 +27,4 @@ This menu is your main control panel. You can change everything about the bot fr
 
 ---
 
-*Made with ❤️*
+*Made With ❤️ By Moham OverKill.*
