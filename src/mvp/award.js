@@ -488,9 +488,6 @@ function formatTimestamp(date) {
 
 // Use getUserDisplayName from shared.js for consistent name resolution
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function describeRemovalError(error) {
   if (!error) return 'unknown error';
