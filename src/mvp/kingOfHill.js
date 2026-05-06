@@ -4,7 +4,7 @@ import { getActiveMvps, setActiveMvps } from '../storage/activeMvps.js';
 import { setMvpCache } from './mvpCache.js';
 import { updateBalance } from '../economy/service.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
-import { COIN_EMOJI } from '../shared.js';
+import { COIN_EMOJI, executeWithRetry } from '../shared.js';
 
 // Per-guild lock to prevent concurrent KotH executions
 const guildKothLocks = new Map();
@@ -156,23 +156,31 @@ export async function runKingOfHillCycle(client, guildId) {
     for (let i = 0; i < newTopUsers.length; i++) {
       const user = newTopUsers[i];
       const userId = user.userId;
-      const isIncoming = incoming.includes(userId);
 
       try {
-        const member = await guildObj.members.fetch(userId).catch(() => null);
+        const member = await executeWithRetry(
+          () => guildObj.members.fetch(userId),
+          { label: `Fetch ${userId}`, maxAttempts: 4 }
+        ).catch(() => null);
+
         if (!member || member.user.bot) continue;
 
-        // Add role ONLY for incoming (new) MVPs — avoid redundant API calls for continuing
-        if (isIncoming && mvpRole) {
+        // Proactively enforce role for ALL top winners every hour.
+        // Discord no-ops if they already have it, which is safe.
+        // This prevents the "Sticky Failure" bug where a user missed their role once and never got it back.
+        if (mvpRole) {
           if (!member.roles.cache.has(mvpRole.id)) {
-            await member.roles.add(mvpRole, 'Entered Top N (KotH Crowning)').catch(e => {
+            await executeWithRetry(
+              () => member.roles.add(mvpRole, 'Top N (KotH Cycle Enforcement)'),
+              { label: `Add MVP to ${member.user.tag}`, maxAttempts: 4 }
+            ).catch(e => {
               sysLog('KotH Role Add Warning', { guild: guildId, user: userId, detail: e.message });
             });
           }
           crowned.push(member.user?.username || userId);
         }
 
-        // Pay coins to ALL winners (incoming + continuing)
+        // Pay coins to ALL winners
         if (rewardAmount > 0) {
           const result = await updateBalance(userId, guildId, rewardAmount, 'mvp_reward', 'Current MVP!');
           if (result?.success) {
