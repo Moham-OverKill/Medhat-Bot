@@ -1,6 +1,6 @@
-# 🏆 OverKill: Ultimate Engagement & Economy Bot
+# 🏆 Medhat Bot: Ultimate Engagement & Economy Bot
 
-OverKill is a state-of-the-art Discord system designed to drive community activity through a robust economy, automated awards, and an intuitive management suite.
+Medhat Bot is a state-of-the-art Discord system designed to drive community activity through a robust economy, automated awards, and an intuitive management suite.
 
 ---
 
@@ -37,9 +37,17 @@ Designed for high-volume server management:
 
 ---
 
-### 🕹️ Unified UI Standard
-OverKill utilizes a standardized interface across all menus. Every module features consistent **Enable/Disable** toggles and predictable navigation, ensuring the bot is as easy to manage as it is to use.
+## ⚙️ Technical Architecture
+*   **Official Timezone**: `Africa/Cairo` (GMT+2/+3).
+*   **Midnight Reset**: All daily streaks and MVP cycles trigger at **00:00 Cairo Time**.
+*   **Dependency Cascading**: High-tier items automatically unequip if prerequisites (e.g. lower tiers or booster status) are lost.
+*   **Event-Driven Maintenance**: Automatic ghost item cleanup and stale role management.
 
 ---
 
-*Made with ❤️ for the OverKill community.*
+### 🕹️ Unified UI Standard
+Medhat Bot utilizes a standardized interface across all menus. Every module features consistent **Enable/Disable** toggles and predictable navigation, ensuring the bot is as easy to manage as it is to use.
+
+---
+
+*Made with ❤️ for the community.*
