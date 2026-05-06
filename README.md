@@ -20,17 +20,11 @@ The `/settings` menu is your main control panel. You can change everything about
 ### What you can manage:
 *   **Money & Rewards**: Set how much members get for daily rewards and server boosting.
 *   **Automatic MVP**: A "King of the Hill" mini-game where the most active user holds the title and earns a configured amount of coins per hour.
-*   **Shop Setup**: Create items, group them into categories or packs, and publish them so members can buy them with coins.
+*   **Shop Setup**: Create items, group them into categories or packs, and publish them so members can buy them with coins. Admins can restrict items to be "MVP-only" or "Booster-only," or require members to own other items first.
 *   **Color Reaction System**: Create beautiful reaction panels that allow members to pick their own name colors with a single click.
 *   **Leaderboards**: Show the richest members, the most active members, and the highest daily streaks in any channel.
 *   **Logs**: A comprehensive audit log for admin channels to monitor all bot activity.
 *   **User Tools**: Manage member balances and inventories directly.
-
----
-
-## 💡 Good to Know
-*   **Timezone**: The bot resets daily rewards and MVP winners at **Midnight Cairo Time**.
-*   **Requirements**: Admins can restrict shop items so they are "MVP-only" or "Booster-only," in addition to requiring other items to be owned first.
 
 ---
 
