@@ -80,9 +80,7 @@ function chunkArray(items, size) {
   return chunks;
 }
 
-const isProduction = process.env.NODE_ENV === 'production';
 
-// Use formatGuildForLog from shared.js for consistent guild logging
 
 export function getScheduleIntervalMs(config) {
   if (!config) return null;
@@ -107,7 +105,7 @@ export function getScheduleIntervalMs(config) {
   return null;
 }
 
-// Use parseIsoTimestamp from shared.js
+
 
 function ensureActivatedAt(config, nowMs) {
   if (!config.activated_at) {
@@ -154,7 +152,12 @@ function getCairoDate(date = new Date()) {
     hour: parseInt(values.hour, 10),
     minute: parseInt(values.minute, 10),
     second: parseInt(values.second, 10),
-    dayOfWeek: date.getDay() // 0 = Sunday, 6 = Saturday
+    // B-10 FIX: Derive dayOfWeek from Cairo date components, not server timezone
+    dayOfWeek: new Date(Date.UTC(
+      parseInt(values.year, 10),
+      parseInt(values.month, 10) - 1,
+      parseInt(values.day, 10)
+    )).getUTCDay()
   };
 }
 
@@ -486,7 +489,7 @@ function formatTimestamp(date) {
   }).format(date) + ' UTC';
 }
 
-// Use getUserDisplayName from shared.js for consistent name resolution
+
 
 
 function describeRemovalError(error) {

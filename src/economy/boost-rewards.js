@@ -100,49 +100,11 @@ export async function handleBoostAdded(userId, guild, username) {
     
     let newBalance = 0;
     
-    // DISABLED: Boosters no longer get a coin reward for boosting
-    // They get a 2x multiplier on Daily rewards instead
-    if (false && shouldReward) {
-      // Get or create user balance
-      const balanceResult = await client.query(
-        `INSERT INTO user_balances (user_id, guild_id, balance)
-         VALUES ($1, $2, 0)
-         ON CONFLICT (user_id, guild_id) 
-         DO UPDATE SET user_id = EXCLUDED.user_id
-         RETURNING balance`,
-        [userId, guildId]
-      );
-      
-      const currentBalance = balanceResult.rows[0].balance;
-      newBalance = currentBalance + BOOST_REWARD_AMOUNT;
-      
-      // Update balance
-      await client.query(
-        `UPDATE user_balances 
-         SET balance = $1,
-             total_earned = total_earned + $2,
-             updated_at = NOW()
-         WHERE user_id = $3 AND guild_id = $4`,
-        [newBalance, BOOST_REWARD_AMOUNT, userId, guildId]
-      );
-      
-      // Log transaction
-      await client.query(
-        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
-         VALUES ($1, $2, $3, $4, 'boost_bonus', $5)`,
-        [userId, guildId, BOOST_REWARD_AMOUNT, newBalance, `Server boost reward (${reason})`]
-      );
-    }
+    // D-06 FIX: Removed disabled coin reward block (feature replaced by 2x daily multiplier)
     
     await client.query('COMMIT');
     
-    // Log: [ServerName] Username — Boost reward +500 coins
-    if (false && shouldReward) {
-      sendLog(guild, 'economy', 'orange', '🎁 Rewards Claimed', 
-        `**User:** \`${getUserLogName(interaction || { user: { id: userId, username } })}\`\n` +
-        `**Reward:** \`${BOOST_REWARD_AMOUNT}\` ${COIN_EMOJI} (Server Boost)`
-      );
-    }
+    // D-06 FIX: Removed disabled log block
     
     return {
       success: true,

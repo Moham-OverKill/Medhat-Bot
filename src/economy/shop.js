@@ -2,7 +2,7 @@ import { query, getPool } from '../storage/postgres.js';
 export { query };
 import { sanitizeError, COIN_EMOJI, getUserLogName } from '../shared.js';
 import { updateBalance } from './service.js';
-import { logAudit, createRefund, getBoosterLossPolicy } from '../storage/audit.js';
+// D-04 FIX: Removed unused imports (logAudit, createRefund, getBoosterLossPolicy)
 import { isMemberBooster } from '../commands/colors.js';
 import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 
@@ -1287,49 +1287,7 @@ export async function getUserInventory(userId, guildId) {
   }
 }
 
-/**
- * Bi-directional sync: inventory is_active state with actual Discord role ownership
- * - If user HAS role but DB says unequipped -> mark as equipped
- * - If user LACKS role but DB says equipped -> mark as unequipped
- */
-export async function syncInventoryRoleState(userId, guildId, member, inventory) {
-  if (!member || !inventory || inventory.length === 0) return inventory;
-
-  const toEquip = [];
-  const toUnequip = [];
-
-  for (const item of inventory) {
-    // Skip items without roles or temporary items (they're auto-managed)
-    if (!item.role_id || item.expires_at) continue;
-
-    const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-    const hasRole = member.roles.cache.has(firstRoleId);
-
-    if (hasRole && !item.is_active) {
-      // User HAS the role but DB says unequipped -> mark as equipped
-      toEquip.push(item.id);
-      item.is_active = true;
-    } else if (!hasRole && item.is_active) {
-      // User LACKS the role but DB says equipped -> mark as unequipped
-      toUnequip.push(item.id);
-      item.is_active = false;
-    }
-  }
-
-  // Batch update DB
-  try {
-    if (toEquip.length > 0) {
-      await query(`UPDATE user_inventory SET is_active = true WHERE id = ANY($1)`, [toEquip]);
-    }
-    if (toUnequip.length > 0) {
-      await query(`UPDATE user_inventory SET is_active = false WHERE id = ANY($1)`, [toUnequip]);
-    }
-  } catch (error) {
-    logSystemError(`Failed to sync inventory role state: ${sanitizeError(error)}`);
-  }
-
-  return inventory;
-}
+// D-02 FIX: Removed dead function syncInventoryRoleState (superseded by syncInventoryWithDiscord)
 
 /**
  * SYNC: The "Source of Truth" Inventory Manager
@@ -1433,30 +1391,7 @@ export async function getSynthesizedInventory(userId, guildId, member) {
   return [...dbInventory, ...adminItems];
 }
 
-/**
- * Clean up orphaned inventory entries (items that no longer exist in shop)
- */
-export async function cleanupOrphanedInventory(guildId = null) {
-  try {
-    let sql = `DELETE FROM user_inventory 
-               WHERE shop_item_id NOT IN (SELECT id FROM shop_items)`;
-    const params = [];
-
-    if (guildId) {
-      sql += ' AND guild_id = $1';
-      params.push(guildId);
-    }
-
-    const result = await query(sql, params);
-    if (result.rowCount > 0) {
-      sysLog('Orphan Cleanup', { guild: guildId, detail: `Cleaned up ${result.rowCount} orphaned inventory entries` });
-    }
-    return result.rowCount;
-  } catch (error) {
-    sysError('Orphan Cleanup Failed', error, { guild: guildId });
-    return 0;
-  }
-}
+// D-03 FIX: Removed dead function cleanupOrphanedInventory (never called from any module)
 
 /**
  * Clean up "Ghost Items" - shop items whose Discord roles have been deleted from the server.
@@ -1838,18 +1773,16 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Reason: Lazy Purge` });
       
       try {
-        const { sendLog } = await import('../commands/bank.js').catch(() => ({ sendLog: null }));
-        if (sendLog) {
-          sendLog(
-            { id: guildId, name: member?.guild?.name || 'Server' }, 
-            'inventory', 
-            'red', 
-            '⏳ Item Expired', 
-            `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
-          );
-        }
+        // B-06 FIX: Corrected import path (was '../commands/bank.js', which is wrong)
+        sendLog(
+          { id: guildId, name: member?.guild?.name || 'Server' }, 
+          'inventory', 
+          'red', 
+          '⏳ Item Expired', 
+          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
+        );
       } catch (e) {
-        // Silently fail if sendLog import or execution fails
+        // Silently fail if sendLog execution fails
       }
     }
 

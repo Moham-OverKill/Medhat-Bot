@@ -543,8 +543,7 @@ export async function handleColorsComponent(interaction) {
   const customId = interaction.customId;
   const guildId = interaction.guildId;
 
-  // IMPORTANT: Immediate console trace to verify the handler is being reached
-  console.log(`[TRACE] Color Component Entry: ${customId} | Guild: ${guildId}`);
+  // D-07 FIX: Removed stray console.log debug trace (sysLog below handles structured logging)
 
   try {
     sysLog('Color Dashboard Interaction', { id: customId, guild: guildId, user: interaction.user.id });

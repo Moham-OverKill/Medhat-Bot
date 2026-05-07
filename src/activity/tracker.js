@@ -12,7 +12,7 @@ const COMMAND_PREFIXES = ['/', '!', '?', '.', '-', '$', '>']; // Ignore commands
 // In-memory cache for cooldowns and last message content
 // Key: `${guildId}:${userId}`, Value: { timestamp, lastContent }
 const userMessageCache = new Map();
-const CACHE_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes (P-10: tightened from 1 hour)
 
 // Periodic cleanup to prevent memory leaks
 setInterval(() => {
@@ -152,9 +152,6 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   const now = Date.now();
   const key = `${guildId}:${userId}`;
   const content = (messageContent || '').trim();
-
-  const { purgeUserInventory } = await import('../economy/shop.js');
-  await purgeUserInventory(userId, guildId, null);
 
   if (content.length < MIN_MESSAGE_LENGTH) return false;
   const firstChar = content.charAt(0);

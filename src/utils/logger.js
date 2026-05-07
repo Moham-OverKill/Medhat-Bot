@@ -2,8 +2,9 @@ import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { stripLog } from '../shared.js';
 
-// Cache log channel IDs to avoid DB hits on every log (1 min cache)
+// Cache log channel IDs to avoid DB hits on every log (1 min cache, max 500 entries)
 const logChannelCache = new Map();
+const LOG_CACHE_MAX_SIZE = 500;
 
 
 /**
@@ -62,6 +63,8 @@ export async function sendLog(guild, category, colorKey, title, description) {
         if (!config) {
             const res = await pool.query('SELECT config FROM guild_configs WHERE guild_id = $1', [guild.id]);
             config = res.rows[0]?.config || {};
+            // P-06 FIX: Prevent unbounded cache growth
+            if (logChannelCache.size >= LOG_CACHE_MAX_SIZE) logChannelCache.clear();
             logChannelCache.set(guild.id, config);
             setTimeout(() => logChannelCache.delete(guild.id), 60000);
         }
