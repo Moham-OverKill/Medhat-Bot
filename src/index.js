@@ -16,6 +16,7 @@ import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog } from './shared.js';
+import { sendLog } from './utils/logger.js';
 import { logSystemEvent, sysLog, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
@@ -335,7 +336,6 @@ client.on(Events.GuildChannelDelete, async (channel) => {
     if (!config) return;
 
     let updated = false;
-    const logs = [];
 
     const channelKeys = [
       { key: 'log_eco_channel_id', name: 'Economy Log' },
@@ -350,7 +350,6 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       if (config[field.key] === channel.id) {
         config[field.key] = null;
         updated = true;
-        logs.push(`• **${field.name}:** Unset (Channel #${channel.name} deleted)`);
       }
     }
     if (updated) {
@@ -414,6 +413,12 @@ client.on('guildDelete', async (guild) => {
 // Member update handler - strip booster colors when boost status is lost
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   try {
+    // Early guard: Only process boost-related changes to avoid unnecessary DB queries
+    // on every nickname/avatar/role change in the server.
+    const boostChanged = oldMember.premiumSince !== newMember.premiumSince;
+    const rolesChanged = oldMember.roles.cache.size !== newMember.roles.cache.size;
+    if (!boostChanged && !rolesChanged) return;
+
     // Skip if database isn't ready yet (during startup)
     const { isDatabaseReady } = await import('./storage/postgres.js');
     if (!isDatabaseReady()) return;
@@ -445,17 +450,8 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   }
 });
 
-// Role delete handler - cleanup ghost items when a Discord role is deleted
-client.on('roleDelete', async (role) => {
-  try {
-    const result = await cleanupDeletedRole(role.guild.id, role.id);
-    if (result.itemsRemoved > 0) {
-      sysLog('Ghost Cleanup Success', { guild: role.guild.id, detail: `RoleID: ${role.id} | Removed: ${result.itemsRemoved}` });
-    }
-  } catch (error) {
-    sysError('Ghost Cleanup Failed', error, { guild: role.guild.id, detail: `RoleID: ${role.id}` });
-  }
-});
+// B-01 FIX: Duplicate roleDelete listener removed.
+// Role deletion cleanup is already handled by Events.GuildRoleDelete (line 299).
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
