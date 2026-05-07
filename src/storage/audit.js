@@ -64,14 +64,4 @@ export async function createRefund(userId, guildId, amount, reason, originalTran
     client.release();
   }
 }
-
-/**
- * Get booster loss policy (placeholder for now)
- */
-export async function getBoosterLossPolicy(guildId) {
-  // In the future, this could fetch from guild_configs
-  return {
-    action: 'remove_role', // 'remove_role', 'keep_role', 'grace_period'
-    gracePeriodHours: 24
-  };
-}
+// D-05 FIX: Removed dead function getBoosterLossPolicy (placeholder, never called)

@@ -56,9 +56,7 @@ export async function registerSlashCommands(client) {
     const currentHash = createHash('sha256').update(payload).digest('hex');
     const previousHash = await readPreviousHash();
 
-    if (false && previousHash && previousHash === currentHash) {
-      return { registered: false, count: commands.length };
-    }
+    // D-06 FIX: Hash dedup intentionally disabled — commands always re-registered on startup
 
     await rest.put(
       Routes.applicationCommands(client.application.id),

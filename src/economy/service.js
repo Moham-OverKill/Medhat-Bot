@@ -9,23 +9,25 @@ import { getGuildConfig } from '../storage/config.js';
  */
 export async function getUserBalance(userId, guildId) {
   try {
+    // B-03 FIX: Atomic upsert to prevent race condition on concurrent first-calls
     const result = await query(
-      'SELECT * FROM user_balances WHERE user_id = $1 AND guild_id = $2',
+      `INSERT INTO user_balances (user_id, guild_id, balance)
+       VALUES ($1, $2, 0)
+       ON CONFLICT (user_id, guild_id) DO NOTHING
+       RETURNING *`,
       [userId, guildId]
     );
 
-    if (result.rows.length === 0) {
-      // Create new balance entry
-      const createResult = await query(
-        `INSERT INTO user_balances (user_id, guild_id, balance)
-         VALUES ($1, $2, 0)
-         RETURNING *`,
-        [userId, guildId]
-      );
-      return createResult.rows[0];
+    if (result.rows.length > 0) {
+      return result.rows[0];
     }
 
-    return result.rows[0];
+    // Row already existed, fetch it
+    const existing = await query(
+      'SELECT * FROM user_balances WHERE user_id = $1 AND guild_id = $2',
+      [userId, guildId]
+    );
+    return existing.rows[0];
   } catch (error) {
     sysError('Economy Audit Failed', error, { user: userId, guild: guildId, detail: 'Getting user balance' });
     throw error;
@@ -311,15 +313,9 @@ export async function transferCoins(fromUserId, toUserId, guild, amount, fromUse
     );
 
     if (senderUpdate.rowCount === 0) {
-      // Check if user exists or just has insufficient funds
-      const checkUser = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2', [fromUserId, guildId]);
+      // B-09 FIX: Simplified — both branches returned the same error
       await client.query('ROLLBACK');
-
-      if (checkUser.rowCount === 0) {
-        return { success: false, error: 'Insufficient balance' };
-      } else {
-        return { success: false, error: 'Insufficient balance' };
-      }
+      return { success: false, error: 'Insufficient balance' };
     }
 
     const senderNewBalance = parseInt(senderUpdate.rows[0].balance, 10);

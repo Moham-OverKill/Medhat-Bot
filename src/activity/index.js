@@ -193,6 +193,14 @@ const questMessageCooldowns = new Map();
 const QUEST_MSG_COOLDOWN_MS = 3000; // 3 seconds (Reduced from 10s for better feel)
 const MIN_MESSAGE_LENGTH = 3;
 
+// P-09 FIX: Periodic cleanup to prevent unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of questMessageCooldowns.entries()) {
+    if (now - timestamp > 30000) questMessageCooldowns.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 // Discord ChannelType values for Post channels
 const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 16
 
