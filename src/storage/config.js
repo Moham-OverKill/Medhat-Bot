@@ -39,7 +39,9 @@ const CONFIG_SCHEMA = {
   log_inv_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
   log_shop_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
   log_audit_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
-  last_mvp_reset: { type: 'string', required: false }
+  last_mvp_reset: { type: 'string', required: false },
+  // Channel content filters (Organize module)
+  channel_filters: { type: 'object', required: false }
 };
 
 /**
