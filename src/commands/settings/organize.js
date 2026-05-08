@@ -16,8 +16,8 @@ import { invalidateFilterCache } from '../../middleware/organize.js';
 // Filter type definitions
 const FILTER_TYPES = {
     links_only: { label: 'Links Only', emoji: '🔗' },
-    images_only: { label: 'Images Only', emoji: '🖼️' },
-    media_only: { label: 'Media Only', emoji: '🎬' },
+    images_only: { label: 'Media Only', emoji: '🎬' },
+    media_only: { label: 'Socials Only', emoji: '🌐' },
     cmd_only: { label: 'CMD Only', emoji: '🤖' }
 };
 
