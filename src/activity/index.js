@@ -148,6 +148,18 @@ async function handleMessage(message) {
   // Ignore bots, webhooks, and DMs, and safely handle partials missing authors
   if (!message.author || message.author.bot || message.webhookId || !message.guild) return;
 
+  // === CONTENT FILTER CHECK (early guard) ===
+  try {
+    const { checkContentFilter } = await import('../middleware/organize.js');
+    const shouldDelete = await checkContentFilter(message);
+    if (shouldDelete) {
+      await message.delete().catch(() => {});
+      return; // Do NOT track activity for deleted messages
+    }
+  } catch (error) {
+    // Never let filter errors block activity tracking
+    sysError('Content Filter Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
+  }
 
   addMessagePoint(message.guild, message.author.id, message.author.username, message.content);
 
