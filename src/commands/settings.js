@@ -110,7 +110,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_organize')
             .setLabel('Organize')
-            .setEmoji('📋')
+            .setEmoji('🧹')
             .setStyle(ButtonStyle.Secondary)
     );
 
