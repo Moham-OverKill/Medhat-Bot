@@ -13,6 +13,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { logServerEvent, sendLog, sysLog, sysError } from '../utils/logger.js';
+import { handleInteractionError } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
@@ -141,8 +142,7 @@ export async function handleBankCommand(interaction) {
     }
     await refreshBankUI(interaction);
   } catch (error) {
-    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Bank command' });
-    await interaction.editReply({ content: '❌ An error occurred.' });
+    await handleInteractionError(interaction, error, 'Bank command');
   }
 }
 
@@ -257,7 +257,7 @@ export async function handleShopButton(interaction) {
       embeds: []
     });
   } catch (error) {
-    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop main menu' });
+    await handleInteractionError(interaction, error, 'Shop main menu');
   }
 }
 
@@ -304,7 +304,7 @@ export async function handleShopCategorySelect(interaction) {
       components: [new ActionRowBuilder().addComponents(select), backRow]
     });
   } catch (error) {
-    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop category select' });
+    await handleInteractionError(interaction, error, 'Shop category select');
   }
 }
 
@@ -696,8 +696,7 @@ export async function handleInventoryButton(interaction) {
     });
 
   } catch (error) {
-    sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Inventory dashboard' });
-    if (!interaction.replied) await interaction.editReply({ content: '❌ Error loading inventory.' });
+    await handleInteractionError(interaction, error, 'Inventory dashboard');
   }
 }
 

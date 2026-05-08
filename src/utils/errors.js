@@ -26,11 +26,15 @@ export function createSuccessEmbed(title, description) {
  * Handle interaction errors uniformly
  */
 export async function handleInteractionError(interaction, error, context) {
-  sysError('Interaction Audit Failure', error, { 
-    user: interaction?.user?.id, 
-    guild: interaction?.guildId, 
-    detail: context 
-  });
+  // 10062 is "Unknown interaction" (token expired).
+  // No need to audit log it as a failure since it's an API/network timeout issue.
+  if (error?.code !== 10062) {
+    sysError('Interaction Audit Failure', error, { 
+      user: interaction?.user?.id, 
+      guild: interaction?.guildId, 
+      detail: context 
+    });
+  }
   
   const message = 'An error occurred while processing your request.';
   
@@ -50,6 +54,6 @@ export async function handleInteractionError(interaction, error, context) {
       });
     }
   } catch (e) {
-    sysError('Interaction Warning', e, { detail: 'Failed to send ephemeral error response' });
+    // Ignore fallback failures like "Unknown interaction" when token is already expired
   }
 }
