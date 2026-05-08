@@ -375,18 +375,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     await handleSlashCommand(interaction);
   } catch (error) {
-    sysError('Interaction Processing Failed', error, { user: interaction.user.id, guild: interaction.guildId });
+    // Only log if it's not a standard Discord timeout/unknown interaction error bubbling up
+    if (error.code !== 10062) {
+      sysError('Interaction Processing Failed', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
 
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: 'An error occurred while handling this command.',
-        flags: MessageFlags.Ephemeral
-      });
-    } else if (interaction.deferred) {
-      await interaction.followUp({
-        content: 'An error occurred while processing this command.',
-        flags: MessageFlags.Ephemeral
-      });
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'An error occurred while handling this command.',
+          flags: MessageFlags.Ephemeral
+        });
+      } else if (interaction.deferred) {
+        await interaction.followUp({
+          content: 'An error occurred while processing this command.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+    } catch (fallbackError) {
+      // Ignore fallback errors like "Unknown interaction" which just means the token expired
     }
   }
 });
