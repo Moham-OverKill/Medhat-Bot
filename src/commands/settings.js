@@ -95,7 +95,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Users, Economy
+    // Row 3: Users, Economy, Organize
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
@@ -106,6 +106,11 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_economy')
             .setLabel('Economy')
             .setEmoji('📈')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_organize')
+            .setLabel('Organize')
+            .setEmoji('📋')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -231,9 +236,15 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_economy' || customId.startsWith('economy_')) {
+        if (customId === 'settings_economy' || customId.startsWith('economy_') || customId.startsWith('eco_')) {
             const { handleEconomySettings } = await import('./settings/economy.js');
             await handleEconomySettings(interaction);
+            return;
+        }
+
+        if (customId === 'settings_organize' || customId.startsWith('organize_')) {
+            const { handleOrganizeComponent } = await import('./settings/organize.js');
+            await handleOrganizeComponent(interaction);
             return;
         }
 
