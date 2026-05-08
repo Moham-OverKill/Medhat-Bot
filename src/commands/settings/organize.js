@@ -52,7 +52,7 @@ async function renderPanel(interaction, activeFilter = null) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('📋 Organize — Channel Filters')
+        .setTitle('🧹 Organize — Channel Filters')
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 
@@ -180,7 +180,7 @@ async function handleChannelToggle(interaction, filterKey) {
 
     // Audit log
     const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', `📋 Organize Filter ${action === 'added' ? 'Added' : 'Removed'}`,
+    sendLog(interaction.guild, 'audit', 'cyan', `🧹 Organize Filter ${action === 'added' ? 'Added' : 'Removed'}`,
         `**Admin:** \`${logName}\`\n` +
         `**Filter:** ${meta.emoji} ${meta.label}\n` +
         `**Channel:** <#${channelId}>\n` +
