@@ -132,7 +132,7 @@ export function setupComponentHandlers(client) {
       // --- SECURITY GUARDRAIL ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const adminPrefixes = [
-          'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_',
+          'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_', 'organize_',
           'shop_admin_', 'shop_setup_', 'shop_pack_', 'shop_add_', 'shop_edit_',
           'shop_delete_', 'shop_post_', 'shop_cat_', 'shop_assign_', 'shop_select_cat_delete',
           'shop_select_item_delete', 'mass_', 'quests_', 'admin_user_', 'lb_',
@@ -194,8 +194,8 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
-      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users)
-      if (customId.startsWith('settings_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('admin_user_') || customId.startsWith('lb_')) {
+      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters)
+      if (customId.startsWith('settings_') || customId.startsWith('organize_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('admin_user_') || customId.startsWith('lb_')) {
         await handleSettingsComponent(interaction);
         return;
       }
