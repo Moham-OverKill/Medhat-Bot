@@ -14,6 +14,7 @@ import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { handleInteractionError } from '../utils/errors.js';
 
 const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
 
@@ -655,11 +656,6 @@ export async function handleAdminUserComponent(interaction) {
         }
     } catch (error) {
         console.error('CRITICAL ADMIN ERROR DETAILS:', error);
-        sysError('Interaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Admin user component handler' });
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
-        } else {
-            await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
+        await handleInteractionError(interaction, error, 'Admin user component handler');
     }
 }
