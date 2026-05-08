@@ -153,15 +153,24 @@ async function handleChannelToggle(interaction, filterKey) {
         action = 'added';
     }
 
-    // Save using JSONB deep set
+    // Save using nested jsonb_set to ensure channel_filters key exists first.
+    // PostgreSQL's jsonb_set cannot create intermediate keys — a single
+    // ARRAY['channel_filters', filterKey] path silently fails if channel_filters
+    // doesn't exist yet. The inner jsonb_set creates it if missing.
     await pool.query(
         `INSERT INTO guild_configs (guild_id, config)
          VALUES ($1, jsonb_build_object('channel_filters', jsonb_build_object($2::text, $3::jsonb)))
          ON CONFLICT (guild_id)
          DO UPDATE SET config = jsonb_set(
-           COALESCE(guild_configs.config, '{}'::jsonb),
+           jsonb_set(
+             COALESCE(guild_configs.config, '{}'::jsonb),
+             '{channel_filters}',
+             COALESCE(guild_configs.config->'channel_filters', '{}'::jsonb),
+             true
+           ),
            ARRAY['channel_filters', $2::text],
-           $3::jsonb
+           $3::jsonb,
+           true
          ), updated_at = NOW()`,
         [guildId, filterKey, JSON.stringify(channels)]
     );
