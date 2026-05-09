@@ -191,15 +191,16 @@ export async function processFixEmbeds(message) {
 
   if (fixedUrls.length === 0) return;
 
-  // Use zero-width space to hide the link text, Discord will still generate the embed
-  const invisibleLinks = fixedUrls.map(url => `[\u200B](${url})`).join('');
+  // Use Braille Pattern Blank (\u2800) to hide the link text. 
+  // This is more reliable than \u200B in many Discord clients to avoid showing "[]".
+  const invisibleLinks = fixedUrls.map(url => `[\u2800](${url})`).join('');
 
   try {
     // 1. Reply to the original message with the invisible replaced links
     const botReply = await message.reply({ content: invisibleLinks });
 
-    // 2. Wait 4.5 seconds to give Discord time to generate the video embed on the bot's reply
-    await new Promise(resolve => setTimeout(resolve, 4500));
+    // 2. Wait 5 seconds to give Discord time to generate the video embed on the bot's reply
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // 3. Fetch the bot's reply message to check for embeds
     const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
