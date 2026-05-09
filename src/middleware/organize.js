@@ -164,30 +164,42 @@ export async function processFixEmbeds(message) {
   const content = message.content || '';
   if (!content) return;
 
-  let newContent = content;
-  let modified = false;
-
+  const urlPattern = /https?:\/\/[^\s<]+/gi;
+  const urls = content.match(urlPattern) || [];
+  
+  const fixedUrls = [];
   const replacers = [
-    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)\b/gi, replacement: '$1tnktok.com' },
-    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)\b/gi, replacement: '$1eeinstagram.com' },
-    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)\b/gi, replacement: '$1facebed.com' }
+    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)(?=\/|$)/i, replacement: '$1tnktok.com' },
+    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: '$1eeinstagram.com' },
+    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: '$1facebed.com' }
   ];
 
-  for (const { pattern, replacement } of replacers) {
-    if (pattern.test(newContent)) {
-      newContent = newContent.replace(pattern, replacement);
-      modified = true;
+  for (let url of urls) {
+    let modifiedUrl = url;
+    let modified = false;
+    for (const { pattern, replacement } of replacers) {
+      if (pattern.test(modifiedUrl)) {
+        modifiedUrl = modifiedUrl.replace(pattern, replacement);
+        modified = true;
+        break; // Only apply one replacement per URL
+      }
+    }
+    if (modified) {
+      fixedUrls.push(modifiedUrl);
     }
   }
 
-  if (!modified) return;
+  if (fixedUrls.length === 0) return;
+
+  // Use zero-width space to hide the link text, Discord will still generate the embed
+  const invisibleLinks = fixedUrls.map(url => `[\u200B](${url})`).join('');
 
   try {
-    // 1. Reply to the original message with the replaced links
-    const botReply = await message.reply({ content: newContent });
+    // 1. Reply to the original message with the invisible replaced links
+    const botReply = await message.reply({ content: invisibleLinks });
 
-    // 2. Wait 3.5 seconds to give Discord time to generate the video embed on the bot's reply
-    await new Promise(resolve => setTimeout(resolve, 3500));
+    // 2. Wait 4.5 seconds to give Discord time to generate the video embed on the bot's reply
+    await new Promise(resolve => setTimeout(resolve, 4500));
 
     // 3. Fetch the bot's reply message to check for embeds
     const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
