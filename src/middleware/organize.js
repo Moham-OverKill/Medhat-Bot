@@ -205,11 +205,14 @@ export async function processFixEmbeds(message) {
     // 3. Fetch the bot's reply message to check for embeds
     const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
 
-    // Success check: Must have at least one embed AND that embed must contain a playable video
-    const hasVideoEmbed = fetchedBotReply?.embeds.some(e => e.video || e.data?.video || e.type === 'video');
+    // Success check: Must have a playable video OR a large image (e.g. for Instagram/Facebook photo posts)
+    const hasContentEmbed = fetchedBotReply?.embeds.some(e => 
+      e.video || e.data?.video || e.type === 'video' || 
+      e.image || e.data?.image
+    );
 
-    if (fetchedBotReply && hasVideoEmbed) {
-      // Success Route: The service generated a playable embed, suppress the user's original broken embed
+    if (fetchedBotReply && hasContentEmbed) {
+      // Success Route: The service generated a playable embed or large image, suppress original
       await message.suppressEmbeds(true).catch(() => {});
     } else if (fetchedBotReply) {
       // Fail Route: No playable video detected, clean up the bot's reply silently
