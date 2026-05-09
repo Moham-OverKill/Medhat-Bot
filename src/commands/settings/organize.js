@@ -255,7 +255,7 @@ export async function handleOrganizeComponent(interaction) {
 
         await pool.query(
             `INSERT INTO guild_configs (guild_id, config)
-             VALUES ($1, jsonb_build_object('channel_filters', jsonb_build_object('fix_embeds', $2::boolean)))
+             VALUES ($1, jsonb_build_object('channel_filters', jsonb_build_object('fix_embeds', $2::jsonb)))
              ON CONFLICT (guild_id)
              DO UPDATE SET config = jsonb_set(
                jsonb_set(
