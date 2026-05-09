@@ -16,6 +16,7 @@ import {
   handleInventoryAction,
   handleItemClaim,
   handleBackButton,
+  handleBankRefresh,
   handleShopConfirmBuy,
   handleShopCancelBuy
 } from '../commands/bank.js';
@@ -229,6 +230,8 @@ export function setupComponentHandlers(client) {
         await handleBankHistory(interaction);
       } else if (customId === 'bank_back') {
         await handleBackButton(interaction);
+      } else if (customId === 'bank_refresh') {
+        await handleBankRefresh(interaction);
       }
       // BANK: Transfer
       // BANK: Shop
