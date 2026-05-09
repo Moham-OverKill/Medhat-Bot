@@ -121,8 +121,14 @@ function buildBankUI(userData, member) {
     .setEmoji('📜')
     .setStyle(ButtonStyle.Secondary);
 
+  const refreshButton = new ButtonBuilder()
+    .setCustomId('bank_refresh')
+    .setLabel('Refresh')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary);
+
   const row = new ActionRowBuilder()
-    .addComponents(dailyButton, historyButton);
+    .addComponents(dailyButton, historyButton, refreshButton);
 
   return { embed, components: [row] };
 }
@@ -1511,6 +1517,17 @@ export async function handleBackButton(interaction) {
     await refreshBankUI(interaction);
   } catch (error) {
     sysError('Back button interaction failure', error, { user: interaction.user.id, guild: interaction.guildId });
+  }
+}
+
+export async function handleBankRefresh(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => { });
+    }
+    await refreshBankUI(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'Bank refresh button');
   }
 }
 
