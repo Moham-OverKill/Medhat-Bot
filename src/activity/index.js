@@ -47,6 +47,7 @@ export async function initializeActivityTracking(discordClient) {
   // Set up message tracking (with anti-spam)
   client.on('messageCreate', handleMessage);
   client.on('messageUpdate', handleMessageUpdate);
+  client.on('messageDelete', handleMessageDelete);
 
   // Set up voice state tracking (event-based stopwatch)
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
@@ -139,6 +140,7 @@ export function cleanup() {
   if (client) {
     client.removeListener('messageCreate', handleMessage);
     client.removeListener('messageUpdate', handleMessageUpdate);
+    client.removeListener('messageDelete', handleMessageDelete);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
   }
 
@@ -207,6 +209,20 @@ async function handleMessageUpdate(oldMessage, newMessage) {
 
   } catch (error) {
     sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });
+  }
+}
+
+/**
+ * Handle message deletions to clean up orphaned bot replies.
+ */
+async function handleMessageDelete(message) {
+  if (!message.guild) return;
+  
+  try {
+    const { handleFixedEmbedCleanup } = await import('../middleware/organize.js');
+    await handleFixedEmbedCleanup(message.channel, message.id);
+  } catch (error) {
+    // Fail silently, just a cleanup task
   }
 }
 
