@@ -46,6 +46,7 @@ export async function initializeActivityTracking(discordClient) {
 
   // Set up message tracking (with anti-spam)
   client.on('messageCreate', handleMessage);
+  client.on('messageUpdate', handleMessageUpdate);
 
   // Set up voice state tracking (event-based stopwatch)
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
@@ -137,6 +138,7 @@ export function cleanup() {
 
   if (client) {
     client.removeListener('messageCreate', handleMessage);
+    client.removeListener('messageUpdate', handleMessageUpdate);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
   }
 
@@ -158,7 +160,7 @@ async function handleMessage(message) {
     }
     
     // === FIX EMBEDS (URL Replacer) ===
-    // This MUST run after the filter check, but we do not await its 3.5s verification delay
+    // This MUST run after the filter check, but we do not await its verification delay
     // to prevent blocking the message activity tracker & quest engine.
     processFixEmbeds(message).catch(err => sysError('Fix Embeds Background Failure', err));
 
@@ -175,6 +177,36 @@ async function handleMessage(message) {
   } catch (error) {
     // Log — do NOT silently swallow. Silent failures make bugs invisible.
     sysError('Quest Progress Check Failed', error, { guild: message.guild?.id, user: message.author?.id });
+  }
+}
+
+/**
+ * Handle message edits to prevent filter bypass and update fixed embeds.
+ */
+async function handleMessageUpdate(oldMessage, newMessage) {
+  // Guard: Ignore bots, webhooks, DMs, and partials
+  if (!newMessage.author || newMessage.author.bot || newMessage.webhookId || !newMessage.guild) return;
+
+  // Guard: Only proceed if content or attachments changed (avoids loops on embed unfurling)
+  const contentChanged = oldMessage.content !== newMessage.content;
+  const attachmentsChanged = oldMessage.attachments?.size !== newMessage.attachments?.size;
+  if (!contentChanged && !attachmentsChanged) return;
+
+  try {
+    const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
+    
+    // 1. Enforce Organize Rules on the edited content
+    const shouldDelete = await checkContentFilter(newMessage);
+    if (shouldDelete) {
+      await newMessage.delete().catch(() => {});
+      return;
+    }
+
+    // 2. Update/Sync Fixed Embeds
+    processFixEmbeds(newMessage).catch(err => sysError('Fix Embeds Update Failure', err));
+
+  } catch (error) {
+    sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });
   }
 }
 
