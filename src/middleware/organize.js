@@ -16,6 +16,13 @@ const SOCIAL_MEDIA_DOMAINS = [
   'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.watch'
 ];
 
+// Domains used for the "Fix Embeds" feature
+const FIX_SERVICE_DOMAINS = {
+  tiktok: 'tnktok.com',
+  instagram: 'kkinstagram.com',
+  facebook: 'facebed.com'
+};
+
 /**
  * Load filter config for a guild into the cache
  */
@@ -169,9 +176,9 @@ export async function processFixEmbeds(message) {
   
   const fixedUrls = [];
   const replacers = [
-    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)(?=\/|$)/i, replacement: '$1tnktok.com' },
-    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: '$1kkinstagram.com' },
-    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: '$1facebed.com' }
+    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.tiktok}` },
+    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.instagram}` },
+    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.facebook}` }
   ];
 
   for (let url of urls) {
