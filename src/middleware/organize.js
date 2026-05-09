@@ -46,6 +46,7 @@ async function loadGuildFilters(guildId) {
       images_only: new Set(Array.isArray(filters.images_only) ? filters.images_only : []),
       media_only: new Set(Array.isArray(filters.media_only) ? filters.media_only : []),
       cmd_only: new Set(Array.isArray(filters.cmd_only) ? filters.cmd_only : []),
+      fix_embeds: !!filters.fix_embeds,
       cachedAt: Date.now()
     };
     entry.hasAnyRule = entry.links_only.size > 0 || entry.images_only.size > 0 ||
@@ -148,3 +149,58 @@ export async function checkContentFilter(message) {
   // No rule was satisfied — delete the message
   return true;
 }
+
+/**
+ * Replace broken social media links with working embeddable alternatives.
+ * Runs AFTER checkContentFilter logic.
+ */
+export async function processFixEmbeds(message) {
+  const guildId = message.guild.id;
+
+  // Read from hot-cache
+  const cached = filterCache.get(guildId);
+  if (!cached || !cached.fix_embeds) return;
+
+  const content = message.content || '';
+  if (!content) return;
+
+  let newContent = content;
+  let modified = false;
+
+  const replacers = [
+    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)\b/gi, replacement: '$1tnktok.com' },
+    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)\b/gi, replacement: '$1eeinstagram.com' },
+    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)\b/gi, replacement: '$1facebed.com' }
+  ];
+
+  for (const { pattern, replacement } of replacers) {
+    if (pattern.test(newContent)) {
+      newContent = newContent.replace(pattern, replacement);
+      modified = true;
+    }
+  }
+
+  if (!modified) return;
+
+  try {
+    // 1. Reply to the original message with the replaced links
+    const botReply = await message.reply({ content: newContent });
+
+    // 2. Wait 3.5 seconds to give Discord time to generate the video embed on the bot's reply
+    await new Promise(resolve => setTimeout(resolve, 3500));
+
+    // 3. Fetch the bot's reply message to check for embeds
+    const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
+
+    if (fetchedBotReply && fetchedBotReply.embeds.length > 0) {
+      // Success Route: The service generated a playable embed, suppress the user's original broken embed
+      await message.suppressEmbeds(true).catch(() => {});
+    } else if (fetchedBotReply) {
+      // Fail Route: The embed failed to generate, clean up the bot's reply silently
+      await fetchedBotReply.delete().catch(() => {});
+    }
+  } catch (error) {
+    sysError('Fix Embeds Failed', error, { guild: guildId, channel: message.channel.id });
+  }
+}
+
