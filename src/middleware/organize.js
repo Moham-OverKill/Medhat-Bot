@@ -170,7 +170,7 @@ export async function processFixEmbeds(message) {
   const fixedUrls = [];
   const replacers = [
     { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)(?=\/|$)/i, replacement: '$1tnktok.com' },
-    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: '$1eeinstagram.com' },
+    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: '$1kkinstagram.com' },
     { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: '$1facebed.com' }
   ];
 
