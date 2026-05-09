@@ -23,6 +23,12 @@ const FIX_SERVICE_DOMAINS = {
   facebook: 'facebed.com'
 };
 
+// Tracks userMessageId -> { botReplyId, lastFixedUrls }
+// Used to update or remove "Fixed Embed" replies when the user edits their message.
+// Entries are auto-deleted after 1 hour.
+const fixedEmbedTracker = new Map();
+const TRACKER_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
 /**
  * Load filter config for a guild into the cache
  */
@@ -159,18 +165,16 @@ export async function checkContentFilter(message) {
 
 /**
  * Replace broken social media links with working embeddable alternatives.
- * Runs AFTER checkContentFilter logic.
+ * Handles both new messages and edits dynamically.
  */
 export async function processFixEmbeds(message) {
   const guildId = message.guild.id;
 
-  // Read from hot-cache
+  // 1. Guard: Check if feature is enabled
   const cached = filterCache.get(guildId);
   if (!cached || !cached.fix_embeds) return;
 
   const content = message.content || '';
-  if (!content) return;
-
   const urlPattern = /https?:\/\/[^\s<]+/gi;
   const urls = content.match(urlPattern) || [];
   
@@ -188,45 +192,74 @@ export async function processFixEmbeds(message) {
       if (pattern.test(modifiedUrl)) {
         modifiedUrl = modifiedUrl.replace(pattern, replacement);
         modified = true;
-        break; // Only apply one replacement per URL
+        break;
       }
     }
-    if (modified) {
-      fixedUrls.push(modifiedUrl);
-    }
+    if (modified) fixedUrls.push(modifiedUrl);
   }
 
-  if (fixedUrls.length === 0) return;
+  // Generate current "invisible links" string
+  const currentFixedUrls = fixedUrls.map(url => `[\u2800](${url})`).join('');
+  const existingRecord = fixedEmbedTracker.get(message.id);
 
-  // Use Braille Pattern Blank (\u2800) to hide the link text. 
-  // This is more reliable than \u200B in many Discord clients to avoid showing "[]".
-  const invisibleLinks = fixedUrls.map(url => `[\u2800](${url})`).join('');
+  // === ROUTE A: CLEANUP (User removed the social links) ===
+  if (currentFixedUrls.length === 0) {
+    if (existingRecord) {
+      try {
+        const botReply = await message.channel.messages.fetch(existingRecord.botReplyId).catch(() => null);
+        if (botReply) await botReply.delete().catch(() => {});
+        fixedEmbedTracker.delete(message.id);
+      } catch (err) { /* silent */ }
+    }
+    return;
+  }
+
+  // === ROUTE B: NO-CHANGE (Links are the same, just a text edit) ===
+  if (existingRecord && existingRecord.lastFixedUrls === currentFixedUrls) {
+    return; // Do nothing, existing player is fine
+  }
 
   try {
-    // 1. Reply to the original message with the invisible replaced links
-    const botReply = await message.reply({ content: invisibleLinks });
+    let botReply;
+    
+    // === ROUTE C: UPDATE (User changed the link) ===
+    if (existingRecord) {
+      botReply = await message.channel.messages.fetch(existingRecord.botReplyId).catch(() => null);
+      if (botReply) {
+        await botReply.edit({ content: currentFixedUrls });
+        // Update the record with new URL signature
+        fixedEmbedTracker.set(message.id, { ...existingRecord, lastFixedUrls: currentFixedUrls });
+      }
+    } 
+    
+    // === ROUTE D: CREATE (New message or first valid link edit) ===
+    if (!botReply) {
+      botReply = await message.reply({ content: currentFixedUrls });
+      fixedEmbedTracker.set(message.id, { botReplyId: botReply.id, lastFixedUrls: currentFixedUrls });
+      
+      // Auto-expire from map after 1 hour
+      setTimeout(() => fixedEmbedTracker.delete(message.id), TRACKER_EXPIRY_MS);
+    }
 
-    // 2. Wait 5 seconds to give Discord time to generate the video embed on the bot's reply
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // --- SHARED VERIFICATION FLOW ---
+    // Wait 3 seconds (per user request for responsiveness on edits)
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // 3. Fetch the bot's reply message to check for embeds
     const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
-
-    // Success check: Must have a playable video OR a large image (e.g. for Instagram/Facebook photo posts)
     const hasContentEmbed = fetchedBotReply?.embeds.some(e => 
       e.video || e.data?.video || e.type === 'video' || 
       e.image || e.data?.image
     );
 
     if (fetchedBotReply && hasContentEmbed) {
-      // Success Route: The service generated a playable embed or large image, suppress original
       await message.suppressEmbeds(true).catch(() => {});
     } else if (fetchedBotReply) {
-      // Fail Route: No playable video detected, clean up the bot's reply silently
+      // Fail Route: New link didn't work, kill the bot reply and tracker
       await fetchedBotReply.delete().catch(() => {});
+      fixedEmbedTracker.delete(message.id);
     }
   } catch (error) {
-    sysError('Fix Embeds Failed', error, { guild: guildId, channel: message.channel.id });
+    sysError('Fix Embeds Dynamic Update Failed', error, { guild: guildId, channel: message.channel.id });
   }
 }
 
