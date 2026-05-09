@@ -263,3 +263,20 @@ export async function processFixEmbeds(message) {
   }
 }
 
+/**
+ * Force-clean a fixed embed reply (e.g. when the original message is deleted).
+ */
+export async function handleFixedEmbedCleanup(channel, messageId) {
+  const record = fixedEmbedTracker.get(messageId);
+  if (!record) return;
+
+  try {
+    const botReply = await channel.messages.fetch(record.botReplyId).catch(() => null);
+    if (botReply) await botReply.delete().catch(() => {});
+  } catch (err) {
+    // Silent fail if already deleted
+  } finally {
+    fixedEmbedTracker.delete(messageId);
+  }
+}
+
