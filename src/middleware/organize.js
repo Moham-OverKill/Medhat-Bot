@@ -145,9 +145,10 @@ export async function checkContentFilter(message) {
         break;
       }
       case 'media_only': {
-        // Passes if message contains a social media URL
+        // Strict Check: If links are present, EVERY link must be a valid social media URL.
+        // If NO links are present, this specific rule fails (may be saved by images_only).
         const urls = extractUrls(content);
-        if (urls.some(url => isSocialMediaUrl(url))) return false;
+        if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url))) return false;
         break;
       }
       case 'cmd_only': {
@@ -180,7 +181,7 @@ export async function processFixEmbeds(message) {
   
   const fixedUrls = [];
   const replacers = [
-    { pattern: /(https?:\/\/)(www\.)?(tiktok\.com|vm\.tiktok\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.tiktok}` },
+    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.tiktok}` },
     { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.instagram}` },
     { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.facebook}` }
   ];
