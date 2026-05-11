@@ -216,11 +216,13 @@ async function handleMessageUpdate(oldMessage, newMessage) {
  * Handle message deletions to clean up orphaned bot replies.
  */
 async function handleMessageDelete(message) {
-  if (!message.guild) return;
+  // Use the local client reference to fetch the channel if message.channel is partial/missing
+  const channel = message.channel || await client.channels.fetch(message.channelId).catch(() => null);
+  if (!channel) return;
   
   try {
     const { handleFixedEmbedCleanup } = await import('../middleware/organize.js');
-    await handleFixedEmbedCleanup(message.channel, message.id);
+    await handleFixedEmbedCleanup(channel, message.id);
   } catch (error) {
     // Fail silently, just a cleanup task
   }
