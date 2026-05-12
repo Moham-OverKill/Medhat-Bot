@@ -243,19 +243,27 @@ export async function processFixEmbeds(message) {
     }
 
     // --- SHARED VERIFICATION FLOW ---
-    // Wait 5 seconds (Increased back from 3s to be more patient with slow Discord embeds)
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Poll every 500ms up to 5 seconds to see if Discord has generated the embed yet.
+    // This allows the bot to be fast when Discord is fast, and patient when it's slow.
+    let fetchedBotReply = null;
+    let hasContentEmbed = false;
 
-    const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
-    const hasContentEmbed = fetchedBotReply?.embeds.some(e => 
-      e.video || e.data?.video || e.type === 'video' || 
-      e.image || e.data?.image
-    );
+    for (let i = 0; i < 10; i++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
+      hasContentEmbed = fetchedBotReply?.embeds.some(e => 
+        e.video || e.data?.video || e.type === 'video' || 
+        e.image || e.data?.image
+      );
+
+      if (hasContentEmbed) break; // Found it! Stop waiting.
+    }
 
     if (fetchedBotReply && hasContentEmbed) {
       await message.suppressEmbeds(true).catch(() => {});
     } else if (fetchedBotReply) {
-      // Fail Route: New link didn't work, kill the bot reply and tracker
+      // Fail Route: 5 seconds passed and no playable content appeared.
       await fetchedBotReply.delete().catch(() => {});
       fixedEmbedTracker.delete(message.id);
     }
