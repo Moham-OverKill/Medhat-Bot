@@ -243,8 +243,8 @@ export async function processFixEmbeds(message) {
     }
 
     // --- SHARED VERIFICATION FLOW ---
-    // Wait 3 seconds (per user request for responsiveness on edits)
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait 5 seconds (Increased back from 3s to be more patient with slow Discord embeds)
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
     const hasContentEmbed = fetchedBotReply?.embeds.some(e => 
