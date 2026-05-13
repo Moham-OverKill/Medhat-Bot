@@ -352,8 +352,25 @@ client.on(Events.GuildChannelDelete, async (channel) => {
         updated = true;
       }
     }
+
+    // Also clean up Organize channel filters
+    if (config.channel_filters) {
+      const filterKeys = ['links_only', 'images_only', 'media_only', 'cmd_only'];
+      for (const key of filterKeys) {
+        if (Array.isArray(config.channel_filters[key])) {
+          const originalLength = config.channel_filters[key].length;
+          config.channel_filters[key] = config.channel_filters[key].filter(id => id !== channel.id);
+          if (config.channel_filters[key].length < originalLength) {
+            updated = true;
+          }
+        }
+      }
+    }
+
     if (updated) {
       await setGuildConfig(guild.id, config);
+      const { invalidateFilterCache } = await import('./middleware/organize.js');
+      invalidateFilterCache(guild.id);
       sysLog('Config Updated', { guild: guild.id, detail: 'Deleted linked channel resource' });
     }
   } catch (error) {
