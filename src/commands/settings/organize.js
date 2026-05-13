@@ -45,8 +45,9 @@ async function renderPanel(interaction, activeFilter = null) {
     const summaryLines = [];
     for (const [key, meta] of Object.entries(FILTER_TYPES)) {
         const channels = Array.isArray(filters[key]) ? filters[key] : [];
-        const channelMentions = channels.length > 0
-            ? channels.map(id => `<#${id}>`).join(', ')
+        const validChannels = channels.filter(id => interaction.guild.channels.cache.has(id));
+        const channelMentions = validChannels.length > 0
+            ? validChannels.map(id => `<#${id}>`).join(', ')
             : '_None_';
         summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
     }
