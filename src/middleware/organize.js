@@ -171,9 +171,9 @@ export async function checkContentFilter(message) {
 export async function processFixEmbeds(message) {
   const guildId = message.guild.id;
 
-  // 1. Guard: Check if feature is enabled
+  // 1. Guard: Check if feature is enabled AND channel is configured for Socials Only (media_only)
   const cached = filterCache.get(guildId);
-  if (!cached || !cached.fix_embeds) return;
+  if (!cached || !cached.fix_embeds || !cached.media_only.has(message.channel.id)) return;
 
   const content = message.content || '';
   const urlPattern = /https?:\/\/[^\s<]+/gi;
