@@ -188,6 +188,20 @@ export async function processFixEmbeds(message) {
 
   for (let url of urls) {
     let modifiedUrl = url;
+
+    // Expand short links (vm, vt, v) because third-party fixers often fail to follow the redirect
+    if (/(https?:\/\/)(vm|vt|v)\.tiktok\.com/i.test(modifiedUrl)) {
+      try {
+        const response = await fetch(modifiedUrl, { method: 'HEAD', redirect: 'follow' });
+        if (response.url && !/(vm|vt|v)\.tiktok\.com/i.test(response.url)) {
+          // Keep the expanded URL and strip any tracking query parameters
+          modifiedUrl = response.url.split('?')[0];
+        }
+      } catch (err) {
+        // Fall back to original on failure
+      }
+    }
+
     let modified = false;
     for (const { pattern, replacement } of replacers) {
       if (pattern.test(modifiedUrl)) {
