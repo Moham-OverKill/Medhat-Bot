@@ -257,12 +257,12 @@ export async function processFixEmbeds(message) {
     }
 
     // --- SHARED VERIFICATION FLOW ---
-    // Poll every 500ms up to 5 seconds to see if Discord has generated the embed yet.
+    // Poll every 500ms up to 7 seconds (14 iterations) to see if Discord has generated the embed yet.
     // This allows the bot to be fast when Discord is fast, and patient when it's slow.
     let fetchedBotReply = null;
     let hasContentEmbed = false;
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 14; i++) {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
@@ -271,13 +271,41 @@ export async function processFixEmbeds(message) {
         e.image || e.data?.image
       );
 
-      if (hasContentEmbed) break; // Found it! Stop waiting.
+      if (hasContentEmbed) {
+        // Optional: If we found at least one, we can wait 1 more second to let other multi-links finish rendering
+        if (fixedUrls.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
+        }
+        break; 
+      }
     }
 
     if (fetchedBotReply && hasContentEmbed) {
       await message.suppressEmbeds(true).catch(() => {});
+
+      // MULTI-LINK PRUNING: If multiple links were sent, check if any failed to embed
+      if (fixedUrls.length > 1) {
+        const workingUrls = [];
+        for (const url of fixedUrls) {
+          // Does any embed's URL match this fixed URL?
+          const embedExists = fetchedBotReply.embeds.some(e => 
+            e.url && (e.url === url || e.url.includes(url) || url.includes(e.url)) &&
+            (e.video || e.data?.video || e.type === 'video' || e.image || e.data?.image)
+          );
+          if (embedExists) workingUrls.push(url);
+        }
+
+        // If some links failed, update the bot's reply to only show the working ones
+        if (workingUrls.length > 0 && workingUrls.length < fixedUrls.length) {
+          const newInvisibleLinks = workingUrls.map(u => `[\u2800](${u})`).join('');
+          await fetchedBotReply.edit({ content: newInvisibleLinks }).catch(() => {});
+          fixedEmbedTracker.set(message.id, { botReplyId: fetchedBotReply.id, lastFixedUrls: newInvisibleLinks });
+        }
+      }
+
     } else if (fetchedBotReply) {
-      // Fail Route: 5 seconds passed and no playable content appeared.
+      // Fail Route: 7 seconds passed and no playable content appeared.
       await fetchedBotReply.delete().catch(() => {});
       fixedEmbedTracker.delete(message.id);
     }
