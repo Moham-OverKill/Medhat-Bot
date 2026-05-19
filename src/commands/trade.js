@@ -116,14 +116,14 @@ export async function initializeTradeJanitor(client) {
 
 
 /**
- * Calculates trade tax (e.g. 10%)
+ * Calculates trade tax (10%)
  * @param {number} amount 
  * @param {boolean} isBooster 
  * @returns {Object} Fee breakdown
  */
 function calculateTradeTax(amount, isBooster = false) {
-    // Boosters pay 0% fee, others pay 5%
-    const rate = isBooster ? 0 : 0.05;
+    // Boosters pay 0% fee, others pay 10%
+    const rate = isBooster ? 0 : 0.10;
     const fee = Math.floor(amount * rate);
     return {
         fee: fee,
@@ -135,7 +135,137 @@ function calculateTradeTax(amount, isBooster = false) {
 // Memory for active trade SETUPS (ephemeral, pre-posting)
 // Key: GuildId_UserId (Sender)
 const ACTIVE_SETUPS = new Map();
-const TRADE_TIMEOUTS = new Map(); 
+const TRADE_TIMEOUTS = new Map();
+
+/**
+ * ─────────────────────────────────────────────────────
+ * ANTI-CHEAT / ALT-ACCOUNT DETECTION ENGINE
+ * Runs asynchronously AFTER a trade completes. Never blocks.
+ * Evaluates 4 heuristic flags. If 2+ fire on either user,
+ * a warning is dispatched to the inventory log channel.
+ * ─────────────────────────────────────────────────────
+ */
+async function detectSuspiciousTrade(guild, senderId, targetId, senderDiscordUser, targetDiscordUser) {
+    try {
+        const now = Date.now();
+        const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+        const guildId = guild.id;
+
+        // ── Shared Data Queries (batched to minimize DB round-trips) ──────────
+
+        // 1. Lifetime Clumping: count total trades per user and trades with each other
+        const clumpRes = await query(
+            `SELECT
+                COUNT(*) FILTER (WHERE (sender_id = $1 OR target_id = $1) AND status = 'accepted') AS sender_total,
+                COUNT(*) FILTER (WHERE (sender_id = $2 OR target_id = $2) AND status = 'accepted') AS target_total,
+                COUNT(*) FILTER (
+                    WHERE status = 'accepted'
+                    AND sender_id = $1 AND target_id = $2
+                ) AS sender_gave_to_target,
+                COUNT(*) FILTER (
+                    WHERE status = 'accepted'
+                    AND sender_id = $2 AND target_id = $1
+                ) AS target_gave_to_sender
+            FROM trades
+            WHERE guild_id = $3`,
+            [senderId, targetId, guildId]
+        );
+        const cl = clumpRes.rows[0];
+        const senderTotal = parseInt(cl.sender_total) || 0;
+        const targetTotal = parseInt(cl.target_total) || 0;
+        const senderGaveToTarget = parseInt(cl.sender_gave_to_target) || 0;
+        const targetGaveToSender = parseInt(cl.target_gave_to_sender) || 0;
+
+        // 2. Server-wide average message_count (dynamic baseline)
+        const avgRes = await query(
+            `SELECT COALESCE(AVG(message_count), 0) AS avg_msgs FROM user_activity WHERE guild_id = $1`,
+            [guildId]
+        );
+        const serverAvgMsgs = parseFloat(avgRes.rows[0]?.avg_msgs) || 0;
+
+        // 3. Individual activity for both users
+        const actRes = await query(
+            `SELECT user_id, message_count, voice_minutes
+             FROM user_activity WHERE guild_id = $1 AND user_id = ANY($2::text[])`,
+            [guildId, [senderId, targetId]]
+        );
+        const actMap = {};
+        for (const row of actRes.rows) actMap[row.user_id] = row;
+
+        // 4. Transaction diversity (for Farmer Routine flag)
+        const txRes = await query(
+            `SELECT user_id,
+                COUNT(*) FILTER (WHERE type != 'trade') AS total_txn,
+                COUNT(*) FILTER (WHERE type IN ('daily', 'quest')) AS passive_txn
+             FROM transactions
+             WHERE guild_id = $1 AND user_id = ANY($2::text[])
+             GROUP BY user_id`,
+            [guildId, [senderId, targetId]]
+        );
+        const txMap = {};
+        for (const row of txRes.rows) txMap[row.user_id] = row;
+
+        // ── Flag Evaluation ───────────────────────────────────────────────────
+        const evaluateUser = (userId, discordUser, gaveToOther, userTotal) => {
+            const flags = [];
+            const act = actMap[userId] || { message_count: 0, voice_minutes: 0 };
+            const tx = txMap[userId] || { total_txn: 0, passive_txn: 0 };
+            const msgCount = parseInt(act.message_count) || 0;
+            const voiceMins = parseInt(act.voice_minutes) || 0;
+            const totalTxn = parseInt(tx.total_txn) || 0;
+            const passiveTxn = parseInt(tx.passive_txn) || 0;
+
+            // FLAG 1: Lifetime Trade Clumping (directional — only flags givers)
+            if (userTotal > 3 && gaveToOther / userTotal > 0.8) {
+                const pct = Math.round((gaveToOther / userTotal) * 100);
+                flags.push(`${pct}% of lifetime trades are directed to this exact partner (${gaveToOther}/${userTotal} trades)`);
+            }
+
+            // FLAG 2: Dynamic Dead Chat Profile
+            // Only relevant if the server has some average activity to compare against
+            if (serverAvgMsgs > 5 && msgCount < serverAvgMsgs * 0.05) {
+                flags.push(`**Dead Profile:** ${msgCount} messages vs. server avg of ${Math.round(serverAvgMsgs)}`);
+            }
+
+            // FLAG 3: Farmer Routine (>80% passive income, min 3 transactions to avoid new-user FPs)
+            if (totalTxn >= 3 && passiveTxn / totalTxn > 0.8) {
+                const pct = Math.round((passiveTxn / totalTxn) * 100);
+                flags.push(`**Farmer:** ${pct}% of economy activity is passive (daily/quest only, ${passiveTxn}/${totalTxn} transactions)`);
+            }
+
+            // FLAG 4: Young Account (under 12 months old)
+            if (discordUser && (now - discordUser.createdAt.getTime()) < ONE_YEAR_MS) {
+                const months = Math.floor((now - discordUser.createdAt.getTime()) / (30 * 24 * 60 * 60 * 1000));
+                flags.push(`**Young Account:** Discord account is only ${months} month(s) old`);
+            }
+
+            return flags;
+        };
+
+        const senderFlags = evaluateUser(senderId, senderDiscordUser, senderGaveToTarget, senderTotal);
+        const targetFlags = evaluateUser(targetId, targetDiscordUser, targetGaveToSender, targetTotal);
+
+        // ── Dispatch Warnings ─────────────────────────────────────────────────
+        const buildWarning = (userId, flags) => {
+            if (flags.length < 2) return;
+
+            const description =
+                `**Suspected User:** <@${userId}>\n` +
+                `**Flags Triggered (${flags.length}/4):**\n` +
+                flags.map(f => `• ${f}`).join('\n') +
+                `\n\n⚠️ This is an automated warning. Review trading history manually before taking action.`;
+
+            sendLog(guild, 'inventory', 'red', '⚠️ Possible Alt-Account Farming', description);
+        };
+
+        buildWarning(senderId, senderFlags);
+        buildWarning(targetId, targetFlags);
+
+    } catch (err) {
+        // Non-critical — never crashes the trade flow
+        sysError('Anti-Cheat Scan Failure', err, { guild: guild.id });
+    }
+}
 
 /**
  * Command definition for /trade
@@ -198,13 +328,23 @@ export async function handleTradeCommand(interaction) {
             return interaction.reply({ content: '❌ You cannot trade with bots.', flags: MessageFlags.Ephemeral });
         }
 
-        // ── Anti-Smurf / Anti-Alt Gate (7-Day Server Membership) ──────────────────
-        // UPDATED: Added Administrator bypass and NULL-SAFETY for joinedAt
+        // ── Anti-Smurf / Anti-Alt Gate (7-Day Server Membership & 30-Day Discord Age) ──
+        // UPDATED: Added 30-day Discord account creation age gate & Administrator bypass
         const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+        const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
         const now = Date.now();
         const isSenderAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
-        // NULL-SAFE check for JoinedAt
+        // 1. Check Sender Discord Account Age
+        const senderAccountAge = now - sender.createdAt.getTime();
+        if (senderAccountAge < THIRTY_DAYS_MS && !isSenderAdmin) {
+            return interaction.reply({
+                content: '❌ Your Discord account must be at least 30 days old to participate in trading.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // 2. Check Sender Server Membership Age
         const senderJoinedAt = interaction.member.joinedAt;
         if (!senderJoinedAt) {
              return interaction.reply({ 
@@ -221,15 +361,25 @@ export async function handleTradeCommand(interaction) {
             });
         }
 
+        // 3. Fetch Target Member for checks
         const targetMemberForAgeCheck = await interaction.guild.members.fetch(target.id).catch(() => null);
         if (!targetMemberForAgeCheck) {
             return interaction.reply({ content: '❌ Could not fetch the target user.', flags: MessageFlags.Ephemeral });
         }
 
         const targetJoinedAt = targetMemberForAgeCheck.joinedAt;
-        // Target bypass if the target is an admin too (optional, but keep it strict unless they are admin)
         const isTargetAdmin = targetMemberForAgeCheck.permissions.has(PermissionFlagsBits.Administrator);
 
+        // 4. Check Target Discord Account Age
+        const targetAccountAge = now - target.createdAt.getTime();
+        if (targetAccountAge < THIRTY_DAYS_MS && !isTargetAdmin) {
+            return interaction.reply({
+                content: '❌ The target user\'s Discord account must be at least 30 days old to participate in trading.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // 5. Check Target Server Membership Age
         if (!targetJoinedAt) {
             return interaction.reply({ 
                 content: '❌ The target user\'s membership data hasn\'t synced yet.', 
@@ -350,7 +500,7 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
             }
         )
         .setColor(0x3498DB)
-        .setFooter({ text: '⚠️ Standard 5% fee applies (0% for Boosters)' });
+        .setFooter({ text: '⚠️ Standard 10% fee applies (0% for Boosters)' });
 
     // Row 1: Coins (Give/Request)
     const row1 = new ActionRowBuilder().addComponents(
@@ -1407,6 +1557,15 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         } catch (logErr) {
             sysError('Post-trade log error', logErr);
         }
+
+        // 11. Anti-Cheat Scan (non-blocking, runs after trade completes and standard log is sent)
+        detectSuspiciousTrade(
+            interaction.guild,
+            trade.sender_id,
+            trade.target_id,
+            senderMember?.user ?? null,
+            targetMember?.user ?? null
+        ).catch(() => {}); // Silenced — failure here must never crash the trade
 
     } catch (err) {
         // Safe Rollback
