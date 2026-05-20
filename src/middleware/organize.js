@@ -20,7 +20,7 @@ const SOCIAL_MEDIA_DOMAINS = [
 const FIX_SERVICE_DOMAINS = {
   tiktok: 'tnktok.com',
   instagram: 'kkinstagram.com',
-  facebook: 'facebed.com'
+  facebook: 'fixacebook.com'
 };
 
 // Tracks userMessageId -> { botReplyId, lastFixedUrls }
