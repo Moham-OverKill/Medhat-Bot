@@ -90,7 +90,13 @@ export async function rotateGuildQuests(guildId, config, pool) {
     const amount = parseInt(config.quests_per_refresh) || 1;
     const allQuests = await getQuests(guildId);
     
-    if (allQuests.length === 0) return;
+    if (allQuests.length === 0) {
+        config.active_quest_ids = [];
+        config.active_quest_snapshot = null;
+        await setGuildConfig(guildId, config);
+        await syncQuestChannelCache(guildId);
+        return;
+    }
     
     // Increment or initialize cycle
     const currentCycle = (config.current_quest_cycle || 0) + 1;
