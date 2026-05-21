@@ -569,10 +569,16 @@ async function createTables() {
     // Migration: Remove Foreign Key constraint to support Snapshot Architecture
     await pool.query(`
       DO $$ 
+      DECLARE
+        r RECORD;
       BEGIN 
-        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE table_name='quest_progress' AND constraint_type='FOREIGN KEY') THEN 
-           ALTER TABLE quest_progress DROP CONSTRAINT IF EXISTS quest_progress_quest_id_fkey;
-        END IF; 
+        FOR r IN 
+          SELECT constraint_name 
+          FROM information_schema.table_constraints 
+          WHERE table_name='quest_progress' AND constraint_type='FOREIGN KEY'
+        LOOP
+          EXECUTE 'ALTER TABLE quest_progress DROP CONSTRAINT ' || quote_ident(r.constraint_name);
+        END LOOP;
       END $$;
     `);
 
