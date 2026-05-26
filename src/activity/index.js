@@ -311,7 +311,7 @@ async function checkQuestProgress(message) {
   const guildId = message.guild.id;
   
   const quests = activeQuestsCache.get(guildId);
-  if (!quests || quests.length === 0) {
+  if (quests === undefined) {
     // LAZY LOAD: If cache is empty, attempt one-time sync before skipping
     if (syncingGuilds.has(guildId)) return; // Wait for current sync
     syncingGuilds.add(guildId);
@@ -443,7 +443,7 @@ export async function syncQuestChannelCache(guildId) {
     // Only wipe the cache if quests are EXPLICITLY turned OFF
     // If config is missing/null (transient error), we KEEP existing cache for safety.
     if (config?.quests_enabled === false || config?.missions_enabled === false) {
-      activeQuestsCache.delete(guildId);
+      activeQuestsCache.set(guildId, []);
       completedQuestsCache.delete(guildId);
       
       sysLog('Quest Cache Maintenance', { guild: guildId, detail: 'Cleared memory cache: quests explicitly disabled' });
@@ -464,7 +464,7 @@ export async function syncQuestChannelCache(guildId) {
       activeQuestsCache.set(guildId, activeQuests);
     } else {
       // Explicitly clear stale cache — do not leave old quests in memory
-      activeQuestsCache.delete(guildId);
+      activeQuestsCache.set(guildId, []);
     }
 
     // Rebuild completed cache directly from DB to clear stale ghosts from previous cycles
@@ -502,7 +502,7 @@ export async function checkReactionQuest(reaction, user) {
 
 
   let quests = activeQuestsCache.get(guildId);
-  if (!quests || quests.length === 0) {
+  if (quests === undefined) {
     if (syncingGuilds.has(guildId)) return;
     syncingGuilds.add(guildId);
     try {
