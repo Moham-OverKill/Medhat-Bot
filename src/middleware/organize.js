@@ -257,12 +257,12 @@ export async function processFixEmbeds(message) {
     }
 
     // --- SHARED VERIFICATION FLOW ---
-    // Poll every 500ms up to 7 seconds (14 iterations) to see if Discord has generated the embed yet.
+    // Poll every 500ms up to 15 seconds (30 iterations) to see if Discord has generated the embed yet.
     // This allows the bot to be fast when Discord is fast, and patient when it's slow.
     let fetchedBotReply = null;
     let hasContentEmbed = false;
 
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 30; i++) {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
