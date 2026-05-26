@@ -744,20 +744,30 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     const isTemp = (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
 
     // ========== TEMP ITEM CHECK (Highest Priority) ==========
-    // Check if item is currently active in DB (expires_at > NOW)
-    // We do this BEFORE role check so we give the correct "Wait for expire" message
+    // Check if item is currently active in DB (expires_at > NOW) or exists inactive/unequipped
+    // We do this BEFORE role check so we give the correct status message
     if (isTemp) {
       const activeTemp = await client.query(
-        `SELECT id FROM user_inventory 
-                 WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 
-                 AND expires_at > NOW()`,
+        `SELECT id, expires_at FROM user_inventory 
+                  WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
         [userId, guildId, itemId]
       );
 
       if (activeTemp.rows.length > 0) {
-        await client.query('ROLLBACK');
-        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already active temporary item` });
-        return { success: false, error: 'Wait for the item to expire before buying it again.' };
+        const hasActive = activeTemp.rows.some(r => r.expires_at && new Date(r.expires_at) > new Date());
+        const hasInactive = activeTemp.rows.some(r => !r.expires_at);
+
+        if (hasActive) {
+          await client.query('ROLLBACK');
+          sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already active temporary item` });
+          return { success: false, error: 'Wait for the item to expire before buying it again.' };
+        }
+
+        if (hasInactive) {
+          await client.query('ROLLBACK');
+          sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Inactive temporary item exists` });
+          return { success: false, error: 'You already have this item in your inventory. Please equip it first!' };
+        }
       }
     }
 
