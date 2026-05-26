@@ -100,9 +100,15 @@ export async function sendLog(guild, category, colorKey, title, description) {
 
             const embed = new EmbedBuilder()
                 .setTitle(title)
-                .setDescription(description)
                 .setColor(colors[colorKey] || colors.blue)
-                .setFooter({ text: `${guild.name} • ${new Date().toLocaleString()}`, iconURL: guild.iconURL() });
+                .setFooter({ 
+                    text: `${guild.name || 'Server'} • ${new Date().toLocaleString()}`, 
+                    iconURL: typeof guild.iconURL === 'function' ? guild.iconURL() : null 
+                });
+
+            if (description && typeof description === 'string' && description.trim() !== '') {
+                embed.setDescription(description);
+            }
 
             await safeSend(guild, channelId, embed, configKey);
         }
