@@ -92,7 +92,7 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
-            .setDescription(`> Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} | Items: **${itemCount}**`)
+            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Items: **${itemCount}**`)
             .setColor(0x5865F2);
 
         const actionRow = new ActionRowBuilder().addComponents(
