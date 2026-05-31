@@ -41,7 +41,10 @@ const CONFIG_SCHEMA = {
   log_audit_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
   last_mvp_reset: { type: 'string', required: false },
   // Channel content filters (Organize module)
-  channel_filters: { type: 'object', required: false }
+  channel_filters: { type: 'object', required: false },
+  // Anti-Cheat (Trade Gates)
+  anti_cheat_account_age_gate: { type: 'boolean', required: false },
+  anti_cheat_join_date_gate: { type: 'boolean', required: false }
 };
 
 /**

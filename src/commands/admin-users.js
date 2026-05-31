@@ -38,7 +38,12 @@ export async function showUserSelector(interaction) {
             .setCustomId('settings_back')
             .setLabel('Back to Settings')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat')
+            .setLabel('Anti Cheat')
+            .setEmoji('🛡️')
+            .setStyle(ButtonStyle.Primary)
     );
 
     const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
@@ -653,9 +658,106 @@ export async function handleAdminUserComponent(interaction) {
                 await showUserHistory(interaction, targetUserId, page);
                 break;
             }
+            case 'anticheat': {
+                const subAction = parts[3];
+                if (!subAction) {
+                    await showAntiCheatDashboard(interaction);
+                } else if (subAction === 'age') {
+                    await handleToggleAntiCheat(interaction, 'age');
+                } else if (subAction === 'join') {
+                    await handleToggleAntiCheat(interaction, 'join');
+                } else if (subAction === 'back') {
+                    await showUserSelector(interaction);
+                }
+                break;
+            }
         }
     } catch (error) {
         console.error('CRITICAL ADMIN ERROR DETAILS:', error);
         await handleInteractionError(interaction, error, 'Admin user component handler');
     }
 }
+
+/**
+ * Show the anti-cheat settings dashboard
+ */
+export async function showAntiCheatDashboard(interaction) {
+    const { getGuildConfig } = await import('../storage/config.js');
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+    
+    // Default to false (Disabled) as per user request
+    const ageGate = config.anti_cheat_account_age_gate ?? false;
+    const joinGate = config.anti_cheat_join_date_gate ?? false;
+    
+    const embed = new EmbedBuilder()
+        .setTitle('🛡️ Anti-Cheat Configuration')
+        .setDescription('Toggle verification gates for P2P trading. These gates help prevent alt-account farming and economy abuse.')
+        .addFields(
+            {
+                name: '📅 Account Age Gate (30 Days)',
+                value: `Requires the user's Discord account to be at least 30 days old to participate in trading.\n**Status:** ${ageGate ? '🟢 **ON** (Enabled)' : '🔴 **OFF** (Disabled)'}`,
+                inline: false
+            },
+            {
+                name: '⏳ Server Membership Gate (7 Days)',
+                value: `Requires the user to have been a member of this server for at least 7 days to participate in trading.\n**Status:** ${joinGate ? '🟢 **ON** (Enabled)' : '🔴 **OFF** (Disabled)'}`,
+                inline: false
+            }
+        )
+        .setColor(0x3498DB);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_age')
+            .setLabel(`Account Age Gate: ${ageGate ? 'ON' : 'OFF'}`)
+            .setEmoji(ageGate ? '🟢' : '🔴')
+            .setStyle(ageGate ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_join')
+            .setLabel(`Join Date Gate: ${joinGate ? 'ON' : 'OFF'}`)
+            .setEmoji(joinGate ? '🟢' : '🔴')
+            .setStyle(joinGate ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_back')
+            .setLabel('Back')
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2, row3]
+    });
+}
+
+/**
+ * Handle toggle action for anti-cheat gates
+ */
+export async function handleToggleAntiCheat(interaction, gateType) {
+    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+    const { invalidateConfigCache } = await import('../activity/index.js');
+    const guildId = interaction.guildId;
+    let config = await getGuildConfig(guildId) || {};
+    
+    if (gateType === 'age') {
+        const current = config.anti_cheat_account_age_gate ?? false;
+        config.anti_cheat_account_age_gate = !current;
+    } else if (gateType === 'join') {
+        const current = config.anti_cheat_join_date_gate ?? false;
+        config.anti_cheat_join_date_gate = !current;
+    }
+    
+    await setGuildConfig(guildId, config);
+    invalidateConfigCache(guildId);
+    
+    await showAntiCheatDashboard(interaction);
+}
+
