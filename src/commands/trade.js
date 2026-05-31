@@ -20,6 +20,7 @@ import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
 import { handleInteractionError } from '../utils/errors.js';
+import { getCachedGuildConfig } from '../activity/tracker.js';
 
 /**
  * ============================================================================
@@ -329,70 +330,82 @@ export async function handleTradeCommand(interaction) {
         }
 
         // ── Anti-Smurf / Anti-Alt Gate (7-Day Server Membership & 30-Day Discord Age) ──
-        // UPDATED: Added 30-day Discord account creation age gate & Administrator bypass
+        // UPDATED: Dynamic toggles via settings. Default to false (OFF) for all servers.
         const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
         const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
         const now = Date.now();
         const isSenderAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
-        // 1. Check Sender Discord Account Age
-        const senderAccountAge = now - sender.createdAt.getTime();
-        if (senderAccountAge < THIRTY_DAYS_MS && !isSenderAdmin) {
-            return interaction.reply({
-                content: '❌ Your Discord account must be at least 30 days old to participate in trading.',
-                flags: MessageFlags.Ephemeral
-            });
-        }
-
-        // 2. Check Sender Server Membership Age
-        const senderJoinedAt = interaction.member.joinedAt;
-        if (!senderJoinedAt) {
-             return interaction.reply({ 
-                content: '❌ Your server membership data hasn\'t synced yet. Please wait a few minutes before trading.', 
-                flags: MessageFlags.Ephemeral 
-            });
-        }
-
-        const senderAge = now - senderJoinedAt.getTime();
-        if (senderAge < SEVEN_DAYS_MS && !isSenderAdmin) {
-            return interaction.reply({
-                content: '❌ You must be a member in this server for at least 7 days to start trading.',
-                flags: MessageFlags.Ephemeral
-            });
-        }
-
-        // 3. Fetch Target Member for checks
+        // Fetch target member for checks
         const targetMemberForAgeCheck = await interaction.guild.members.fetch(target.id).catch(() => null);
         if (!targetMemberForAgeCheck) {
             return interaction.reply({ content: '❌ Could not fetch the target user.', flags: MessageFlags.Ephemeral });
         }
-
-        const targetJoinedAt = targetMemberForAgeCheck.joinedAt;
         const isTargetAdmin = targetMemberForAgeCheck.permissions.has(PermissionFlagsBits.Administrator);
 
+        // Fetch cached config for dynamic toggles (defaulting to false / OFF)
+        const guildConfig = await getCachedGuildConfig(guildId) || {};
+        const ageGateEnabled = guildConfig.anti_cheat_account_age_gate ?? false;
+        const joinGateEnabled = guildConfig.anti_cheat_join_date_gate ?? false;
+
+        // 1. Check Sender Discord Account Age
+        if (ageGateEnabled) {
+            const senderAccountAge = now - sender.createdAt.getTime();
+            if (senderAccountAge < THIRTY_DAYS_MS && !isSenderAdmin) {
+                return interaction.reply({
+                    content: '❌ Your Discord account must be at least 30 days old to participate in trading.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+
+        // 2. Check Sender Server Membership Age
+        const senderJoinedAt = interaction.member.joinedAt;
+        if (joinGateEnabled) {
+            if (!senderJoinedAt) {
+                 return interaction.reply({ 
+                    content: '❌ Your server membership data hasn\'t synced yet. Please wait a few minutes before trading.', 
+                    flags: MessageFlags.Ephemeral 
+                });
+            }
+
+            const senderAge = now - senderJoinedAt.getTime();
+            if (senderAge < SEVEN_DAYS_MS && !isSenderAdmin) {
+                return interaction.reply({
+                    content: '❌ You must be a member in this server for at least 7 days to start trading.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+
         // 4. Check Target Discord Account Age
-        const targetAccountAge = now - target.createdAt.getTime();
-        if (targetAccountAge < THIRTY_DAYS_MS && !isTargetAdmin) {
-            return interaction.reply({
-                content: '❌ The target user\'s Discord account must be at least 30 days old to participate in trading.',
-                flags: MessageFlags.Ephemeral
-            });
+        if (ageGateEnabled) {
+            const targetAccountAge = now - target.createdAt.getTime();
+            if (targetAccountAge < THIRTY_DAYS_MS && !isTargetAdmin) {
+                return interaction.reply({
+                    content: '❌ The target user\'s Discord account must be at least 30 days old to participate in trading.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
         }
 
         // 5. Check Target Server Membership Age
-        if (!targetJoinedAt) {
-            return interaction.reply({ 
-                content: '❌ The target user\'s membership data hasn\'t synced yet.', 
-                flags: MessageFlags.Ephemeral 
-            });
-        }
+        const targetJoinedAt = targetMemberForAgeCheck.joinedAt;
+        if (joinGateEnabled) {
+            if (!targetJoinedAt) {
+                return interaction.reply({ 
+                    content: '❌ The target user\'s membership data hasn\'t synced yet.', 
+                    flags: MessageFlags.Ephemeral 
+                });
+            }
 
-        const targetAge = now - targetJoinedAt.getTime();
-        if (targetAge < SEVEN_DAYS_MS && !isTargetAdmin) {
-            return interaction.reply({
-                content: '❌ This user must be a member in the server for at least 7 days.',
-                flags: MessageFlags.Ephemeral
-            });
+            const targetAge = now - targetJoinedAt.getTime();
+            if (targetAge < SEVEN_DAYS_MS && !isTargetAdmin) {
+                return interaction.reply({
+                    content: '❌ This user must be a member in the server for at least 7 days.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
         }
         // ── End Gate ───────────────────────────────────────────────────────────────
 
