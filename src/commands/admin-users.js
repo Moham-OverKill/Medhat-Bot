@@ -691,17 +691,16 @@ export async function showAntiCheatDashboard(interaction) {
     const joinGate = config.anti_cheat_join_date_gate ?? false;
     
     const embed = new EmbedBuilder()
-        .setTitle('🛡️ Anti-Cheat Configuration')
-        .setDescription('Toggle verification gates for P2P trading. These gates help prevent alt-account farming and economy abuse.')
+        .setTitle('🛡️ Anti-Cheat')
         .addFields(
             {
-                name: '📅 Account Age Gate (30 Days)',
-                value: `Requires the user's Discord account to be at least 30 days old to participate in trading.\n**Status:** ${ageGate ? '🟢 **ON** (Enabled)' : '🔴 **OFF** (Disabled)'}`,
+                name: '📅 Account Age Gate',
+                value: 'Requires a (30-day) old Discord account to trade.',
                 inline: false
             },
             {
-                name: '⏳ Server Membership Gate (7 Days)',
-                value: `Requires the user to have been a member of this server for at least 7 days to participate in trading.\n**Status:** ${joinGate ? '🟢 **ON** (Enabled)' : '🔴 **OFF** (Disabled)'}`,
+                name: '⏳ Join Date Gate',
+                value: 'Requires (7-days) of server membership to trade.',
                 inline: false
             }
         )
