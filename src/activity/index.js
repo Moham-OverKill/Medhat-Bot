@@ -205,7 +205,7 @@ async function handleMessageUpdate(oldMessage, newMessage) {
     }
 
     // 2. Update/Sync Fixed Embeds
-    processFixEmbeds(newMessage).catch(err => sysError('Fix Embeds Update Failure', err));
+    processFixEmbeds(newMessage, true).catch(err => sysError('Fix Embeds Update Failure', err));
 
   } catch (error) {
     sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });

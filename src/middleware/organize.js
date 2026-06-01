@@ -29,6 +29,9 @@ const FIX_SERVICE_DOMAINS = {
 const fixedEmbedTracker = new Map();
 const TRACKER_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
+// Lock to prevent concurrent reply creations during race conditions
+const pendingFixes = new Set();
+
 /**
  * Load filter config for a guild into the cache
  */
@@ -168,7 +171,7 @@ export async function checkContentFilter(message) {
  * Replace broken social media links with working embeddable alternatives.
  * Handles both new messages and edits dynamically.
  */
-export async function processFixEmbeds(message) {
+export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
 
   // 1. Guard: Check if feature is enabled AND channel is configured for Socials Only (media_only)
@@ -182,17 +185,28 @@ export async function processFixEmbeds(message) {
   const fixedUrls = [];
   const replacers = [
     { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.tiktok}` },
-    { pattern: /(https?:\/\/)(www\.)?(instagram\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.instagram}` },
-    { pattern: /(https?:\/\/)(www\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.facebook}` }
+    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.instagram}` },
+    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.facebook}` }
   ];
 
   for (let url of urls) {
     let modifiedUrl = url;
 
+    // Clean trailing punctuation commonly attached to URLs in chat messages (brackets, parentheses, dots, etc.)
+    modifiedUrl = modifiedUrl.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\]\[]+$/, (match) => {
+      return match === '/' ? '/' : '';
+    });
+
     // Expand short links (vm, vt, v) because third-party fixers often fail to follow the redirect
     if (/(https?:\/\/)(vm|vt|v)\.tiktok\.com/i.test(modifiedUrl)) {
       try {
-        const response = await fetch(modifiedUrl, { method: 'HEAD', redirect: 'follow' });
+        const response = await fetch(modifiedUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          redirect: 'follow'
+        });
         if (response.url && !/(vm|vt|v)\.tiktok\.com/i.test(response.url)) {
           // Keep the expanded URL and strip any tracking query parameters
           modifiedUrl = response.url.split('?')[0];
@@ -215,7 +229,23 @@ export async function processFixEmbeds(message) {
 
   // Generate current "invisible links" string
   const currentFixedUrls = fixedUrls.map(url => `[\u2800](${url})`).join('');
-  const existingRecord = fixedEmbedTracker.get(message.id);
+  let existingRecord = fixedEmbedTracker.get(message.id);
+
+  // If this is an edit and the reply isn't in memory, search the next 5 messages sent after it
+  if (isEdit && !existingRecord) {
+    try {
+      const siblingMessages = await message.channel.messages.fetch({ after: message.id, limit: 5 }).catch(() => null);
+      if (siblingMessages) {
+        const botReplyMessage = siblingMessages.find(m => m.author.id === message.client.user.id && m.reference?.messageId === message.id);
+        if (botReplyMessage) {
+          existingRecord = { botReplyId: botReplyMessage.id, lastFixedUrls: botReplyMessage.content };
+          fixedEmbedTracker.set(message.id, existingRecord);
+        }
+      }
+    } catch (err) {
+      // Silent fail
+    }
+  }
 
   // === ROUTE A: CLEANUP (User removed the social links) ===
   if (currentFixedUrls.length === 0) {
@@ -249,11 +279,22 @@ export async function processFixEmbeds(message) {
     
     // === ROUTE D: CREATE (New message or first valid link edit) ===
     if (!botReply) {
-      botReply = await message.reply({ content: currentFixedUrls });
-      fixedEmbedTracker.set(message.id, { botReplyId: botReply.id, lastFixedUrls: currentFixedUrls });
-      
-      // Auto-expire from map after 1 hour
-      setTimeout(() => fixedEmbedTracker.delete(message.id), TRACKER_EXPIRY_MS);
+      // If this is an edit, do not create a new message if one wasn't found
+      if (isEdit) return;
+
+      // Prevent concurrent creations for the same message ID
+      if (pendingFixes.has(message.id)) return;
+      pendingFixes.add(message.id);
+
+      try {
+        botReply = await message.reply({ content: currentFixedUrls });
+        fixedEmbedTracker.set(message.id, { botReplyId: botReply.id, lastFixedUrls: currentFixedUrls });
+        
+        // Auto-expire from map after 1 hour
+        setTimeout(() => fixedEmbedTracker.delete(message.id), TRACKER_EXPIRY_MS);
+      } finally {
+        pendingFixes.delete(message.id);
+      }
     }
 
     // --- SHARED VERIFICATION FLOW ---
@@ -268,7 +309,7 @@ export async function processFixEmbeds(message) {
       fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
       hasContentEmbed = fetchedBotReply?.embeds.some(e => 
         e.video || e.data?.video || e.type === 'video' || 
-        e.image || e.data?.image
+        e.image || e.data?.image || e.thumbnail || e.data?.thumbnail
       );
 
       if (hasContentEmbed) {
@@ -291,7 +332,7 @@ export async function processFixEmbeds(message) {
           // Does any embed's URL match this fixed URL?
           const embedExists = fetchedBotReply.embeds.some(e => 
             e.url && (e.url === url || e.url.includes(url) || url.includes(e.url)) &&
-            (e.video || e.data?.video || e.type === 'video' || e.image || e.data?.image)
+            (e.video || e.data?.video || e.type === 'video' || e.image || e.data?.image || e.thumbnail || e.data?.thumbnail)
           );
           if (embedExists) workingUrls.push(url);
         }
@@ -305,7 +346,7 @@ export async function processFixEmbeds(message) {
       }
 
     } else if (fetchedBotReply) {
-      // Fail Route: 7 seconds passed and no playable content appeared.
+      // Fail Route: 15 seconds passed and no playable content appeared.
       await fetchedBotReply.delete().catch(() => {});
       fixedEmbedTracker.delete(message.id);
     }
