@@ -103,6 +103,14 @@ export async function rotateGuildQuests(guildId, config, pool) {
     
     // Build weighted items remaining
     let availableQuests = [...allQuests];
+    const lastIds = config.active_quest_ids || [];
+    
+    // Strict exclusion: if the pool is large enough, filter out the quests that were active in the previous cycle
+    const canStrictlyAvoid = (allQuests.length - lastIds.length) >= amount;
+    if (canStrictlyAvoid) {
+        availableQuests = availableQuests.filter(q => !lastIds.includes(q.id));
+    }
+    
     let selectedIds = [];
     
     // Pick required amount of quests (or as many as we have available)
