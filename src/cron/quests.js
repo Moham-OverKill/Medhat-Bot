@@ -169,7 +169,6 @@ export async function rotateGuildQuests(guildId, config, pool) {
     }
 
     // Atomic Update to Guild Configuration
-    const lastIds = config.active_quest_ids || [];
     config.last_quest_ids = lastIds;
     config.active_quest_ids = selectedIds;
     config.current_quest_cycle = currentCycle;
