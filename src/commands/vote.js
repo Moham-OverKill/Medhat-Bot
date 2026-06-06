@@ -22,16 +22,17 @@ export async function handleVoteCommand(interaction) {
   const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
   const desc = voteReward > 0
-    ? `Support us by voting for **Medhat** on Top.gg!\n\nReward: ${voteReward.toLocaleString()} ${COIN_EMOJI}`
-    : `Support us by voting for **Medhat** on Top.gg!`;
+    ? `vote for Medhat on top.gg and get ${voteReward.toLocaleString()} ${COIN_EMOJI}`
+    : `vote for Medhat on top.gg`;
 
   const embed = new EmbedBuilder()
+    .setTitle('🗳️ Support Medhat!')
     .setDescription(desc)
     .setColor('#F1C40F');
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('Vote on Top.gg')
+      .setLabel('VOTE NOW!')
       .setURL(`https://top.gg/bot/${interaction.client.user.id}/vote`)
       .setStyle(ButtonStyle.Link)
   );
