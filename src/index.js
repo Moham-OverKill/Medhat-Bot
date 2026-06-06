@@ -159,6 +159,7 @@ keepAliveServer = createServer((req, res) => {
         sysLog('Incoming webhook auth check', { 
           detail: `Auth Header: ${authHeader ? `${authHeader.substring(0, 5)}... (len: ${authHeader.length})` : 'none'} | Expected: ${webhookAuth ? `${webhookAuth.substring(0, 5)}... (len: ${webhookAuth.length})` : 'none'}` 
         });
+        sysLog('All Webhook Headers', { detail: JSON.stringify(req.headers) });
 
         if (webhookAuth && authHeader !== webhookAuth) {
           sysError('Webhook unauthorized access attempt', new Error('Auth mismatch'));
