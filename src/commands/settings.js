@@ -227,21 +227,27 @@ export async function handleSettingsComponent(interaction) {
             const match = currentEmoji.match(/:(\d+)>$/);
             const initialValue = match ? match[1] : '';
 
+            // Get server-specific member info
+            const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
+            const currentNickname = botMember ? (botMember.nickname || '') : '';
+            const currentServerAvatar = botMember ? (botMember.avatarURL() || '') : '';
+
             const modal = new ModalBuilder().setCustomId('settings_customize_modal').setTitle('Customize Bot');
             
             const nameInput = new TextInputBuilder()
                 .setCustomId('bot_name')
-                .setLabel('Bot Name')
+                .setLabel('Bot Server Nickname')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter bot profile name')
-                .setValue(interaction.client.user.username)
+                .setPlaceholder('Enter bot nickname for this server')
+                .setValue(currentNickname)
                 .setRequired(false);
 
             const avatarInput = new TextInputBuilder()
                 .setCustomId('bot_avatar')
-                .setLabel('Bot Avatar URL')
+                .setLabel('Bot Server Avatar URL')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter bot profile image URL')
+                .setPlaceholder('Enter profile image URL for this server')
+                .setValue(currentServerAvatar)
                 .setRequired(false);
 
             const emojiInput = new TextInputBuilder()
@@ -377,25 +383,37 @@ export async function handleSettingsComponent(interaction) {
             let avatarErrorMsg = '';
 
             const client = interaction.client;
+            const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
 
-            if (botName && botName.trim() !== client.user.username) {
-                try {
-                    await client.user.setUsername(botName.trim());
-                } catch (err) {
-                    nameUpdated = false;
-                    nameErrorMsg = err.message || String(err);
-                    sysError('Failed to update bot username', err);
+            if (botMember) {
+                const newNickname = botName && botName.trim() ? botName.trim() : null;
+                const currentNickname = botMember.nickname || '';
+                if (newNickname !== currentNickname) {
+                    try {
+                        await botMember.setNickname(newNickname);
+                    } catch (err) {
+                        nameUpdated = false;
+                        nameErrorMsg = err.message || String(err);
+                        sysError('Failed to update bot server nickname', err);
+                    }
                 }
-            }
 
-            if (botAvatar && botAvatar.trim()) {
-                try {
-                    await client.user.setAvatar(botAvatar.trim());
-                } catch (err) {
-                    avatarUpdated = false;
-                    avatarErrorMsg = err.message || String(err);
-                    sysError('Failed to update bot avatar', err);
+                const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
+                const currentAvatar = botMember.avatarURL() || '';
+                if (newAvatar !== currentAvatar) {
+                    try {
+                        await botMember.setAvatar(newAvatar);
+                    } catch (err) {
+                        avatarUpdated = false;
+                        avatarErrorMsg = err.message || String(err);
+                        sysError('Failed to update bot server avatar', err);
+                    }
                 }
+            } else {
+                nameUpdated = false;
+                nameErrorMsg = 'Could not find bot member object in this server.';
+                avatarUpdated = false;
+                avatarErrorMsg = 'Could not find bot member object in this server.';
             }
 
             const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
@@ -409,15 +427,15 @@ export async function handleSettingsComponent(interaction) {
             const logName = getUserLogName(interaction);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Bot Customized',
                 `**Admin:** \`${logName}\`\n` +
-                `**Bot Name:** \`${botName || client.user.username}\`\n` +
+                `**Bot Nickname:** \`${botName || 'None'}\`\n` +
                 `**Coin Emoji:** ${config.coin_emoji || 'Default'}`
             );
 
             let responseContent = '✅ **Bot customization updated successfully!**';
             if (!nameUpdated || !avatarUpdated) {
                 responseContent = '⚠️ **Bot customization updated with warnings:**\n';
-                if (!nameUpdated) responseContent += `❌ Username: ${nameErrorMsg}\n`;
-                if (!avatarUpdated) responseContent += `❌ Avatar: ${avatarErrorMsg}\n`;
+                if (!nameUpdated) responseContent += `❌ Nickname: ${nameErrorMsg}\n`;
+                if (!avatarUpdated) responseContent += `❌ Server Avatar: ${avatarErrorMsg}\n`;
             }
 
             await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
