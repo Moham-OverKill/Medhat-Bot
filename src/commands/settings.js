@@ -391,10 +391,10 @@ export async function handleSettingsComponent(interaction) {
             const client = interaction.client;
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
 
+            const newNickname = botName && botName.trim() ? botName.trim() : null;
+            const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
+
             if (botMember) {
-                const newNickname = botName && botName.trim() ? botName.trim() : null;
-                const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
-                
                 const currentNickname = botMember.nickname || null;
                 const hasServerAvatar = botMember.avatar !== null;
                 
