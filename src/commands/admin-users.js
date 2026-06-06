@@ -109,12 +109,12 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setCustomId(`admin_user_items_${targetUserId}`)
                 .setLabel('Items')
                 .setEmoji('🎒')
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`admin_user_history_${targetUserId}`)
                 .setLabel('History')
                 .setEmoji('📜')
-                .setStyle(ButtonStyle.Primary)
+                .setStyle(ButtonStyle.Secondary)
         );
 
         const backRow = new ActionRowBuilder().addComponents(
@@ -127,7 +127,7 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setCustomId(`admin_user_streak_${targetUserId}`)
                 .setLabel('Streak')
                 .setEmoji('🔥')
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Primary)
         );
 
     const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
