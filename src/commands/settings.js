@@ -225,7 +225,7 @@ export async function handleSettingsComponent(interaction) {
                 .setLabel('Reward members for voting Medhat on Top.gg')
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('Coins Per Vote')
-                .setValue(String(config.vote_reward_amount !== undefined ? config.vote_reward_amount : ''))
+                .setValue(String(config.vote_reward_amount !== undefined ? config.vote_reward_amount : '100'))
                 .setRequired(false);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             await interaction.showModal(modal);
