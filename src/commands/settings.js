@@ -394,6 +394,8 @@ export async function handleSettingsComponent(interaction) {
             const newNickname = botName && botName.trim() ? botName.trim() : null;
             const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
 
+            const promises = [];
+
             if (botMember) {
                 const currentNickname = botMember.nickname || null;
                 const hasServerAvatar = botMember.avatar !== null;
@@ -402,36 +404,38 @@ export async function handleSettingsComponent(interaction) {
                 const avatarChanged = hasServerAvatar ? (newAvatar === null || newAvatar !== botMember.avatarURL()) : (newAvatar !== null);
                 
                 if (nickChanged) {
-                    try {
-                        await botMember.setNickname(newNickname);
-                    } catch (err) {
-                        nameUpdated = false;
-                        nameErrorMsg = err.message || String(err);
-                        sysError('Failed to update bot server nickname', err);
-                    }
+                    promises.push(
+                        botMember.setNickname(newNickname).catch((err) => {
+                            nameUpdated = false;
+                            nameErrorMsg = err.message || String(err);
+                            sysError('Failed to update bot server nickname', err);
+                        })
+                    );
                 }
                 
                 if (avatarChanged) {
-                    try {
-                        let avatarBuffer = null;
-                        if (newAvatar) {
-                            if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
-                                const res = await fetch(newAvatar);
-                                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                                const contentType = res.headers.get('content-type') || 'image/png';
-                                const arrayBuffer = await res.arrayBuffer();
-                                const buffer = Buffer.from(arrayBuffer);
-                                avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
-                            } else {
-                                avatarBuffer = newAvatar;
+                    promises.push((async () => {
+                        try {
+                            let avatarBuffer = null;
+                            if (newAvatar) {
+                                if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
+                                    const res = await fetch(newAvatar);
+                                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                                    const contentType = res.headers.get('content-type') || 'image/png';
+                                    const arrayBuffer = await res.arrayBuffer();
+                                    const buffer = Buffer.from(arrayBuffer);
+                                    avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
+                                } else {
+                                    avatarBuffer = newAvatar;
+                                }
                             }
+                            await interaction.guild.members.editMe({ avatar: avatarBuffer });
+                        } catch (err) {
+                            avatarUpdated = false;
+                            avatarErrorMsg = err.message || String(err);
+                            sysError('Failed to update bot server avatar', err);
                         }
-                        await interaction.guild.members.editMe({ avatar: avatarBuffer });
-                    } catch (err) {
-                        avatarUpdated = false;
-                        avatarErrorMsg = err.message || String(err);
-                        sysError('Failed to update bot server avatar', err);
-                    }
+                    })());
                 }
             } else {
                 nameUpdated = false;
@@ -440,14 +444,24 @@ export async function handleSettingsComponent(interaction) {
                 avatarErrorMsg = 'Could not find bot member object in this server.';
             }
 
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
-            const guildId = interaction.guildId;
-            const config = await getGuildConfig(guildId) || {};
-            
-            config.coin_emoji = formattedEmoji;
-            config.bot_nickname = newNickname;
-            config.bot_avatar = newAvatar;
-            await setGuildConfig(guildId, config);
+            // Update database configuration concurrently
+            promises.push((async () => {
+                try {
+                    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+                    const guildId = interaction.guildId;
+                    const config = await getGuildConfig(guildId) || {};
+                    
+                    config.coin_emoji = formattedEmoji;
+                    config.bot_nickname = newNickname;
+                    config.bot_avatar = newAvatar;
+                    await setGuildConfig(guildId, config);
+                } catch (err) {
+                    sysError('Failed to save customization config', err);
+                }
+            })());
+
+            // Execute all tasks in parallel to minimize response latency
+            await Promise.all(promises);
 
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
