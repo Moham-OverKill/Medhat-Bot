@@ -7,7 +7,10 @@ import {
     ButtonStyle,
     PermissionFlagsBits,
     ChannelSelectMenuBuilder,
-    ChannelType
+    ChannelType,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } from 'discord.js';
 // Config imports moved to dynamic imports within handlers to prevent scope errors
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
@@ -147,16 +150,16 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Vote Reward, Tag Reward, Give Coins
+    // Row 2: Vote, Tag, Give Coins
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_vote_reward')
-            .setLabel('Vote Reward')
+            .setLabel('Vote')
             .setEmoji('🗳️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_tag_reward')
-            .setLabel('Tag Reward')
+            .setLabel('Tag')
             .setEmoji('🏷️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
@@ -214,12 +217,84 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_vote_reward') {
-            await interaction.reply({ content: '🗳️ **Vote Reward settings** are currently under construction.', flags: MessageFlags.Ephemeral });
+            const { getGuildConfig } = await import('../storage/config.js');
+            const config = await getGuildConfig(interaction.guildId) || {};
+            const modal = new ModalBuilder().setCustomId('settings_vote_modal').setTitle('Vote Reward');
+            const input = new TextInputBuilder()
+                .setCustomId('amount')
+                .setLabel('Reward: bot voting on top.gg')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Coins Per Vote')
+                .setValue(String(config.vote_reward_amount !== undefined ? config.vote_reward_amount : ''))
+                .setRequired(false);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            await interaction.showModal(modal);
             return;
         }
 
         if (customId === 'settings_tag_reward') {
-            await interaction.reply({ content: '🏷️ **Tag Reward settings** are currently under construction.', flags: MessageFlags.Ephemeral });
+            const { getGuildConfig } = await import('../storage/config.js');
+            const config = await getGuildConfig(interaction.guildId) || {};
+            const modal = new ModalBuilder().setCustomId('settings_tag_modal').setTitle('Tag Reward');
+            const input = new TextInputBuilder()
+                .setCustomId('amount')
+                .setLabel('Reward members for using your server tags')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Coins per day')
+                .setValue(String(config.tag_reward_amount !== undefined ? config.tag_reward_amount : ''))
+                .setRequired(false);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            await interaction.showModal(modal);
+            return;
+        }
+
+        if (customId === 'settings_vote_modal') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+            const amountStr = interaction.fields.getTextInputValue('amount');
+            const amount = amountStr ? Math.max(0, parseInt(amountStr, 10)) : 0;
+            if (amountStr && isNaN(amount)) {
+                return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+            }
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+            const guildId = interaction.guildId;
+            const config = await getGuildConfig(guildId) || {};
+            config.vote_reward_amount = amount;
+            await setGuildConfig(guildId, config);
+
+            const { getUserLogName } = await import('../shared.js');
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Vote Reward Config Changed',
+                `**Admin:** \`${logName}\`\n` +
+                `**Setting:** Coins Per Vote\n` +
+                `**New Value:** \`${amount.toLocaleString()}\` coins`
+            );
+
+            await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_tag_modal') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+            const amountStr = interaction.fields.getTextInputValue('amount');
+            const amount = amountStr ? Math.max(0, parseInt(amountStr, 10)) : 0;
+            if (amountStr && isNaN(amount)) {
+                return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+            }
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+            const guildId = interaction.guildId;
+            const config = await getGuildConfig(guildId) || {};
+            config.tag_reward_amount = amount;
+            await setGuildConfig(guildId, config);
+
+            const { getUserLogName } = await import('../shared.js');
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Tag Reward Config Changed',
+                `**Admin:** \`${logName}\`\n` +
+                `**Setting:** Coins per day\n` +
+                `**New Value:** \`${amount.toLocaleString()}\` coins`
+            );
+
+            await showCoinsSubMenu(interaction);
             return;
         }
 
