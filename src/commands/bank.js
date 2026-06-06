@@ -59,6 +59,17 @@ async function getUserBalance(guildId, userId) {
   return result.rows[0] || { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
 }
 
+function getCoinThumbnailUrl() {
+  const emojiStr = COIN_EMOJI.toString();
+  const match = emojiStr.match(/<(a)?:[^:]+:(\d+)>/);
+  if (match) {
+    const isAnimated = Boolean(match[1]);
+    const emojiId = match[2];
+    return `https://cdn.discordapp.com/emojis/${emojiId}.${isAnimated ? 'gif' : 'png'}`;
+  }
+  return BANK_THUMBNAIL_URL;
+}
+
 function buildBankUI(userData, member) {
   const balance = parseInt(userData.balance);
   const dbStreak = parseInt(userData.daily_streak) || 0;
@@ -99,7 +110,7 @@ function buildBankUI(userData, member) {
     .setColor(0xFFD700) // Gold
     .setTitle('🏛️ Bank')
     .setDescription(`Welcome to your personal bank account, <@${member.id}>!`)
-    .setThumbnail(BANK_THUMBNAIL_URL)
+    .setThumbnail(getCoinThumbnailUrl())
     .addFields(
       { name: `💰 Balance`, value: `${balance.toLocaleString()} ${COIN_EMOJI}`, inline: true },
       { name: '🔥 Daily Streak', value: streakText, inline: true },
