@@ -343,7 +343,7 @@ export async function handleShopItemSelect(interaction) {
     const buyButton = new ButtonBuilder()
       .setCustomId(`bank_shop_buy_${itemId}`)
       .setLabel(buyButtonLabel)
-      .setEmoji('1490666813501997076')
+      .setEmoji(`${COIN_EMOJI}`)
       .setStyle(ButtonStyle.Secondary);
 
     const backButton = new ButtonBuilder()
