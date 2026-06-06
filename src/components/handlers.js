@@ -182,6 +182,9 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('admin_user_balmod_')) {
           const { handleBalanceModal } = await import('../commands/admin-users.js');
           await handleBalanceModal(interaction);
+        } else if (interaction.customId.startsWith('admin_user_stkmod_')) {
+          const { handleStreakModal } = await import('../commands/admin-users.js');
+          await handleStreakModal(interaction);
         } else if (interaction.customId.startsWith('trade_modal_')) {
           await handleTradeModal(interaction);
         } else if (interaction.customId.startsWith('trade_confirm_')) {
