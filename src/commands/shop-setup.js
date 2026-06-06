@@ -1453,7 +1453,7 @@ export async function handleShopPostPublish(interaction) {
     const buyButton = new ButtonBuilder()
       .setCustomId(`bank_shop_buy_${itemId}_${sellerPart}_${payoutPart}_${overridePart}`)
       .setLabel(isFree ? 'BUY (FREE)' : `BUY (${effectivePrice.toLocaleString()})`)
-      .setEmoji('1490666813501997076') // OK_COIN
+      .setEmoji(`${COIN_EMOJI}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(isSoldOut);
 
