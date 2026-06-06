@@ -238,7 +238,7 @@ export async function handleSettingsComponent(interaction) {
             const modal = new ModalBuilder().setCustomId('settings_tag_modal').setTitle('Tag Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
-                .setLabel('Reward members for using your server tags')
+                .setLabel('Reward members for using your server tag')
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('Coins per day')
                 .setValue(String(config.tag_reward_amount !== undefined ? config.tag_reward_amount : ''))
