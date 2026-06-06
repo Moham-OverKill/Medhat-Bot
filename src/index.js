@@ -146,6 +146,37 @@ emitPhase('boot', 'Starting bot', {
 });
 
 keepAliveServer = createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/dblwebhook') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', async () => {
+      try {
+        const authHeader = req.headers['authorization'];
+        const webhookAuth = process.env.TOPGG_WEBHOOK_PASSWORD;
+        if (webhookAuth && authHeader !== webhookAuth) {
+          res.writeHead(401, { 'Content-Type': 'text/plain' });
+          res.end('Unauthorized');
+          return;
+        }
+
+        const data = JSON.parse(body);
+        if (data.type === 'upvote' && data.user) {
+          const { handleVoteWebhook } = await import('./commands/vote.js');
+          await handleVoteWebhook(client, data.user);
+        }
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+      } catch (err) {
+        sysError('Top.gg Webhook processing failure', err);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Error');
+      }
+    });
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('ok');
 });
