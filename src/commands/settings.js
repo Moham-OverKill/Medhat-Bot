@@ -401,37 +401,36 @@ export async function handleSettingsComponent(interaction) {
                 const nickChanged = newNickname !== currentNickname;
                 const avatarChanged = hasServerAvatar ? (newAvatar === null || newAvatar !== botMember.avatarURL()) : (newAvatar !== null);
                 
-                if (nickChanged || avatarChanged) {
+                if (nickChanged) {
                     try {
-                        const editData = {};
-                        if (nickChanged) editData.nick = newNickname;
-                        if (avatarChanged) {
-                            let avatarBuffer = null;
-                            if (newAvatar) {
-                                if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
-                                    const res = await fetch(newAvatar);
-                                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                                    const contentType = res.headers.get('content-type') || 'image/png';
-                                    const arrayBuffer = await res.arrayBuffer();
-                                    const buffer = Buffer.from(arrayBuffer);
-                                    avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
-                                } else {
-                                    avatarBuffer = newAvatar;
-                                }
-                            }
-                            editData.avatar = avatarBuffer;
-                        }
-                        await interaction.guild.members.editMe(editData);
+                        await botMember.setNickname(newNickname);
                     } catch (err) {
-                        if (nickChanged) {
-                            nameUpdated = false;
-                            nameErrorMsg = err.message || String(err);
+                        nameUpdated = false;
+                        nameErrorMsg = err.message || String(err);
+                        sysError('Failed to update bot server nickname', err);
+                    }
+                }
+                
+                if (avatarChanged) {
+                    try {
+                        let avatarBuffer = null;
+                        if (newAvatar) {
+                            if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
+                                const res = await fetch(newAvatar);
+                                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                                const contentType = res.headers.get('content-type') || 'image/png';
+                                const arrayBuffer = await res.arrayBuffer();
+                                const buffer = Buffer.from(arrayBuffer);
+                                avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
+                            } else {
+                                avatarBuffer = newAvatar;
+                            }
                         }
-                        if (avatarChanged) {
-                            avatarUpdated = false;
-                            avatarErrorMsg = err.message || String(err);
-                        }
-                        sysError('Failed to update bot server profile', err);
+                        await interaction.guild.members.editMe({ avatar: avatarBuffer });
+                    } catch (err) {
+                        avatarUpdated = false;
+                        avatarErrorMsg = err.message || String(err);
+                        sysError('Failed to update bot server avatar', err);
                     }
                 }
             } else {
