@@ -223,6 +223,10 @@ export async function handleSettingsComponent(interaction) {
             const config = await getGuildConfig(interaction.guildId) || {};
             const { COIN_EMOJI } = await import('../shared.js');
             
+            const currentEmoji = config.coin_emoji || COIN_EMOJI;
+            const match = currentEmoji.match(/:(\d+)>$/);
+            const initialValue = match ? match[1] : '';
+
             const modal = new ModalBuilder().setCustomId('settings_customize_modal').setTitle('Customize Bot');
             
             const nameInput = new TextInputBuilder()
@@ -242,10 +246,10 @@ export async function handleSettingsComponent(interaction) {
 
             const emojiInput = new TextInputBuilder()
                 .setCustomId('coin_emoji')
-                .setLabel('Coin Emoji')
+                .setLabel('Coin Emoji ID')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter coin emoji (e.g. <:OK_COIN:id>)')
-                .setValue(config.coin_emoji || COIN_EMOJI)
+                .setPlaceholder('Enter server emoji ID (e.g. 1343686075385647164)')
+                .setValue(initialValue)
                 .setRequired(false);
 
             modal.addComponents(
@@ -353,6 +357,20 @@ export async function handleSettingsComponent(interaction) {
             const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
             const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
 
+            let formattedEmoji = null;
+            if (coinEmoji && coinEmoji.trim()) {
+                const emojiId = coinEmoji.trim();
+                if (!/^\d+$/.test(emojiId)) {
+                    return interaction.followUp({ content: '❌ **Invalid Emoji ID:** Please provide a numeric emoji ID (e.g., `1343686075385647164`).', flags: MessageFlags.Ephemeral });
+                }
+                
+                const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
+                if (!emoji) {
+                    return interaction.followUp({ content: '❌ **Invalid Emoji ID:** The emoji must belong to this server.', flags: MessageFlags.Ephemeral });
+                }
+                formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+            }
+
             let nameUpdated = true;
             let avatarUpdated = true;
             let nameErrorMsg = '';
@@ -384,11 +402,7 @@ export async function handleSettingsComponent(interaction) {
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
             
-            if (coinEmoji && coinEmoji.trim()) {
-                config.coin_emoji = coinEmoji.trim();
-            } else {
-                config.coin_emoji = null;
-            }
+            config.coin_emoji = formattedEmoji;
             await setGuildConfig(guildId, config);
 
             const { getUserLogName } = await import('../shared.js');
