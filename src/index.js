@@ -161,8 +161,42 @@ keepAliveServer = createServer((req, res) => {
         });
         sysLog('All Webhook Headers', { detail: JSON.stringify(req.headers) });
 
-        if (webhookAuth && authHeader !== webhookAuth) {
-          sysError('Webhook unauthorized access attempt', new Error('Auth mismatch'));
+        const signatureHeader = req.headers['x-topgg-signature'];
+        let isAuthorized = false;
+
+        if (!webhookAuth) {
+          isAuthorized = process.env.NODE_ENV === 'development';
+        } else {
+          if (signatureHeader) {
+            const parts = signatureHeader.split(',');
+            let timestamp = '';
+            let receivedSig = '';
+            for (const part of parts) {
+              const [key, val] = part.split('=');
+              if (key === 't') timestamp = val;
+              if (key === 'v1') receivedSig = val;
+            }
+
+            if (timestamp && receivedSig) {
+              const hmacBodyOnly = crypto.createHmac('sha256', webhookAuth).update(body).digest('hex');
+              const hmacConcatDot = crypto.createHmac('sha256', webhookAuth).update(`${timestamp}.${body}`).digest('hex');
+              const hmacConcatDirect = crypto.createHmac('sha256', webhookAuth).update(`${timestamp}${body}`).digest('hex');
+
+              sysLog('HMAC Signature Diagnostics', {
+                detail: `Received: ${receivedSig} | hmacBodyOnly: ${hmacBodyOnly} | hmacConcatDot: ${hmacConcatDot} | hmacConcatDirect: ${hmacConcatDirect}`
+              });
+
+              if (receivedSig === hmacBodyOnly || receivedSig === hmacConcatDot || receivedSig === hmacConcatDirect) {
+                isAuthorized = true;
+              }
+            }
+          } else if (authHeader) {
+            isAuthorized = authHeader === webhookAuth;
+          }
+        }
+
+        if (!isAuthorized) {
+          sysError('Webhook unauthorized access attempt', new Error('Auth mismatch or missing'));
           res.writeHead(401, { 'Content-Type': 'text/plain' });
           res.end('Unauthorized');
           return;
