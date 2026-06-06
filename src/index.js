@@ -155,7 +155,13 @@ keepAliveServer = createServer((req, res) => {
       try {
         const authHeader = req.headers['authorization'];
         const webhookAuth = process.env.TOPGG_WEBHOOK_PASSWORD;
+        
+        sysLog('Incoming webhook auth check', { 
+          detail: `Auth Header: ${authHeader ? `${authHeader.substring(0, 5)}... (len: ${authHeader.length})` : 'none'} | Expected: ${webhookAuth ? `${webhookAuth.substring(0, 5)}... (len: ${webhookAuth.length})` : 'none'}` 
+        });
+
         if (webhookAuth && authHeader !== webhookAuth) {
+          sysError('Webhook unauthorized access attempt', new Error('Auth mismatch'));
           res.writeHead(401, { 'Content-Type': 'text/plain' });
           res.end('Unauthorized');
           return;
