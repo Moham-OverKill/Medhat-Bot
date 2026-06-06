@@ -21,116 +21,77 @@ export async function handleVoteCommand(interaction) {
   const config = await getGuildConfig(guildId) || {};
   const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
+  const desc = voteReward > 0
+    ? `Support us by voting for **Medhat** on Top.gg!\n\n**Reward:** \`${voteReward.toLocaleString()}\` ${COIN_EMOJI} per vote.`
+    : `Support us by voting for **Medhat** on Top.gg!`;
+
   const embed = new EmbedBuilder()
     .setTitle('🗳️ Vote for Medhat')
-    .setDescription(
-      `Support us by voting for **Medhat** on Top.gg!\n\n` +
-      `**Reward:** \`${voteReward.toLocaleString()}\` coins per vote (can be claimed every 12 hours).`
-    )
+    .setDescription(desc)
     .setColor('#F1C40F');
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setLabel('Vote on Top.gg')
       .setURL(`https://top.gg/bot/${interaction.client.user.id}/vote`)
-      .setStyle(ButtonStyle.Link),
-    new ButtonBuilder()
-      .setCustomId('vote_verify')
-      .setLabel('Verify & Claim Reward')
-      .setEmoji('💸')
-      .setStyle(ButtonStyle.Success)
+      .setStyle(ButtonStyle.Link)
   );
 
   await interaction.reply({ embeds: [embed], components: [row] });
 }
 
-export async function handleVoteVerify(interaction) {
-  const isButton = interaction.isButton();
-  
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  }
-
-  const guildId = interaction.guildId;
-  const userId = interaction.user.id;
-  const config = await getGuildConfig(guildId) || {};
-  const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
-
-  if (voteReward <= 0) {
-    return interaction.editReply({ content: '❌ Vote rewards are not enabled or configured for this server.' });
-  }
-
-  // 1. Check if they already claimed their vote reward in the last 12 hours
-  const checkClaim = await query(
-    `SELECT created_at FROM transactions 
-     WHERE user_id = $1 AND guild_id = $2 AND type = 'vote_reward' 
-     ORDER BY created_at DESC LIMIT 1`,
-    [userId, guildId]
-  );
-
-  if (checkClaim.rows.length > 0) {
-    const lastClaim = new Date(checkClaim.rows[0].created_at).getTime();
-    const now = Date.now();
-    const cooldown = 12 * 60 * 60 * 1000; // 12 hours
-    if (now - lastClaim < cooldown) {
-      const remainingMs = cooldown - (now - lastClaim);
-      const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000));
-      const remainingMinutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
-      return interaction.editReply({ 
-        content: `❌ You have already claimed your vote reward recently. Please try again in **${remainingHours}h ${remainingMinutes}m**.` 
-      });
-    }
-  }
-
-  // 2. Fetch Top.gg API to see if the user voted in the last 12 hours
-  const topggToken = process.env.TOPGG_TOKEN;
-  if (!topggToken) {
-    sysLog('Top.gg Missing Token', { guildId, userId });
-    return interaction.editReply({ 
-      content: '❌ Top.gg integration is not fully configured (missing TOPGG_TOKEN on the bot host).' 
-    });
-  }
-
+export async function handleVoteWebhook(client, userId) {
   try {
-    const url = `https://top.gg/api/bots/${interaction.client.user.id}/check?userId=${userId}`;
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': topggToken
+    // 1. Fetch all guild configurations from the database
+    const { query } = await import('../storage/postgres.js');
+    const guildConfigs = await query('SELECT guild_id, config FROM guild_configs');
+
+    // 2. Loop through each guild config to see if they have vote reward enabled (> 0)
+    for (const row of guildConfigs.rows) {
+      const guildId = row.guild_id;
+      const config = row.config || {};
+      const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
+
+      if (voteReward <= 0) continue;
+
+      // Check if the user is a member of this guild
+      const guild = client.guilds.cache.get(guildId);
+      if (!guild) continue;
+
+      try {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (!member) continue; // Not in this guild
+
+        // 3. Check if they already claimed their vote reward in the last 12 hours in this guild
+        const checkClaim = await query(
+          `SELECT created_at FROM transactions 
+           WHERE user_id = $1 AND guild_id = $2 AND type = 'vote_reward' 
+           ORDER BY created_at DESC LIMIT 1`,
+          [userId, guildId]
+        );
+
+        if (checkClaim.rows.length > 0) {
+          const lastClaim = new Date(checkClaim.rows[0].created_at).getTime();
+          const now = Date.now();
+          const cooldown = 12 * 60 * 60 * 1000; // 12 hours
+          if (now - lastClaim < cooldown) {
+            sysLog('Vote webhook duplicate claim skipped', { guildId, userId });
+            continue;
+          }
+        }
+
+        // 4. Award the coins
+        const result = await updateBalance(userId, guildId, voteReward, 'vote_reward', 'Voted for the bot on Top.gg');
+        if (result.success) {
+          sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: voteReward });
+          const { sendLog } = await import('../utils/logger.js');
+          sendLog(guild, 'economy', 'green', '🗳️ Vote Reward Claimed', `**<@${userId}>** automatically claimed **${voteReward.toLocaleString()}** ${COIN_EMOJI} for voting on Top.gg!`);
+        }
+      } catch (memberErr) {
+        sysError('Error checking member or awarding vote reward', memberErr, { guildId, userId });
       }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      sysError('Top.gg API check failure', new Error(errorText), { status: response.status });
-      return interaction.editReply({ 
-        content: '❌ Failed to verify your vote with Top.gg. Please make sure you voted and try again shortly.' 
-      });
     }
-
-    const data = await response.json();
-    // Top.gg check returns: { voted: 1 } or { voted: 0 }
-    if (data.voted !== 1) {
-      return interaction.editReply({ 
-        content: '❌ Top.gg reports that you have not voted in the last 12 hours. Please vote first using the link above!' 
-      });
-    }
-
-    // 3. User voted and hasn't claimed yet. Add the coins to their balance!
-    const result = await updateBalance(userId, guildId, voteReward, 'vote_reward', 'Voted for the bot on Top.gg');
-    if (!result.success) {
-      return interaction.editReply({ 
-        content: `❌ Failed to award coins: ${result.error || 'Unknown error'}` 
-      });
-    }
-
-    return interaction.editReply({
-      content: `🎉 Thank you for voting! You have been awarded **${voteReward.toLocaleString()}** ${COIN_EMOJI} coins. Your new balance is **${result.balance.toLocaleString()}** ${COIN_EMOJI} coins.`
-    });
-
   } catch (error) {
-    sysError('Vote verification failed', error, { user: userId, guild: guildId });
-    return interaction.editReply({ 
-      content: '❌ An error occurred while verifying your vote. Please try again later.' 
-    });
+    sysError('Failed to handle vote webhook', error, { userId });
   }
 }
