@@ -22,11 +22,10 @@ export async function handleVoteCommand(interaction) {
   const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
   const desc = voteReward > 0
-    ? `Support us by voting for **Medhat** on Top.gg!\n\n**Reward:** \`${voteReward.toLocaleString()}\` ${COIN_EMOJI} per vote.`
+    ? `Support us by voting for **Medhat** on Top.gg!\n\nReward: ${voteReward.toLocaleString()} ${COIN_EMOJI}`
     : `Support us by voting for **Medhat** on Top.gg!`;
 
   const embed = new EmbedBuilder()
-    .setTitle('🗳️ Vote for Medhat')
     .setDescription(desc)
     .setColor('#F1C40F');
 
