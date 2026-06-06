@@ -197,6 +197,13 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
+      // VOTE VERIFICATION
+      if (customId === 'vote_verify') {
+        const { handleVoteVerify } = await import('../commands/vote.js');
+        await handleVoteVerify(interaction);
+        return;
+      }
+
       // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters)
       if (customId.startsWith('settings_') || customId.startsWith('organize_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('admin_user_') || customId.startsWith('lb_')) {
         await handleSettingsComponent(interaction);

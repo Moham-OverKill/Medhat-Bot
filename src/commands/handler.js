@@ -5,6 +5,7 @@ import { handleInventoryCommand } from './inventory.js';
 import { handleItemMassCommand } from './item-mass.js';
 import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
+import { handleVoteCommand } from './vote.js';
 import { sysLog } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
@@ -34,6 +35,9 @@ export async function handleSlashCommand(interaction) {
       break;
     case 'trade':
       await handleTradeCommand(interaction);
+      break;
+    case 'vote':
+      await handleVoteCommand(interaction);
       break;
     default:
       await interaction.reply({
