@@ -228,7 +228,14 @@ export function isValidEconomyAmount(value, allowZero = false) {
 }
 
 // Custom Emoji Constants
-export const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+export let COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+
+export function setGlobalCoinEmoji(emoji) {
+  if (emoji && typeof emoji === 'string') {
+    COIN_EMOJI = emoji;
+  }
+}
+
 
 /**
  * Strips emojis, markdown, and extra whitespace for clean console logging.
