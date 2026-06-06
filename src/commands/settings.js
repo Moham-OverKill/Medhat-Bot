@@ -362,6 +362,10 @@ export async function handleSettingsComponent(interaction) {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
             }
             
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+            const guildId = interaction.guildId;
+            const config = await getGuildConfig(guildId) || {};
+            
             const botName = interaction.fields.getTextInputValue('bot_name');
             const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
             const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
@@ -450,10 +454,6 @@ export async function handleSettingsComponent(interaction) {
             // Update database configuration concurrently
             promises.push((async () => {
                 try {
-                    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
-                    const guildId = interaction.guildId;
-                    const config = await getGuildConfig(guildId) || {};
-                    
                     config.coin_emoji = formattedEmoji;
                     config.bot_nickname = newNickname;
                     config.bot_avatar = newAvatar;
