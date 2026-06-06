@@ -253,6 +253,16 @@ client.once(Events.ClientReady, async () => {
 
     const configs = await loadGuildConfigs();
     const configCount = Object.keys(configs).length;
+    
+    // Set global coin emoji from the first configuration that has it
+    for (const config of Object.values(configs)) {
+      if (config.coin_emoji) {
+        const { setGlobalCoinEmoji } = await import('./shared.js');
+        setGlobalCoinEmoji(config.coin_emoji);
+        break;
+      }
+    }
+
     emitPhase('config', 'Configs loaded', {
       guilds: configCount
     });

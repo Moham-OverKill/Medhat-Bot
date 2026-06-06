@@ -47,7 +47,8 @@ const CONFIG_SCHEMA = {
   anti_cheat_join_date_gate: { type: 'boolean', required: false },
   // Vote & Tag Rewards
   vote_reward_amount: { type: 'number', min: 0, required: false },
-  tag_reward_amount: { type: 'number', min: 0, required: false }
+  tag_reward_amount: { type: 'number', min: 0, required: false },
+  coin_emoji: { type: 'string', required: false }
 };
 
 /**
@@ -197,7 +198,12 @@ export async function getGuildConfig(guildId) {
     }
     
     const config = result.rows[0].config;
-    return validateConfig(config);
+    const validated = validateConfig(config);
+    if (validated && validated.coin_emoji) {
+      const { setGlobalCoinEmoji } = await import('../shared.js');
+      setGlobalCoinEmoji(validated.coin_emoji);
+    }
+    return validated;
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Getting guild config' });
     return null;
@@ -217,6 +223,10 @@ export async function setGuildConfig(guildId, config) {
   }
   
   try {
+    if (sanitized && sanitized.coin_emoji) {
+      const { setGlobalCoinEmoji } = await import('../shared.js');
+      setGlobalCoinEmoji(sanitized.coin_emoji);
+    }
     await query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, $2, NOW())
