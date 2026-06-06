@@ -18,7 +18,7 @@ export async function startLeaderboardScheduler(client) {
         
         setTimeout(async () => {
             try {
-                await runHourlyRefresh(client);
+                await runHourlyRefresh(client, false);
             } catch (err) {
                 sysError('Hourly Leaderboard Refresh Failed', err);
             }
@@ -29,7 +29,8 @@ export async function startLeaderboardScheduler(client) {
 
     // --- STARTUP CATCH-UP ---
     // Perform an immediate initial check in case we missed midnight due to maintenance
-    runHourlyRefresh(client).catch(err => sysError('Initial Leaderboard Check Failed', err));
+    // Pass isStartup = true to prevent running KotH role updates and duplicate resets on boot.
+    runHourlyRefresh(client, true).catch(err => sysError('Initial Leaderboard Check Failed', err));
 
     scheduleNext();
 }
@@ -39,12 +40,12 @@ export async function startLeaderboardScheduler(client) {
  * On every hour: update leaderboard UI + run KotH MVP cycle.
  * On midnight (Cairo hour 0): voice flush BEFORE KotH, activity reset AFTER.
  */
-async function runHourlyRefresh(client) {
-    const isMidnight = getCairoHour() === 0;
+async function runHourlyRefresh(client, isStartup = false) {
+    const isMidnight = !isStartup && getCairoHour() === 0;
     const todayStr = (await import('../utils/time.js')).getTodayCairo();
 
     sysLog('Leaderboard Hourly Refresh Started', {
-        detail: `Syncing all configured guilds${isMidnight ? ' [MIDNIGHT — Honors Hour]' : ''}`
+        detail: `Syncing all configured guilds${isMidnight ? ' [MIDNIGHT — Honors Hour]' : ''}${isStartup ? ' [STARTUP CATCH-UP]' : ''}`
     });
     
     const configs = await loadGuildConfigs();
@@ -77,15 +78,19 @@ async function runHourlyRefresh(client) {
     }
 
     // ── STEP 3: Run KotH MVP cycle (roles + coins) for each guild ──
-    const { runKingOfHillCycle } = await import('../mvp/kingOfHill.js');
-    for (const guildId of guildIds) {
-        await runInGuildContext(guildId, async () => {
-            try {
-                await runKingOfHillCycle(client, guildId);
-            } catch (err) {
-                sysError('KotH Cycle Error', err, { guild: guildId });
-            }
-        });
+    if (!isStartup) {
+        const { runKingOfHillCycle } = await import('../mvp/kingOfHill.js');
+        for (const guildId of guildIds) {
+            await runInGuildContext(guildId, async () => {
+                try {
+                    await runKingOfHillCycle(client, guildId);
+                } catch (err) {
+                    sysError('KotH Cycle Error', err, { guild: guildId });
+                }
+            });
+        }
+    } else {
+        sysLog('KotH Cycle Skipped on Startup', { detail: 'Active MVPs are loaded from DB cache' });
     }
 
     // ── MIDNIGHT STEP 4: Reset activity AFTER KotH pays out final scores ──
@@ -94,7 +99,7 @@ async function runHourlyRefresh(client) {
             try {
                 const config = configs[guildId] || {};
                 const lastReset = config.last_mvp_reset;
-                const needsReset = isMidnight || (lastReset !== todayStr);
+                const needsReset = lastReset !== todayStr;
 
                 if (needsReset) {
                     // ── STEP 3.5: Run Tag Rewards cycle (daily) before reset ──
