@@ -21,13 +21,37 @@ client.once('ready', async () => {
     process.exit(1);
   }
   
-  console.log(`Running Tag Rewards Cycle for Guild: ${guild.name} (${guild.id})...`);
+  console.log(`Guild: ${guild.name} (${guild.id})`);
   
   try {
+    console.log('Fetching members to inspect primaryGuild tags...');
+    const members = await guild.members.fetch({ force: true });
+    console.log(`Fetched ${members.size} members.`);
+    
+    for (const [id, member] of members) {
+      if (member.user.bot) continue;
+      
+      let primaryGuild = member.user.primaryGuild;
+      if (primaryGuild === undefined) {
+        try {
+          const freshUser = await client.users.fetch(member.id, { force: true });
+          primaryGuild = freshUser.primaryGuild;
+        } catch {}
+      }
+      
+      if (primaryGuild) {
+        console.log(`User: ${member.user.tag} (${member.id})`);
+        console.log(` - Primary Guild ID: ${primaryGuild.identityGuildId}`);
+        console.log(` - Identity Enabled: ${primaryGuild.identityEnabled}`);
+        console.log(` - Tag: ${primaryGuild.tag}`);
+      }
+    }
+    
+    console.log('Running full scan cycle...');
     await runTagRewardsCycle(client, guild.id);
     console.log('Tag Rewards Cycle completed successfully.');
   } catch (err) {
-    console.error('Critical Error running cycle:', err);
+    console.error('Critical Error during test:', err);
   }
   
   process.exit(0);

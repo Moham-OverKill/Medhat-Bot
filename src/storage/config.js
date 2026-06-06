@@ -47,8 +47,7 @@ const CONFIG_SCHEMA = {
   anti_cheat_join_date_gate: { type: 'boolean', required: false },
   // Vote & Tag Rewards
   vote_reward_amount: { type: 'number', min: 0, required: false },
-  tag_reward_amount: { type: 'number', min: 0, required: false },
-  server_tag: { type: 'string', required: false }
+  tag_reward_amount: { type: 'number', min: 0, required: false }
 };
 
 /**
