@@ -194,12 +194,18 @@ keepAliveServer = createServer((req, res) => {
         }
 
         const data = JSON.parse(body);
-        sysLog('Received Top.gg webhook payload', { type: data.type, user: data.user });
+        const isVoteEvent = data.type === 'vote.create' || data.type === 'upvote';
+        const userId = data.data?.user?.platform_id || data.data?.user?.id || data.user?.id || data.user;
+        const weight = data.data?.weight || 1;
 
-        if (data.type === 'upvote' && data.user) {
+        sysLog('Received Top.gg webhook payload', { 
+          detail: `Type: ${data.type} | User ID: ${userId || 'none'} | Weight: ${weight}` 
+        });
+
+        if (isVoteEvent && userId) {
           const { handleVoteWebhook } = await import('./commands/vote.js');
           // Run in background to respond immediately and prevent Top.gg timeouts
-          handleVoteWebhook(client, data.user).catch(err => {
+          handleVoteWebhook(client, userId, weight).catch(err => {
             sysError('Error executing handleVoteWebhook in background', err);
           });
         }

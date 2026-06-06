@@ -40,7 +40,7 @@ export async function handleVoteCommand(interaction) {
   await interaction.reply({ embeds: [embed], components: [row] });
 }
 
-export async function handleVoteWebhook(client, userId) {
+export async function handleVoteWebhook(client, userId, weight = 1) {
   try {
     // 1. Fetch all guild configurations from the database
     const { query } = await import('../storage/postgres.js');
@@ -81,11 +81,12 @@ export async function handleVoteWebhook(client, userId) {
         }
 
         // 4. Award the coins
-        const result = await updateBalance(userId, guildId, voteReward, 'vote_reward', 'Voted for the bot on Top.gg');
+        const finalReward = voteReward * weight;
+        const result = await updateBalance(userId, guildId, finalReward, 'vote_reward', 'Voted for the bot on Top.gg');
         if (result.success) {
-          sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: voteReward });
+          sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: finalReward });
           const { sendLog } = await import('../utils/logger.js');
-          sendLog(guild, 'economy', 'green', '🗳️ Vote Reward Claimed', `**<@${userId}>** automatically claimed **${voteReward.toLocaleString()}** ${COIN_EMOJI} for voting on Top.gg!`);
+          sendLog(guild, 'economy', 'green', '🗳️ Vote Reward Claimed', `**<@${userId}>** automatically claimed **${finalReward.toLocaleString()}** ${COIN_EMOJI} for voting on Top.gg!`);
         }
       } catch (memberErr) {
         sysError('Error checking member or awarding vote reward', memberErr, { guildId, userId });
