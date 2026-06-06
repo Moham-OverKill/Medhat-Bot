@@ -29,18 +29,17 @@ const CATEGORIES = {
  * Main Leaderboard Settings Panel
  * Mirroring Logs UI style exactly, but preserving Leaderboard logic
  */
-export async function handleLeaderboardSettings(interaction, selectedId = null) {
+export async function handleLeaderboardSettings(interaction, selectedId = null, configOverride = null) {
     try {
         const guildId = interaction.guildId;
-        const config = await getLeaderboardConfig(guildId) || {};
+        const config = configOverride || await getLeaderboardConfig(guildId) || {};
 
         // Mirror Logs UI Style
         let desc = '';
         for (const cat of Object.values(CATEGORIES)) {
             const chanId = config[cat.dbId];
-            const prefix = selectedId === cat.id ? '👉 ' : '';
             const statusLabel = chanId ? `<#${chanId}>` : '*Not Set*';
-            desc += `${prefix}**${cat.name}**\n↳ ${statusLabel}\n\n`;
+            desc += `**${cat.name}**\n↳ ${statusLabel}\n\n`;
         }
 
         const embed = new EmbedBuilder()
@@ -170,7 +169,7 @@ export async function handleLeaderboardChannelSelect(interaction) {
             `**Action:** Set channel to ${channel}`
         );
 
-        return handleLeaderboardSettings(interaction, cat.id);
+        return handleLeaderboardSettings(interaction, cat.id, config);
     } catch (error) {
         sysError('Leaderboard channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Channel Select');
@@ -217,7 +216,7 @@ export async function handleLeaderboardDisable(interaction) {
             );
         }
 
-        return handleLeaderboardSettings(interaction, cat.id);
+        return handleLeaderboardSettings(interaction, cat.id, config);
     } catch (error) {
         sysError('Leaderboard disable failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Disable');
