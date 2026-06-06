@@ -5,6 +5,7 @@ import { setMvpCache } from './mvpCache.js';
 import { updateBalance } from '../economy/service.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { COIN_EMOJI, executeWithRetry } from '../shared.js';
+import { query } from '../storage/postgres.js';
 
 // Per-guild lock to prevent concurrent KotH executions
 const guildKothLocks = new Map();
@@ -180,13 +181,32 @@ export async function runKingOfHillCycle(client, guildId) {
           crowned.push(member.user?.username || userId);
         }
 
-        // Pay coins to ALL winners
+        // Pay coins to ALL winners (with a 50-minute cooldown to prevent double payouts on bot restarts)
         if (rewardAmount > 0) {
-          const result = await updateBalance(userId, guildId, rewardAmount, 'mvp_reward', 'Current MVP!');
-          if (result?.success) {
-            paid.push(userId);
+          const checkPayout = await query(
+            `SELECT created_at FROM transactions 
+             WHERE user_id = $1 AND guild_id = $2 AND type = 'mvp_reward' 
+             ORDER BY created_at DESC LIMIT 1`,
+            [userId, guildId]
+          );
+
+          let alreadyPaid = false;
+          if (checkPayout.rows.length > 0) {
+            const lastPayout = new Date(checkPayout.rows[0].created_at).getTime();
+            if (Date.now() - lastPayout < 50 * 60 * 1000) {
+              alreadyPaid = true;
+            }
+          }
+
+          if (alreadyPaid) {
+            sysLog('KotH Payout Skipped', { guild: guildId, user: userId, detail: 'Already paid within the last 50 minutes' });
           } else {
-            sysError('KotH Coin Payout Failed', result?.error || 'Unknown error', { guild: guildId, user: userId });
+            const result = await updateBalance(userId, guildId, rewardAmount, 'mvp_reward', 'Current MVP!');
+            if (result?.success) {
+              paid.push(userId);
+            } else {
+              sysError('KotH Coin Payout Failed', result?.error || 'Unknown error', { guild: guildId, user: userId });
+            }
           }
         }
       } catch (error) {
