@@ -227,7 +227,6 @@ export async function handleSettingsComponent(interaction) {
             const match = currentEmoji.match(/:(\d+)>$/);
             const initialValue = match ? match[1] : '';
 
-            // Get server-specific member info
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
             const currentNickname = botMember ? (botMember.nickname || '') : '';
             const currentServerAvatar = botMember ? (botMember.avatarURL() || '') : '';
@@ -365,7 +364,13 @@ export async function handleSettingsComponent(interaction) {
 
             let formattedEmoji = null;
             if (coinEmoji && coinEmoji.trim()) {
-                const emojiId = coinEmoji.trim();
+                let emojiId = coinEmoji.trim();
+                // Extract numeric ID if a full Discord emoji tag is pasted
+                const match = emojiId.match(/:(\d+)>$/);
+                if (match) {
+                    emojiId = match[1];
+                }
+
                 if (!/^\d+$/.test(emojiId)) {
                     return interaction.followUp({ content: '❌ **Invalid Emoji ID:** Please provide a numeric emoji ID (e.g., `1343686075385647164`).', flags: MessageFlags.Ephemeral });
                 }
@@ -399,10 +404,11 @@ export async function handleSettingsComponent(interaction) {
                 }
 
                 const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
+                // Retrieve current server-specific avatar URL for comparison
                 const currentAvatar = botMember.avatarURL() || '';
                 if (newAvatar !== currentAvatar) {
                     try {
-                        await botMember.setAvatar(newAvatar);
+                        await botMember.edit({ avatar: newAvatar });
                     } catch (err) {
                         avatarUpdated = false;
                         avatarErrorMsg = err.message || String(err);
