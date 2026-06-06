@@ -223,10 +223,13 @@ export async function handleSettingsComponent(interaction) {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
             
-            const currentEmoji = config.coin_emoji || COIN_EMOJI;
-            const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
-            const match = currentEmojiStr.match(/:(\d+)>$/);
-            const initialValue = match ? match[1] : '';
+            const currentEmoji = config.coin_emoji;
+            let initialValue = '';
+            if (currentEmoji) {
+                const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
+                const match = currentEmojiStr.match(/:(\d+)>$/);
+                initialValue = match ? match[1] : '';
+            }
 
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
             const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
