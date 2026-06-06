@@ -392,40 +392,45 @@ export async function handleSettingsComponent(interaction) {
 
             if (botMember) {
                 const newNickname = botName && botName.trim() ? botName.trim() : null;
-                const currentNickname = botMember.nickname || '';
-                if (newNickname !== currentNickname) {
-                    try {
-                        await botMember.setNickname(newNickname);
-                    } catch (err) {
-                        nameUpdated = false;
-                        nameErrorMsg = err.message || String(err);
-                        sysError('Failed to update bot server nickname', err);
-                    }
-                }
-
                 const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
-                // Retrieve current server-specific avatar URL for comparison
+                
+                const currentNickname = botMember.nickname || '';
                 const currentAvatar = botMember.avatarURL() || '';
-                if (newAvatar !== currentAvatar) {
+                
+                const nickChanged = newNickname !== currentNickname;
+                const avatarChanged = newAvatar !== currentAvatar;
+                
+                if (nickChanged || avatarChanged) {
                     try {
-                        let avatarBuffer = null;
-                        if (newAvatar) {
-                            if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
-                                const res = await fetch(newAvatar);
-                                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                                const contentType = res.headers.get('content-type') || 'image/png';
-                                const arrayBuffer = await res.arrayBuffer();
-                                const buffer = Buffer.from(arrayBuffer);
-                                avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
-                            } else {
-                                avatarBuffer = newAvatar;
+                        const editData = {};
+                        if (nickChanged) editData.nick = newNickname;
+                        if (avatarChanged) {
+                            let avatarBuffer = null;
+                            if (newAvatar) {
+                                if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
+                                    const res = await fetch(newAvatar);
+                                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                                    const contentType = res.headers.get('content-type') || 'image/png';
+                                    const arrayBuffer = await res.arrayBuffer();
+                                    const buffer = Buffer.from(arrayBuffer);
+                                    avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
+                                } else {
+                                    avatarBuffer = newAvatar;
+                                }
                             }
+                            editData.avatar = avatarBuffer;
                         }
-                        await botMember.edit({ avatar: avatarBuffer });
+                        await interaction.guild.members.editMe(editData);
                     } catch (err) {
-                        avatarUpdated = false;
-                        avatarErrorMsg = err.message || String(err);
-                        sysError('Failed to update bot server avatar', err);
+                        if (nickChanged) {
+                            nameUpdated = false;
+                            nameErrorMsg = err.message || String(err);
+                        }
+                        if (avatarChanged) {
+                            avatarUpdated = false;
+                            avatarErrorMsg = err.message || String(err);
+                        }
+                        sysError('Failed to update bot server profile', err);
                     }
                 }
             } else {
