@@ -80,8 +80,8 @@ export async function handleVoteWebhook(client, userId, weight = 1) {
           }
         }
 
-        // 4. Award the coins
-        const finalReward = voteReward * weight;
+        // 4. Award the coins (ignoring the Top.gg weekend multiplier to keep rewards consistent)
+        const finalReward = voteReward;
         const result = await updateBalance(userId, guildId, finalReward, 'vote_reward', 'Voted for the bot on Top.gg');
         if (result.success) {
           sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: finalReward });
