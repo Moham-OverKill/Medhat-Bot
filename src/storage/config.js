@@ -48,7 +48,9 @@ const CONFIG_SCHEMA = {
   // Vote & Tag Rewards
   vote_reward_amount: { type: 'number', min: 0, required: false },
   tag_reward_amount: { type: 'number', min: 0, required: false },
-  coin_emoji: { type: 'string', required: false }
+  coin_emoji: { type: 'string', required: false },
+  bot_nickname: { type: 'string', required: false },
+  bot_avatar: { type: 'string', required: false }
 };
 
 export const configCache = new Map();
