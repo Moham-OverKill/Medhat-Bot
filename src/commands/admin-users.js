@@ -72,7 +72,7 @@ export async function showUserDashboard(interaction, targetUserId) {
     try {
         // Fetch user basic data
         let userResult = await pool.query(
-            'SELECT balance FROM user_balances WHERE guild_id = $1 AND user_id = $2',
+            'SELECT balance, daily_streak FROM user_balances WHERE guild_id = $1 AND user_id = $2',
             [guildId, targetUserId]
         );
 
@@ -80,12 +80,13 @@ export async function showUserDashboard(interaction, targetUserId) {
             sysLog('Infrastructure Audit', { guild: guildId, detail: `Creating first-time balance entry for ${targetUserId}` });
             // Create entry if missing
             userResult = await pool.query(
-                'INSERT INTO user_balances (guild_id, user_id, balance) VALUES ($1, $2, 0) RETURNING balance',
+                'INSERT INTO user_balances (guild_id, user_id, balance, daily_streak) VALUES ($1, $2, 0, 0) RETURNING balance, daily_streak',
                 [guildId, targetUserId]
             );
         }
 
         const balance = parseInt(userResult.rows[0].balance);
+        const streak = parseInt(userResult.rows[0].daily_streak) || 0;
 
         // Fetch synthesized inventory to get accurate item count
         const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
@@ -95,7 +96,7 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
-            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Items: **${itemCount}**`)
+            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Items: **${itemCount}** ｜ Streak: **${streak}** 🔥`)
             .setColor(0x5865F2);
 
         const actionRow = new ActionRowBuilder().addComponents(
@@ -117,6 +118,11 @@ export async function showUserDashboard(interaction, targetUserId) {
         );
 
         const backRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`admin_user_streak_${targetUserId}`)
+                .setLabel('Streak')
+                .setEmoji('🔥')
+                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('settings_back')
                 .setLabel('Back to Settings')
@@ -221,6 +227,94 @@ export async function handleBalanceModal(interaction) {
     } catch (error) {
         sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, guild: guildId, detail: `Balance adjust: ${targetUserId}` });
         await interaction.followUp({ content: '❌ Failed to update balance.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+}
+
+/**
+ * Handle streak adjustment button click
+ */
+export async function handleStreakAction(interaction, targetUserId) {
+    const pool = getPool();
+    const res = await pool.query(
+        'SELECT daily_streak FROM user_balances WHERE guild_id = $1 AND user_id = $2',
+        [interaction.guildId, targetUserId]
+    );
+    const currentStreak = res.rows.length > 0 ? (parseInt(res.rows[0].daily_streak) || 0) : 0;
+
+    const modal = new ModalBuilder()
+        .setCustomId(`admin_user_stkmod_${targetUserId}`)
+        .setTitle('Edit User Streak');
+
+    const input = new TextInputBuilder()
+        .setCustomId('new_streak')
+        .setLabel('Current Streak Days')
+        .setPlaceholder('Enter total streak days...')
+        .setValue(String(currentStreak))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+}
+
+/**
+ * Process streak modal submission
+ */
+export async function handleStreakModal(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const targetUserId = interaction.customId.split('_').pop();
+    const newStreakText = interaction.fields.getTextInputValue('new_streak');
+
+    if (!/^\d+$/.test(newStreakText)) {
+        return interaction.followUp({ content: '❌ Invalid input. Streak must be a positive number.', flags: MessageFlags.Ephemeral });
+    }
+
+    const newStreak = parseInt(newStreakText, 10);
+    const guildId = interaction.guildId;
+    const pool = getPool();
+
+    try {
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+
+        // Get old streak and last_daily for continuity logic
+        const oldRes = await pool.query(
+            'SELECT daily_streak, last_daily FROM user_balances WHERE guild_id = $1 AND user_id = $2',
+            [guildId, targetUserId]
+        );
+        const oldStreak = oldRes.rowCount > 0 ? (parseInt(oldRes.rows[0].daily_streak) || 0) : 0;
+        const lastDaily = oldRes.rowCount > 0 ? oldRes.rows[0].last_daily : null;
+
+        // Next-Day Continuity:
+        // Set last_daily to yesterday in Cairo timezone if the current last_daily is expired/null.
+        // This ensures the next claim increments the new streak normally instead of resetting to 1.
+        const { isStreakValid, getYesterdayCairo } = await import('../utils/time.js');
+        let targetLastDaily = lastDaily;
+        if (!lastDaily || !isStreakValid(new Date(lastDaily))) {
+            const yesterdayStr = getYesterdayCairo();
+            targetLastDaily = new Date(yesterdayStr + 'T12:00:00Z');
+        }
+
+        // Upsert database entry
+        await pool.query(
+            `INSERT INTO user_balances (guild_id, user_id, daily_streak, last_daily, balance) VALUES ($1, $2, $3, $4, 0)
+             ON CONFLICT (guild_id, user_id) DO UPDATE SET daily_streak = $3, last_daily = $4, updated_at = NOW()`,
+            [guildId, targetUserId, newStreak, targetLastDaily]
+        );
+
+        // Discord Log
+        const adminLogName = getUserLogName(interaction);
+        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
+
+        sendLog(interaction.guild, 'audit', 'orange', '🔥 Streak Adjusted',
+            `**Target:** \`${targetLogName}\`\n` +
+            `**Streak Changed:** \`${oldStreak}\` ➜ \`${newStreak}\`\n` +
+            `**Admin:** \`${adminLogName}\` (via User Settings)`
+        );
+
+        await showUserDashboard(interaction, targetUserId);
+    } catch (error) {
+        sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, target: targetUserId, guild: guildId, detail: `Streak adjust: ${targetUserId}` });
+        await interaction.followUp({ content: '❌ Failed to update streak.', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
 }
 
@@ -624,6 +718,9 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             case 'balance':
                 await handleBalanceAction(interaction, targetUserId);
+                break;
+            case 'streak':
+                await handleStreakAction(interaction, targetUserId);
                 break;
             case 'items':
                 await showUserItems(interaction, targetUserId);
