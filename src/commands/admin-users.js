@@ -11,12 +11,10 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory } from '../economy/shop.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
-
-const COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
 
 /**
  * Show user selector dropdown
