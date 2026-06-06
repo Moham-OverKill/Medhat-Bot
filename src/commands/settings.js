@@ -370,56 +370,74 @@ export async function handleSettingsComponent(interaction) {
             const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
             const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
 
+            // --- 1. Emoji Status ---
+            let emojiStatus = 'Default ⏪';
             let formattedEmoji = null;
+            let emojiValid = true;
+
             if (coinEmoji && coinEmoji.trim()) {
                 let emojiId = coinEmoji.trim();
-                // Extract numeric ID if a full Discord emoji tag is pasted
                 const match = emojiId.match(/:(\d+)>$/);
                 if (match) {
                     emojiId = match[1];
                 }
 
                 if (!/^\d+$/.test(emojiId)) {
-                    return interaction.followUp({ content: '❌ **Invalid Emoji ID:** Please provide a numeric emoji ID (e.g., `1343686075385647164`).', flags: MessageFlags.Ephemeral });
+                    emojiValid = false;
+                } else {
+                    const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
+                    if (!emoji) {
+                        emojiValid = false;
+                    } else {
+                        formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+                    }
                 }
-                
-                const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
-                if (!emoji) {
-                    return interaction.followUp({ content: '❌ **Invalid Emoji ID:** The emoji must belong to this server.', flags: MessageFlags.Ephemeral });
+
+                if (emojiValid) {
+                    emojiStatus = 'Updated ✅';
+                } else {
+                    emojiStatus = 'Failed ❌';
                 }
-                formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
             }
 
-            let nameUpdated = true;
-            let avatarUpdated = true;
-            let nameErrorMsg = '';
-            let avatarErrorMsg = '';
-
+            // --- 2. Nickname Status ---
             const client = interaction.client;
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
-
             const newNickname = botName && botName.trim() ? botName.trim() : null;
-            const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
+            let nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
 
             const promises = [];
 
             if (botMember) {
                 const currentNickname = botMember.nickname || null;
-                const hasServerAvatar = botMember.avatar !== null;
-                
                 const nickChanged = newNickname !== currentNickname;
-                const avatarChanged = hasServerAvatar ? (newAvatar === null || newAvatar !== botMember.avatarURL()) : (newAvatar !== null);
-                
+
                 if (nickChanged) {
                     promises.push(
-                        botMember.setNickname(newNickname).catch((err) => {
-                            nameUpdated = false;
-                            nameErrorMsg = err.message || String(err);
-                            sysError('Failed to update bot server nickname', err);
-                        })
+                        botMember.setNickname(newNickname)
+                            .then(() => {
+                                nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
+                            })
+                            .catch((err) => {
+                                nicknameStatus = 'Failed ❌';
+                                sysError('Failed to update bot server nickname', err);
+                            })
                     );
                 }
-                
+            } else {
+                nicknameStatus = 'Failed ❌';
+            }
+
+            // --- 3. Avatar Status ---
+            const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
+            let avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+
+            if (botMember) {
+                const hasServerAvatar = botMember.avatar !== null;
+                const avatarChanged = hasServerAvatar 
+                    ? (newAvatar === null || newAvatar !== botMember.avatarURL()) 
+                    : (newAvatar !== null);
+
                 if (avatarChanged) {
                     promises.push((async () => {
                         try {
@@ -437,49 +455,60 @@ export async function handleSettingsComponent(interaction) {
                                 }
                             }
                             await interaction.guild.members.editMe({ avatar: avatarBuffer });
+                            avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
                         } catch (err) {
-                            avatarUpdated = false;
-                            avatarErrorMsg = err.message || String(err);
+                            avatarStatus = 'Failed ❌';
                             sysError('Failed to update bot server avatar', err);
                         }
                     })());
                 }
             } else {
-                nameUpdated = false;
-                nameErrorMsg = 'Could not find bot member object in this server.';
-                avatarUpdated = false;
-                avatarErrorMsg = 'Could not find bot member object in this server.';
+                avatarStatus = 'Failed ❌';
             }
 
-            // Update database configuration concurrently
-            promises.push((async () => {
-                try {
-                    config.coin_emoji = formattedEmoji;
-                    config.bot_nickname = newNickname;
-                    config.bot_avatar = newAvatar;
-                    await setGuildConfig(guildId, config);
-                } catch (err) {
-                    sysError('Failed to save customization config', err);
-                }
-            })());
+            // Wait for Discord API updates to settle
+            if (promises.length > 0) {
+                await Promise.all(promises);
+            }
 
-            // Execute all tasks in parallel to minimize response latency
-            await Promise.all(promises);
+            // --- 4. Save to Database ---
+            if (nicknameStatus === 'Updated ✅') {
+                config.bot_nickname = newNickname;
+            } else if (nicknameStatus === 'Default ⏪') {
+                config.bot_nickname = null;
+            }
 
+            if (avatarStatus === 'Updated ✅') {
+                config.bot_avatar = newAvatar;
+            } else if (avatarStatus === 'Default ⏪') {
+                config.bot_avatar = null;
+            }
+
+            if (emojiStatus === 'Updated ✅') {
+                config.coin_emoji = formattedEmoji;
+            } else if (emojiStatus === 'Default ⏪') {
+                config.coin_emoji = null;
+            }
+
+            await setGuildConfig(guildId, config).catch((err) => {
+                sysError('Failed to save customization config', err);
+            });
+
+            // --- 5. Audit Logging ---
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Bot Customized',
                 `**Admin:** \`${logName}\`\n` +
-                `**Bot Nickname:** \`${botName || 'None'}\`\n` +
-                `**Coin Emoji:** ${config.coin_emoji || 'Default'}`
+                `**Nickname:** ${nicknameStatus}\n` +
+                `**Avatar:** ${avatarStatus}\n` +
+                `**Emoji:** ${emojiStatus}`
             );
 
-            let responseContent = '✅ **Bot customization updated successfully!**';
-            if (!nameUpdated || !avatarUpdated) {
-                responseContent = '⚠️ **Bot customization updated with warnings:**\n';
-                if (!nameUpdated) responseContent += `❌ Nickname: ${nameErrorMsg}\n`;
-                if (!avatarUpdated) responseContent += `❌ Server Avatar: ${avatarErrorMsg}\n`;
-            }
+            // --- 6. Send Response ---
+            const responseContent = 
+                `Nickname: ${nicknameStatus}\n` +
+                `Avatar: ${avatarStatus}\n` +
+                `Emoji: ${emojiStatus}`;
 
             await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
             return;
