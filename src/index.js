@@ -156,11 +156,6 @@ keepAliveServer = createServer((req, res) => {
         const authHeader = req.headers['authorization'];
         const webhookAuth = process.env.TOPGG_WEBHOOK_PASSWORD;
         
-        sysLog('Incoming webhook auth check', { 
-          detail: `Auth Header: ${authHeader ? `${authHeader.substring(0, 5)}... (len: ${authHeader.length})` : 'none'} | Expected: ${webhookAuth ? `${webhookAuth.substring(0, 5)}... (len: ${webhookAuth.length})` : 'none'}` 
-        });
-        sysLog('All Webhook Headers', { detail: JSON.stringify(req.headers) });
-
         const signatureHeader = req.headers['x-topgg-signature'];
         let isAuthorized = false;
 
@@ -178,15 +173,11 @@ keepAliveServer = createServer((req, res) => {
             }
 
             if (timestamp && receivedSig) {
-              const hmacBodyOnly = crypto.createHmac('sha256', webhookAuth).update(body).digest('hex');
-              const hmacConcatDot = crypto.createHmac('sha256', webhookAuth).update(`${timestamp}.${body}`).digest('hex');
-              const hmacConcatDirect = crypto.createHmac('sha256', webhookAuth).update(`${timestamp}${body}`).digest('hex');
-
-              sysLog('HMAC Signature Diagnostics', {
-                detail: `Received: ${receivedSig} | hmacBodyOnly: ${hmacBodyOnly} | hmacConcatDot: ${hmacConcatDot} | hmacConcatDirect: ${hmacConcatDirect}`
-              });
-
-              if (receivedSig === hmacBodyOnly || receivedSig === hmacConcatDot || receivedSig === hmacConcatDirect) {
+              const expectedSig = crypto.createHmac('sha256', webhookAuth).update(`${timestamp}.${body}`).digest('hex');
+              const bufReceived = Buffer.from(receivedSig, 'hex');
+              const bufExpected = Buffer.from(expectedSig, 'hex');
+              // Safe timing-safe comparison to prevent timing attacks; length check avoids throwing RangeError
+              if (bufReceived.length === bufExpected.length && crypto.timingSafeEqual(bufReceived, bufExpected)) {
                 isAuthorized = true;
               }
             }
