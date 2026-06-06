@@ -229,8 +229,8 @@ export async function handleSettingsComponent(interaction) {
             const initialValue = match ? match[1] : '';
 
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
-            const currentNickname = botMember ? (botMember.nickname || '') : '';
-            const currentServerAvatar = botMember ? (botMember.avatarURL() || '') : '';
+            const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
+            const currentServerAvatar = config.bot_avatar !== undefined ? (config.bot_avatar || '') : '';
 
             const modal = new ModalBuilder().setCustomId('settings_customize_modal').setTitle('Customize Bot');
             
@@ -445,6 +445,8 @@ export async function handleSettingsComponent(interaction) {
             const config = await getGuildConfig(guildId) || {};
             
             config.coin_emoji = formattedEmoji;
+            config.bot_nickname = newNickname;
+            config.bot_avatar = newAvatar;
             await setGuildConfig(guildId, config);
 
             const { getUserLogName } = await import('../shared.js');
