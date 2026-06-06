@@ -181,7 +181,7 @@ export async function handleRewardsComponent(interaction) {
 
       const row = new ActionRowBuilder().addComponents(userSelect);
       const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('settings_rewards_menu').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
 
       await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
@@ -360,7 +360,7 @@ export async function handleRewardsModal(interaction) {
 
         const row = new ActionRowBuilder().addComponents(userSelect);
         const backRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('settings_rewards_menu').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
 
         await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
