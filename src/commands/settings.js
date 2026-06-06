@@ -408,7 +408,18 @@ export async function handleSettingsComponent(interaction) {
                 const currentAvatar = botMember.avatarURL() || '';
                 if (newAvatar !== currentAvatar) {
                     try {
-                        await botMember.edit({ avatar: newAvatar });
+                        let avatarBuffer = null;
+                        if (newAvatar) {
+                            if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
+                                const res = await fetch(newAvatar);
+                                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                                const arrayBuffer = await res.arrayBuffer();
+                                avatarBuffer = Buffer.from(arrayBuffer);
+                            } else {
+                                avatarBuffer = newAvatar;
+                            }
+                        }
+                        await botMember.edit({ avatar: avatarBuffer });
                     } catch (err) {
                         avatarUpdated = false;
                         avatarErrorMsg = err.message || String(err);
