@@ -1,5 +1,5 @@
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, runInGuildContext } from '../shared.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
 // ============================================
@@ -419,82 +419,84 @@ export async function voicePointsTick(client) {
     );
 
     for (const row of result.rows) {
-      const validStart = parseInt(row.voice_valid_start);
-      if (!validStart || validStart <= 0) continue;
+      await runInGuildContext(row.guild_id, async () => {
+        const validStart = parseInt(row.voice_valid_start);
+        if (!validStart || validStart <= 0) return;
 
-      const guild = client.guilds.cache.get(row.guild_id);
-      if (!guild) {
-        await stopTrackingUser(pool, row.guild_id, row.user_id, null, 'guild not found');
-        continue;
-      }
-
-      let member;
-      try {
-        member = await guild.members.fetch(row.user_id);
-      } catch {
-        await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
-        continue;
-      }
-
-      const voiceState = member.voice;
-      if (!voiceState || !voiceState.channel) {
-        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
-        continue;
-      }
-
-      if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
-        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
-        continue;
-      }
-
-      if (guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
-        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
-        continue;
-      }
-
-      const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
-      if (humanCount < 2) {
-        await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
-        continue;
-      }
-
-      // ========== VALIDATION PASSED - AWARD POINTS ==========
-      const buffer = parseInt(row.voice_seconds_accumulated || 0);
-      const elapsedMs = now - validStart;
-      const elapsedSeconds = Math.floor(elapsedMs / 1000);
-      const totalBuffer = buffer + elapsedSeconds;
-
-      if (totalBuffer >= VOICE_POINTS_THRESHOLD_SECONDS) {
-        const pointsToAward = Math.floor(totalBuffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
-        const remainingBuffer = totalBuffer % VOICE_POINTS_THRESHOLD_SECONDS;
-
-        // ATOMIC UPDATE: Consume valid time and increment points in one step
-        // We use a WHERE clause on voice_valid_start to ensure we only update if it hasn't changed
-        const updateResult = await pool.query(
-          `UPDATE user_activity 
-           SET voice_valid_start = $3,
-               voice_seconds_accumulated = $4,
-               voice_minutes = voice_minutes + $5,
-               last_active = $6
-           WHERE guild_id = $1 AND user_id = $2 AND voice_valid_start = $7`,
-          [row.guild_id, row.user_id, now, remainingBuffer, pointsToAward, new Date(now), row.voice_valid_start]
-        );
-
-        if (updateResult.rowCount === 0) {
-          sysLog('Activity Sync Notice', { user: row.user_id, guild: row.guild_id, detail: 'Atomic update skipped: state changed' });
-          continue;
+        const guild = client.guilds.cache.get(row.guild_id);
+        if (!guild) {
+          await stopTrackingUser(pool, row.guild_id, row.user_id, null, 'guild not found');
+          return;
         }
 
+        let member;
         try {
-          const { checkVoiceQuest } = await import('./index.js');
-          const voiceChannelId = voiceState?.channel?.id;
-          if (voiceChannelId) {
-            await checkVoiceQuest(row.guild_id, row.user_id, voiceChannelId, pointsToAward, voiceState);
-          }
-        } catch {
-          // Silent fail
+          member = await guild.members.fetch(row.user_id);
+        } catch (e) {
+          await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
+          return;
         }
-      }
+
+        const voiceState = member.voice;
+        if (!voiceState || !voiceState.channel) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
+          return;
+        }
+
+        if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
+          return;
+        }
+
+        if (guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
+          return;
+        }
+
+        const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
+        if (humanCount < 2) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
+          return;
+        }
+
+        // ========== VALIDATION PASSED - AWARD POINTS ==========
+        const buffer = parseInt(row.voice_seconds_accumulated || 0);
+        const elapsedMs = now - validStart;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const totalBuffer = buffer + elapsedSeconds;
+
+        if (totalBuffer >= VOICE_POINTS_THRESHOLD_SECONDS) {
+          const pointsToAward = Math.floor(totalBuffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
+          const remainingBuffer = totalBuffer % VOICE_POINTS_THRESHOLD_SECONDS;
+
+          // ATOMIC UPDATE: Consume valid time and increment points in one step
+          // We use a WHERE clause on voice_valid_start to ensure we only update if it hasn't changed
+          const updateResult = await pool.query(
+            `UPDATE user_activity 
+             SET voice_valid_start = $3,
+                 voice_seconds_accumulated = $4,
+                 voice_minutes = voice_minutes + $5,
+                 last_active = $6
+             WHERE guild_id = $1 AND user_id = $2 AND voice_valid_start = $7`,
+            [row.guild_id, row.user_id, now, remainingBuffer, pointsToAward, new Date(now), row.voice_valid_start]
+          );
+
+          if (updateResult.rowCount === 0) {
+            sysLog('Activity Sync Notice', { user: row.user_id, guild: row.guild_id, detail: 'Atomic update skipped: state changed' });
+            return;
+          }
+
+          try {
+            const { checkVoiceQuest } = await import('./index.js');
+            const voiceChannelId = voiceState?.channel?.id;
+            if (voiceChannelId) {
+              await checkVoiceQuest(row.guild_id, row.user_id, voiceChannelId, pointsToAward, voiceState);
+            }
+          } catch (e) {
+            // Silent fail
+          }
+        }
+      });
     }
   } catch (error) {
     sysError('Activity Heart-Beat Failed', error, { detail: 'Voice points tick' });

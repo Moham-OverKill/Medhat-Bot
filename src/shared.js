@@ -227,12 +227,43 @@ export function isValidEconomyAmount(value, allowZero = false) {
   return num > 0;
 }
 
-// Custom Emoji Constants
-export let COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+import { AsyncLocalStorage } from 'async_hooks';
+
+export const guildContext = new AsyncLocalStorage();
+
+export function runInGuildContext(guildId, callback) {
+  if (!guildId) return callback();
+  return guildContext.run({ guildId }, callback);
+}
+
+let emojiResolver = null;
+export function registerEmojiResolver(resolver) {
+  emojiResolver = resolver;
+}
+
+export let DEFAULT_COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+
+class DynamicCoinEmoji {
+  toString() {
+    const store = guildContext.getStore();
+    const guildId = store?.guildId;
+    if (guildId && emojiResolver) {
+      const customEmoji = emojiResolver(guildId);
+      if (customEmoji) return customEmoji;
+    }
+    return DEFAULT_COIN_EMOJI;
+  }
+
+  [Symbol.toPrimitive](hint) {
+    return this.toString();
+  }
+}
+
+export const COIN_EMOJI = new DynamicCoinEmoji();
 
 export function setGlobalCoinEmoji(emoji) {
   if (emoji && typeof emoji === 'string') {
-    COIN_EMOJI = emoji;
+    DEFAULT_COIN_EMOJI = emoji;
   }
 }
 

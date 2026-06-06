@@ -92,7 +92,7 @@ import {
   handleTradeExecution,
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, runInGuildContext } from '../shared.js';
 import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
@@ -104,7 +104,8 @@ export function setupComponentHandlers(client) {
   }
 
   client.on('interactionCreate', async (interaction) => {
-    // --- 0. INTERACTION WATCHDOG ---
+    return runInGuildContext(interaction.guildId, async () => {
+      // --- 0. INTERACTION WATCHDOG ---
     // Log a warning if any interaction takes > 2.5s to acknowledge.
     const watchdog = setTimeout(() => {
       if (!interaction.deferred && !interaction.replied) {
@@ -436,6 +437,7 @@ export function setupComponentHandlers(client) {
       clearTimeout(watchdog);
     }
   });
+});
 
   handlersSetup = true;
   sysLog('Infrastructure Audit', { detail: 'Component handlers set up' });
