@@ -185,6 +185,8 @@ export function setupComponentHandlers(client) {
           await handleTradeModal(interaction);
         } else if (interaction.customId.startsWith('trade_confirm_')) {
           await handleTradeFinalConfirmation(interaction);
+        } else if (interaction.customId.startsWith('settings_')) {
+          await handleSettingsComponent(interaction);
         }
         return;
       }
