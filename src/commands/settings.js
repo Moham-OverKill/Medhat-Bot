@@ -222,7 +222,7 @@ export async function handleSettingsComponent(interaction) {
             const modal = new ModalBuilder().setCustomId('settings_vote_modal').setTitle('Vote Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
-                .setLabel('Reward: bot voting on top.gg')
+                .setLabel('Reward members for voting Medhat on Top.gg')
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('Coins Per Vote')
                 .setValue(String(config.vote_reward_amount !== undefined ? config.vote_reward_amount : ''))
