@@ -305,8 +305,8 @@ export async function showSetupPanel(interaction, config) {
   const backRow = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
-        .setCustomId('settings_rewards_menu')
-        .setLabel('Back')
+        .setCustomId('settings_coins')
+        .setLabel('Back to Coins')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
