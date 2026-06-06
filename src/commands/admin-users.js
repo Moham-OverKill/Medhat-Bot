@@ -96,7 +96,7 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
-            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Items: **${itemCount}** ｜ Streak: **${streak}** 🔥`)
+            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Streak: **${streak}** 🔥 ｜ Items: **${itemCount}**`)
             .setColor(0x5865F2);
 
         const actionRow = new ActionRowBuilder().addComponents(
@@ -106,14 +106,14 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setEmoji('💰')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
+                .setCustomId(`admin_user_streak_${targetUserId}`)
+                .setLabel('Streak')
+                .setEmoji('🔥')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
                 .setCustomId(`admin_user_items_${targetUserId}`)
                 .setLabel('Items')
                 .setEmoji('🎒')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`admin_user_history_${targetUserId}`)
-                .setLabel('History')
-                .setEmoji('📜')
                 .setStyle(ButtonStyle.Secondary)
         );
 
@@ -124,10 +124,10 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
-                .setCustomId(`admin_user_streak_${targetUserId}`)
-                .setLabel('Streak')
-                .setEmoji('🔥')
-                .setStyle(ButtonStyle.Primary)
+                .setCustomId(`admin_user_history_${targetUserId}`)
+                .setLabel('History')
+                .setEmoji('📜')
+                .setStyle(ButtonStyle.Secondary)
         );
 
     const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
