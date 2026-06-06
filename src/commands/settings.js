@@ -236,14 +236,27 @@ export async function handleSettingsComponent(interaction) {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
             const modal = new ModalBuilder().setCustomId('settings_tag_modal').setTitle('Tag Reward');
-            const input = new TextInputBuilder()
+            
+            const amountInput = new TextInputBuilder()
                 .setCustomId('amount')
-                .setLabel('Reward members for using your server tag')
+                .setLabel('Coins per day')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Coins per day')
+                .setPlaceholder('Coins awarded daily')
                 .setValue(String(config.tag_reward_amount !== undefined ? config.tag_reward_amount : ''))
                 .setRequired(false);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
+
+            const tagInput = new TextInputBuilder()
+                .setCustomId('tag')
+                .setLabel('Server Tag (e.g. [M] or Medhat)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Tag to look for in usernames')
+                .setValue(config.server_tag || '')
+                .setRequired(false);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(amountInput),
+                new ActionRowBuilder().addComponents(tagInput)
+            );
             await interaction.showModal(modal);
             return;
         }
@@ -276,6 +289,7 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_tag_modal') {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
             const amountStr = interaction.fields.getTextInputValue('amount');
+            const tagStr = interaction.fields.getTextInputValue('tag') || '';
             const amount = amountStr ? Math.max(0, parseInt(amountStr, 10)) : 0;
             if (amountStr && isNaN(amount)) {
                 return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
@@ -284,14 +298,15 @@ export async function handleSettingsComponent(interaction) {
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
             config.tag_reward_amount = amount;
+            config.server_tag = tagStr.trim() || null;
             await setGuildConfig(guildId, config);
 
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Tag Reward Config Changed',
                 `**Admin:** \`${logName}\`\n` +
-                `**Setting:** Coins per day\n` +
-                `**New Value:** \`${amount.toLocaleString()}\` coins`
+                `**Coins per day:** \`${amount.toLocaleString()}\` coins\n` +
+                `**Server Tag:** ${config.server_tag ? `\`${config.server_tag}\`` : '`None`'}`
             );
 
             await showCoinsSubMenu(interaction);

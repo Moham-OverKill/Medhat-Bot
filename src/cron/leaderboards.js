@@ -89,6 +89,14 @@ async function runHourlyRefresh(client) {
             const needsReset = isMidnight || (lastReset !== todayStr);
 
             if (needsReset) {
+                // ── STEP 3.5: Run Tag Rewards cycle (daily) before reset ──
+                try {
+                    const { runTagRewardsCycle } = await import('./tagRewards.js');
+                    await runTagRewardsCycle(client, guildId);
+                } catch (err) {
+                    sysError('Tag Rewards Cycle Failed', err, { guild: guildId });
+                }
+
                 const { resetGuildActivity } = await import('../activity/tracker.js');
                 await resetGuildActivity(guildId);
                 
