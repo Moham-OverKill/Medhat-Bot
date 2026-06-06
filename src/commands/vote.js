@@ -22,8 +22,8 @@ export async function handleVoteCommand(interaction) {
   const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
   const desc = voteReward > 0
-    ? `vote for Medhat on top.gg and get ${voteReward.toLocaleString()} ${COIN_EMOJI}`
-    : `vote for Medhat on top.gg`;
+    ? `Vote for Medhat on [top.gg](https://top.gg/bot/${interaction.client.user.id}) and get ${voteReward.toLocaleString()} ${COIN_EMOJI}`
+    : `Vote for Medhat on [top.gg](https://top.gg/bot/${interaction.client.user.id})`;
 
   const embed = new EmbedBuilder()
     .setTitle('🗳️ Support Medhat!')
