@@ -26,6 +26,7 @@ import {
     handleLeaderboardRefresh as handleLeaderboardRefreshV2
 } from './settings/leaderboards.js';
 import { handleInteractionError } from '../utils/errors.js';
+import { COIN_EMOJI } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -75,7 +76,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_coins')
             .setLabel('Coins')
-            .setEmoji('<:OK_COIN:1490666813501997076>')
+            .setEmoji(`${COIN_EMOJI}`)
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -221,7 +222,6 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_customize') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
-            const { COIN_EMOJI } = await import('../shared.js');
             
             const currentEmoji = config.coin_emoji || COIN_EMOJI;
             const match = currentEmoji.match(/:(\d+)>$/);

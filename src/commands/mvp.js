@@ -292,7 +292,7 @@ export async function showSetupPanel(interaction, config) {
       new ButtonBuilder()
         .setCustomId('mvp_reward_config_btn')
         .setLabel('Reward')
-        .setEmoji('<:OK_COIN:1490666813501997076>')
+        .setEmoji(`${COIN_EMOJI}`)
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('mvp_toggle')
