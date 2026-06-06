@@ -57,7 +57,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors, Coins, Rewards (NEW Layout)
+    // Row 1: Colors, Coins, Shop
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -70,19 +70,14 @@ export async function showMainMenu(interaction) {
             .setEmoji('<:OK_COIN:1490666813501997076>')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_rewards_menu')
-            .setLabel('Rewards')
-            .setEmoji('🎁')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Shop, Leaderboard, Logs
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
             .setCustomId('settings_shop')
             .setLabel('Shop')
             .setEmoji('🛒')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 2: Leaderboard, Logs, Users
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
             .setLabel('Leaderboard')
@@ -92,16 +87,16 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_logs')
             .setLabel('Logs')
             .setEmoji('📜')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Users, Economy, Organize
-    const row3 = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users')
             .setLabel('Users')
             .setEmoji('👥')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Economy, Organize
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_economy')
             .setLabel('Economy')
@@ -121,6 +116,43 @@ export async function showMainMenu(interaction) {
     await interaction[responseMethod]({
         embeds: [embed],
         components: [row1, row2, row3]
+    });
+}
+
+/**
+ * Show the Coins Sub-Menu (Daily & Rewards)
+ */
+export async function showCoinsSubMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🪙 Coins Management')
+        .setDescription('Manage your server\'s daily claims and reward modules.')
+        .setColor(0x2F3136);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_daily')
+            .setLabel('Daily')
+            .setEmoji('📅')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_rewards_menu')
+            .setLabel('Rewards')
+            .setEmoji('🎁')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back to Settings')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2]
     });
 }
 
@@ -153,8 +185,8 @@ export async function showRewardsSubMenu(interaction) {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back to Settings')
+            .setCustomId('settings_coins')
+            .setLabel('Back to Coins')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -193,6 +225,11 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_coins') {
+            await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_daily') {
             await showRewardsPanel(interaction);
             return;
         }

@@ -51,7 +51,7 @@ async function getRewardsPayload(guildId) {
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
-    .setTitle(`${COIN_EMOJI} Coins Configuration`)
+    .setTitle(`${COIN_EMOJI} Daily Configuration`)
     .setColor('#F1C40F')
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },
@@ -76,7 +76,7 @@ async function getRewardsPayload(guildId) {
 
   // Row 3: Navigation
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('settings_home').setLabel('Back to Settings').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };
