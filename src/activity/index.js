@@ -7,7 +7,7 @@ import {
   voicePointsTick,
   clearStaleVoiceTracking
 } from './tracker.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, runInGuildContext } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getTodayCairo } from '../utils/time.js';
 import { sysLog, sysError } from '../utils/logger.js';
@@ -152,34 +152,36 @@ async function handleMessage(message) {
   // Ignore bots, webhooks, and DMs, and safely handle partials missing authors
   if (!message.author || message.author.bot || message.webhookId || !message.guild) return;
 
-  // === CONTENT FILTER CHECK (early guard) ===
-  try {
-    const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
-    const shouldDelete = await checkContentFilter(message);
-    if (shouldDelete) {
-      await message.delete().catch(() => {});
-      return; // Do NOT track activity for deleted messages
+  return runInGuildContext(message.guild.id, async () => {
+    // === CONTENT FILTER CHECK (early guard) ===
+    try {
+      const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
+      const shouldDelete = await checkContentFilter(message);
+      if (shouldDelete) {
+        await message.delete().catch(() => {});
+        return; // Do NOT track activity for deleted messages
+      }
+      
+      // === FIX EMBEDS (URL Replacer) ===
+      // This MUST run after the filter check, but we do not await its verification delay
+      // to prevent blocking the message activity tracker & quest engine.
+      processFixEmbeds(message).catch(err => sysError('Fix Embeds Background Failure', err));
+
+    } catch (error) {
+      // Never let filter errors block activity tracking
+      sysError('Content Filter Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
     }
-    
-    // === FIX EMBEDS (URL Replacer) ===
-    // This MUST run after the filter check, but we do not await its verification delay
-    // to prevent blocking the message activity tracker & quest engine.
-    processFixEmbeds(message).catch(err => sysError('Fix Embeds Background Failure', err));
 
-  } catch (error) {
-    // Never let filter errors block activity tracking
-    sysError('Content Filter Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
-  }
+    addMessagePoint(message.guild, message.author.id, message.author.username, message.content);
 
-  addMessagePoint(message.guild, message.author.id, message.author.username, message.content);
-
-  // === QUEST PROGRESS TRACKING ===
-  try {
-    await checkQuestProgress(message);
-  } catch (error) {
-    // Log — do NOT silently swallow. Silent failures make bugs invisible.
-    sysError('Quest Progress Check Failed', error, { guild: message.guild?.id, user: message.author?.id });
-  }
+    // === QUEST PROGRESS TRACKING ===
+    try {
+      await checkQuestProgress(message);
+    } catch (error) {
+      // Log — do NOT silently swallow. Silent failures make bugs invisible.
+      sysError('Quest Progress Check Failed', error, { guild: message.guild?.id, user: message.author?.id });
+    }
+  });
 }
 
 /**
@@ -194,45 +196,52 @@ async function handleMessageUpdate(oldMessage, newMessage) {
   const attachmentsChanged = oldMessage.attachments?.size !== newMessage.attachments?.size;
   if (!contentChanged && !attachmentsChanged) return;
 
-  try {
-    const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
-    
-    // 1. Enforce Organize Rules on the edited content
-    const shouldDelete = await checkContentFilter(newMessage);
-    if (shouldDelete) {
-      await newMessage.delete().catch(() => {});
-      return;
+  return runInGuildContext(newMessage.guild.id, async () => {
+    try {
+      const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
+      
+      // 1. Enforce Organize Rules on the edited content
+      const shouldDelete = await checkContentFilter(newMessage);
+      if (shouldDelete) {
+        await newMessage.delete().catch(() => {});
+        return;
+      }
+
+      // 2. Update/Sync Fixed Embeds
+      processFixEmbeds(newMessage, true).catch(err => sysError('Fix Embeds Update Failure', err));
+
+    } catch (error) {
+      sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });
     }
-
-    // 2. Update/Sync Fixed Embeds
-    processFixEmbeds(newMessage, true).catch(err => sysError('Fix Embeds Update Failure', err));
-
-  } catch (error) {
-    sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });
-  }
+  });
 }
 
 /**
  * Handle message deletions to clean up orphaned bot replies.
  */
 async function handleMessageDelete(message) {
-  // Use the local client reference to fetch the channel if message.channel is partial/missing
-  const channel = message.channel || await client.channels.fetch(message.channelId).catch(() => null);
-  if (!channel) return;
-  
-  try {
-    const { handleFixedEmbedCleanup } = await import('../middleware/organize.js');
-    await handleFixedEmbedCleanup(channel, message.id);
-  } catch (error) {
-    // Fail silently, just a cleanup task
-  }
+  const guildId = message.guild?.id || message.guildId;
+  return runInGuildContext(guildId, async () => {
+    // Use the local client reference to fetch the channel if message.channel is partial/missing
+    const channel = message.channel || await client.channels.fetch(message.channelId).catch(() => null);
+    if (!channel) return;
+    
+    try {
+      const { handleFixedEmbedCleanup } = await import('../middleware/organize.js');
+      await handleFixedEmbedCleanup(channel, message.id);
+    } catch (error) {
+      // Fail silently, just a cleanup task
+    }
+  });
 }
 
 async function handleVoiceStateUpdate(oldState, newState) {
   const member = newState?.member ?? oldState?.member;
   if (!member || member.user.bot) return;
 
-  await handleVoiceStateChange(member.guild, oldState, newState);
+  return runInGuildContext(member.guild.id, async () => {
+    await handleVoiceStateChange(member.guild, oldState, newState);
+  });
 }
 
 export function invalidateConfigCache(guildId) {

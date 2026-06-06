@@ -51,6 +51,14 @@ const CONFIG_SCHEMA = {
   coin_emoji: { type: 'string', required: false }
 };
 
+export const configCache = new Map();
+
+import { registerEmojiResolver } from '../shared.js';
+registerEmojiResolver((guildId) => {
+  const config = configCache.get(guildId);
+  return config?.coin_emoji || null;
+});
+
 /**
  * Validates and sanitizes configuration object against schema
  */
@@ -126,6 +134,7 @@ export async function loadGuildConfigs() {
         const validated = validateConfig(config);
         if (validated) {
           validConfigs[guildId] = validated;
+          configCache.set(guildId, validated);
         }
       }
     }
@@ -187,6 +196,10 @@ export async function getGuildConfig(guildId) {
     return null;
   }
   
+  if (configCache.has(guildId)) {
+    return configCache.get(guildId);
+  }
+  
   try {
     const result = await query(
       'SELECT config FROM guild_configs WHERE guild_id = $1',
@@ -199,9 +212,8 @@ export async function getGuildConfig(guildId) {
     
     const config = result.rows[0].config;
     const validated = validateConfig(config);
-    if (validated && validated.coin_emoji) {
-      const { setGlobalCoinEmoji } = await import('../shared.js');
-      setGlobalCoinEmoji(validated.coin_emoji);
+    if (validated) {
+      configCache.set(guildId, validated);
     }
     return validated;
   } catch (error) {
@@ -223,10 +235,7 @@ export async function setGuildConfig(guildId, config) {
   }
   
   try {
-    if (sanitized && sanitized.coin_emoji) {
-      const { setGlobalCoinEmoji } = await import('../shared.js');
-      setGlobalCoinEmoji(sanitized.coin_emoji);
-    }
+    configCache.set(guildId, sanitized);
     await query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, $2, NOW())
@@ -247,6 +256,7 @@ export async function deleteGuildConfig(guildId) {
   }
   
   try {
+    configCache.delete(guildId);
     await query('DELETE FROM guild_configs WHERE guild_id = $1', [guildId]);
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Deleting guild config' });
