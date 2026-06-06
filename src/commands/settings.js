@@ -60,7 +60,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors, Coins, Shop
+    // Row 1: Colors - Shop - Coins
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -68,19 +68,24 @@ export async function showMainMenu(interaction) {
             .setEmoji('🎨')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_coins')
-            .setLabel('Coins')
-            .setEmoji('<:OK_COIN:1490666813501997076>')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
             .setCustomId('settings_shop')
             .setLabel('Shop')
             .setEmoji('🛒')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_coins')
+            .setLabel('Coins')
+            .setEmoji('<:OK_COIN:1490666813501997076>')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Leaderboard, Logs, Users
+    // Row 2: Users - Leaderboard - Logs
     const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_users')
+            .setLabel('Users')
+            .setEmoji('👥')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
             .setLabel('Leaderboard')
@@ -90,15 +95,10 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_logs')
             .setLabel('Logs')
             .setEmoji('📜')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_users')
-            .setLabel('Users')
-            .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Economy, Organize
+    // Row 3: Economy - Organize - Customize (new)
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_economy')
@@ -109,6 +109,11 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_organize')
             .setLabel('Organize')
             .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_customize')
+            .setLabel('Customize')
+            .setEmoji('✨')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -186,6 +191,34 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
+ * Show the Customize Sub-Menu (Aesthetics & Custom Modules)
+ */
+export async function showCustomizeMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🎨 Customize Bot')
+        .setDescription('Customize your bot\'s aesthetics, messages, and appearance.')
+        .setColor(0x2F3136)
+        .addFields(
+            { name: '✨ Custom Appearance', value: 'Customize embed colors, emojis, and visual elements.' },
+            { name: '💬 Custom Messages', value: 'Configure custom welcome/announcement templates.' }
+        );
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back to Settings')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row]
+    });
+}
+
+/**
  * Handle settings component interactions (navigation)
  */
 export async function handleSettingsComponent(interaction) {
@@ -208,6 +241,11 @@ export async function handleSettingsComponent(interaction) {
         // Navigation to main modules
         if (customId === 'settings_coins') {
             await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_customize') {
+            await showCustomizeMenu(interaction);
             return;
         }
 
