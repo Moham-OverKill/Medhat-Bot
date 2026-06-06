@@ -120,7 +120,7 @@ export async function showMainMenu(interaction) {
 }
 
 /**
- * Show the Coins Sub-Menu (Daily & Rewards)
+ * Show the Coins Sub-Menu (Daily & Rewards Modules)
  */
 export async function showCoinsSubMenu(interaction) {
     const embed = new EmbedBuilder()
@@ -128,6 +128,7 @@ export async function showCoinsSubMenu(interaction) {
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 
+    // Row 1: Daily, Quests, MVP
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_daily')
@@ -135,13 +136,38 @@ export async function showCoinsSubMenu(interaction) {
             .setEmoji('📅')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_rewards_menu')
-            .setLabel('Rewards')
-            .setEmoji('🎁')
+            .setCustomId('quests_dashboard')
+            .setLabel('Quests')
+            .setEmoji('🎯')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_mvp')
+            .setLabel('MVP')
+            .setEmoji('🏆')
             .setStyle(ButtonStyle.Secondary)
     );
 
+    // Row 2: Vote Reward, Tag Reward, Give Coins
     const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_vote_reward')
+            .setLabel('Vote Reward')
+            .setEmoji('🗳️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_tag_reward')
+            .setLabel('Tag Reward')
+            .setEmoji('🏷️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('rewards_give_btn')
+            .setLabel('Give Coins')
+            .setEmoji('💸')
+            .setStyle(ButtonStyle.Success)
+    );
+
+    // Row 3: Back to Settings
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
             .setLabel('Back to Settings')
@@ -152,49 +178,7 @@ export async function showCoinsSubMenu(interaction) {
     const responseMethod = interaction.isButton() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2]
-    });
-}
-
-/**
- * Show the special Rewards Sub-Menu (Nested Hierarchy)
- */
-export async function showRewardsSubMenu(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle('🎁 Rewards Modules')
-        .setDescription('Manage your server\'s reward systems and events.')
-        .setColor(0x2F3136);
-
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_mvp')
-            .setLabel('MVP')
-            .setEmoji('🏆')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('quests_dashboard')
-            .setLabel('Quests')
-            .setEmoji('🎯')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('rewards_give_btn')
-            .setLabel('Give Coins')
-            .setEmoji('💸')
-            .setStyle(ButtonStyle.Success)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_coins')
-            .setLabel('Back to Coins')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
-    await interaction[responseMethod]({
-        embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2, row3]
     });
 }
 
@@ -219,11 +203,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         // Navigation to main modules
-        if (customId === 'settings_rewards_menu') {
-            await showRewardsSubMenu(interaction);
-            return;
-        }
-
         if (customId === 'settings_coins') {
             await showCoinsSubMenu(interaction);
             return;
@@ -231,6 +210,16 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_daily') {
             await showRewardsPanel(interaction);
+            return;
+        }
+
+        if (customId === 'settings_vote_reward') {
+            await interaction.reply({ content: '🗳️ **Vote Reward settings** are currently under construction.', flags: MessageFlags.Ephemeral });
+            return;
+        }
+
+        if (customId === 'settings_tag_reward') {
+            await interaction.reply({ content: '🏷️ **Tag Reward settings** are currently under construction.', flags: MessageFlags.Ephemeral });
             return;
         }
 
