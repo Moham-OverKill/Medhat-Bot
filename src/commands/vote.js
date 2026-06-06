@@ -19,7 +19,7 @@ export const voteCommand = new SlashCommandBuilder()
 export async function handleVoteCommand(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId) || {};
-  const voteReward = config.vote_reward_amount || 0;
+  const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
   const embed = new EmbedBuilder()
     .setTitle('🗳️ Vote for Medhat')
@@ -54,7 +54,7 @@ export async function handleVoteVerify(interaction) {
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
   const config = await getGuildConfig(guildId) || {};
-  const voteReward = config.vote_reward_amount || 0;
+  const voteReward = config.vote_reward_amount !== undefined ? config.vote_reward_amount : 100;
 
   if (voteReward <= 0) {
     return interaction.editReply({ content: '❌ Vote rewards are not enabled or configured for this server.' });
