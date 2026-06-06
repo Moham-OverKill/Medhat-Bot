@@ -5,7 +5,7 @@ import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { COIN_EMOJI } from '../shared.js';
 
 /**
- * Scans all guild members, identifies who has the server tag in their username/nickname,
+ * Scans all guild members, identifies who has the server's official Server Tag enabled,
  * and awards them daily coins (once per Cairo calendar day).
  * 
  * @param {Client} client - Discord client instance
@@ -17,10 +17,9 @@ export async function runTagRewardsCycle(client, guildId) {
     if (!config) return;
 
     const rewardAmount = parseInt(config.tag_reward_amount, 10);
-    const tag = config.server_tag?.trim();
 
-    if (isNaN(rewardAmount) || rewardAmount <= 0 || !tag) {
-      sysLog('Tag Rewards Skipped', { guild: guildId, detail: 'Tag rewards disabled or incomplete config' });
+    if (isNaN(rewardAmount) || rewardAmount <= 0) {
+      sysLog('Tag Rewards Skipped', { guild: guildId, detail: 'Tag rewards disabled or reward amount not set' });
       return;
     }
 
@@ -30,7 +29,7 @@ export async function runTagRewardsCycle(client, guildId) {
       return;
     }
 
-    sysLog('Tag Rewards Scan Started', { guild: guildId, tag, rewardAmount });
+    sysLog('Tag Rewards Scan Started', { guild: guildId, rewardAmount });
 
     // Fetch all guild members from Discord API
     const members = await guildObj.members.fetch({ force: true }).catch((err) => {
@@ -49,15 +48,25 @@ export async function runTagRewardsCycle(client, guildId) {
     for (const [memberId, member] of members) {
       if (member.user.bot) continue;
 
-      const username = member.user.username || '';
-      const nickname = member.nickname || '';
-      
-      const hasTag = username.toLowerCase().includes(tag.toLowerCase()) || 
-                     nickname.toLowerCase().includes(tag.toLowerCase());
-
-      if (!hasTag) continue;
-
       try {
+        let primaryGuild = member.user.primaryGuild;
+
+        // Fallback: If primaryGuild is undefined, fetch the full user object via REST to populate it
+        if (primaryGuild === undefined) {
+          try {
+            const freshUser = await client.users.fetch(member.id, { force: true });
+            primaryGuild = freshUser.primaryGuild;
+          } catch (fetchErr) {
+            sysError('Stale user fetch failed', fetchErr, { guild: guildId, user: member.id });
+          }
+        }
+
+        const hasOfficialTag = primaryGuild && 
+                               primaryGuild.identityGuildId === guildId && 
+                               primaryGuild.identityEnabled;
+
+        if (!hasOfficialTag) continue;
+
         // Enforce once-per-day Cairo calendar day limit via transaction history check
         const checkPayout = await query(
           `SELECT 1 FROM transactions 
@@ -86,7 +95,7 @@ export async function runTagRewardsCycle(client, guildId) {
     if (paidUsersCount > 0) {
       sendLog(guildObj, 'economy', 'green', '🏷️ Daily Tag Rewards Distributed', 
         `**Action:** \`Daily Tag Scan\`\n` +
-        `**Server Tag:** \`${tag}\`\n` +
+        `**Server Tag:** \`Active Server Tag\`\n` +
         `**Reward Value:** \`${rewardAmount.toLocaleString()}\` ${COIN_EMOJI} per member\n` +
         `**Members Rewarded:** \`${paidUsersCount.toLocaleString()}\`\n` +
         `**Total Distributed:** \`${(paidUsersCount * rewardAmount).toLocaleString()}\` ${COIN_EMOJI}`
