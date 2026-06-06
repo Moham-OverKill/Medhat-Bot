@@ -2,6 +2,7 @@ import { sysLog, sysError } from '../utils/logger.js';
 import { updateLeaderboards } from '../commands/leaderboard.js';
 import { loadGuildConfigs } from '../storage/config.js';
 import { getTimeUntilNextCairoHour, getCairoHour } from '../utils/time.js';
+import { runInGuildContext } from '../shared.js';
 
 /**
  * Static Cairo Hourly Ticker
@@ -52,65 +53,73 @@ async function runHourlyRefresh(client) {
     // ── MIDNIGHT STEP 1: Flush voice time so final minutes are counted for KotH ──
     if (isMidnight) {
         for (const guildId of guildIds) {
-            try {
-                const { flushAllVoiceTime } = await import('../activity/tracker.js');
-                await flushAllVoiceTime(guildId);
-            } catch (err) {
-                sysError('Midnight Voice Flush Failed', err, { guild: guildId });
-            }
+            await runInGuildContext(guildId, async () => {
+                try {
+                    const { flushAllVoiceTime } = await import('../activity/tracker.js');
+                    await flushAllVoiceTime(guildId);
+                } catch (err) {
+                    sysError('Midnight Voice Flush Failed', err, { guild: guildId });
+                }
+            });
         }
         sysLog('Midnight Pre-Processing', { detail: `Voice time flushed for ${guildIds.length} guild(s)` });
     }
 
     // ── STEP 2: Refresh leaderboard UI messages ──
     for (const guildId of guildIds) {
-        try {
-            await updateLeaderboards(client, guildId, null, []);
-        } catch (err) {
-            sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
-        }
+        await runInGuildContext(guildId, async () => {
+            try {
+                await updateLeaderboards(client, guildId, null, []);
+            } catch (err) {
+                sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
+            }
+        });
     }
 
     // ── STEP 3: Run KotH MVP cycle (roles + coins) for each guild ──
     const { runKingOfHillCycle } = await import('../mvp/kingOfHill.js');
     for (const guildId of guildIds) {
-        try {
-            await runKingOfHillCycle(client, guildId);
-        } catch (err) {
-            sysError('KotH Cycle Error', err, { guild: guildId });
-        }
+        await runInGuildContext(guildId, async () => {
+            try {
+                await runKingOfHillCycle(client, guildId);
+            } catch (err) {
+                sysError('KotH Cycle Error', err, { guild: guildId });
+            }
+        });
     }
 
     // ── MIDNIGHT STEP 4: Reset activity AFTER KotH pays out final scores ──
     for (const guildId of guildIds) {
-        try {
-            const config = configs[guildId] || {};
-            const lastReset = config.last_mvp_reset;
-            const needsReset = isMidnight || (lastReset !== todayStr);
+        await runInGuildContext(guildId, async () => {
+            try {
+                const config = configs[guildId] || {};
+                const lastReset = config.last_mvp_reset;
+                const needsReset = isMidnight || (lastReset !== todayStr);
 
-            if (needsReset) {
-                // ── STEP 3.5: Run Tag Rewards cycle (daily) before reset ──
-                try {
-                    const { runTagRewardsCycle } = await import('./tagRewards.js');
-                    await runTagRewardsCycle(client, guildId);
-                } catch (err) {
-                    sysError('Tag Rewards Cycle Failed', err, { guild: guildId });
+                if (needsReset) {
+                    // ── STEP 3.5: Run Tag Rewards cycle (daily) before reset ──
+                    try {
+                        const { runTagRewardsCycle } = await import('./tagRewards.js');
+                        await runTagRewardsCycle(client, guildId);
+                    } catch (err) {
+                        sysError('Tag Rewards Cycle Failed', err, { guild: guildId });
+                    }
+
+                    const { resetGuildActivity } = await import('../activity/tracker.js');
+                    await resetGuildActivity(guildId);
+                    
+                    // Track reset persistently
+                    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+                    const fresh = await getGuildConfig(guildId) || config;
+                    fresh.last_mvp_reset = todayStr;
+                    await setGuildConfig(guildId, fresh);
+
+                    sysLog('Activity Reset Performed', { guild: guildId, detail: isMidnight ? 'Midnight Reset' : 'Catch-up Reset' });
                 }
-
-                const { resetGuildActivity } = await import('../activity/tracker.js');
-                await resetGuildActivity(guildId);
-                
-                // Track reset persistently
-                const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
-                const fresh = await getGuildConfig(guildId) || config;
-                fresh.last_mvp_reset = todayStr;
-                await setGuildConfig(guildId, fresh);
-
-                sysLog('Activity Reset Performed', { guild: guildId, detail: isMidnight ? 'Midnight Reset' : 'Catch-up Reset' });
+            } catch (err) {
+                sysError('Activity Reset Processing Failed', err, { guild: guildId });
             }
-        } catch (err) {
-            sysError('Activity Reset Processing Failed', err, { guild: guildId });
-        }
+        });
     }
     
     sysLog('Leaderboard Hourly Refresh Complete', { detail: `Processed ${guildIds.length} guild(s)` });
