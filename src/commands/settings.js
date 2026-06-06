@@ -224,7 +224,8 @@ export async function handleSettingsComponent(interaction) {
             const config = await getGuildConfig(interaction.guildId) || {};
             
             const currentEmoji = config.coin_emoji || COIN_EMOJI;
-            const match = currentEmoji.match(/:(\d+)>$/);
+            const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
+            const match = currentEmojiStr.match(/:(\d+)>$/);
             const initialValue = match ? match[1] : '';
 
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
@@ -394,11 +395,11 @@ export async function handleSettingsComponent(interaction) {
                 const newNickname = botName && botName.trim() ? botName.trim() : null;
                 const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
                 
-                const currentNickname = botMember.nickname || '';
-                const currentAvatar = botMember.avatarURL() || '';
+                const currentNickname = botMember.nickname || null;
+                const hasServerAvatar = botMember.avatar !== null;
                 
                 const nickChanged = newNickname !== currentNickname;
-                const avatarChanged = newAvatar !== currentAvatar;
+                const avatarChanged = hasServerAvatar ? (newAvatar === null || newAvatar !== botMember.avatarURL()) : (newAvatar !== null);
                 
                 if (nickChanged || avatarChanged) {
                     try {
