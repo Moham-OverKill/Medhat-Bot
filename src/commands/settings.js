@@ -190,33 +190,7 @@ export async function showCoinsSubMenu(interaction) {
     });
 }
 
-/**
- * Show the Customize Sub-Menu (Aesthetics & Custom Modules)
- */
-export async function showCustomizeMenu(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle('🎨 Customize Bot')
-        .setDescription('Customize your bot\'s aesthetics, messages, and appearance.')
-        .setColor(0x2F3136)
-        .addFields(
-            { name: '✨ Custom Appearance', value: 'Customize embed colors, emojis, and visual elements.' },
-            { name: '💬 Custom Messages', value: 'Configure custom welcome/announcement templates.' }
-        );
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back to Settings')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
-    await interaction[responseMethod]({
-        embeds: [embed],
-        components: [row]
-    });
-}
 
 /**
  * Handle settings component interactions (navigation)
@@ -245,7 +219,41 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_customize') {
-            await showCustomizeMenu(interaction);
+            const { getGuildConfig } = await import('../storage/config.js');
+            const config = await getGuildConfig(interaction.guildId) || {};
+            const { COIN_EMOJI } = await import('../shared.js');
+            
+            const modal = new ModalBuilder().setCustomId('settings_customize_modal').setTitle('Customize Bot');
+            
+            const nameInput = new TextInputBuilder()
+                .setCustomId('bot_name')
+                .setLabel('Bot Name')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Enter bot profile name')
+                .setValue(interaction.client.user.username)
+                .setRequired(false);
+
+            const avatarInput = new TextInputBuilder()
+                .setCustomId('bot_avatar')
+                .setLabel('Bot Avatar URL')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Enter bot profile image URL')
+                .setRequired(false);
+
+            const emojiInput = new TextInputBuilder()
+                .setCustomId('coin_emoji')
+                .setLabel('Coin Emoji')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Enter coin emoji (e.g. <:OK_COIN:id>)')
+                .setValue(config.coin_emoji || COIN_EMOJI)
+                .setRequired(false);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nameInput),
+                new ActionRowBuilder().addComponents(avatarInput),
+                new ActionRowBuilder().addComponents(emojiInput)
+            );
+            await interaction.showModal(modal);
             return;
         }
 
@@ -333,6 +341,72 @@ export async function handleSettingsComponent(interaction) {
             );
 
             await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_customize_modal') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+            }
+            
+            const botName = interaction.fields.getTextInputValue('bot_name');
+            const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
+            const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
+
+            let nameUpdated = true;
+            let avatarUpdated = true;
+            let nameErrorMsg = '';
+            let avatarErrorMsg = '';
+
+            const client = interaction.client;
+
+            if (botName && botName.trim() !== client.user.username) {
+                try {
+                    await client.user.setUsername(botName.trim());
+                } catch (err) {
+                    nameUpdated = false;
+                    nameErrorMsg = err.message || String(err);
+                    sysError('Failed to update bot username', err);
+                }
+            }
+
+            if (botAvatar && botAvatar.trim()) {
+                try {
+                    await client.user.setAvatar(botAvatar.trim());
+                } catch (err) {
+                    avatarUpdated = false;
+                    avatarErrorMsg = err.message || String(err);
+                    sysError('Failed to update bot avatar', err);
+                }
+            }
+
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+            const guildId = interaction.guildId;
+            const config = await getGuildConfig(guildId) || {};
+            
+            if (coinEmoji && coinEmoji.trim()) {
+                config.coin_emoji = coinEmoji.trim();
+            } else {
+                config.coin_emoji = null;
+            }
+            await setGuildConfig(guildId, config);
+
+            const { getUserLogName } = await import('../shared.js');
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Bot Customized',
+                `**Admin:** \`${logName}\`\n` +
+                `**Bot Name:** \`${botName || client.user.username}\`\n` +
+                `**Coin Emoji:** ${config.coin_emoji || 'Default'}`
+            );
+
+            let responseContent = '✅ **Bot customization updated successfully!**';
+            if (!nameUpdated || !avatarUpdated) {
+                responseContent = '⚠️ **Bot customization updated with warnings:**\n';
+                if (!nameUpdated) responseContent += `❌ Username: ${nameErrorMsg}\n`;
+                if (!avatarUpdated) responseContent += `❌ Avatar: ${avatarErrorMsg}\n`;
+            }
+
+            await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
             return;
         }
 
