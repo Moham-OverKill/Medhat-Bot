@@ -413,8 +413,10 @@ export async function handleSettingsComponent(interaction) {
                             if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
                                 const res = await fetch(newAvatar);
                                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                                const contentType = res.headers.get('content-type') || 'image/png';
                                 const arrayBuffer = await res.arrayBuffer();
-                                avatarBuffer = Buffer.from(arrayBuffer);
+                                const buffer = Buffer.from(arrayBuffer);
+                                avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
                             } else {
                                 avatarBuffer = newAvatar;
                             }
