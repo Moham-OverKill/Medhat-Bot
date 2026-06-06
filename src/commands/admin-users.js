@@ -119,14 +119,14 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`admin_user_streak_${targetUserId}`)
-                .setLabel('Streak')
-                .setEmoji('🔥')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
                 .setCustomId('settings_back')
                 .setLabel('Back to Settings')
                 .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`admin_user_streak_${targetUserId}`)
+                .setLabel('Streak')
+                .setEmoji('🔥')
                 .setStyle(ButtonStyle.Secondary)
         );
 
