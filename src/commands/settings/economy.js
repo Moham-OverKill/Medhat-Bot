@@ -59,6 +59,8 @@ async function showEconomyDashboard(interaction, view) {
         const boosterMult = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2.0;
         const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 30;
         const baseDaily = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
+        const tagReward = config.tag_reward_amount !== undefined ? parseInt(config.tag_reward_amount, 10) : 0;
+        const voteReward = config.vote_reward_amount !== undefined ? parseInt(config.vote_reward_amount, 10) : 100;
 
         // Fetch Quest Configuration
         const questRefreshes = config.quests_refreshes_per_day || 1;
@@ -72,18 +74,18 @@ async function showEconomyDashboard(interaction, view) {
         // 1. Lazy User (Base Daily Only)
         const lazyIncome = baseDaily;
 
-        // 2. Casual User (Base Daily + ALL configured quests)
-        const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay);
+        // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
+        const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay) + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Weekly MVP share)
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + Weekly MVP share)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
-        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + Math.floor(mvpReward / 7);
+        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + Math.floor(mvpReward / 7);
 
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
-                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Boost Bonus:** ${boosterMult}x\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **MVP Prize:** ${mvpReward}/hour ${COIN_EMOJI}`,
+                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Boost Bonus:** ${boosterMult}x\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **Tag Reward:** ${tagReward} ${COIN_EMOJI}/day\n• **Vote Reward:** ${voteReward} ${COIN_EMOJI}/vote\n• **MVP Prize:** ${mvpReward}/hour ${COIN_EMOJI}`,
                 inline: false
             },
             {
@@ -123,7 +125,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'tag_reward', 'vote_reward')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY user_id
             ORDER BY earned DESC
@@ -160,7 +162,7 @@ async function showEconomyDashboard(interaction, view) {
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust')
+              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'tag_reward', 'vote_reward')
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY type
             ORDER BY total DESC
@@ -170,6 +172,8 @@ async function showEconomyDashboard(interaction, view) {
             { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
             { id: 'daily', aliases: [], label: 'Daily Claims' },
             { id: 'quest_reward', aliases: ['mission_reward'], label: 'Quest Rewards' },
+            { id: 'tag_reward', aliases: [], label: 'Tag Rewards' },
+            { id: 'vote_reward', aliases: [], label: 'Vote Rewards' },
             { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
         ];
 
