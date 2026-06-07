@@ -228,7 +228,7 @@ export async function handleSettingsComponent(interaction) {
             if (currentEmoji) {
                 const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
                 const match = currentEmojiStr.match(/:(\d+)>$/);
-                initialValue = match ? match[1] : '';
+                initialValue = match ? match[1] : currentEmojiStr;
             }
 
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
