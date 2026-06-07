@@ -60,13 +60,27 @@ async function getUserBalance(guildId, userId) {
 }
 
 function getCoinThumbnailUrl() {
-  const emojiStr = COIN_EMOJI.toString();
+  const emojiStr = COIN_EMOJI.toString().trim();
   const match = emojiStr.match(/<(a)?:[^:]+:(\d+)>/);
   if (match) {
     const isAnimated = Boolean(match[1]);
     const emojiId = match[2];
     return `https://cdn.discordapp.com/emojis/${emojiId}.${isAnimated ? 'gif' : 'png'}`;
   }
+
+  // Check if it's a standard unicode emoji
+  const emojiRegex = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
+  if (emojiRegex.test(emojiStr)) {
+    try {
+      const codePoints = [...emojiStr].map(char => char.codePointAt(0).toString(16));
+      const filteredCodePoints = codePoints.filter(cp => cp !== 'fe0f');
+      const hex = filteredCodePoints.join('-');
+      return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${hex}.png`;
+    } catch (e) {
+      // Fallback
+    }
+  }
+
   return BANK_THUMBNAIL_URL;
 }
 
