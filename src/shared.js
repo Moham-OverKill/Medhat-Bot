@@ -241,7 +241,7 @@ export function registerEmojiResolver(resolver) {
   emojiResolver = resolver;
 }
 
-export let DEFAULT_COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+export const DEFAULT_COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
 
 class DynamicCoinEmoji {
   toString() {
@@ -260,12 +260,6 @@ class DynamicCoinEmoji {
 }
 
 export const COIN_EMOJI = new DynamicCoinEmoji();
-
-export function setGlobalCoinEmoji(emoji) {
-  if (emoji && typeof emoji === 'string') {
-    DEFAULT_COIN_EMOJI = emoji;
-  }
-}
 
 
 /**
