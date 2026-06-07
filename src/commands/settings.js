@@ -373,30 +373,45 @@ export async function handleSettingsComponent(interaction) {
             // --- 1. Emoji Status ---
             let emojiStatus = 'Default ⏪';
             let formattedEmoji = null;
-            let emojiValid = true;
 
             if (coinEmoji && coinEmoji.trim()) {
-                let emojiId = coinEmoji.trim();
-                const match = emojiId.match(/:(\d+)>$/);
-                if (match) {
-                    emojiId = match[1];
-                }
+                const input = coinEmoji.trim();
 
-                if (!/^\d+$/.test(emojiId)) {
-                    emojiValid = false;
+                // Check for custom emoji format first
+                const customMatch = input.match(/<a?:(\w+):(\d+)>/);
+                let emojiId = null;
+                if (customMatch) {
+                    emojiId = customMatch[2];
                 } else {
-                    const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
-                    if (!emoji) {
-                        emojiValid = false;
-                    } else {
-                        formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+                    // Check if it's a numeric ID
+                    const numMatch = input.match(/\b\d+\b/);
+                    if (numMatch) {
+                        emojiId = numMatch[0];
                     }
                 }
 
-                if (emojiValid) {
-                    emojiStatus = 'Updated ✅';
+                if (emojiId) {
+                    const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
+                    if (emoji) {
+                        formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        emojiStatus = 'Failed ❌';
+                    }
                 } else {
-                    emojiStatus = 'Failed ❌';
+                    // Check for standard Unicode emoji
+                    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+                    const segments = Array.from(segmenter.segment(input));
+                    const emojiRegex = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
+                    const emojiSegments = segments.filter(s => emojiRegex.test(s.segment));
+
+                    if (emojiSegments.length > 0) {
+                        // Pick the first unicode emoji found
+                        formattedEmoji = emojiSegments[0].segment;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        emojiStatus = 'Failed ❌';
+                    }
                 }
             }
 
