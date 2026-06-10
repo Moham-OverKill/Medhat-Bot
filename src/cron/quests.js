@@ -128,10 +128,11 @@ export async function rotateGuildQuests(guildId, config, pool) {
                 weight = 150; // Brand New priority override
             } else {
                 const distance = currentCycle - q.last_active_at;
-                if (distance <= 1) weight = 1;      // Just used (1% base)
-                else if (distance === 2) weight = 25; // Used 2 cycles ago (Low)
-                else if (distance === 3) weight = 50; // Used 3 cycles ago (Medium)
-                else weight = 100;                    // Used 4+ cycles ago (Max)
+                if (distance <= 1) weight = 0;      // Exclude immediately active quests
+                else if (distance === 2) weight = 5;  // 5% relative weight (extremely low)
+                else if (distance === 3) weight = 15; // 15% relative weight (low)
+                else if (distance === 4) weight = 45; // 45% relative weight (medium)
+                else weight = 100;                    // Used 5+ cycles ago (Max)
             }
             
             totalWeight += weight;
