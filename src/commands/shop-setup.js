@@ -1229,7 +1229,7 @@ export async function handleShopPostPriceBtn(interaction) {
     .setCustomId('price_input')
     .setLabel('Price')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('0000')
+    .setPlaceholder('0 = Free')
     .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
     .setRequired(true);
 
@@ -1258,7 +1258,7 @@ export async function handleShopPostPayoutBtn(interaction) {
       .setCustomId('payout')
       .setLabel('Payout (Per purchase)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0000')
+      .setPlaceholder('0 = None')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
       .setRequired(false);
 
@@ -1281,7 +1281,7 @@ export async function handleShopPostStockBtn(interaction) {
     .setCustomId('stock')
     .setLabel('Stocks')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('0000')
+    .setPlaceholder('0 = Unlimited')
     .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
     .setRequired(false);
 
@@ -1319,9 +1319,9 @@ export async function handleShopPostImageBtn(interaction) {
 
   const urlInput = new TextInputBuilder()
     .setCustomId('image_url')
-    .setLabel('Image URL (Leave empty to use default)')
+    .setLabel('Image URL')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('https://example.com/image.png')
+    .setPlaceholder('Empty = Default')
     .setValue(state.imageUrl || '')
     .setRequired(false);
 
