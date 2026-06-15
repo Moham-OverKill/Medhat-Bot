@@ -1106,11 +1106,20 @@ export async function handleShopPostItemSelect(interaction) {
   } else {
     // Final Item Selection
     state.itemId = itemId;
-    state.overridePrice = null;
     state.postStep = 0; // Return to root after selection
     
     const items = await getShopItems(interaction.guildId, null, 'name', true);
     const selectedItem = items.find(i => i.id === parseInt(itemId));
+
+    if (selectedItem) {
+      state.overridePrice = selectedItem.price;
+      state.stock = selectedItem.stock;
+      state.stockConfigured = true;
+    } else {
+      state.overridePrice = null;
+      state.stock = null;
+      state.stockConfigured = false;
+    }
 
     // Check if selected item is a pack - if so, reset seller/payout (packs are server-only)
     if (selectedItem && selectedItem.item_type === 'pack') {
@@ -1304,6 +1313,7 @@ export async function handleShopPostReset(interaction) {
     state.overridePrice = null;
     state.postStep = 0;
     state.postFilter = null;
+    state.stockConfigured = false;
     pendingPosts.set(interaction.user.id, state);
   }
   await handleShopPostStart(interaction);
