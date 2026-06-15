@@ -3373,8 +3373,15 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 
     // Extract embed contents
     const firstEmbed = message.embeds[0];
-    const description = firstEmbed?.description || null;
-    const imageUrl = firstEmbed?.image?.url || null;
+    const embedDescription = firstEmbed?.description || null;
+    const embedImageUrl = firstEmbed?.image?.url || null;
+
+    // Compare with default item details to determine overrides
+    const defaultImage = getItemImage(item);
+    const defaultDescription = item.description || null;
+
+    const imageUrl = embedImageUrl === defaultImage ? null : embedImageUrl;
+    const description = embedDescription === defaultDescription ? null : embedDescription;
 
     // Initialize state
     const userId = interaction.user.id;
