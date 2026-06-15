@@ -1005,7 +1005,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_price_btn')
       .setLabel('Set Price')
       .setEmoji('🏷️')
-      .setStyle(state.overridePrice !== null ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle((state.overridePrice !== null && state.overridePrice !== 0) ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
@@ -1035,7 +1035,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_stock_btn')
       .setLabel('Set Stocks')
       .setEmoji('⏳')
-      .setStyle(state.stockConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle((state.stock !== null && state.stock !== 0) ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
