@@ -1212,7 +1212,10 @@ export async function handleShopPostDescBtn(interaction) {
     .setTitle('Item Description');
 
   // state.description holds: the embed-scraped text (edit flow) or user-entered text (create flow)
-  const descValue = (state.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let descValue = (state.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Safety: truncate to 1000 chars to prevent Discord.js validation errors on old posts
+  if (descValue.length > 1000) descValue = descValue.substring(0, 1000);
 
   const descInput = new TextInputBuilder()
     .setCustomId('description')
