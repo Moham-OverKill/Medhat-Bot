@@ -3386,7 +3386,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       description,
       imageUrl,
       overridePrice: overridePrice !== null ? overridePrice : item.price,
-      stock: null,
+      stock: item.stock,
       stockConfigured: false, // Must be explicitly set
       isEditing: true,
       messageId,
