@@ -1206,22 +1206,20 @@ export async function handleShopPostSellerSelect(interaction) {
 // Handle Description Button - Show Modal
 export async function handleShopPostDescBtn(interaction) {
   const state = pendingPosts.get(interaction.user.id) || {};
-  const items = await getShopItems(interaction.guildId, null, 'name', true);
-  const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_desc_modal')
     .setTitle('Item Description');
 
-  const descValue = state.description || (selectedItem ? selectedItem.description : '');
-  const cleanDescValue = descValue ? descValue.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : '';
+  // state.description holds: the embed-scraped text (edit flow) or user-entered text (create flow)
+  const descValue = (state.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   const descInput = new TextInputBuilder()
     .setCustomId('description')
     .setLabel('Description')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder('A very cool item that makes you look even cooler!')
-    .setValue(cleanDescValue)
+    .setValue(descValue)
     .setRequired(false)
     .setMaxLength(1000);
 
@@ -3421,30 +3419,15 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     let embedDescription = firstEmbed?.description || null;
     const embedImageUrl = firstEmbed?.image?.url || null;
 
-    // Strip out the Item-Duration-Stock block if it's embedded in the description text
-    if (embedDescription) {
-      const lines = embedDescription.split('\n');
-      const footerIndex = lines.findIndex(line => {
-        const lower = line.toLowerCase();
-        return (
-          (lower.includes('item') && lower.includes('duration') && lower.includes('stock')) ||
-          (line.includes('🏷️') && line.includes('⏳') && (line.includes('♾️') || line.includes('🟢') || line.includes('🔴')))
-        );
-      });
-      if (footerIndex !== -1) {
-        embedDescription = lines.slice(0, footerIndex).join('\n').trim();
-      }
-    }
-
-    // Compare with default item details to determine overrides
+    // The message embed is the source of truth for description — always use what's visible on the post
+    // No database comparison needed; the user wants to edit what they see
     const defaultImage = getItemImage(item);
-    const defaultDescription = item.description || null;
-
-    const cleanEmbedDesc = embedDescription ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() : null;
-    const cleanDefaultDesc = defaultDescription ? defaultDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() : null;
-
     const imageUrl = embedImageUrl === defaultImage ? null : embedImageUrl;
-    const description = cleanEmbedDesc === cleanDefaultDesc ? null : cleanEmbedDesc;
+
+    // Clean the embed description: strip carriage returns and trim
+    const description = embedDescription
+      ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() || null
+      : null;
 
     // Scrape stock from embed field if present, falling back to DB stock
     let scrapedStock = item.stock;
