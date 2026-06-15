@@ -1206,17 +1206,22 @@ export async function handleShopPostSellerSelect(interaction) {
 // Handle Description Button - Show Modal
 export async function handleShopPostDescBtn(interaction) {
   const state = pendingPosts.get(interaction.user.id) || {};
+  const items = await getShopItems(interaction.guildId, null, 'name', true);
+  const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
 
   const modal = new ModalBuilder()
     .setCustomId('shop_post_desc_modal')
     .setTitle('Item Description');
+
+  const descValue = state.description || (selectedItem ? selectedItem.description : '');
+  const cleanDescValue = descValue ? descValue.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : '';
 
   const descInput = new TextInputBuilder()
     .setCustomId('description')
     .setLabel('Description')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder('A very cool item that makes you look even cooler!')
-    .setValue(state.description ?? '')
+    .setValue(cleanDescValue)
     .setRequired(false)
     .setMaxLength(1000);
 
@@ -3420,8 +3425,11 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     const defaultImage = getItemImage(item);
     const defaultDescription = item.description || null;
 
+    const cleanEmbedDesc = embedDescription ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() : null;
+    const cleanDefaultDesc = defaultDescription ? defaultDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() : null;
+
     const imageUrl = embedImageUrl === defaultImage ? null : embedImageUrl;
-    const description = embedDescription === defaultDescription ? null : embedDescription;
+    const description = cleanEmbedDesc === cleanDefaultDesc ? null : cleanEmbedDesc;
 
     // Scrape stock from embed field if present, falling back to DB stock
     let scrapedStock = item.stock;
