@@ -1013,7 +1013,7 @@ export async function handleShopPostStart(interaction) {
   const actionComponents = [];
   actionComponents.push(
     new ButtonBuilder()
-      .setCustomId(state.isEditing ? 'shop_admin_post' : 'shop_admin_home')
+      .setCustomId((state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home')
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
@@ -1077,7 +1077,15 @@ export async function handleShopPostItemSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const userId = interaction.user.id;
   const itemId = interaction.values[0];
-  let state = pendingPosts.get(userId) || { itemId: null, channelId: null, sellerId: null, imageUrl: null, description: null, payout: null, postStep: 0, postFilter: null };
+  let state = pendingPosts.get(userId);
+  if (!state) {
+    state = {
+      itemId: null, channelId: null, sellerId: null,
+      imageUrl: null, description: null, payout: null, stock: null,
+      overridePrice: null, postStep: 0, postFilter: null,
+      isEditing: false, stockConfigured: false, fromGateway: false
+    };
+  }
 
   // --- Navigation Routing ---
   if (itemId === 'folder_reset') {
@@ -1126,7 +1134,15 @@ export async function handleShopPostChannelSelect(interaction) {
   const userId = interaction.user.id;
   const channelId = interaction.values[0];
 
-  let state = pendingPosts.get(userId) || { itemId: null, channelId: null, sellerId: null, imageUrl: null };
+  let state = pendingPosts.get(userId);
+  if (!state) {
+    state = {
+      itemId: null, channelId: null, sellerId: null,
+      imageUrl: null, description: null, payout: null, stock: null,
+      overridePrice: null, postStep: 0, postFilter: null,
+      isEditing: false, stockConfigured: false, fromGateway: false
+    };
+  }
   state.channelId = channelId;
   pendingPosts.set(userId, state);
 
@@ -1141,7 +1157,15 @@ export async function handleShopPostSellerSelect(interaction) {
   const selectedUserId = interaction.values[0];
   const guildOwnerId = interaction.guild.ownerId;
 
-  let state = pendingPosts.get(userId) || { itemId: null, channelId: null, sellerId: null, imageUrl: null, description: null, payout: null };
+  let state = pendingPosts.get(userId);
+  if (!state) {
+    state = {
+      itemId: null, channelId: null, sellerId: null,
+      imageUrl: null, description: null, payout: null, stock: null,
+      overridePrice: null, postStep: 0, postFilter: null,
+      isEditing: false, stockConfigured: false, fromGateway: false
+    };
+  }
 
   // Owner-as-reset logic: selecting guild owner = reset seller to null
   if (selectedUserId === guildOwnerId) {
@@ -1312,10 +1336,15 @@ export async function handleShopPostModalSubmit(interaction) {
     const userId = interaction.user.id;
     const customId = interaction.customId;
 
-    let state = pendingPosts.get(userId) || { 
-      itemId: null, channelId: null, sellerId: null, 
-      imageUrl: null, description: null, payout: null, stock: null 
-    };
+    let state = pendingPosts.get(userId);
+    if (!state) {
+      state = {
+        itemId: null, channelId: null, sellerId: null,
+        imageUrl: null, description: null, payout: null, stock: null,
+        overridePrice: null, postStep: 0, postFilter: null,
+        isEditing: false, stockConfigured: false, fromGateway: false
+      };
+    }
 
     if (customId === 'shop_post_image_modal') {
       const val = (interaction.fields.getTextInputValue('image_url') || '').trim().toLowerCase();
@@ -3277,7 +3306,8 @@ export async function handleShopPostNewLayout(interaction) {
       postStep: 0,
       postFilter: null,
       isEditing: false,
-      stockConfigured: false
+      stockConfigured: false,
+      fromGateway: true
     });
 
     await handleShopPostStart(interaction);
@@ -3383,6 +3413,25 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     const imageUrl = embedImageUrl === defaultImage ? null : embedImageUrl;
     const description = embedDescription === defaultDescription ? null : embedDescription;
 
+    // Scrape stock from embed field if present, falling back to DB stock
+    let scrapedStock = item.stock;
+    if (firstEmbed && firstEmbed.fields) {
+      const stockField = firstEmbed.fields.find(f => f.name && f.name.includes('Stock'));
+      if (stockField) {
+        const val = stockField.value;
+        if (val.includes('Unlimited')) {
+          scrapedStock = null;
+        } else if (val.includes('Sold Out')) {
+          scrapedStock = 0;
+        } else {
+          const matchNum = val.match(/\*\*(\d+)\*\*/);
+          if (matchNum) {
+            scrapedStock = parseInt(matchNum[1], 10);
+          }
+        }
+      }
+    }
+
     // Initialize state
     const userId = interaction.user.id;
     pendingPosts.set(userId, {
@@ -3393,9 +3442,10 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       description,
       imageUrl,
       overridePrice: overridePrice !== null ? overridePrice : item.price,
-      stock: item.stock,
-      stockConfigured: false, // Must be explicitly set
+      stock: scrapedStock,
+      stockConfigured: true,
       isEditing: true,
+      fromGateway: true,
       messageId,
       messageUrl: url,
       postStep: 0,
