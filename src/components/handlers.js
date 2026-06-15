@@ -180,7 +180,13 @@ export function setupComponentHandlers(client) {
           await handleTierModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_cat_modal_edit_')) {
           await handleEditCategoryModalSubmit(interaction);
-        } else if (interaction.customId === 'shop_post_image_modal' || interaction.customId === 'shop_post_desc_modal' || interaction.customId === 'shop_post_payout_modal' || interaction.customId === 'shop_post_stock_modal' || interaction.customId === 'shop_post_price_modal') {
+        } else if (
+          interaction.customId.startsWith('shop_post_image_modal') ||
+          interaction.customId.startsWith('shop_post_desc_modal') ||
+          interaction.customId.startsWith('shop_post_payout_modal') ||
+          interaction.customId.startsWith('shop_post_stock_modal') ||
+          interaction.customId.startsWith('shop_post_price_modal')
+        ) {
           await handleShopPostModalSubmit(interaction);
         } else if (interaction.customId === 'shop_edit_post_url_modal') {
           await handleShopEditPostUrlSubmit(interaction);
