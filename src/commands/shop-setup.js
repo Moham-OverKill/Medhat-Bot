@@ -846,7 +846,7 @@ export async function handleShopPostStart(interaction) {
 
   // Show item image as small thumbnail preview in the staging embed
   if (selectedItem) {
-    const previewImg = getItemImage(selectedItem);
+    const previewImg = state.imageUrl || getItemImage(selectedItem);
     if (previewImg) embed.setThumbnail(previewImg);
   }
 
