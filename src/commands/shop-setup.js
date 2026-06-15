@@ -1035,7 +1035,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_stock_btn')
       .setLabel('Set Stocks')
       .setEmoji('⏳')
-      .setStyle((state.stock !== null || state.stockConfigured) ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle(state.stockConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
