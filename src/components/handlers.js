@@ -72,7 +72,12 @@ import {
   handleShopPostPublish,
   handleShopPostPriceBtn,
   handleShopPostReset,
-  handleShopPostStockBtn
+  handleShopPostStockBtn,
+  handleShopPostGate,
+  handleShopPostNewLayout,
+  handleShopPostEditLayout,
+  handleShopEditPostUrlSubmit,
+  handleShopPostUpdate
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -177,6 +182,8 @@ export function setupComponentHandlers(client) {
           await handleEditCategoryModalSubmit(interaction);
         } else if (interaction.customId === 'shop_post_image_modal' || interaction.customId === 'shop_post_desc_modal' || interaction.customId === 'shop_post_payout_modal' || interaction.customId === 'shop_post_stock_modal' || interaction.customId === 'shop_post_price_modal') {
           await handleShopPostModalSubmit(interaction);
+        } else if (interaction.customId === 'shop_edit_post_url_modal') {
+          await handleShopEditPostUrlSubmit(interaction);
         } else if (interaction.customId.startsWith('mass_modal_create_')) {
           await handleMassModalSubmit(interaction);
         } else if (interaction.customId.startsWith('admin_user_balmod_')) {
@@ -320,7 +327,13 @@ export function setupComponentHandlers(client) {
       } else if (customId === 'shop_admin_delete' || customId === 'shop_setup_delete') {
         await handleShopAdminDelete(interaction);
       } else if (customId === 'shop_admin_post' || customId === 'shop_setup_post') {
-        await handleShopPostStart(interaction);
+        await handleShopPostGate(interaction);
+      } else if (customId === 'shop_post_new_layout') {
+        await handleShopPostNewLayout(interaction);
+      } else if (customId === 'shop_post_edit_layout') {
+        await handleShopPostEditLayout(interaction);
+      } else if (customId === 'shop_post_update') {
+        await handleShopPostUpdate(interaction);
       } else if (customId.startsWith('shop_pack_add_content_select_')) {
         await handlePackAddContentSelect(interaction);
       } else if (customId.startsWith('shop_pack_add_')) {

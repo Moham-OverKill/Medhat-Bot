@@ -811,6 +811,8 @@ export async function handleShopPostStart(interaction) {
   state.overridePrice = state.overridePrice ?? null;
   state.postStep = (state.postStep === undefined || state.postStep === null) ? 0 : state.postStep;
   state.postFilter = state.postFilter ?? null;
+  state.isEditing = state.isEditing ?? false;
+  state.stockConfigured = state.stockConfigured ?? false;
 
   pendingPosts.set(userId, state);
 
@@ -839,7 +841,7 @@ export async function handleShopPostStart(interaction) {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('📢 Post an Item/Pack To The Shop!')
+    .setTitle(state.isEditing ? '📢 Edit Shop Post' : '📢 Post an Item/Pack To The Shop!')
     .setColor(0x9B59B6);
 
   // Show item image as small thumbnail preview in the staging embed
@@ -850,15 +852,34 @@ export async function handleShopPostStart(interaction) {
 
   // Prioritized status description
   let statusDesc = '';
-  if (!state.itemId) {
-    statusDesc = '⚠️ Select an Item to post';
-  } else if (!state.channelId) {
-    statusDesc = '⚠️ Set a channel to post the item to';
-  } else if (!isPack && state.overridePrice === null) {
-    statusDesc = '⚠️ Set a price for that item';
+  if (state.isEditing) {
+    if (state.overridePrice === null) {
+      statusDesc = '⚠️ Set a price for that item';
+    } else if (!state.stockConfigured) {
+      statusDesc = '⚠️ Configure the stock using the Set Stocks button first';
+    }
+  } else {
+    if (!state.itemId) {
+      statusDesc = '⚠️ Select an Item to post';
+    } else if (!state.channelId) {
+      statusDesc = '⚠️ Set a channel to post the item to';
+    } else if (!isPack && state.overridePrice === null) {
+      statusDesc = '⚠️ Set a price for that item';
+    }
   }
   
   embed.setDescription(statusDesc || null);
+
+  if (state.isEditing && selectedItem) {
+    embed.addFields(
+      { name: '🏷️ Item', value: selectedItem.name, inline: true },
+      { name: '🏪 Channel', value: `<#${state.channelId}>`, inline: true },
+      { name: '💰 Price', value: state.overridePrice !== null ? `${state.overridePrice.toLocaleString()} coins` : 'Not Set', inline: true },
+      { name: '👥 Seller', value: sellerDisplay, inline: true },
+      { name: '💵 Payout', value: payoutDisplay, inline: true },
+      { name: '⏳ Stock', value: state.stockConfigured ? (state.stock === null ? 'Unlimited' : `${state.stock}`) : 'Not Configured (Required)', inline: true }
+    );
+  }
 
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
@@ -867,90 +888,92 @@ export async function handleShopPostStart(interaction) {
   let itemOptions = [];
   let placeholder = '📦 Select Item/Pack (Required)';
 
-  if (state.postStep === 0) {
-    const hasCategorized = itemsAll.some(i => i.category_id && !i.is_pack && i.item_type !== 'pack');
-    const hasUncategorized = itemsAll.some(i => !i.category_id && !i.is_pack && i.item_type !== 'pack');
-    const hasPacks = itemsAll.some(i => i.is_pack || i.item_type === 'pack');
+  if (!state.isEditing) {
+    if (state.postStep === 0) {
+      const hasCategorized = itemsAll.some(i => i.category_id && !i.is_pack && i.item_type !== 'pack');
+      const hasUncategorized = itemsAll.some(i => !i.category_id && !i.is_pack && i.item_type !== 'pack');
+      const hasPacks = itemsAll.some(i => i.is_pack || i.item_type === 'pack');
 
-    if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
-    if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
-    if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
-    placeholder = '📦 Select Item/Pack (Required)';
-    
-    // If an item is already selected, show it as a quick-pick at the top
-    if (selectedItem) {
-      itemOptions.unshift({
-        label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
-        value: selectedItem.id.toString(),
-        default: true
+      if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
+      if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
+      if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
+      placeholder = '📦 Select Item/Pack (Required)';
+      
+      // If an item is already selected, show it as a quick-pick at the top
+      if (selectedItem) {
+        itemOptions.unshift({
+          label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
+          value: selectedItem.id.toString(),
+          default: true
+        });
+      }
+    } 
+    else if (state.postStep === 1) {
+      // Category Folder List - Hide Empty Folders
+      const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.category_id).map(i => i.category_id));
+      const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
+
+      itemOptions = activeCategories.map(c => ({
+        label: `📂 ${c.name.slice(0, 50)}`,
+        value: `filter_cat_${c.id}`
+      }));
+      itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
+      placeholder = '📂 Choose Category Folder...';
+    } 
+    else if (state.postStep === 2) {
+      // Final Item List (Filtered)
+      let filtered = [];
+      let groupPrefix = '🏷️';
+      let groupName = 'Items';
+
+      if (state.postFilter === 'standalone') {
+        filtered = itemsAll.filter(i => !i.category_id && !i.is_pack);
+        groupName = 'Uncategorized';
+        groupPrefix = '🏷️';
+      } else if (state.postFilter === 'packs') {
+        filtered = itemsAll.filter(i => i.is_pack);
+        groupName = 'Packs';
+        groupPrefix = '📦';
+      } else if (state.postFilter?.startsWith('cat_')) {
+        const catId = parseInt(state.postFilter.split('_').pop());
+        filtered = itemsAll.filter(i => i.category_id === catId);
+        groupName = categories.find(c => c.id === catId)?.name || 'Category';
+        groupPrefix = '🏷️';
+      }
+
+      itemOptions = filtered.slice(0, 24).map(i => {
+        return {
+          label: `${groupPrefix} ${i.name.slice(0, 75)}`,
+          value: i.id.toString(),
+          default: state.itemId === i.id.toString()
+        };
       });
-    }
-  } 
-  else if (state.postStep === 1) {
-    // Category Folder List - Hide Empty Folders
-    const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.category_id).map(i => i.category_id));
-    const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
-    itemOptions = activeCategories.map(c => ({
-      label: `📂 ${c.name.slice(0, 50)}`,
-      value: `filter_cat_${c.id}`
-    }));
-    itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
-    placeholder = '📂 Choose Category Folder...';
-  } 
-  else if (state.postStep === 2) {
-    // Final Item List (Filtered)
-    let filtered = [];
-    let groupPrefix = '🏷️';
-    let groupName = 'Items';
-
-    if (state.postFilter === 'standalone') {
-      filtered = itemsAll.filter(i => !i.category_id && !i.is_pack);
-      groupName = 'Uncategorized';
-      groupPrefix = '🏷️';
-    } else if (state.postFilter === 'packs') {
-      filtered = itemsAll.filter(i => i.is_pack);
-      groupName = 'Packs';
-      groupPrefix = '📦';
-    } else if (state.postFilter?.startsWith('cat_')) {
-      const catId = parseInt(state.postFilter.split('_').pop());
-      filtered = itemsAll.filter(i => i.category_id === catId);
-      groupName = categories.find(c => c.id === catId)?.name || 'Category';
-      groupPrefix = '🏷️';
+      itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
+      placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
     }
 
-    itemOptions = filtered.slice(0, 24).map(i => {
-      return {
-        label: `${groupPrefix} ${i.name.slice(0, 75)}`,
-        value: i.id.toString(),
-        default: state.itemId === i.id.toString()
-      };
-    });
-
-    itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
-    placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
+    // Unified Empty State Fallback
+    if (itemOptions.length === 0 || (itemOptions.length === 1 && itemOptions[0].value === 'folder_reset')) {
+      const emptyRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+      );
+      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
+    }
   }
 
-  // Unified Empty State Fallback
-  if (itemOptions.length === 0 || (itemOptions.length === 1 && itemOptions[0].value === 'folder_reset')) {
-    const emptyRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-    const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-    return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
-  }
-
-  const itemSelect = new StringSelectMenuBuilder()
+  const itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
     .setCustomId('shop_post_item_select')
     .setPlaceholder(placeholder)
-    .addOptions(itemOptions);
+    .addOptions(itemOptions) : null;
 
   // Row 2: Channel Select
-  const channelSelect = new ChannelSelectMenuBuilder()
+  const channelSelect = !state.isEditing ? new ChannelSelectMenuBuilder()
     .setCustomId('shop_post_channel_select')
     .setPlaceholder('🏪 Select Channel (Required)')
-    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
-  if (state.channelId) channelSelect.setDefaultChannels([state.channelId]);
+    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement) : null;
+  if (!state.isEditing && state.channelId) channelSelect.setDefaultChannels([state.channelId]);
 
   // Row 3: User Select (Seller - Optional, disabled for packs)
   const userSelect = new UserSelectMenuBuilder()
@@ -998,42 +1021,65 @@ export async function handleShopPostStart(interaction) {
   );
 
   // Row 5: Action Buttons (4 buttons)
-  const actionRow = new ActionRowBuilder().addComponents(
+  const actionComponents = [];
+  actionComponents.push(
     new ButtonBuilder()
-      .setCustomId('shop_admin_home')
+      .setCustomId(state.isEditing ? 'shop_admin_post' : 'shop_admin_home')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('shop_post_reset')
-      .setLabel('Reset')
-      .setEmoji('🔄')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isModified),
+  );
+
+  if (!state.isEditing) {
+    actionComponents.push(
+      new ButtonBuilder()
+        .setCustomId('shop_post_reset')
+        .setLabel('Reset')
+        .setEmoji('🔄')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!isModified)
+    );
+  }
+
+  actionComponents.push(
     new ButtonBuilder()
       .setCustomId('shop_post_stock_btn')
       .setLabel('Set Stocks')
       .setEmoji('⏳')
-      .setStyle(state.stock ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected),
-    new ButtonBuilder()
-      .setCustomId('shop_post_publish')
-      .setLabel('Publish')
-      .setEmoji('🚀')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(!canPublish)
+      .setStyle((state.stock !== null || state.stockConfigured) ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(!isItemSelected)
   );
+
+  const confirmBtn = new ButtonBuilder()
+    .setCustomId(state.isEditing ? 'shop_post_update' : 'shop_post_publish')
+    .setLabel(state.isEditing ? 'Update' : 'Publish')
+    .setEmoji('🚀')
+    .setStyle(ButtonStyle.Success);
+
+  let canSubmit = false;
+  if (state.isEditing) {
+    canSubmit = state.overridePrice !== null && state.stockConfigured === true;
+  } else {
+    canSubmit = canPublish;
+  }
+  confirmBtn.setDisabled(!canSubmit);
+  actionComponents.push(confirmBtn);
+
+  const actionRow = new ActionRowBuilder().addComponents(actionComponents);
+
+  const components = [];
+  if (!state.isEditing) {
+    components.push(new ActionRowBuilder().addComponents(itemSelect));
+    components.push(new ActionRowBuilder().addComponents(channelSelect));
+  }
+  components.push(new ActionRowBuilder().addComponents(userSelect));
+  components.push(configRow);
+  components.push(actionRow);
 
   await interaction.editReply({
     content: null,
     embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(itemSelect),
-      new ActionRowBuilder().addComponents(channelSelect),
-      new ActionRowBuilder().addComponents(userSelect),
-      configRow,
-      actionRow
-    ]
+    components: components
   });
 }
 
@@ -1311,6 +1357,7 @@ export async function handleShopPostModalSubmit(interaction) {
         const num = parseInt(val, 10);
         state.stock = num <= 0 ? null : num; // Double check: 0 or less = Unlimited
       }
+      state.stockConfigured = true;
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim();
       
@@ -3182,5 +3229,331 @@ export async function handlePackRemoveContentSelect(interaction) {
     await handleInteractionError(interaction, error, 'pack remove content select');
   }
 }
+
+// --- GATEWAY INTERSTITIAL PANEL ---
+export async function handleShopPostGate(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      if (interaction.isMessageComponent && interaction.isMessageComponent()) {
+        await interaction.deferUpdate();
+      } else {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#9B59B6')
+      .setTitle('📢 Shop Posting Options')
+      .setDescription('Choose whether you want to publish a new shop item or edit an existing live post in this server.');
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('shop_admin_home')
+          .setLabel('Back')
+          .setEmoji('◀️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('shop_post_new_layout')
+          .setLabel('New Post')
+          .setEmoji('➕')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('shop_post_edit_layout')
+          .setLabel('Edit Post')
+          .setEmoji('📝')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post gate');
+  }
+}
+
+export async function handleShopPostNewLayout(interaction) {
+  try {
+    const userId = interaction.user.id;
+    
+    // Initialize/Reset session state for New Post
+    pendingPosts.set(userId, {
+      itemId: null,
+      channelId: null,
+      sellerId: null,
+      payout: null,
+      stock: null,
+      description: null,
+      imageUrl: null,
+      overridePrice: null,
+      postStep: 0,
+      postFilter: null,
+      isEditing: false,
+      stockConfigured: false
+    });
+
+    await handleShopPostStart(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post new layout');
+  }
+}
+
+export async function handleShopPostEditLayout(interaction) {
+  try {
+    const modal = new ModalBuilder()
+      .setCustomId('shop_edit_post_url_modal')
+      .setTitle('Edit Shop Post');
+
+    const urlInput = new TextInputBuilder()
+      .setCustomId('message_url')
+      .setLabel('Discord Message URL')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('https://discord.com/channels/...')
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
+    await interaction.showModal(modal);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'show edit post modal');
+  }
+}
+
+export async function handleShopEditPostUrlSubmit(interaction) {
+  try {
+    // Defer reply for modal submission
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const url = (interaction.fields.getTextInputValue('message_url') || '').trim();
+
+    // Parse URL: https://discord.com/channels/guildId/channelId/messageId
+    const match = url.match(/channels\/(\d+)\/(\d+)\/(\d+)/);
+    if (!match) {
+      return interaction.editReply({ content: '❌ Invalid Message URL. Must be a valid Discord message link.' });
+    }
+
+    const [_, guildId, channelId, messageId] = match;
+
+    // Security Gate: Server validation
+    if (guildId !== interaction.guildId) {
+      return interaction.editReply({ content: '❌ The message URL must belong to this server.' });
+    }
+
+    // Fetch Channel & Message
+    const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel) {
+      return interaction.editReply({ content: '❌ Channel not found or inaccessible.' });
+    }
+
+    const message = await channel.messages.fetch(messageId).catch(() => null);
+    if (!message) {
+      return interaction.editReply({ content: '❌ Message not found. Make sure the bot has permission to view it.' });
+    }
+
+    // Author verification
+    if (message.author.id !== interaction.client.user.id) {
+      return interaction.editReply({ content: '❌ That message was not posted by this bot.' });
+    }
+
+    // Signature verification (Find Buy Button)
+    let buyButton = null;
+    for (const row of message.components) {
+      for (const component of row.components) {
+        if (component.type === 2 && component.customId && component.customId.startsWith('bank_shop_buy_')) {
+          buyButton = component;
+          break;
+        }
+      }
+      if (buyButton) break;
+    }
+
+    if (!buyButton) {
+      return interaction.editReply({ content: '❌ No valid shop buy button found in the message components.' });
+    }
+
+    // Parse customId parts: bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
+    const parts = buyButton.customId.split('_');
+    const itemId = parseInt(parts[3], 10);
+    const sellerId = parts[4] === '0' ? null : parts[4];
+    const payout = parts[5] === '0' ? null : parseInt(parts[5], 10);
+    const overridePrice = (parts[6] !== undefined && parts[6] !== '') ? parseInt(parts[6], 10) : null;
+
+    // Verify item exists in DB
+    const item = await getShopItem(itemId, guildId);
+    if (!item) {
+      return interaction.editReply({ content: '❌ The item associated with this post could not be found in the database.' });
+    }
+
+    // Extract embed contents
+    const firstEmbed = message.embeds[0];
+    const description = firstEmbed?.description || null;
+    const imageUrl = firstEmbed?.image?.url || null;
+
+    // Initialize state
+    const userId = interaction.user.id;
+    pendingPosts.set(userId, {
+      itemId,
+      channelId,
+      sellerId,
+      payout,
+      description,
+      imageUrl,
+      overridePrice: overridePrice !== null ? overridePrice : item.price,
+      stock: null,
+      stockConfigured: false, // Must be explicitly set
+      isEditing: true,
+      messageId,
+      messageUrl: url,
+      postStep: 0,
+      postFilter: null
+    });
+
+    const mock = {
+      deferred: true,
+      replied: true,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      guildId: interaction.guildId,
+      guild: interaction.guild,
+      user: interaction.user,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+
+    await handleShopPostStart(mock);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop edit post url submit');
+  }
+}
+
+export async function handleShopPostUpdate(interaction) {
+  try {
+    const userId = interaction.user.id;
+    const state = pendingPosts.get(userId);
+
+    if (!state || !state.itemId || !state.channelId || !state.messageId || !state.isEditing) {
+      return handleInteractionError(interaction, new Error('Validation Failed: Missing required parameters for updating'), 'shop post update');
+    }
+
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
+    const { itemId, channelId, messageId, sellerId, imageUrl, description, payout, stock, overridePrice } = state;
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) {
+      return interaction.followUp({ content: '❌ Item not found in database.', flags: MessageFlags.Ephemeral });
+    }
+
+    const effectivePrice = overridePrice !== null && overridePrice !== undefined ? Number(overridePrice) : null;
+    if (effectivePrice === null) {
+      return interaction.followUp({ content: '❌ You must set a price before updating.', flags: MessageFlags.Ephemeral });
+    }
+
+    const isFree = effectivePrice === 0;
+
+    const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel) {
+      return interaction.followUp({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    const message = await channel.messages.fetch(messageId).catch(() => null);
+    if (!message) {
+      return interaction.followUp({ content: '❌ Message not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    // JIT DB Update
+    await updateShopItem(itemId, { price: effectivePrice, stock });
+    item.price = effectivePrice;
+    item.stock = stock;
+
+    // Build the updated embed
+    const embed = new EmbedBuilder()
+      .setTitle(item.name)
+      .setColor('#3498DB');
+
+    const finalImage = imageUrl || getItemImage(item);
+    if (finalImage) {
+      embed.setImage(finalImage);
+    }
+
+    const finalDescription = description || item.description;
+    if (finalDescription) {
+      embed.setDescription(finalDescription);
+    }
+
+    if (item.item_type === 'pack') {
+      const count = item.contents ? item.contents.length : 0;
+      embed.addFields({ name: '📦 Contents', value: `**${count}** Items`, inline: true });
+    } else {
+      if (item.role_id) {
+        embed.addFields({ name: '🏷️ Item', value: `<@&${item.role_id}>`, inline: true });
+      } else {
+        embed.addFields({ name: '🏷️ Item', value: item.name, inline: true });
+      }
+
+      let durationText = 'Permanent';
+      if (item.duration_seconds) {
+        const days = Math.floor(item.duration_seconds / 86400);
+        const hours = Math.floor((item.duration_seconds % 86400) / 3600);
+        if (days > 0) {
+          durationText = `${days} Day${days !== 1 ? 's' : ''}`;
+          if (hours > 0) durationText += ` ${hours} Hour${hours !== 1 ? 's' : ''}`;
+        } else if (hours > 0) {
+          durationText = `${hours} Hour${hours !== 1 ? 's' : ''}`;
+        } else {
+          const minutes = Math.floor(item.duration_seconds / 60);
+          durationText = `${minutes} Minute${minutes !== 1 ? 's' : ''}`;
+        }
+      }
+      embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
+    }
+
+    let stockHeader = '♾️ Stock';
+    let stockValue = 'Unlimited';
+    if (item.stock === null || item.stock === undefined) {
+      stockHeader = '♾️ Stock';
+      stockValue = 'Unlimited';
+    } else if (item.stock <= 0) {
+      stockHeader = '🔴 Stock';
+      stockValue = 'Sold Out';
+      embed.setColor('#808080'); // Gray out sold out items
+    } else {
+      stockHeader = '🟢 Stock';
+      stockValue = `**${item.stock}** Left`;
+    }
+    embed.addFields({ name: stockHeader, value: stockValue, inline: true });
+
+    // Build Buy button
+    const sellerPart = sellerId || '0';
+    const payoutPart = payout || '0';
+    const overridePart = overridePrice !== null ? overridePrice : '';
+    const isSoldOut = item.stock !== null && item.stock <= 0;
+
+    const buyButton = new ButtonBuilder()
+      .setCustomId(`bank_shop_buy_${itemId}_${sellerPart}_${payoutPart}_${overridePart}`)
+      .setLabel(isFree ? 'BUY (FREE)' : `BUY (${effectivePrice.toLocaleString()})`)
+      .setEmoji(`${COIN_EMOJI}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(isSoldOut);
+
+    const row = new ActionRowBuilder().addComponents(buyButton);
+
+    // Edit message live
+    await message.edit({ embeds: [embed], components: [row] });
+
+    // Log & Cleanup
+    sendLog(interaction.guild, 'shop', 'blue', '📝 Shop Post Updated', `Admin **<@${interaction.user.id}>** updated posted item **${item.name}** in <#${channelId}>`);
+
+    pendingPosts.delete(userId);
+
+    await interaction.followUp({
+      content: `✅ **${item.name}** post updated successfully!`,
+      flags: MessageFlags.Ephemeral
+    }).catch(() => {});
+
+    await handleShopPostGate(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post update');
+  }
+}
+
 
 
