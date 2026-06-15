@@ -1208,7 +1208,7 @@ export async function handleShopPostDescBtn(interaction) {
   const state = pendingPosts.get(interaction.user.id) || {};
 
   const modal = new ModalBuilder()
-    .setCustomId('shop_post_desc_modal')
+    .setCustomId(`shop_post_desc_modal_${Date.now()}`)
     .setTitle('Item Description');
 
   // state.description holds: the embed-scraped text (edit flow) or user-entered text (create flow)
@@ -1237,7 +1237,7 @@ export async function handleShopPostPriceBtn(interaction) {
   if (!state) return;
 
   const modal = new ModalBuilder()
-    .setCustomId('shop_post_price_modal')
+    .setCustomId(`shop_post_price_modal_${Date.now()}`)
     .setTitle('Item Price');
 
   const priceInput = new TextInputBuilder()
@@ -1266,7 +1266,7 @@ export async function handleShopPostPayoutBtn(interaction) {
       }
 
     const modal = new ModalBuilder()
-      .setCustomId('shop_post_payout_modal')
+      .setCustomId(`shop_post_payout_modal_${Date.now()}`)
       .setTitle('Seller Payout');
 
     const payoutInput = new TextInputBuilder()
@@ -1289,7 +1289,7 @@ export async function handleShopPostStockBtn(interaction) {
   const state = pendingPosts.get(interaction.user.id) || {};
 
   const modal = new ModalBuilder()
-    .setCustomId('shop_post_stock_modal')
+    .setCustomId(`shop_post_stock_modal_${Date.now()}`)
     .setTitle('Item Stocks');
 
   const stockInput = new TextInputBuilder()
@@ -1330,7 +1330,7 @@ export async function handleShopPostImageBtn(interaction) {
   const state = pendingPosts.get(interaction.user.id) || {};
 
   const modal = new ModalBuilder()
-    .setCustomId('shop_post_image_modal')
+    .setCustomId(`shop_post_image_modal_${Date.now()}`)
     .setTitle('Item Image');
 
   const urlInput = new TextInputBuilder()
@@ -1350,7 +1350,10 @@ export async function handleShopPostModalSubmit(interaction) {
   try {
     await interaction.deferUpdate();
     const userId = interaction.user.id;
-    const customId = interaction.customId;
+    const rawCustomId = interaction.customId;
+    const customId = rawCustomId.includes('_modal')
+      ? rawCustomId.substring(0, rawCustomId.indexOf('_modal') + 6)
+      : rawCustomId;
 
     let state = pendingPosts.get(userId);
     if (!state) {
