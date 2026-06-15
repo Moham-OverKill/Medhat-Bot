@@ -3346,30 +3346,30 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // Parse URL: https://discord.com/channels/guildId/channelId/messageId
     const match = url.match(/channels\/(\d+)\/(\d+)\/(\d+)/);
     if (!match) {
-      return interaction.followUp({ content: '❌ Invalid Message URL. Must be a valid Discord message link.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     const [_, guildId, channelId, messageId] = match;
 
     // Security Gate: Server validation
     if (guildId !== interaction.guildId) {
-      return interaction.followUp({ content: '❌ The message URL must belong to this server.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     // Fetch Channel & Message
     const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
     if (!channel) {
-      return interaction.followUp({ content: '❌ Channel not found or inaccessible.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     const message = await channel.messages.fetch(messageId).catch(() => null);
     if (!message) {
-      return interaction.followUp({ content: '❌ Message not found. Make sure the bot has permission to view it.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     // Author verification
     if (message.author.id !== interaction.client.user.id) {
-      return interaction.followUp({ content: '❌ That message was not posted by this bot.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     // Signature verification (Find Buy Button)
@@ -3385,7 +3385,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     }
 
     if (!buyButton) {
-      return interaction.followUp({ content: '❌ No valid shop buy button found in the message components.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     // Parse customId parts: bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
@@ -3398,7 +3398,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // Verify item exists in DB
     const item = await getShopItem(itemId, guildId);
     if (!item) {
-      return interaction.followUp({ content: '❌ The item associated with this post could not be found in the database.', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
     // Extract embed contents
