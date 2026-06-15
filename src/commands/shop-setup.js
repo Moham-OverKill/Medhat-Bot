@@ -3418,8 +3418,23 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 
     // Extract embed contents
     const firstEmbed = message.embeds[0];
-    const embedDescription = firstEmbed?.description || null;
+    let embedDescription = firstEmbed?.description || null;
     const embedImageUrl = firstEmbed?.image?.url || null;
+
+    // Strip out the Item-Duration-Stock block if it's embedded in the description text
+    if (embedDescription) {
+      const lines = embedDescription.split('\n');
+      const footerIndex = lines.findIndex(line => {
+        const lower = line.toLowerCase();
+        return (
+          (lower.includes('item') && lower.includes('duration') && lower.includes('stock')) ||
+          (line.includes('🏷️') && line.includes('⏳') && (line.includes('♾️') || line.includes('🟢') || line.includes('🔴')))
+        );
+      });
+      if (footerIndex !== -1) {
+        embedDescription = lines.slice(0, footerIndex).join('\n').trim();
+      }
+    }
 
     // Compare with default item details to determine overrides
     const defaultImage = getItemImage(item);
