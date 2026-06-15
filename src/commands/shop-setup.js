@@ -870,17 +870,6 @@ export async function handleShopPostStart(interaction) {
   
   embed.setDescription(statusDesc || null);
 
-  if (state.isEditing && selectedItem) {
-    embed.addFields(
-      { name: '🏷️ Item', value: selectedItem.name, inline: true },
-      { name: '🏪 Channel', value: `<#${state.channelId}>`, inline: true },
-      { name: '💰 Price', value: state.overridePrice !== null ? `${state.overridePrice.toLocaleString()} coins` : 'Not Set', inline: true },
-      { name: '👥 Seller', value: sellerDisplay, inline: true },
-      { name: '💵 Payout', value: payoutDisplay, inline: true },
-      { name: '⏳ Stock', value: state.stockConfigured ? (state.stock === null ? 'Unlimited' : `${state.stock}`) : 'Not Configured (Required)', inline: true }
-    );
-  }
-
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
   const itemsAll = await getShopItems(guildId, null, 'name', false); // Post flow: Active items only
