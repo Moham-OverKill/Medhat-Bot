@@ -3244,14 +3244,14 @@ export async function handleShopPostGate(interaction) {
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
       .setTitle('📢 Shop Posting Options')
-      .setDescription('Choose whether you want to publish a new shop item or edit an existing live post in this server.');
+      .setDescription('Choose to publish a new shop item or edit an existing post.');
 
     const row = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
           .setCustomId('shop_admin_home')
           .setLabel('Back')
-          .setEmoji('◀️')
+          .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('shop_post_new_layout')
