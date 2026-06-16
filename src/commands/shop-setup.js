@@ -287,7 +287,7 @@ export async function handleAddTypeSelect(interaction) {
   }
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_item_modal_add_new_${type}`)
+    .setCustomId(`shop_item_modal_add_new_${type}_${Date.now()}`)
     .setTitle(type === 'pack' ? 'Create Item Pack' : 'Create Item');
 
   const nameInput = new TextInputBuilder()
@@ -2761,7 +2761,7 @@ export async function handleEditItemDetails(interaction) {
     }
 
     const modal = new ModalBuilder()
-      .setCustomId(`shop_item_modal_edit_${itemId}_item`)
+      .setCustomId(`shop_item_modal_edit_${itemId}_item_${Date.now()}`)
       .setTitle('Edit Shop Item');
 
     const nameInput = new TextInputBuilder().setCustomId('item_name').setLabel('Name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
