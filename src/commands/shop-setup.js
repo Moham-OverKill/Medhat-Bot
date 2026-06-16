@@ -1111,15 +1111,10 @@ export async function handleShopPostItemSelect(interaction) {
     const items = await getShopItems(interaction.guildId, null, 'name', true);
     const selectedItem = items.find(i => i.id === parseInt(itemId));
 
-    if (selectedItem) {
-      state.overridePrice = selectedItem.price;
-      state.stock = selectedItem.stock;
-      state.stockConfigured = true;
-    } else {
-      state.overridePrice = null;
-      state.stock = null;
-      state.stockConfigured = false;
-    }
+    // For new posts, everything must start over as null/unconfigured
+    state.overridePrice = null;
+    state.stock = null;
+    state.stockConfigured = false;
 
     // Check if selected item is a pack - if so, reset seller/payout (packs are server-only)
     if (selectedItem && selectedItem.item_type === 'pack') {
