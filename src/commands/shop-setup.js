@@ -2802,8 +2802,8 @@ export async function handleEditItemDetails(interaction) {
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(nameInput),
-      new ActionRowBuilder().addComponents(imageInput),
       new ActionRowBuilder().addComponents(roleInput),
+      new ActionRowBuilder().addComponents(imageInput),
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
     );
