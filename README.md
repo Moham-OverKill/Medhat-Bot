@@ -1,41 +1,89 @@
-# 🏆 The Ultimate Fun & Economy Bot
+### 💰 Coin Economy
+Set coin payouts for daily claims, streaks, and voting.
 
-Medhat Bot is designed to keep your server alive, engaging, and active by turning your server into an entire game! From a complete economy system and daily quests, to secure trading and custom shops - it has everything you need to build a thriving community.
+<br>
+
+### 💳 Personal Banking
+Check your balance, see your transaction logs, and claim daily rewards to build your streak.
+
+<br>
+
+### ⚙️ Custom Branding
+Change the bot's name, avatar, and coin icon to fit your server's theme.
+
+<br>
+
+### 🎨 Color Panels
+Create panels where members can select their name colors, with the ability to lock specific colors to Server Boosters.
+
+<br>
+
+### 🛒 Custom Shop
+Create shop items with custom prices, descriptions, stock limits, and images. Group items into categories and packs.
+
+<br>
+
+### 🎒 Inventory & Items
+View your owned items, equip roles/colors, or drop items from your inventory.
+
+<br>
+
+### 📈 Progression Tiers
+Connect items together so buying higher-tier items requires owning lower-tier items first (like Tier 2 requires Tier 1).
+
+<br>
+
+### 🔑 Locked Shop Items
+Restrict specific shop items to Server Boosters, active MVPs, or require users to own specific items in their inventory first.
+
+<br>
+
+### 💼 Seller Commissions
+Set members as sellers for items to let them get a percentage cut of the price when someone buys their item.
+
+<br>
+
+### 🤝 Secure Trading
+Safely trade coins and items with other players in a single trade transaction.
+
+<br>
+
+### 📜 Quests
+Create daily quests (like text or voice goals) for members to complete, track their progress, and claim coin rewards.
+
+<br>
+
+### 👑 King of the Hill
+Track voice and text chat activity daily and automatically crown the most active member as MVP with a custom role and hourly wage.
+
+<br>
+
+### 🏆 Leaderboards
+See rankings for the richest members, most active chatters, and highest claim streaks.
+
+<br>
+
+### 🚀 Booster Perks
+Reward Server Boosters with double (or more) daily coins, exclusive colors, and zero-fee trading (no 5% tax).
+
+<br>
+
+### 🔒 Channel Controls
+Keep chats organized by locking specific channels to links-only, media-only (images/videos), or social-only content.
+
+<br>
+
+### 🗄️ Logs
+Monitor all trade histories, quest progress, bank transfers, money flow, and shop sales.
+
+<br>
+<br>
+<br>
 
 ---
 
-## 👤 For Members:
+<br>
+<br>
+<br>
 
-💳 **/bank** – Check your balance, claim Daily Coins, and track your transaction history.
-
-🎒 **/inventory** – View, manage, equip, and unequip the items you own.
-
-📜 **/quest** – Check active server quests and track your current progress.
-
-🤝 **/trade** – Safely and securely swap coins or items with other members.
-
----
-
-## ⚙️ For Admins:
-
-The **/settings** Dashboard is your all-in-one control panel. Manage everything from one sleek interface without ever leaving Discord!
-
-💰 **Money & Rewards**: Configure payout amounts for daily rewards and Server Boosters.
-
-👑 **Automatic MVP**: A "King of the Hill" system where the most active user claims the title and earns a passive hourly coin income!
-
-🛒 **Advanced Shop Setup**: Create items, group them into categories or packs, and publish them to your shop channels. 
-
-Add restrictions to make items MVP-only, Booster-only, or require other items.
-
-🎨 **Color Reaction System**: Deploy beautiful, one-click reaction panels that let members choose their own custom name colors.
-
-🏆 **Leaderboards**: Display the richest members, the most active chatters, and the highest daily streaks directly in any channel.
-
-📜 **Audit Logs**: Keep your server safe with a comprehensive admin log that tracks all bot activity.
-
-🛠️ **User Tools**: Easily manage, adjust, and moderate member balances and inventories.
-
----
-
-Made with ❤️ by Moham OverKill.
+Made with ❤️ by Moham OverKill
