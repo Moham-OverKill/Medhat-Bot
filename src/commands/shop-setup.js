@@ -2656,7 +2656,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const roleMention = item.role_id ? `<@&${item.role_id}>` : 'None';
 
     // Show prerequisites
-    let prereqDisplay = 'None';
+    let prereqDisplay = '``None``';
     let reqItems = item.required_items;
     if (typeof reqItems === 'string') {
       try { reqItems = JSON.parse(reqItems); } catch (e) { reqItems = []; }
@@ -2677,7 +2677,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
             return `<@&${match.role_id}>`;
         })
         .filter(Boolean);
-      prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
+      prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : '``None``';
     }
 
     // Get category name for display
@@ -2699,7 +2699,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Role: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}\nOwned: ${ownedCount}\nEquipped: ${equippedCount}`)
+      .setDescription(`Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequired Items: ${prereqDisplay}\nOwned: \`\`${ownedCount}\`\`\nEquipped: \`\`${equippedCount}\`\``)
       .setColor('#3498DB');
 
     // Show item image as thumbnail if available
@@ -2881,7 +2881,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
     if (!item) return interaction.followUp({ content: '❌ Pack not found.', flags: MessageFlags.Ephemeral });
 
     // Resolve Role Mentions for display
-    let contentsDisplay = '**None**';
+    let contentsDisplay = '``None``';
     if (item.role_id) {
       const roles = item.role_id.split(/[,\s]+/).filter(r => r.trim().length > 0);
       if (roles.length > 0) {
@@ -2903,7 +2903,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
-      .setDescription(`**Contents:** ${contentsDisplay}\n**Owned:** ${ownedCount}\n**Equipped:** ${equippedCount}`)
+      .setDescription(`**Contents:** ${contentsDisplay}\n**Owned:** \`\`${ownedCount}\`\`\n**Equipped:** \`\`${equippedCount}\`\``)
       .setColor('#8E44AD'); // Purple for packs
 
     const actionRow = new ActionRowBuilder().addComponents(
