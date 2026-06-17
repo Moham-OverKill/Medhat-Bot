@@ -2685,9 +2685,21 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const itemCategory = categories.find(c => c.id === item.category_id);
     const categoryDisplay = itemCategory ? itemCategory.name : 'None';
 
+    // Calculate owned and equipped counts from database (source of truth)
+    const countsRes = await query(
+      `SELECT 
+         COUNT(DISTINCT user_id) FILTER (WHERE expires_at IS NULL OR expires_at > NOW()) as owned_count,
+         COUNT(DISTINCT user_id) FILTER (WHERE is_active = true AND (expires_at IS NULL OR expires_at > NOW())) as equipped_count
+       FROM user_inventory
+       WHERE shop_item_id = $1 AND guild_id = $2`,
+      [item.id, interaction.guildId]
+    );
+    const ownedCount = parseInt(countsRes.rows[0]?.owned_count || '0', 10);
+    const equippedCount = parseInt(countsRes.rows[0]?.equipped_count || '0', 10);
+
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Role: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}`)
+      .setDescription(`Role: ${roleMention}\nCategory: ${categoryDisplay}\nIn Packs: ${packCount}\nRequired Items: ${prereqDisplay}\nOwned: ${ownedCount}\nEquipped: ${equippedCount}`)
       .setColor('#3498DB');
 
     // Show item image as thumbnail if available
@@ -2877,9 +2889,21 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
       }
     }
 
+    // Calculate owned and equipped counts from database (source of truth)
+    const countsRes = await query(
+      `SELECT 
+         COUNT(DISTINCT user_id) FILTER (WHERE expires_at IS NULL OR expires_at > NOW()) as owned_count,
+         COUNT(DISTINCT user_id) FILTER (WHERE is_active = true AND (expires_at IS NULL OR expires_at > NOW())) as equipped_count
+       FROM user_inventory
+       WHERE shop_item_id = $1 AND guild_id = $2`,
+      [item.id, interaction.guildId]
+    );
+    const ownedCount = parseInt(countsRes.rows[0]?.owned_count || '0', 10);
+    const equippedCount = parseInt(countsRes.rows[0]?.equipped_count || '0', 10);
+
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
-      .setDescription(`**Contents:** ${contentsDisplay}`)
+      .setDescription(`**Contents:** ${contentsDisplay}\n**Owned:** ${ownedCount}\n**Equipped:** ${equippedCount}`)
       .setColor('#8E44AD'); // Purple for packs
 
     const actionRow = new ActionRowBuilder().addComponents(
