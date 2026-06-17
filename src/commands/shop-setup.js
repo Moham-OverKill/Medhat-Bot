@@ -2685,17 +2685,36 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const itemCategory = categories.find(c => c.id === item.category_id);
     const categoryDisplay = itemCategory ? itemCategory.name : 'None';
 
-    // Calculate owned and equipped counts from database (source of truth)
-    const countsRes = await query(
-      `SELECT 
-         COUNT(DISTINCT user_id) FILTER (WHERE expires_at IS NULL OR expires_at > NOW()) as owned_count,
-         COUNT(DISTINCT user_id) FILTER (WHERE is_active = true AND (expires_at IS NULL OR expires_at > NOW())) as equipped_count
-       FROM user_inventory
-       WHERE shop_item_id = $1 AND guild_id = $2`,
+    // Calculate owned and equipped counts (filtering to current guild members)
+    let ownedCount = 0;
+    let equippedCount = 0;
+
+    const dbUsers = await query(
+      `SELECT user_id, is_active FROM user_inventory 
+       WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())`,
       [item.id, interaction.guildId]
     );
-    const ownedCount = parseInt(countsRes.rows[0]?.owned_count || '0', 10);
-    const equippedCount = parseInt(countsRes.rows[0]?.equipped_count || '0', 10);
+
+    if (dbUsers.rows.length > 0) {
+      const dbUserIds = dbUsers.rows.map(r => r.user_id);
+      try {
+        const fetchedMembers = await interaction.guild.members.fetch({ user: dbUserIds });
+        const activeMemberIds = new Set(fetchedMembers.keys());
+        
+        ownedCount = dbUsers.rows.filter(r => activeMemberIds.has(r.user_id)).length;
+        
+        if (item.role_id) {
+          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+          equippedCount = fetchedMembers.filter(m => m.roles.cache.has(firstRoleId)).size;
+        } else {
+          equippedCount = dbUsers.rows.filter(r => r.is_active && activeMemberIds.has(r.user_id)).length;
+        }
+      } catch (err) {
+        // Fallback to database-only counts if member fetch fails
+        ownedCount = dbUsers.rows.length;
+        equippedCount = dbUsers.rows.filter(r => r.is_active).length;
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
@@ -2889,17 +2908,36 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
       }
     }
 
-    // Calculate owned and equipped counts from database (source of truth)
-    const countsRes = await query(
-      `SELECT 
-         COUNT(DISTINCT user_id) FILTER (WHERE expires_at IS NULL OR expires_at > NOW()) as owned_count,
-         COUNT(DISTINCT user_id) FILTER (WHERE is_active = true AND (expires_at IS NULL OR expires_at > NOW())) as equipped_count
-       FROM user_inventory
-       WHERE shop_item_id = $1 AND guild_id = $2`,
+    // Calculate owned and equipped counts (filtering to current guild members)
+    let ownedCount = 0;
+    let equippedCount = 0;
+
+    const dbUsers = await query(
+      `SELECT user_id, is_active FROM user_inventory 
+       WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())`,
       [item.id, interaction.guildId]
     );
-    const ownedCount = parseInt(countsRes.rows[0]?.owned_count || '0', 10);
-    const equippedCount = parseInt(countsRes.rows[0]?.equipped_count || '0', 10);
+
+    if (dbUsers.rows.length > 0) {
+      const dbUserIds = dbUsers.rows.map(r => r.user_id);
+      try {
+        const fetchedMembers = await interaction.guild.members.fetch({ user: dbUserIds });
+        const activeMemberIds = new Set(fetchedMembers.keys());
+        
+        ownedCount = dbUsers.rows.filter(r => activeMemberIds.has(r.user_id)).length;
+        
+        if (item.role_id) {
+          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+          equippedCount = fetchedMembers.filter(m => m.roles.cache.has(firstRoleId)).size;
+        } else {
+          equippedCount = dbUsers.rows.filter(r => r.is_active && activeMemberIds.has(r.user_id)).length;
+        }
+      } catch (err) {
+        // Fallback to database-only counts if member fetch fails
+        ownedCount = dbUsers.rows.length;
+        equippedCount = dbUsers.rows.filter(r => r.is_active).length;
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
