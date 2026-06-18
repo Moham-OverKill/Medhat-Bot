@@ -145,6 +145,8 @@ export async function checkContentFilter(message) {
       case 'images_only': {
         // Passes if message has at least 1 attachment
         if (message.attachments && message.attachments.size > 0) return false;
+        // Passes if message contains direct Discord attachment links
+        if (content.includes('https://media.discordapp.net') || content.includes('https://cdn.discordapp.com')) return false;
         break;
       }
       case 'media_only': {
