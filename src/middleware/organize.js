@@ -131,13 +131,13 @@ export async function checkContentFilter(message) {
   // No rules apply to this channel — allow everything
   if (applicableRules.length === 0) return false;
 
-  // Stacking logic (OR): if ANY rule is satisfied, the message is allowed.
-  // Only delete if NO rule is satisfied.
   const content = (message.content || '').trim();
+  const hasMarkdownLink = /\[[^\]]+\]\(\s*https?:\/\/[^\s)]+\s*\)/i.test(content);
 
   for (const rule of applicableRules) {
     switch (rule) {
       case 'links_only': {
+        if (hasMarkdownLink) break;
         // Passes if message starts with http:// or https://
         if (content.startsWith('http://') || content.startsWith('https://')) return false;
         break;
@@ -148,6 +148,7 @@ export async function checkContentFilter(message) {
         break;
       }
       case 'media_only': {
+        if (hasMarkdownLink) break;
         // Strict Check: If links are present, EVERY link must be a valid social media URL.
         // If NO links are present, this specific rule fails (may be saved by images_only).
         const urls = extractUrls(content);
