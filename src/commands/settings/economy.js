@@ -85,7 +85,7 @@ async function showEconomyDashboard(interaction, view) {
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
-                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Boost Bonus:** ${boosterMult}x\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **Tag Reward:** ${tagReward} ${COIN_EMOJI}/day\n• **Vote Reward:** ${voteReward} ${COIN_EMOJI}/vote\n• **MVP Prize:** ${mvpReward}/hour ${COIN_EMOJI}`,
+                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Boost Bonus:** ${boosterMult}x\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **Tag Reward:** ${tagReward} ${COIN_EMOJI}/day\n• **Vote Reward:** ${voteReward} ${COIN_EMOJI}/vote\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}/hour`,
                 inline: false
             },
             {
