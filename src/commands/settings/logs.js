@@ -72,7 +72,7 @@ export async function handleLogsSettings(interaction) {
 
     const backButton = new ButtonBuilder()
         .setCustomId('settings_other')
-        .setLabel('Back to Other')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary);
 

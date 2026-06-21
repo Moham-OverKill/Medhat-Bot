@@ -229,7 +229,7 @@ async function showEconomyDashboard(interaction, view) {
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_other')
-            .setLabel('Back to Other')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
