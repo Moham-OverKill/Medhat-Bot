@@ -80,7 +80,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Users - Leaderboard - Logs
+    // Row 2: Users - Leaderboard - Other
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
@@ -93,28 +93,9 @@ export async function showMainMenu(interaction) {
             .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Economy - Organize - Customize (new)
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_economy')
-            .setLabel('Economy')
-            .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_organize')
-            .setLabel('Organize')
-            .setEmoji('🧹')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_customize')
-            .setLabel('Customize')
-            .setEmoji('✨')
+            .setCustomId('settings_other')
+            .setLabel('Other')
+            .setEmoji('⚙️')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -124,7 +105,7 @@ export async function showMainMenu(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2]
     });
 }
 
@@ -191,7 +172,58 @@ export async function showCoinsSubMenu(interaction) {
     });
 }
 
+/**
+ * Show the Other Sub-Menu (Logs, Economy, Organize, Customize)
+ */
+export async function showOtherSubMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('⚙️ Other Settings')
+        .setDescription('Configure additional server utilities.')
+        .setColor(0x2F3136);
 
+    // Row 1: Logs - Economy
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_logs')
+            .setLabel('Logs')
+            .setEmoji('📜')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_economy')
+            .setLabel('Economy')
+            .setEmoji('📈')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 2: Organize - Customize
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_organize')
+            .setLabel('Organize')
+            .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_customize')
+            .setLabel('Customize')
+            .setEmoji('✨')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Back to Settings
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back to Settings')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2, row3]
+    });
+}
 
 /**
  * Handle settings component interactions (navigation)
@@ -216,6 +248,11 @@ export async function handleSettingsComponent(interaction) {
         // Navigation to main modules
         if (customId === 'settings_coins') {
             await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_other') {
+            await showOtherSubMenu(interaction);
             return;
         }
 

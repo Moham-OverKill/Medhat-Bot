@@ -83,8 +83,8 @@ async function renderPanel(interaction, activeFilter = null) {
     // Row 3: Back button & Specific Toggles
     const backRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back to Settings')
+            .setCustomId('settings_other')
+            .setLabel('Back to Other')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
