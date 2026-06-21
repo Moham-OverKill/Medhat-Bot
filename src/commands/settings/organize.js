@@ -84,7 +84,7 @@ async function renderPanel(interaction, activeFilter = null) {
     const backRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_other')
-            .setLabel('Back to Other')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
