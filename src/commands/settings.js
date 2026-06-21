@@ -104,6 +104,7 @@ export async function showMainMenu(interaction) {
         : (interaction.isButton() ? 'update' : 'editReply');
 
     await interaction[responseMethod]({
+        content: '',
         embeds: [embed],
         components: [row1, row2]
     });
@@ -167,6 +168,7 @@ export async function showCoinsSubMenu(interaction) {
 
     const responseMethod = interaction.isButton() ? 'update' : 'editReply';
     await interaction[responseMethod]({
+        content: '',
         embeds: [embed],
         components: [row1, row2, row3]
     });
@@ -220,6 +222,7 @@ export async function showOtherSubMenu(interaction) {
 
     const responseMethod = interaction.isButton() ? 'update' : 'editReply';
     await interaction[responseMethod]({
+        content: '',
         embeds: [embed],
         components: [row1, row2, row3]
     });
