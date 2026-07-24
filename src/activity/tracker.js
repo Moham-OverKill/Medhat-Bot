@@ -188,11 +188,12 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 /**
  * Get top active users for MVP selection
  */
-export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
+export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
   const pool = getPool();
   const users = [];
 
   try {
+    const fetchLimit = guildObj ? Math.max(limit * 3, 20) : limit;
     const result = await pool.query(
       `SELECT 
          user_id, 
@@ -206,10 +207,23 @@ export async function getTopActiveUsers(guildId, limit = 1, guildName = null) {
          AND (COALESCE(message_count, 0) + COALESCE(voice_minutes, 0)) > 0
        ORDER BY score DESC, last_active DESC
        LIMIT $2`,
-      [guildId, limit]
+      [guildId, fetchLimit]
     );
 
     for (const row of result.rows) {
+      if (users.length >= limit) break;
+
+      if (guildObj) {
+        // Verify user is still a member of the Discord server
+        const member = await guildObj.members.fetch(row.user_id).catch(() => null);
+        if (!member) {
+          // User left the server — purge stale record so they don't clog leaderboard/MVP slots
+          await pool.query('DELETE FROM user_activity WHERE guild_id = $1 AND user_id = $2', [guildId, row.user_id]).catch(() => {});
+          continue;
+        }
+        if (member.user.bot) continue;
+      }
+
       users.push({
         userId: row.user_id,
         username: row.username,

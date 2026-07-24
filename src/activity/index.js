@@ -428,7 +428,7 @@ async function checkQuestProgress(message) {
           : 'Message';
         sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Type: ${quest.action_type} | Context: ${context}` });
 
-        if (result.justCompleted) {
+        if (result.completed) {
           // Re-fetch the map in case it was just created in this cycle
           if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
           const map = completedQuestsCache.get(guildId);
@@ -573,8 +573,8 @@ export async function checkReactionQuest(reaction, user) {
         const context = inPostChannel ? 'Original Post' : 'Message';
         sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Reaction | Context: ${context} | QuestID: ${quest.id}` });
 
-        if (result.justCompleted) {
-          if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
+        if (result.completed) {
+          if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
           const map = completedQuestsCache.get(guildId);
           if (!map.has(quest.id)) map.set(quest.id, new Set());
           map.get(quest.id).add(userId);
@@ -613,8 +613,8 @@ export async function checkVoiceQuest(guildId, userId, channelId, minutesAdded, 
       const { incrementProgressAndPayout } = await import('../quests/quests.js');
       const result = await incrementProgressAndPayout(guildId, userId, quest, minutesAdded);
       
-      if (result.justCompleted) {
-        if (!guildCompletions) completedQuestsCache.set(guildId, new Map());
+      if (result.completed) {
+        if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
         const map = completedQuestsCache.get(guildId);
         if (!map.has(quest.id)) map.set(quest.id, new Set());
         map.get(quest.id).add(userId);
