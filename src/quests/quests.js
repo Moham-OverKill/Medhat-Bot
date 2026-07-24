@@ -407,20 +407,22 @@ export function formatActionType(actionType) {
 }
 
 /**
- * Get the action types available for a channel type
+ * Get the action types available for a channel type.
+ *
+ * Rules:
+ * - Voice channels (voice): only "Stay in Call (Minutes)".
+ * - All text-based channels (text, media/forum, announcement): all three
+ *   engagement actions — Send Messages, Upload Files, React to Posts.
  */
 export function getActionsForChannelType(channelType) {
-  switch (channelType) {
-    case 'voice':
-      return [{ value: 'voice_minutes', label: '🎙️ Stay in Call (Minutes)' }];
-    case 'media':
-      return [
-        { value: 'send_messages', label: '💬 Send Messages' },
-        { value: 'upload_images', label: '🖼️ Upload Files' },
-        { value: 'react_images', label: '👍 React to Posts' }
-      ];
-    case 'text':
-    default:
-      return [{ value: 'send_messages', label: '💬 Send Messages' }];
+  if (channelType === 'voice') {
+    return [{ value: 'voice_minutes', label: '🎙️ Stay in Call (Minutes)' }];
   }
+
+  // text | media | announcement — unified text engagement set
+  return [
+    { value: 'send_messages', label: '💬 Send Messages' },
+    { value: 'upload_images', label: '🖼️ Upload Files' },
+    { value: 'react_images', label: '👍 React to Posts' }
+  ];
 }
