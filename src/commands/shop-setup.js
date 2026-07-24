@@ -15,7 +15,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
-import { handleInteractionError } from '../utils/errors.js';
+import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
@@ -1451,6 +1451,22 @@ export async function handleShopPostPublish(interaction) {
       return interaction.followUp({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
     }
 
+    const botMember = interaction.guild.members.me;
+    const diag = diagnoseChannelPermissions(channel, botMember, [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks
+    ]);
+
+    if (!diag.hasAll) {
+      return handleInteractionError(
+        interaction,
+        new Error(`Missing Permissions in <#${channelId}>: ${diag.missing.join(', ')}`),
+        `Publish Shop Post to <#${channelId}>`,
+        { targetChannel: channel }
+      );
+    }
+
     // Construct the Embed
     const embed = new EmbedBuilder()
       .setTitle(item.name)
@@ -1568,7 +1584,9 @@ export async function handleShopPostPublish(interaction) {
     // Re-render panel (stay open for more posts)
     await handleShopPostStart(interaction);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'shop post publish');
+    const state = pendingPosts.get(interaction.user.id);
+    const targetChannel = state?.channelId ? interaction.guild?.channels?.cache?.get(state.channelId) : interaction.channel;
+    await handleInteractionError(interaction, error, 'Publish Shop Post', { targetChannel });
   }
 }
 
@@ -3577,6 +3595,22 @@ export async function handleShopPostUpdate(interaction) {
     const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
     if (!channel) {
       return interaction.followUp({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    const botMember = interaction.guild.members.me;
+    const diag = diagnoseChannelPermissions(channel, botMember, [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks
+    ]);
+
+    if (!diag.hasAll) {
+      return handleInteractionError(
+        interaction,
+        new Error(`Missing Permissions in <#${channelId}>: ${diag.missing.join(', ')}`),
+        `Update Shop Post in <#${channelId}>`,
+        { targetChannel: channel }
+      );
     }
 
     const message = await channel.messages.fetch(messageId).catch(() => null);
