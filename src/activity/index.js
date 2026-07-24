@@ -387,10 +387,10 @@ async function checkQuestProgress(message) {
     if (quest.action_type === 'send_messages') {
       if (inPostChannel) {
         // POST CHANNEL: Only comments qualify (NOT the new-post starter message)
-        qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker);
+        qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasAttachment);
       } else {
-        // NORMAL CHANNEL: Any message with text, sticker, or custom emoji counts
-        qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker;
+        // NORMAL CHANNEL: Any message with text, sticker, custom emoji, or attachment counts
+        qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasAttachment;
       }
     } else if (quest.action_type === 'upload_images') {
       if (inPostChannel) {
