@@ -70,7 +70,7 @@ export async function runKingOfHillCycle(client, guildId) {
       : 100;
 
     // === STEP 3: FETCH — Current live Top N ===
-    const newTopUsers = await getTopActiveUsers(guildId, winnersCount);
+    const newTopUsers = await getTopActiveUsers(guildId, winnersCount, guildObj);
     const newTopUserIds = newTopUsers.map(u => u.userId);
 
     // === STEP 4: LOAD — Previous active MVPs from DB ===
