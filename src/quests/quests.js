@@ -405,7 +405,7 @@ export function formatActionType(actionType, channelType = 'text') {
   const map = {
     'send_messages': 'Send Messages',
     'upload_images': 'Upload Files',
-    'voice_minutes': 'Voice Minutes',
+    'voice_minutes': 'Join Call',
   };
   return map[actionType] || actionType;
 }
@@ -414,14 +414,14 @@ export function formatActionType(actionType, channelType = 'text') {
  * Get the action types available for a channel type.
  *
  * Rules:
- * - Voice channels (voice): "Stay in Call (Minutes)" AND standard text engagement (voice text chat).
+ * - Voice channels (voice): "Join Call" AND standard text engagement (voice text chat).
  * - Media/Forum channels (media): Send Messages, Upload Files, React to Posts.
  * - Text/Announcement channels (text): Send Messages, Upload Files, React to Messages.
  */
 export function getActionsForChannelType(channelType) {
   if (channelType === 'voice') {
     return [
-      { value: 'voice_minutes', label: '🎙️ Stay in Call (Minutes)' },
+      { value: 'voice_minutes', label: '🎙️ Join Call' },
       { value: 'send_messages', label: '💬 Send Messages' },
       { value: 'upload_images', label: '🖼️ Upload Files' },
       { value: 'react_images', label: '👍 React to Messages' }
