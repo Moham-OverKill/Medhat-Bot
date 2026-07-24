@@ -98,6 +98,7 @@ import {
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
+import { handleInteractionError } from '../utils/errors.js';
 import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
@@ -445,8 +446,7 @@ export function setupComponentHandlers(client) {
 
     } catch (error) {
       const errorMsg = error?.message || String(error);
-      // If it's a "harmless" interaction error, don't log it in red (sysError)
-      if (errorMsg.includes('already been sent') || errorMsg.includes('Unknown interaction')) {
+      if (errorMsg.includes('already been sent') || error?.code === 10062) {
         sysLog('Interaction Notice', { 
           user: interaction.user.id, 
           guild: interaction.guildId, 
@@ -454,6 +454,7 @@ export function setupComponentHandlers(client) {
         });
       } else {
         sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: guildId, detail: 'InteractionCreate event' });
+        await handleInteractionError(interaction, error, `Component Handler (${interaction.customId || 'Unknown'})`);
       }
     } finally {
       clearTimeout(watchdog);
