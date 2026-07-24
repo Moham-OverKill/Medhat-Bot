@@ -538,6 +538,20 @@ export async function handleEditQuestModal(interaction) {
       return;
     }
 
+    // Instantly sync active snapshot & tracking cache with edited values
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId);
+    if (config?.active_quest_snapshot && Array.isArray(config.active_quest_snapshot)) {
+      const idx = config.active_quest_snapshot.findIndex(q => Number(q.id) === Number(questId));
+      if (idx !== -1) {
+        config.active_quest_snapshot[idx].required_count = requiredCount;
+        config.active_quest_snapshot[idx].reward_coins = rewardCoins;
+        await setGuildConfig(guildId, config);
+      }
+    }
+    const { syncQuestChannelCache } = await import('../activity/index.js');
+    await syncQuestChannelCache(guildId);
+
     await showQuestDetail(interaction, questId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Edit quest modal submit');
@@ -555,7 +569,28 @@ export async function handleDeleteQuest(interaction, questId) {
     const success = await deleteQuest(questId);
     if (!success) {
       await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
+      return;
     }
+
+    // Instantly purge deleted quest from active snapshot & tracking cache
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId);
+    if (config) {
+      let configChanged = false;
+      if (Array.isArray(config.active_quest_snapshot)) {
+        config.active_quest_snapshot = config.active_quest_snapshot.filter(q => Number(q.id) !== Number(questId));
+        configChanged = true;
+      }
+      if (Array.isArray(config.active_quest_ids)) {
+        config.active_quest_ids = config.active_quest_ids.filter(id => Number(id) !== Number(questId));
+        configChanged = true;
+      }
+      if (configChanged) {
+        await setGuildConfig(guildId, config);
+      }
+    }
+    const { syncQuestChannelCache } = await import('../activity/index.js');
+    await syncQuestChannelCache(guildId);
 
     await showQuestsDashboard(interaction);
   } catch (error) {
