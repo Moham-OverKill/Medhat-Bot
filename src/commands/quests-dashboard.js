@@ -301,7 +301,14 @@ export async function handleAddQuestStart(interaction) {
     const channelSelect = new ChannelSelectMenuBuilder()
       .setCustomId('quests_add_channel')
       .setPlaceholder('Select target channel...')
-      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum);
+      .addChannelTypes(
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement,
+        ChannelType.GuildForum,
+        ChannelType.GuildMedia,
+        ChannelType.GuildVoice,
+        ChannelType.GuildStageVoice
+      );
 
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -335,12 +342,16 @@ export async function handleAddChannelSelect(interaction) {
       return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
     }
 
+    // Classify into our 3 internal channel type buckets:
+    //   'voice'        → voice_minutes quest only
+    //   'text'/'media' → full text engagement set (Send, Upload, React)
     let channelType = 'text';
     if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
       channelType = 'voice';
     } else if (channel.type === ChannelType.GuildForum || channel.type === ChannelType.GuildMedia) {
       channelType = 'media';
     }
+    // GuildText and GuildAnnouncement both fall through to 'text' (full action set)
 
     pendingQuestAdd.set(interaction.user.id, { channelId, channelType });
     const actions = getActionsForChannelType(channelType);
