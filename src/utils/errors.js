@@ -163,7 +163,7 @@ export async function handleInteractionError(interaction, error, context = 'Acti
   const targetRole = options.targetRole;
 
   if (isPermissionError) {
-    embed.setTitle('❌ Permission Error');
+    embed.setTitle('❌ Missing Permissions');
 
     let channelDiag = null;
     if (targetChannel) {
@@ -175,31 +175,14 @@ export async function handleInteractionError(interaction, error, context = 'Acti
       roleDiag = diagnoseRolePermissions(interaction.guild, targetRole, botMember);
     }
 
-    embed.addFields({ name: '📍 Action', value: `\`${context}\``, inline: false });
-
     if (channelDiag && !channelDiag.hasAll) {
-      embed.addFields(
-        { name: '🔍 Root Cause', value: channelDiag.explanation, inline: false },
-        { name: '🛠️ How to Fix', value: channelDiag.fixInstructions, inline: false }
-      );
+      embed.setDescription(`${channelDiag.explanation}\n\n${channelDiag.fixInstructions}`);
     } else if (roleDiag && !roleDiag.hasAll) {
-      embed.addFields(
-        { name: '🔍 Root Cause', value: roleDiag.explanation, inline: false },
-        { name: '🛠️ How to Fix', value: roleDiag.fixInstructions, inline: false }
-      );
+      embed.setDescription(`${roleDiag.explanation}\n\n${roleDiag.fixInstructions}`);
     } else {
       // General Discord Permission Error fallback
-      embed.addFields(
-        { 
-          name: '🔍 Root Cause', 
-          value: `Discord API returned **${errorCode || 'Permission Error'}**: ${sanitizeError(rawErrorMessage)}`, 
-          inline: false 
-        },
-        { 
-          name: '🛠️ How to Fix', 
-          value: 'Ensure the bot has **Administrator** or proper **Channel / Role Permissions** (Send Messages, Embed Links, Manage Roles) in your server settings.', 
-          inline: false 
-        }
+      embed.setDescription(
+        `Discord API returned **${errorCode || 'Permission Error'}**: ${sanitizeError(rawErrorMessage)}\n\nEnsure the bot has **Administrator** or proper **Channel / Role Permissions** (Send Messages, Embed Links, Manage Roles) in your server settings.`
       );
     }
   } else {
