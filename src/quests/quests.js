@@ -342,6 +342,7 @@ export function formatQuestTask(quest) {
   if (!quest) return '';
   const count = quest.required_count;
   const type = quest.action_type;
+  const channelType = quest.channel_type || 'text';
 
   if (type === 'send_messages') {
     const unit = count === 1 ? 'Message' : 'Messages';
@@ -353,7 +354,7 @@ export function formatQuestTask(quest) {
   }
   if (type === 'react_images') {
     const unit = count === 1 ? 'Reaction' : 'Reactions';
-    const container = count === 1 ? 'post' : 'posts';
+    const container = (channelType === 'media' || channelType === 'forum') ? (count === 1 ? 'post' : 'posts') : (count === 1 ? 'message' : 'messages');
     return { text: `React on **${count}** ${container}`, unit };
   }
   if (type === 'upload_images') {
@@ -362,7 +363,7 @@ export function formatQuestTask(quest) {
     return { text: `Upload **${count}** ${container}`, unit };
   }
   
-  return { text: `${formatActionType(type)} × **${count}**`, unit: count === 1 ? 'Action' : 'Actions' };
+  return { text: `${formatActionType(type, channelType)} × **${count}**`, unit: count === 1 ? 'Action' : 'Actions' };
 }
 
 /**
@@ -371,6 +372,7 @@ export function formatQuestTask(quest) {
 export function formatCompactQuest(quest) {
   const count = quest.required_count;
   const type = quest.action_type;
+  const channelType = quest.channel_type || 'text';
   const channel = `<#${quest.channel_id}>`;
 
   if (type === 'send_messages') {
@@ -382,25 +384,27 @@ export function formatCompactQuest(quest) {
     return `**Join** ${channel} **for ${count} ${unit}**`;
   }
   if (type === 'react_images') {
-    const unit = count === 1 ? 'post' : 'posts';
-    return `**React to ${count} ${unit} in** ${channel}`;
+    const container = (channelType === 'media' || channelType === 'forum') ? (count === 1 ? 'post' : 'posts') : (count === 1 ? 'message' : 'messages');
+    return `**React to ${count} ${container} in** ${channel}`;
   }
   if (type === 'upload_images') {
     const unit = count === 1 ? 'file' : 'files';
     return `**Upload ${count} ${unit} in** ${channel}`;
   }
   
-  return `**Complete ${formatActionType(type)} x${count} in** ${channel}`;
+  return `**Complete ${formatActionType(type, channelType)} x${count} in** ${channel}`;
 }
 
 /**
  * Format action type for display
  */
-export function formatActionType(actionType) {
+export function formatActionType(actionType, channelType = 'text') {
+  if (actionType === 'react_images') {
+    return (channelType === 'media' || channelType === 'forum') ? 'React to Posts' : 'React to Messages';
+  }
   const map = {
     'send_messages': 'Send Messages',
     'upload_images': 'Upload Files',
-    'react_images': 'React to Posts',
     'voice_minutes': 'Voice Minutes',
   };
   return map[actionType] || actionType;
@@ -410,19 +414,32 @@ export function formatActionType(actionType) {
  * Get the action types available for a channel type.
  *
  * Rules:
- * - Voice channels (voice): only "Stay in Call (Minutes)".
- * - All text-based channels (text, media/forum, announcement): all three
- *   engagement actions — Send Messages, Upload Files, React to Posts.
+ * - Voice channels (voice): "Stay in Call (Minutes)" AND standard text engagement (voice text chat).
+ * - Media/Forum channels (media): Send Messages, Upload Files, React to Posts.
+ * - Text/Announcement channels (text): Send Messages, Upload Files, React to Messages.
  */
 export function getActionsForChannelType(channelType) {
   if (channelType === 'voice') {
-    return [{ value: 'voice_minutes', label: '🎙️ Stay in Call (Minutes)' }];
+    return [
+      { value: 'voice_minutes', label: '🎙️ Stay in Call (Minutes)' },
+      { value: 'send_messages', label: '💬 Send Messages' },
+      { value: 'upload_images', label: '🖼️ Upload Files' },
+      { value: 'react_images', label: '👍 React to Messages' }
+    ];
   }
 
-  // text | media | announcement — unified text engagement set
+  if (channelType === 'media' || channelType === 'forum') {
+    return [
+      { value: 'send_messages', label: '💬 Send Messages' },
+      { value: 'upload_images', label: '🖼️ Upload Files' },
+      { value: 'react_images', label: '👍 React to Posts' }
+    ];
+  }
+
+  // text | announcement — standard text engagement set
   return [
     { value: 'send_messages', label: '💬 Send Messages' },
     { value: 'upload_images', label: '🖼️ Upload Files' },
-    { value: 'react_images', label: '👍 React to Posts' }
+    { value: 'react_images', label: '👍 React to Messages' }
   ];
 }
