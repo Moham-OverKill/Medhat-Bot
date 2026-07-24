@@ -487,7 +487,7 @@ export async function handleEditQuest(interaction, questId) {
     return;
   }
 
-  const actionLabel = formatActionType(quest.action_type);
+  const actionLabel = formatActionType(quest.action_type, quest.channel_type);
 
   const modal = new ModalBuilder()
     .setCustomId(`quests_edit_modal_${questId}`)
