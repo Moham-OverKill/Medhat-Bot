@@ -243,28 +243,27 @@ export async function processFixEmbeds(message, isEdit = false) {
     }
 
     const isImage = mediaInfo?.type === 'image';
-    const headerText = `<@${message.author.id}> shared a ${isImage ? 'image' : 'video'}:`;
+    const authorName = message.author.displayName || message.author.username;
+    const titleText = `${authorName} shared a ${isImage ? 'image' : 'video'}`;
     const activeMediaUrl = mediaInfo?.url || targetUrl;
 
-    // Construct custom embed with clickable blue link
+    // Construct custom embed with Title as clickable blue hyperlink
     const embed = new EmbedBuilder()
       .setColor('#2B2D31')
       .setAuthor({
-        name: message.author.displayName || message.author.username,
+        name: authorName,
         iconURL: message.author.displayAvatarURL({ dynamic: true })
       })
-      .setDescription(`[Click to View Original Post](${targetUrl})`)
+      .setTitle(titleText)
       .setURL(targetUrl);
 
     if (isImage && mediaInfo?.url) {
       embed.setImage(mediaInfo.url);
     }
 
-    // Message payload: Attach media URL via invisible markdown link for playable video player rendering
+    // Message payload: Invisible link in content triggers Discord's playable video player rendering
     const messagePayload = {
-      content: isImage 
-        ? headerText 
-        : `${headerText} [\u2800](${activeMediaUrl})`,
+      content: `[\u2800](${activeMediaUrl})`,
       embeds: [embed]
     };
 
@@ -290,10 +289,10 @@ export async function processFixEmbeds(message, isEdit = false) {
         if (hasVideoEmbed) break;
       }
 
-      // If rendering failed after 10s, edit message to remove broken stream link (Tier 3 fallback)
+      // If rendering failed after 10s, edit message to remove stream link from content (Tier 3 fallback)
       if (!hasVideoEmbed) {
         await sentMsg.edit({
-          content: headerText,
+          content: ' ',
           embeds: [embed]
         }).catch(() => {});
       }
