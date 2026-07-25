@@ -85,10 +85,8 @@ export async function processFixEmbeds(message, isEdit = false) {
   
   const fixedUrls = [];
   const targetPlatforms = [
-    { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.tiktok },
     { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
-    { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook },
-    { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.twitter }
+    { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook }
   ];
 
   for (let url of urls) {
