@@ -157,12 +157,17 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Success)
     );
 
-    // Row 3: Back to Settings
+    // Row 3: Back to Settings + Roles (coming soon)
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
             .setLabel('Back to Settings')
             .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_coins_roles')
+            .setLabel('Roles')
+            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -251,6 +256,22 @@ export async function handleSettingsComponent(interaction) {
         // Navigation to main modules
         if (customId === 'settings_coins') {
             await showCoinsSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_coins_roles') {
+            const embed = new EmbedBuilder()
+                .setTitle('🎭 Roles')
+                .setDescription('> **To be continued...**\n\nThis feature is currently under construction.')
+                .setColor(0x2F3136);
+            const backRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('settings_coins')
+                    .setLabel('Back')
+                    .setEmoji('⬅️')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            await interaction.update({ embeds: [embed], components: [backRow] });
             return;
         }
 
