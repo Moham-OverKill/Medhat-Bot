@@ -440,7 +440,7 @@ async function handleRoleSelect(interaction, config) {
     if (config.streak_role_id === selectedRoleId) usedRoles.push('Streaks');
     if (usedRoles.length > 0) {
       await interaction.update({
-        content: `❌ This role is already assigned to **${usedRoles.join(', ')}**. Each role reward module must use a unique role.`,
+        content: `❌ This role is already assigned to ${usedRoles.join(', ')}.`,
         embeds: [],
         components: []
       });
