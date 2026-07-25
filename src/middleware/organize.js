@@ -22,7 +22,7 @@ const SOCIAL_MEDIA_DOMAINS = [
 // Secondary fallback domain replacers for high availability
 const FALLBACK_DOMAINS = {
   tiktok: 'vxtiktok.com',
-  instagram: 'ddinstagram.com',
+  instagram: 'kkinstagram.com',
   facebook: 'fixacebook.com',
   twitter: 'fixupx.com'
 };
@@ -231,7 +231,9 @@ export async function processFixEmbeds(message, isEdit = false) {
     // Secondary Fallback Proxy check
     const targetPlatforms = [
       { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
-      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook }
+      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook },
+      { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.tiktok },
+      { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.twitter }
     ];
 
     if (!mediaInfo) {
@@ -245,7 +247,7 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = mediaInfo?.type === 'image';
     const mediaWord = isImage ? 'image' : 'video';
     const activeMediaUrl = mediaInfo?.url || targetUrl;
-    const formattedText = `<@${message.author.id}> shared a [${mediaWord}](${activeMediaUrl})`;
+    const formattedText = `<@${message.author.id}> shared a [${mediaWord}](${targetUrl})`;
 
     let sentMsg;
 
@@ -261,8 +263,9 @@ export async function processFixEmbeds(message, isEdit = false) {
 
       sentMsg = await message.channel.send({ embeds: [embed] });
     } else {
-      // Video Post: User mention + hyperlinked word 'video' (no raw URL line)
-      sentMsg = await message.channel.send({ content: formattedText });
+      // Video Post: User mention + hyperlinked word 'video' + invisible media link (no raw URL line)
+      const videoContent = `${formattedText} [\u2800](${activeMediaUrl})`;
+      sentMsg = await message.channel.send({ content: videoContent });
     }
 
     // Delete user's original message
