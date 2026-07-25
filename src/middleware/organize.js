@@ -1,3 +1,4 @@
+import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -26,13 +27,7 @@ const FALLBACK_DOMAINS = {
   twitter: 'fixupx.com'
 };
 
-// Tracks userMessageId -> { botReplyId, lastFixedUrls }
-// Used to update or remove "Fixed Embed" replies when the user edits their message.
-// Entries are auto-deleted after 1 hour.
-const fixedEmbedTracker = new Map();
-const TRACKER_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-
-// Lock to prevent concurrent reply creations during race conditions
+// Lock to prevent concurrent processing during race conditions
 const pendingFixes = new Set();
 
 /**
@@ -48,7 +43,6 @@ async function loadGuildFilters(guildId) {
 
     const filters = result.rows[0]?.filters;
     if (!filters || typeof filters !== 'object') {
-      // No filters configured — cache an empty entry so we don't re-query
       filterCache.set(guildId, {
         links_only: new Set(),
         images_only: new Set(),
@@ -108,31 +102,25 @@ function extractUrls(content) {
 /**
  * Check if a message should be deleted based on channel content filters.
  * Returns true if the message should be deleted, false if it should be kept.
- * 
- * This is designed for the hot path — uses in-memory Set lookups only.
  */
 export async function checkContentFilter(message) {
   const guildId = message.guild.id;
   const channelId = message.channel.id;
 
-  // Load cache if missing or expired
   let cached = filterCache.get(guildId);
   if (!cached || (Date.now() - cached.cachedAt > CACHE_TTL_MS)) {
     await loadGuildFilters(guildId);
     cached = filterCache.get(guildId);
   }
 
-  // Early guard: no filters configured for this guild
   if (!cached || !cached.hasAnyRule) return false;
 
-  // Collect all rules that apply to this specific channel
   const applicableRules = [];
   if (cached.links_only.has(channelId)) applicableRules.push('links_only');
   if (cached.images_only.has(channelId)) applicableRules.push('images_only');
   if (cached.media_only.has(channelId)) applicableRules.push('media_only');
   if (cached.cmd_only.has(channelId)) applicableRules.push('cmd_only');
 
-  // No rules apply to this channel — allow everything
   if (applicableRules.length === 0) return false;
 
   const content = (message.content || '').trim();
@@ -149,34 +137,28 @@ export async function checkContentFilter(message) {
         break;
       }
       case 'images_only': {
-        // Passes if message has at least 1 attachment
         if (message.attachments && message.attachments.size > 0) return false;
-        // Passes if message contains direct Discord attachment links
         if (content.includes('https://media.discordapp.net') || content.includes('https://cdn.discordapp.com')) return false;
         break;
       }
       case 'media_only': {
-        // Strict Check: If links are present, EVERY link target must be a valid social media URL.
-        // If NO links are present, this specific rule fails (may be saved by images_only).
         const urls = extractUrls(content);
         if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url))) return false;
         break;
       }
       case 'cmd_only': {
-        // Passes if the message author is a bot (slash commands are interactions, not messages)
-        // Human messages in CMD-only channels are always deleted
         if (message.author.bot) return false;
         break;
       }
     }
   }
 
-  // No rule was satisfied — delete the message
   return true;
 }
 
 /**
- * Request high-quality direct video stream URL using the Cobalt API engine.
+ * Request high-quality direct video/image stream URL using Cobalt API.
+ * Returns: { type: 'video'|'image', url: string } | null
  */
 async function fetchCobaltMediaUrl(targetUrl) {
   try {
@@ -198,10 +180,23 @@ async function fetchCobaltMediaUrl(targetUrl) {
     if (!response.ok) return null;
     const data = await response.json();
 
-    if (data.url) return data.url;
-    if (data.picker && Array.isArray(data.picker) && data.picker.length > 0 && data.picker[0].url) {
-      return data.picker[0].url;
+    if (data.status === 'picker' && Array.isArray(data.picker) && data.picker.length > 0) {
+      const item = data.picker[0];
+      const isPhoto = item.type === 'photo' || item.type === 'image' || /\.(jpe?g|png|webp|gif)/i.test(item.url);
+      return {
+        type: isPhoto ? 'image' : 'video',
+        url: item.url
+      };
     }
+
+    if (data.url) {
+      const isPhoto = data.status === 'photo' || data.type === 'image' || /\.(jpe?g|png|webp|gif)/i.test(data.url);
+      return {
+        type: isPhoto ? 'image' : 'video',
+        url: data.url
+      };
+    }
+
     return null;
   } catch (err) {
     return null;
@@ -209,207 +204,110 @@ async function fetchCobaltMediaUrl(targetUrl) {
 }
 
 /**
- * Replace broken social media links with working embeddable alternatives.
- * Handles both new messages and edits dynamically.
+ * Custom Fix Embeds handler: Deletes original user message and posts a standalone custom embed
+ * with 3-tier video/image fallbacks and sequential automated reactions.
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
 
-  // 1. Guard: Check if feature is enabled AND channel is configured for Socials Only (media_only)
+  // Guard: Feature must be enabled AND channel configured for Socials Only (media_only)
   const cached = filterCache.get(guildId);
   if (!cached || !cached.fix_embeds || !cached.media_only.has(message.channel.id)) return;
 
+  // Ignore edits or bot messages for custom standalone reposting
+  if (isEdit || message.author.bot) return;
+
   const content = message.content || '';
-  const urlPattern = /https?:\/\/[^\s<]+/gi;
-  const urls = content.match(urlPattern) || [];
-  
-  const fixedUrls = [];
-  const targetPlatforms = [
-    { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
-    { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook }
-  ];
+  const urls = extractUrls(content).filter(u => isSocialMediaUrl(u));
+  if (urls.length === 0) return;
 
-  for (let url of urls) {
-    let modifiedUrl = url;
-
-    // Clean trailing punctuation commonly attached to URLs in chat messages
-    modifiedUrl = modifiedUrl.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\]\[]+$/, (match) => {
-      return match === '/' ? '/' : '';
-    });
-
-    // Expand short links (vm, vt, v) for TikTok
-    if (/(https?:\/\/)(vm|vt|v)\.tiktok\.com/i.test(modifiedUrl)) {
-      try {
-        const response = await fetch(modifiedUrl, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          },
-          redirect: 'follow'
-        });
-        if (response.url && !/(vm|vt|v)\.tiktok\.com/i.test(response.url)) {
-          modifiedUrl = response.url.split('?')[0];
-        }
-      } catch (err) {}
-    }
-
-    // 1. Universal Check: Attempt media extraction via Cobalt API for ANY URL
-    const cobaltStreamUrl = await fetchCobaltMediaUrl(modifiedUrl);
-    if (cobaltStreamUrl) {
-      fixedUrls.push(cobaltStreamUrl);
-      continue;
-    }
-
-    // 2. Secondary Fallback: If Cobalt returns null, check secondary domain proxies for known sites
-    const matchedPlatform = targetPlatforms.find(p => p.pattern.test(modifiedUrl));
-    if (matchedPlatform && matchedPlatform.fallback) {
-      const fallbackUrl = modifiedUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
-      fixedUrls.push(fallbackUrl);
-    }
-  }
-
-  // Generate current "invisible links" string
-  const currentFixedUrls = fixedUrls.map(url => `[\u2800](${url})`).join('');
-  let existingRecord = fixedEmbedTracker.get(message.id);
-
-  // If this is an edit and the reply isn't in memory, search the next 5 messages sent after it
-  if (isEdit && !existingRecord) {
-    try {
-      const siblingMessages = await message.channel.messages.fetch({ after: message.id, limit: 5 }).catch(() => null);
-      if (siblingMessages) {
-        const botReplyMessage = siblingMessages.find(m => m.author.id === message.client.user.id && m.reference?.messageId === message.id);
-        if (botReplyMessage) {
-          existingRecord = { botReplyId: botReplyMessage.id, lastFixedUrls: botReplyMessage.content };
-          fixedEmbedTracker.set(message.id, existingRecord);
-        }
-      }
-    } catch (err) {
-      // Silent fail
-    }
-  }
-
-  // === ROUTE A: CLEANUP (User removed the social links) ===
-  if (currentFixedUrls.length === 0) {
-    if (existingRecord) {
-      try {
-        const botReply = await message.channel.messages.fetch(existingRecord.botReplyId).catch(() => null);
-        if (botReply) await botReply.delete().catch(() => {});
-        fixedEmbedTracker.delete(message.id);
-      } catch (err) { /* silent */ }
-    }
-    return;
-  }
-
-  // === ROUTE B: NO-CHANGE (Links are the same, just a text edit) ===
-  if (existingRecord && existingRecord.lastFixedUrls === currentFixedUrls) {
-    return; // Do nothing, existing player is fine
-  }
+  if (pendingFixes.has(message.id)) return;
+  pendingFixes.add(message.id);
 
   try {
-    let botReply;
-    
-    // === ROUTE C: UPDATE (User changed the link) ===
-    if (existingRecord) {
-      botReply = await message.channel.messages.fetch(existingRecord.botReplyId).catch(() => null);
-      if (botReply) {
-        await botReply.edit({ content: currentFixedUrls });
-        // Update the record with new URL signature
-        fixedEmbedTracker.set(message.id, { ...existingRecord, lastFixedUrls: currentFixedUrls });
-      }
-    } 
-    
-    // === ROUTE D: CREATE (New message or first valid link edit) ===
-    if (!botReply) {
-      // If this is an edit, do not create a new message if one wasn't found
-      if (isEdit) return;
+    const targetUrl = urls[0];
+    let mediaInfo = await fetchCobaltMediaUrl(targetUrl);
 
-      // Prevent concurrent creations for the same message ID
-      if (pendingFixes.has(message.id)) return;
-      pendingFixes.add(message.id);
+    // Secondary Fallback Proxy check
+    const targetPlatforms = [
+      { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
+      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook }
+    ];
 
-      try {
-        botReply = await message.reply({ content: currentFixedUrls });
-        fixedEmbedTracker.set(message.id, { botReplyId: botReply.id, lastFixedUrls: currentFixedUrls });
-        
-        // Auto-expire from map after 1 hour
-        setTimeout(() => fixedEmbedTracker.delete(message.id), TRACKER_EXPIRY_MS);
-      } finally {
-        pendingFixes.delete(message.id);
+    if (!mediaInfo) {
+      const matchedPlatform = targetPlatforms.find(p => p.pattern.test(targetUrl));
+      if (matchedPlatform && matchedPlatform.fallback) {
+        const fallbackUrl = targetUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
+        mediaInfo = { type: 'video', url: fallbackUrl };
       }
     }
 
-    // --- SHARED VERIFICATION FLOW ---
-    // Poll every 500ms up to 15 seconds (30 iterations) to see if Discord has generated the embed yet.
-    // This allows the bot to be fast when Discord is fast, and patient when it's slow.
-    let fetchedBotReply = null;
-    let hasContentEmbed = false;
+    const isImage = mediaInfo?.type === 'image';
+    const headerText = `<@${message.author.id}> shared a ${isImage ? 'image' : 'video'}:`;
 
-    for (let i = 0; i < 30; i++) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
-      hasContentEmbed = fetchedBotReply?.embeds.some(e => 
-        e.video || e.data?.video || e.type === 'video' || 
-        e.image || e.data?.image || e.thumbnail || e.data?.thumbnail
-      );
+    // Construct custom embed with clickable blue link
+    const embed = new EmbedBuilder()
+      .setColor('#2B2D31')
+      .setAuthor({
+        name: message.author.displayName || message.author.username,
+        iconURL: message.author.displayAvatarURL({ dynamic: true })
+      })
+      .setDescription(`[Click to View Original Post](${targetUrl})`)
+      .setURL(targetUrl);
 
-      if (hasContentEmbed) {
-        // Optional: If we found at least one, we can wait 1 more second to let other multi-links finish rendering
-        if (fixedUrls.length > 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          fetchedBotReply = await message.channel.messages.fetch(botReply.id).catch(() => null);
-        }
-        break; 
+    if (isImage && mediaInfo?.url) {
+      embed.setImage(mediaInfo.url);
+    }
+
+    // Message payload: For videos, attach stream link to message content for playable player rendering
+    const messagePayload = {
+      content: isImage || !mediaInfo?.url 
+        ? headerText 
+        : `${headerText} [\u2800](${mediaInfo.url})`,
+      embeds: [embed]
+    };
+
+    // Post standalone message
+    const sentMsg = await message.channel.send(messagePayload);
+
+    // Delete user's original message
+    await message.delete().catch(() => {});
+
+    // Add automated reactions sequentially: 👍, ❤️, 😂, 😭
+    const emojis = ['👍', '❤️', '😂', '😭'];
+    for (const emoji of emojis) {
+      await sentMsg.react(emoji).catch(() => {});
+    }
+
+    // Tier 3 Validation: If video was attached, verify that Discord generated a video player card
+    if (!isImage && mediaInfo?.url) {
+      let hasVideoEmbed = false;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const refetched = await message.channel.messages.fetch(sentMsg.id).catch(() => null);
+        hasVideoEmbed = refetched?.embeds.some(e => e.video || e.data?.video || e.type === 'video');
+        if (hasVideoEmbed) break;
+      }
+
+      // If rendering failed after 10s, edit message to remove broken stream link (Tier 3 fallback)
+      if (!hasVideoEmbed) {
+        await sentMsg.edit({
+          content: headerText,
+          embeds: [embed]
+        }).catch(() => {});
       }
     }
 
-    if (fetchedBotReply && hasContentEmbed) {
-      await message.suppressEmbeds(true).catch(() => {});
-
-      // MULTI-LINK PRUNING: If multiple links were sent, check if any failed to embed
-      if (fixedUrls.length > 1) {
-        const workingUrls = [];
-        for (const url of fixedUrls) {
-          // Does any embed's URL match this fixed URL?
-          const embedExists = fetchedBotReply.embeds.some(e => 
-            e.url && (e.url === url || e.url.includes(url) || url.includes(e.url)) &&
-            (e.video || e.data?.video || e.type === 'video' || e.image || e.data?.image || e.thumbnail || e.data?.thumbnail)
-          );
-          if (embedExists) workingUrls.push(url);
-        }
-
-        // If some links failed, update the bot's reply to only show the working ones
-        if (workingUrls.length > 0 && workingUrls.length < fixedUrls.length) {
-          const newInvisibleLinks = workingUrls.map(u => `[\u2800](${u})`).join('');
-          await fetchedBotReply.edit({ content: newInvisibleLinks }).catch(() => {});
-          fixedEmbedTracker.set(message.id, { botReplyId: fetchedBotReply.id, lastFixedUrls: newInvisibleLinks });
-        }
-      }
-
-    } else if (fetchedBotReply) {
-      // Fail Route: No playable content appeared on bot reply -> delete reply & restore Discord native embed
-      await fetchedBotReply.delete().catch(() => {});
-      await message.suppressEmbeds(false).catch(() => {});
-      fixedEmbedTracker.delete(message.id);
-    }
   } catch (error) {
-    sysError('Fix Embeds Dynamic Update Failed', error, { guild: guildId, channel: message.channel.id });
+    sysError('Custom Fix Embed Repost Failed', error, { guild: guildId, channel: message.channel.id });
+  } finally {
+    pendingFixes.delete(message.id);
   }
 }
 
 /**
- * Force-clean a fixed embed reply (e.g. when the original message is deleted).
+ * Force-clean (no-op retained for backwards interface compatibility)
  */
 export async function handleFixedEmbedCleanup(channel, messageId) {
-  const record = fixedEmbedTracker.get(messageId);
-  if (!record) return;
-
-  try {
-    const botReply = await channel.messages.fetch(record.botReplyId).catch(() => null);
-    if (botReply) await botReply.delete().catch(() => {});
-  } catch (err) {
-    // Silent fail if already deleted
-  } finally {
-    fixedEmbedTracker.delete(messageId);
-  }
+  // Standalone messages manage their own lifecycle
 }
