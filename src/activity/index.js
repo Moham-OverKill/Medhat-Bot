@@ -155,15 +155,14 @@ async function handleMessage(message) {
   return runInGuildContext(message.guild.id, async () => {
     // === CONTENT FILTER CHECK (early guard) ===
     try {
-      const { checkContentFilter, processFixEmbeds, processAutoReact } = await import('../middleware/organize.js');
+      const { checkContentFilter, processAutoReact } = await import('../middleware/organize.js');
       const shouldDelete = await checkContentFilter(message);
       if (shouldDelete) {
         await message.delete().catch(() => {});
         return; // Do NOT track activity for deleted messages
       }
       
-      // === FIX EMBEDS & AUTO REACT ===
-      processFixEmbeds(message).catch(err => sysError('Fix Embeds Background Failure', err));
+      // === AUTO REACT ===
       processAutoReact(message).catch(err => sysError('Auto React Background Failure', err));
 
     } catch (error) {
@@ -184,7 +183,7 @@ async function handleMessage(message) {
 }
 
 /**
- * Handle message edits to prevent filter bypass and update fixed embeds.
+ * Handle message edits to prevent filter bypass.
  */
 async function handleMessageUpdate(oldMessage, newMessage) {
   // Guard: Ignore bots, webhooks, DMs, and partials
@@ -197,17 +196,14 @@ async function handleMessageUpdate(oldMessage, newMessage) {
 
   return runInGuildContext(newMessage.guild.id, async () => {
     try {
-      const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
+      const { checkContentFilter } = await import('../middleware/organize.js');
       
-      // 1. Enforce Organize Rules on the edited content
+      // Enforce Organize Rules on the edited content
       const shouldDelete = await checkContentFilter(newMessage);
       if (shouldDelete) {
         await newMessage.delete().catch(() => {});
         return;
       }
-
-      // 2. Update/Sync Fixed Embeds
-      processFixEmbeds(newMessage, true).catch(err => sysError('Fix Embeds Update Failure', err));
 
     } catch (error) {
       sysError('Message Update Guard Failed', error, { guild: newMessage.guild.id });

@@ -89,16 +89,6 @@ async function renderPanel(interaction, activeFilter = null) {
             .setStyle(activeFilter === 'auto_react' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ];
 
-    if (activeFilter === 'media_only') {
-        const isFixEmbedsEnabled = !!filters.fix_embeds;
-        row2Buttons.push(
-            new ButtonBuilder()
-                .setCustomId('organize_toggle_fix_embeds')
-                .setLabel('Fix Embeds')
-                .setStyle(isFixEmbedsEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
-        );
-    }
-
     const row2 = new ActionRowBuilder().addComponents(row2Buttons);
     const components = [row1, row2];
 
@@ -270,41 +260,5 @@ export async function handleOrganizeComponent(interaction) {
     if (customId.startsWith('organize_select_')) {
         const filterKey = customId.replace('organize_select_', '');
         return handleChannelToggle(interaction, filterKey);
-    }
-
-    // Toggle Fix Embeds setting
-    if (customId === 'organize_toggle_fix_embeds') {
-        const guildId = interaction.guildId;
-        const pool = getPool();
-        const filters = await getFilters(guildId);
-        const newState = !filters.fix_embeds;
-
-        await pool.query(
-            `INSERT INTO guild_configs (guild_id, config)
-             VALUES ($1, jsonb_build_object('channel_filters', jsonb_build_object('fix_embeds', $2::jsonb)))
-             ON CONFLICT (guild_id)
-             DO UPDATE SET config = jsonb_set(
-               jsonb_set(
-                 COALESCE(guild_configs.config, '{}'::jsonb),
-                 '{channel_filters}',
-                 COALESCE(guild_configs.config->'channel_filters', '{}'::jsonb),
-                 true
-               ),
-               '{channel_filters, fix_embeds}',
-               $2::jsonb,
-               true
-             ), updated_at = NOW()`,
-            [guildId, JSON.stringify(newState)]
-        );
-
-        invalidateFilterCache(guildId);
-        
-        sysLog('Organize Config Changed', {
-            user: interaction.user.id,
-            guild: guildId,
-            detail: `Feature: Fix Embeds | Action: Toggled ${newState ? 'ON' : 'OFF'}`
-        });
-
-        return renderPanel(interaction, 'media_only');
     }
 }
