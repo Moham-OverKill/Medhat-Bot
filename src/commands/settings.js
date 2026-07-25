@@ -119,7 +119,7 @@ export async function showCoinsSubMenu(interaction) {
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 
-    // Row 1: Daily, Quests, MVP
+    // Row 1: Daily, Quests, Give Coins
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_daily')
@@ -132,13 +132,13 @@ export async function showCoinsSubMenu(interaction) {
             .setEmoji('🎯')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_mvp')
-            .setLabel('MVP')
-            .setEmoji('🏆')
-            .setStyle(ButtonStyle.Secondary)
+            .setCustomId('rewards_give_btn')
+            .setLabel('Give Coins')
+            .setEmoji('💸')
+            .setStyle(ButtonStyle.Success)
     );
 
-    // Row 2: Vote, Tag, Give Coins
+    // Row 2: Vote, Tag
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_vote_reward')
@@ -149,25 +149,15 @@ export async function showCoinsSubMenu(interaction) {
             .setCustomId('settings_tag_reward')
             .setLabel('Tag')
             .setEmoji('🏷️')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('rewards_give_btn')
-            .setLabel('Give Coins')
-            .setEmoji('💸')
-            .setStyle(ButtonStyle.Success)
+            .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Back to Settings + Roles (coming soon)
+    // Row 3: Back to Settings
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
             .setLabel('Back to Settings')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_coins_roles')
-            .setLabel('Roles')
-            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -259,21 +249,6 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_coins_roles') {
-            const embed = new EmbedBuilder()
-                .setTitle('🎭 Roles')
-                .setDescription('> **To be continued...**\n\nThis feature is currently under construction.')
-                .setColor(0x2F3136);
-            const backRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('settings_coins')
-                    .setLabel('Back')
-                    .setEmoji('⬅️')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-            await interaction.update({ embeds: [embed], components: [backRow] });
-            return;
-        }
 
         if (customId === 'settings_other') {
             await showOtherSubMenu(interaction);
@@ -590,15 +565,15 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_mvp') {
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
-            const guildId = interaction.guildId;
-            let config = await getGuildConfig(guildId);
-            if (!config) {
-                config = { enabled: true };
-                await setGuildConfig(guildId, config);
-            }
-            await showMvpPanel(interaction, config);
+        if (customId === 'settings_users_roles') {
+            const { showRoleRewardsMenu } = await import('./settings/role-rewards.js');
+            await showRoleRewardsMenu(interaction);
+            return;
+        }
+
+        if (customId.startsWith('role_rewards_')) {
+            const { handleRoleRewardsComponent } = await import('./settings/role-rewards.js');
+            await handleRoleRewardsComponent(interaction);
             return;
         }
 
