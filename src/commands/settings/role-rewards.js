@@ -11,6 +11,7 @@ import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { isValidSnowflake } from '../../shared.js';
 import { sendLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError, diagnoseRolePermissions } from '../../utils/errors.js';
+import { applyRichestRole, applyStreakRole } from '../../mvp/role-assignment.js';
 
 // ── Rate limiting (mirrors mvp.js pattern) ───────────────────────────────────
 const configChangeRateLimit = new Map();
@@ -287,6 +288,9 @@ export async function handleRoleRewardsComponent(interaction) {
             config.richest_role_id = selectedRoleId;
             await setGuildConfig(guildId, config);
 
+            // Sync role immediately in background
+            applyRichestRole(interaction.client, guildId).catch(err => sysError('Richest Role Instant Sync Error', err));
+
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Richest Role Updated',
                 `**Admin:** \`${interaction.user.tag}\`\n**Role:** ${role}`);
 
@@ -307,6 +311,9 @@ export async function handleRoleRewardsComponent(interaction) {
             const config = await getGuildConfig(guildId) || {};
             config.richest_role_winners = count;
             await setGuildConfig(guildId, config);
+
+            // Sync role immediately in background
+            applyRichestRole(interaction.client, guildId).catch(err => sysError('Richest Role Instant Sync Error', err));
 
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Richest Winner Count Updated',
                 `**Admin:** \`${interaction.user.tag}\`\n**Winners:** ${count}`);
@@ -329,6 +336,9 @@ export async function handleRoleRewardsComponent(interaction) {
 
             config.richest_role_enabled = newState;
             await setGuildConfig(guildId, config);
+
+            // Sync role immediately in background
+            applyRichestRole(interaction.client, guildId).catch(err => sysError('Richest Role Instant Sync Error', err));
 
             sendLog(interaction.guild, 'audit', newState ? 'cyan' : 'crimson', '💰 Richest Role Reward',
                 `**Admin:** \`${interaction.user.tag}\`\n**Status:** ${newState ? 'Enabled' : 'Disabled'}`);
@@ -354,6 +364,9 @@ export async function handleRoleRewardsComponent(interaction) {
             config.streak_role_id = selectedRoleId;
             await setGuildConfig(guildId, config);
 
+            // Sync role immediately in background
+            applyStreakRole(interaction.client, guildId).catch(err => sysError('Streak Role Instant Sync Error', err));
+
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Streaks Role Updated',
                 `**Admin:** \`${interaction.user.tag}\`\n**Role:** ${role}`);
 
@@ -374,6 +387,9 @@ export async function handleRoleRewardsComponent(interaction) {
             const config = await getGuildConfig(guildId) || {};
             config.streak_role_winners = count;
             await setGuildConfig(guildId, config);
+
+            // Sync role immediately in background
+            applyStreakRole(interaction.client, guildId).catch(err => sysError('Streak Role Instant Sync Error', err));
 
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Streaks Winner Count Updated',
                 `**Admin:** \`${interaction.user.tag}\`\n**Winners:** ${count}`);
@@ -396,6 +412,9 @@ export async function handleRoleRewardsComponent(interaction) {
 
             config.streak_role_enabled = newState;
             await setGuildConfig(guildId, config);
+
+            // Sync role immediately in background
+            applyStreakRole(interaction.client, guildId).catch(err => sysError('Streak Role Instant Sync Error', err));
 
             sendLog(interaction.guild, 'audit', newState ? 'cyan' : 'crimson', '🔥 Streaks Role Reward',
                 `**Admin:** \`${interaction.user.tag}\`\n**Status:** ${newState ? 'Enabled' : 'Disabled'}`);
