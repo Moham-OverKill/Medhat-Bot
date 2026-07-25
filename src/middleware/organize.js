@@ -305,36 +305,22 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = metadata.type === 'image';
     const mediaWord = isImage ? 'an image' : 'a video';
 
-    // Message 1: Top Custom Header Embed Box with User Profile
-    const customHeaderEmbed = new EmbedBuilder()
-      .setColor('#2B2D31')
-      .setAuthor({
-        name: authorUsername,
-        iconURL: authorAvatar
-      })
-      .setDescription(`shared ${mediaWord}:`);
-
-    // Conditionally send ``` ``` divider ONLY if previous message in channel was from bot/webhook within <10 mins
+    // Single unified message format (Header + Title + Zero-gap native media card)
     const addSeparator = await shouldAddSeparator(message.channel, message.id);
-    const codeBlockContent = addSeparator ? '```\u2800```' : undefined;
+    const prefix = addSeparator ? '```\u2800```\n' : '';
 
-    if (webhook) {
-      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
-    } else {
-      await message.channel.send({ content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
-    }
+    const userHeader = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
+    const titleLine = metadata.title ? `**${metadata.title}**` : '';
 
-    // Message 2: Plain text bold title (NOT hyperlinked in blue) + active media link (e.g. kkinstagram.com)
-    const titleText = metadata.title ? `**${metadata.title}**` : '';
-    const message2Content = titleText
-      ? `${titleText} [\u2800](${activeMediaUrl})`
-      : `[\u2800](${activeMediaUrl})`;
+    const singleMessageContent = titleLine
+      ? `${prefix}${userHeader}\n${titleLine} [\u2800](${activeMediaUrl})`
+      : `${prefix}${userHeader} [\u2800](${activeMediaUrl})`;
 
     let sentMsg;
     if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: message2Content });
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: singleMessageContent });
     } else {
-      sentMsg = await message.channel.send({ content: message2Content });
+      sentMsg = await message.channel.send({ content: singleMessageContent });
     }
 
     // Delete user's original message
