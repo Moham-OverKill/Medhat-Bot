@@ -129,7 +129,7 @@ function buildRoleRewardPanel(type, config) {
             .setDisabled(!canEnable && !enabled),
         new ButtonBuilder()
             .setCustomId('settings_users_roles')
-            .setLabel('Back to Roles')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     ));
@@ -175,13 +175,10 @@ export async function showRoleRewardsMenu(interaction) {
             .setCustomId('role_rewards_streaks')
             .setLabel('Streaks')
             .setEmoji('🔥')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users')
-            .setLabel('Back to Users')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -192,7 +189,7 @@ export async function showRoleRewardsMenu(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1]
     });
 }
 

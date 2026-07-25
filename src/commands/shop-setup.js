@@ -150,7 +150,7 @@ export async function handleShopSetup(interaction) {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('settings_back')
-          .setLabel('Back to Settings')
+          .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary)
       );

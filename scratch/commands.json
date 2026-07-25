@@ -1,0 +1,108 @@
+[
+  {
+    "name": "settings",
+    "description": "Open the server control panel",
+    "default_member_permissions": "8",
+    "dm_permission": false,
+    "options": []
+  },
+  {
+    "name": "bank",
+    "description": "Access your personal bank account",
+    "options": []
+  },
+  {
+    "name": "inventory",
+    "description": "View your inventory",
+    "options": []
+  },
+  {
+    "name": "mass",
+    "description": "Bulk operations",
+    "default_member_permissions": "8",
+    "dm_permission": false,
+    "options": [
+      {
+        "type": 1,
+        "name": "item",
+        "description": "Bulk populate Shop Packs or Categories with Items",
+        "options": [
+          {
+            "type": 3,
+            "name": "input",
+            "description": "Role IDs separated by space, comma, or newline",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "color",
+        "description": "Bulk add or remove color roles",
+        "options": [
+          {
+            "type": 3,
+            "name": "mode",
+            "description": "Operation mode",
+            "required": true,
+            "choices": [
+              {
+                "name": "Add",
+                "value": "add"
+              },
+              {
+                "name": "Remove",
+                "value": "remove"
+              }
+            ]
+          },
+          {
+            "type": 3,
+            "name": "type",
+            "description": "Type of colors",
+            "required": true,
+            "choices": [
+              {
+                "name": "Normal Colors",
+                "value": "normal"
+              },
+              {
+                "name": "Booster Colors",
+                "value": "booster"
+              }
+            ]
+          },
+          {
+            "type": 3,
+            "name": "roles",
+            "description": "Role IDs separated by space, comma, or hyphen",
+            "required": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "quest",
+    "description": "View your current daily quests and progress",
+    "options": []
+  },
+  {
+    "name": "trade",
+    "description": "Initiate a P2P trade with another member",
+    "dm_permission": false,
+    "options": [
+      {
+        "type": 6,
+        "name": "target",
+        "description": "The user you want to trade with",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "vote",
+    "description": "Get the link to vote for the bot and claim your coin reward.",
+    "options": []
+  }
+]

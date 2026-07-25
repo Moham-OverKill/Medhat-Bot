@@ -116,7 +116,7 @@ export async function showQuestsDashboard(interaction) {
     const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('settings_coins')
-        .setLabel('Back to Coins')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
