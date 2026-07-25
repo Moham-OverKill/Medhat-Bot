@@ -251,7 +251,7 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = metadata.type === 'image';
     const mediaWord = isImage ? 'an image' : 'a video';
 
-    // Message 1: Top Custom Header Embed Box with User Profile
+    // Message 1: Top Custom Header Embed Box with User Profile + Code Block above embed
     const customHeaderEmbed = new EmbedBuilder()
       .setColor('#2B2D31')
       .setAuthor({
@@ -260,10 +260,12 @@ export async function processFixEmbeds(message, isEdit = false) {
       })
       .setDescription(`shared ${mediaWord}:`);
 
+    const codeBlockContent = '```\u2800```';
+
     if (webhook) {
-      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] }).catch(() => {});
+      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
     } else {
-      await message.channel.send({ embeds: [customHeaderEmbed] }).catch(() => {});
+      await message.channel.send({ content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
     }
 
     // Message 2: Plain text bold title (NOT hyperlinked in blue) + invisible link on exact same line for 0 gaps
