@@ -18,7 +18,7 @@ import { cancelMvpTimer, scheduleMvpTimer } from '../mvp/award.js';
 import { getNextCairoHourTimestamp } from '../utils/time.js';
 import { invalidateConfigCache } from '../activity/index.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
-import { handleInteractionError } from '../utils/errors.js';
+import { handleInteractionError, diagnoseRolePermissions } from '../utils/errors.js';
 
 // Command Definition
 export const mvpCommand = new SlashCommandBuilder()
@@ -442,22 +442,11 @@ async function handleRoleSelect(interaction, config) {
       return;
     }
 
-    // Prevent selecting managed roles (bot roles, integrations)
-    if (role.managed) {
+    const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
+    const diag = diagnoseRolePermissions(guild, role, botMember);
+    if (!diag.hasAll) {
       await interaction.reply({
-        content: '❌ Cannot use managed roles (bot roles, boosts, etc.) as MVP role.',
-        flags: MessageFlags.Ephemeral
-      });
-      return;
-    }
-
-    // Check if bot can manage this role
-    const botMember = await guild.members.fetchMe();
-    const botHighestRole = botMember.roles.highest;
-
-    if (role.position >= botHighestRole.position) {
-      await interaction.reply({
-        content: `❌ Cannot use this role. The bot's highest role (${botHighestRole.name}) must be above the MVP role in the role list.`,
+        content: `❌ ${diag.explanation}\n\n**How to fix:**\n${diag.fixInstructions}`,
         flags: MessageFlags.Ephemeral
       });
       return;
@@ -466,7 +455,7 @@ async function handleRoleSelect(interaction, config) {
     // Warn if role has dangerous permissions
     if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
       await interaction.reply({
-        content: '❌ Cannot use this role. MVP role should not have Administrator, Manage Server, or Manage Roles permissions.',
+        content: '❌ Reward role must not have Administrator, Manage Server, or Manage Roles permissions.',
         flags: MessageFlags.Ephemeral
       });
       return;
