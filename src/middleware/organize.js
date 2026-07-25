@@ -321,77 +321,30 @@ async function shouldAddSeparator(channel, currentMsgId) {
 }
 
 /**
- * Fix Embeds handler: Deletes user message and posts:
- * - Message 1: Custom top header embed box (@user shared a video: / @user shared an image:).
- * - Message 2: Plain text bold title (NOT hyperlinked in blue) + native media embed (0 gaps).
- * - Sequential automated reactions (👍, ❤️, 😂, 😭).
+ * Fix Embeds handler:
+ * When a user sends an Instagram media post/reel link, the bot replies with the fixed ddinstagram.com link.
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
 
-  // Guard: Feature must be enabled AND channel configured for Socials Only (media_only)
+  // Guard: Feature must be enabled
   const cached = filterCache.get(guildId);
-  if (!cached || !cached.fix_embeds || !cached.media_only.has(message.channel.id)) return;
+  if (!cached || !cached.fix_embeds) return;
 
   // Ignore edits or bot messages
   if (isEdit || message.author.bot) return;
 
   const content = message.content || '';
-  const urls = extractUrls(content).filter(u => isSocialMediaUrl(u));
-  if (urls.length === 0) return;
-
-  // Reject profile links (must be a media post URL like /p/, /reel/, /video/, /shorts/)
-  const mediaUrls = urls.filter(u => isMediaPostUrl(u));
-  if (mediaUrls.length === 0) {
-    // Delete non-media profile links posted in social-only channels
-    await message.delete().catch(() => {});
-    return;
-  }
+  const instaUrls = extractUrls(content).filter(u => /(instagram\.com|instagr\.am)/i.test(u) && isMediaPostUrl(u));
+  if (instaUrls.length === 0) return;
 
   if (pendingFixes.has(message.id)) return;
   pendingFixes.add(message.id);
 
   try {
-    const targetUrl = mediaUrls[0];
-    const activeMediaUrl = getActiveMediaUrl(targetUrl);
-    const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
-    const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
-    const webhook = await getOrCreateWebhook(message.channel);
+    const fixedContent = instaUrls.map(u => u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://ddinstagram.com')).join('\n');
 
-    const metadata = await fetchMediaMetadata(targetUrl);
-    const isImage = metadata.type === 'image';
-    const mediaWord = isImage ? 'an image' : 'a video';
-
-    // Single unified message format (Header + Title + Zero-gap native media card)
-    const addSeparator = await shouldAddSeparator(message.channel, message.id);
-    const prefix = addSeparator ? '```\u2800```\n' : '';
-
-    const userHeader = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
-    const titleLine = metadata.title ? `**${metadata.title}**` : '';
-
-    // Hide blue URL text using invisible braille link [\u2800](activeMediaUrl)
-    const singleMessageContent = titleLine
-      ? `${prefix}${userHeader}\n${titleLine} [\u2800](${activeMediaUrl})`
-      : `${prefix}${userHeader} [\u2800](${activeMediaUrl})`;
-
-    let sentMsg;
-    if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: singleMessageContent });
-    } else {
-      sentMsg = await message.channel.send({ content: singleMessageContent });
-    }
-
-    // Delete user's original message
-    await message.delete().catch(() => {});
-
-    // Add automated reactions sequentially: 👍, ❤️, 😂, 😭
-    if (sentMsg && sentMsg.react) {
-      const emojis = ['👍', '❤️', '😂', '😭'];
-      for (const emoji of emojis) {
-        await sentMsg.react(emoji).catch(() => {});
-      }
-    }
-
+    await message.reply({ content: fixedContent, allowedMentions: { repliedUser: false } }).catch(() => {});
   } catch (error) {
     sysError('Fix Embed Repost Failed', error, { guild: guildId, channel: message.channel.id });
   } finally {
