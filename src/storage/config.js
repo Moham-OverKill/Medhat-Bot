@@ -50,7 +50,15 @@ const CONFIG_SCHEMA = {
   tag_reward_amount: { type: 'number', min: 0, required: false },
   coin_emoji: { type: 'string', required: false },
   bot_nickname: { type: 'string', required: false },
-  bot_avatar: { type: 'string', required: false }
+  bot_avatar: { type: 'string', required: false },
+  // Richest Role Reward
+  richest_role_id: { type: 'string', validate: isValidSnowflake, required: false },
+  richest_role_enabled: { type: 'boolean', required: false },
+  richest_role_winners: { type: 'number', min: 1, max: 5, required: false },
+  // Streaks Role Reward
+  streak_role_id: { type: 'string', validate: isValidSnowflake, required: false },
+  streak_role_enabled: { type: 'boolean', required: false },
+  streak_role_winners: { type: 'number', min: 1, max: 5, required: false }
 };
 
 export const configCache = new Map();

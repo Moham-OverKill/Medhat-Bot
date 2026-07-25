@@ -31,11 +31,12 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    const backRow = new ActionRowBuilder().addComponents(
+    // Row 2: Roles + Anti-Cheat
+    const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_back')
-            .setLabel('Back to Settings')
-            .setEmoji('⬅️')
+            .setCustomId('settings_users_roles')
+            .setLabel('Roles')
+            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat')
@@ -44,10 +45,19 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Primary)
     );
 
+    // Row 3: Back to Settings
+    const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_back')
+            .setLabel('Back to Settings')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
     const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(select), backRow]
+        components: [new ActionRowBuilder().addComponents(select), actionRow, backRow]
     });
 }
 
@@ -705,6 +715,12 @@ export async function handleAdminUserComponent(interaction) {
         if (customId === 'admin_user_select') {
             const targetUserId = interaction.values[0];
             await showUserDashboard(interaction, targetUserId);
+            return;
+        }
+
+        if (customId === 'settings_users_roles') {
+            const { showRoleRewardsMenu } = await import('./settings/role-rewards.js');
+            await showRoleRewardsMenu(interaction);
             return;
         }
 

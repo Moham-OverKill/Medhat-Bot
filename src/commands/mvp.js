@@ -305,8 +305,8 @@ export async function showSetupPanel(interaction, config) {
   const backRow = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
-        .setCustomId('settings_coins')
-        .setLabel('Back to Coins')
+        .setCustomId('settings_users_roles')
+        .setLabel('Back to Roles')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
