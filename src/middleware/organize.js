@@ -223,32 +223,38 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
- * Tests candidate URLs sequentially until a working video player renders cleanly without errors.
- * Renders "@user shared a video" inside a clean top embed box, with the playable video player rendered underneath.
+ * Posts top custom header embed as Message 1, followed by the verified playable video player as Message 2 directly underneath.
  */
 async function sendVerifiedVideoMessage(channel, webhook, authorUsername, authorAvatar, userId, targetUrl, candidates) {
-  let sentMsg = null;
+  // Message 1: Top Custom Header Embed Box
   const headerDescription = webhook ? `shared a [video](${targetUrl})` : `<@${userId}> shared a [video](${targetUrl})`;
-  
   const customHeaderEmbed = new EmbedBuilder()
     .setColor('#2B2D31')
     .setDescription(headerDescription);
 
+  try {
+    if (webhook) {
+      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] });
+    } else {
+      await channel.send({ embeds: [customHeaderEmbed] });
+    }
+  } catch (err) {}
+
+  // Message 2: Playable Video Player Message
+  let playerMsg = null;
+
   for (const candidateUrl of candidates) {
-    const payload = {
-      content: `[\u2800](${candidateUrl})`,
-      embeds: [customHeaderEmbed]
-    };
+    const content = `[\u2800](${candidateUrl})`;
 
     try {
-      if (!sentMsg) {
+      if (!playerMsg) {
         if (webhook) {
-          sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, ...payload });
+          playerMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content });
         } else {
-          sentMsg = await channel.send(payload);
+          playerMsg = await channel.send({ content });
         }
       } else {
-        await sentMsg.edit(payload);
+        await playerMsg.edit({ content });
       }
 
       // Poll up to 3.5 seconds (7 iterations) to verify if Discord rendered a valid video embed
@@ -257,7 +263,7 @@ async function sendVerifiedVideoMessage(channel, webhook, authorUsername, author
 
       for (let attempt = 0; attempt < 7; attempt++) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        const refetched = await channel.messages.fetch(sentMsg.id).catch(() => null);
+        const refetched = await channel.messages.fetch(playerMsg.id).catch(() => null);
         if (!refetched) break;
 
         const embeds = refetched.embeds || [];
@@ -278,25 +284,18 @@ async function sendVerifiedVideoMessage(channel, webhook, authorUsername, author
       }
 
       if (isValidVideo && !hasErrorOrNotice) {
-        return sentMsg; // Success! Locked in working candidate.
+        return playerMsg; // Success! Locked in working candidate.
       }
     } catch (err) {
       // Continue to next candidate
     }
   }
 
-  // Final Fallback: Edit message to keep clean custom top embed without broken proxy embeds
-  const fallbackPayload = { content: ' ', embeds: [customHeaderEmbed] };
-  if (sentMsg) {
-    await sentMsg.edit(fallbackPayload).catch(() => {});
-  } else {
-    if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, ...fallbackPayload });
-    } else {
-      sentMsg = await channel.send(fallbackPayload);
-    }
+  // If no candidate rendered a playable video, delete playerMsg so only header embed remains
+  if (playerMsg) {
+    await playerMsg.delete().catch(() => {});
   }
-  return sentMsg;
+  return null;
 }
 
 /**
