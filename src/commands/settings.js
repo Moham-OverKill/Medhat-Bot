@@ -138,8 +138,13 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Success)
     );
 
-    // Row 2: Vote, Tag
+    // Row 2: Back, Vote, Tag
     const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_vote_reward')
             .setLabel('Vote')
@@ -152,20 +157,11 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Back
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
     const responseMethod = interaction.isButton() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2]
     });
 }
 
