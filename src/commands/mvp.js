@@ -392,20 +392,18 @@ async function handleRoleSelect(interaction, config) {
   const selectedRoleId = interaction.values[0];
 
   if (!isValidSnowflake(selectedRoleId)) {
-    await interaction.update({
+    await interaction.reply({
       content: '❌ Invalid role selection.',
-      embeds: [],
-      components: []
+      flags: MessageFlags.Ephemeral
     });
     return;
   }
 
   // Rate limiting: Prevent config spam
   if (!checkRateLimit(`${guildId}-config`, CONFIG_RATE_LIMIT_MS)) {
-    await interaction.update({
+    await interaction.reply({
       content: '⚠️ Please wait a moment before changing settings again.',
-      embeds: [],
-      components: []
+      flags: MessageFlags.Ephemeral
     });
     return;
   }
@@ -416,20 +414,18 @@ async function handleRoleSelect(interaction, config) {
     const role = await guild.roles.fetch(selectedRoleId);
 
     if (!role) {
-      await interaction.update({
+      await interaction.reply({
         content: '❌ Selected role not found.',
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
 
     // Prevent selecting @everyone
     if (role.id === guild.id) {
-      await interaction.update({
+      await interaction.reply({
         content: '❌ Cannot use @everyone as MVP role.',
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
@@ -439,20 +435,18 @@ async function handleRoleSelect(interaction, config) {
     if (config.richest_role_id === selectedRoleId) usedRoles.push('Richest');
     if (config.streak_role_id === selectedRoleId) usedRoles.push('Streaks');
     if (usedRoles.length > 0) {
-      await interaction.update({
+      await interaction.reply({
         content: `❌ This role is already assigned to ${usedRoles.join(', ')}.`,
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
 
     // Prevent selecting managed roles (bot roles, integrations)
     if (role.managed) {
-      await interaction.update({
+      await interaction.reply({
         content: '❌ Cannot use managed roles (bot roles, boosts, etc.) as MVP role.',
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
@@ -462,20 +456,18 @@ async function handleRoleSelect(interaction, config) {
     const botHighestRole = botMember.roles.highest;
 
     if (role.position >= botHighestRole.position) {
-      await interaction.update({
+      await interaction.reply({
         content: `❌ Cannot use this role. The bot's highest role (${botHighestRole.name}) must be above the MVP role in the role list.`,
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
 
     // Warn if role has dangerous permissions
     if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
-      await interaction.update({
+      await interaction.reply({
         content: '❌ Cannot use this role. MVP role should not have Administrator, Manage Server, or Manage Roles permissions.',
-        embeds: [],
-        components: []
+        flags: MessageFlags.Ephemeral
       });
       return;
     }
