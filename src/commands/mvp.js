@@ -434,6 +434,19 @@ async function handleRoleSelect(interaction, config) {
       return;
     }
 
+    // Prevent selecting a role already assigned to Richest or Streaks
+    const usedRoles = [];
+    if (config.richest_role_id === selectedRoleId) usedRoles.push('Richest');
+    if (config.streak_role_id === selectedRoleId) usedRoles.push('Streaks');
+    if (usedRoles.length > 0) {
+      await interaction.update({
+        content: `❌ This role is already assigned to **${usedRoles.join(', ')}**. Each role reward module must use a unique role.`,
+        embeds: [],
+        components: []
+      });
+      return;
+    }
+
     // Prevent selecting managed roles (bot roles, integrations)
     if (role.managed) {
       await interaction.update({

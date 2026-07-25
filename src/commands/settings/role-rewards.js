@@ -32,7 +32,18 @@ function checkRateLimit(key) {
 }
 
 // ── Role validation helper ────────────────────────────────────────────────────
-async function validateRoleChoice(interaction, roleId) {
+async function validateRoleChoice(interaction, roleId, currentModule) {
+    const config = await getGuildConfig(interaction.guildId) || {};
+
+    const usedRoles = [];
+    if (config.mvpRoleId === roleId) usedRoles.push('MVP');
+    if (currentModule !== 'richest' && config.richest_role_id === roleId) usedRoles.push('Richest');
+    if (currentModule !== 'streaks' && config.streak_role_id === roleId) usedRoles.push('Streaks');
+
+    if (usedRoles.length > 0) {
+        return { ok: false, msg: `❌ This role is already assigned to **${usedRoles.join(', ')}**. Each role reward module must use a unique role.` };
+    }
+
     const guild = interaction.guild;
     const role  = await guild.roles.fetch(roleId).catch(() => null);
     if (!role) return { ok: false, msg: '❌ Selected role not found.' };
@@ -266,7 +277,7 @@ export async function handleRoleRewardsComponent(interaction) {
                 return interaction.update({ content: '⚠️ Please wait a moment before changing settings again.', embeds: [], components: [] });
             }
 
-            const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId);
+            const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId, 'richest');
             if (!ok) return interaction.update({ content: msg, embeds: [], components: [] });
 
             const config = await getGuildConfig(guildId) || {};
@@ -333,7 +344,7 @@ export async function handleRoleRewardsComponent(interaction) {
                 return interaction.update({ content: '⚠️ Please wait a moment before changing settings again.', embeds: [], components: [] });
             }
 
-            const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId);
+            const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId, 'streaks');
             if (!ok) return interaction.update({ content: msg, embeds: [], components: [] });
 
             const config = await getGuildConfig(guildId) || {};
