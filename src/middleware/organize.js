@@ -1,4 +1,3 @@
-import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -18,17 +17,6 @@ const SOCIAL_MEDIA_DOMAINS = [
   'twitch.tv', 'www.twitch.tv', 'clips.twitch.tv', 'm.twitch.tv',
   'kick.com', 'www.kick.com'
 ];
-
-// Secondary fallback domain matrices for high availability
-const FALLBACK_MATRIX = {
-  tiktok: ['tnktok.com', 'vxtiktok.com'],
-  instagram: ['kkinstagram.com', 'igp.app'],
-  facebook: ['fixacebook.com'],
-  twitter: ['fixupx.com', 'fxtwitter.com']
-};
-
-// Lock to prevent concurrent processing during race conditions
-const pendingFixes = new Set();
 
 /**
  * Load filter config for a guild into the cache
@@ -157,245 +145,16 @@ export async function checkContentFilter(message) {
 }
 
 /**
- * Request high-quality direct video/image stream URL using Cobalt API.
- * Returns: { type: 'video'|'image', url: string } | null
- */
-async function fetchCobaltMediaUrl(targetUrl) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-
-    const response = await fetch('https://api.cobalt.tools/', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: JSON.stringify({ url: targetUrl }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-    if (!response.ok) return null;
-    const data = await response.json();
-
-    if (data.status === 'picker' && Array.isArray(data.picker) && data.picker.length > 0) {
-      const item = data.picker[0];
-      const isPhoto = item.type === 'photo' || item.type === 'image' || /\.(jpe?g|png|webp|gif)/i.test(item.url);
-      return {
-        type: isPhoto ? 'image' : 'video',
-        url: item.url
-      };
-    }
-
-    if (data.url) {
-      const isPhoto = data.status === 'photo' || data.type === 'image' || /\.(jpe?g|png|webp|gif)/i.test(data.url);
-      return {
-        type: isPhoto ? 'image' : 'video',
-        url: data.url
-      };
-    }
-
-    return null;
-  } catch (err) {
-    return null;
-  }
-}
-
-/**
- * Helper to fetch or create a bot-managed webhook for seamless user impersonation reposting.
- */
-async function getOrCreateWebhook(channel) {
-  try {
-    const webhooks = await channel.fetchWebhooks();
-    let webhook = webhooks.find(w => w.name === 'Medhat-FixEmbeds');
-    if (!webhook) {
-      webhook = await channel.createWebhook({
-        name: 'Medhat-FixEmbeds',
-        reason: 'Automated Social Media Fix Embeds Reposting'
-      });
-    }
-    return webhook;
-  } catch (err) {
-    return null;
-  }
-}
-
-/**
- * Posts top custom header embed as Message 1, followed by the verified playable video player as Message 2 directly underneath.
- */
-async function sendVerifiedVideoMessage(channel, webhook, authorUsername, authorAvatar, userId, targetUrl, candidates) {
-  // Message 1: Top Custom Header Embed Box
-  const headerDescription = webhook ? `shared a [video](${targetUrl})` : `<@${userId}> shared a [video](${targetUrl})`;
-  const customHeaderEmbed = new EmbedBuilder()
-    .setColor('#2B2D31')
-    .setDescription(headerDescription);
-
-  try {
-    if (webhook) {
-      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] });
-    } else {
-      await channel.send({ embeds: [customHeaderEmbed] });
-    }
-  } catch (err) {}
-
-  // Message 2: Playable Video Player Message
-  let playerMsg = null;
-
-  for (const candidateUrl of candidates) {
-    const content = `[\u2800](${candidateUrl})`;
-
-    try {
-      if (!playerMsg) {
-        if (webhook) {
-          playerMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content });
-        } else {
-          playerMsg = await channel.send({ content });
-        }
-      } else {
-        await playerMsg.edit({ content });
-      }
-
-      // Poll up to 3.5 seconds (7 iterations) to verify if Discord rendered a valid video embed
-      let isValidVideo = false;
-      let hasErrorOrNotice = false;
-
-      for (let attempt = 0; attempt < 7; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const refetched = await channel.messages.fetch(playerMsg.id).catch(() => null);
-        if (!refetched) break;
-
-        const embeds = refetched.embeds || [];
-
-        hasErrorOrNotice = embeds.some(e => {
-          const text = `${e.title || ''} ${e.description || ''} ${e.author?.name || ''}`;
-          return /legal request|no longer available|error|not found|404/i.test(text);
-        });
-
-        isValidVideo = embeds.some(e => e.video || e.data?.video || e.type === 'video');
-
-        if (hasErrorOrNotice) {
-          isValidVideo = false;
-          break; // Reject immediately on legal request / error notice
-        }
-
-        if (isValidVideo) break;
-      }
-
-      if (isValidVideo && !hasErrorOrNotice) {
-        return playerMsg; // Success! Locked in working candidate.
-      }
-    } catch (err) {
-      // Continue to next candidate
-    }
-  }
-
-  // If no candidate rendered a playable video, delete playerMsg so only header embed remains
-  if (playerMsg) {
-    await playerMsg.delete().catch(() => {});
-  }
-  return null;
-}
-
-/**
- * Custom Fix Embeds handler: Deletes original user message and posts a standalone custom embed
- * via Webhook using the user's avatar and name, with sequential 3-tier video/image verification.
+ * Fix Embeds handler: Native Discord Embed Mode.
+ * All social media links render using Discord's default native embed previews.
  */
 export async function processFixEmbeds(message, isEdit = false) {
-  const guildId = message.guild.id;
-
-  // Guard: Feature must be enabled AND channel configured for Socials Only (media_only)
-  const cached = filterCache.get(guildId);
-  if (!cached || !cached.fix_embeds || !cached.media_only.has(message.channel.id)) return;
-
-  // Ignore edits or bot messages for custom standalone reposting
-  if (isEdit || message.author.bot) return;
-
-  const content = message.content || '';
-  const urls = extractUrls(content).filter(u => isSocialMediaUrl(u));
-  if (urls.length === 0) return;
-
-  if (pendingFixes.has(message.id)) return;
-  pendingFixes.add(message.id);
-
-  try {
-    const targetUrl = urls[0];
-    let mediaInfo = await fetchCobaltMediaUrl(targetUrl);
-
-    // Build candidate list for video testing in order
-    const candidateUrls = [];
-    if (mediaInfo?.url && mediaInfo.type !== 'image') {
-      candidateUrls.push(mediaInfo.url);
-    }
-
-    const platformRules = [
-      { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.tiktok },
-      { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.instagram },
-      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, matrix: FALLBACK_MATRIX.facebook },
-      { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.twitter }
-    ];
-
-    const matchedPlatform = platformRules.find(p => p.pattern.test(targetUrl));
-    if (matchedPlatform && matchedPlatform.matrix) {
-      for (const domain of matchedPlatform.matrix) {
-        const proxyUrl = targetUrl.replace(matchedPlatform.pattern, `$1${domain}`);
-        if (!candidateUrls.includes(proxyUrl)) {
-          candidateUrls.push(proxyUrl);
-        }
-      }
-    }
-    if (!candidateUrls.includes(targetUrl)) {
-      candidateUrls.push(targetUrl);
-    }
-
-    const isImage = mediaInfo?.type === 'image';
-    const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
-    const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
-    const webhook = await getOrCreateWebhook(message.channel);
-
-    let sentMsg;
-
-    if (isImage) {
-      const embed = new EmbedBuilder()
-        .setColor('#2B2D31')
-        .setDescription(`shared an [image](${targetUrl})`);
-
-      if (mediaInfo?.url) {
-        embed.setImage(mediaInfo.url);
-      }
-
-      if (webhook) {
-        sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [embed] });
-      } else {
-        sentMsg = await message.channel.send({ content: `<@${message.author.id}> shared an [image](${targetUrl})`, embeds: [embed] });
-      }
-    } else {
-      // Sequential video verification engine
-      sentMsg = await sendVerifiedVideoMessage(message.channel, webhook, authorUsername, authorAvatar, message.author.id, targetUrl, candidateUrls);
-    }
-
-    // Delete user's original message
-    await message.delete().catch(() => {});
-
-    // Add automated reactions sequentially: 👍, ❤️, 😂, 😭
-    if (sentMsg && sentMsg.react) {
-      const emojis = ['👍', '❤️', '😂', '😭'];
-      for (const emoji of emojis) {
-        await sentMsg.react(emoji).catch(() => {});
-      }
-    }
-
-  } catch (error) {
-    sysError('Custom Fix Embed Repost Failed', error, { guild: guildId, channel: message.channel.id });
-  } finally {
-    pendingFixes.delete(message.id);
-  }
+  // Uses 100% Discord native default embed previews for all social links
 }
 
 /**
- * Force-clean (no-op retained for backwards interface compatibility)
+ * Cleanup handler (retained for interface compatibility)
  */
 export async function handleFixedEmbedCleanup(channel, messageId) {
-  // Standalone messages manage their own lifecycle
+  // Native embeds manage their own lifecycle
 }
