@@ -237,7 +237,7 @@ export async function showColorPanel(interaction, type = 'normal') {
   const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
-      .setLabel('Back to Settings') // Updated label
+      .setLabel('Back') // Updated label
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()

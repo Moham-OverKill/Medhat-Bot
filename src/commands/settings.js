@@ -152,11 +152,11 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Back to Settings
+    // Row 3: Back
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
-            .setLabel('Back to Settings')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -206,11 +206,11 @@ export async function showOtherSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Back to Settings
+    // Row 3: Back
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
-            .setLabel('Back to Settings')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );

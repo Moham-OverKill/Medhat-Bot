@@ -306,7 +306,7 @@ export async function showSetupPanel(interaction, config) {
     .addComponents(
       new ButtonBuilder()
         .setCustomId('settings_users_roles')
-        .setLabel('Back to Roles')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );

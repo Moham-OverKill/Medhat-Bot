@@ -31,7 +31,7 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Row 2: Roles + Anti-Cheat
+    // Row 2: Roles, Anti-Cheat, Back
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users_roles')
@@ -42,14 +42,10 @@ export async function showUserSelector(interaction) {
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
             .setEmoji('🛡️')
-            .setStyle(ButtonStyle.Primary)
-    );
-
-    // Row 3: Back to Settings
-    const backRow = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
             .setCustomId('settings_back')
-            .setLabel('Back to Settings')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -57,7 +53,7 @@ export async function showUserSelector(interaction) {
     const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(select), actionRow, backRow]
+        components: [new ActionRowBuilder().addComponents(select), actionRow]
     });
 }
 
@@ -130,7 +126,7 @@ export async function showUserDashboard(interaction, targetUserId) {
         const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('settings_back')
-                .setLabel('Back to Settings')
+                .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()

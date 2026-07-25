@@ -76,7 +76,7 @@ async function getRewardsPayload(guildId) {
 
   // Row 3: Navigation
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };
@@ -181,7 +181,7 @@ export async function handleRewardsComponent(interaction) {
 
       const row = new ActionRowBuilder().addComponents(userSelect);
       const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
 
       await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
@@ -360,7 +360,7 @@ export async function handleRewardsModal(interaction) {
 
         const row = new ActionRowBuilder().addComponents(userSelect);
         const backRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('settings_coins').setLabel('Back to Coins').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
 
         await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
