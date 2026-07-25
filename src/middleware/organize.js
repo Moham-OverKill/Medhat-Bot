@@ -1,3 +1,4 @@
+import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -144,12 +145,95 @@ export async function checkContentFilter(message) {
   return true;
 }
 
+// Lock to prevent concurrent processing during race conditions
+const pendingFixes = new Set();
+
 /**
- * Fix Embeds handler: Native Discord Embed Mode.
- * All social media links render using Discord's default native embed previews.
+ * Helper to fetch or create a bot-managed webhook for seamless user impersonation reposting.
+ */
+async function getOrCreateWebhook(channel) {
+  try {
+    const webhooks = await channel.fetchWebhooks();
+    let webhook = webhooks.find(w => w.name === 'Medhat-FixEmbeds');
+    if (!webhook) {
+      webhook = await channel.createWebhook({
+        name: 'Medhat-FixEmbeds',
+        reason: 'Automated Social Media Fix Embeds Reposting'
+      });
+    }
+    return webhook;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Fix Embeds handler: Deletes original user message and posts:
+ * - Message 1: Custom top header embed box (@user shared a video).
+ * - Message 2: Discord default native embed for original targetUrl.
+ * - Sequential automated reactions (👍, ❤️, 😂, 😭).
  */
 export async function processFixEmbeds(message, isEdit = false) {
-  // Uses 100% Discord native default embed previews for all social links
+  const guildId = message.guild.id;
+
+  // Guard: Feature must be enabled AND channel configured for Socials Only (media_only)
+  const cached = filterCache.get(guildId);
+  if (!cached || !cached.fix_embeds || !cached.media_only.has(message.channel.id)) return;
+
+  // Ignore edits or bot messages
+  if (isEdit || message.author.bot) return;
+
+  const content = message.content || '';
+  const urls = extractUrls(content).filter(u => isSocialMediaUrl(u));
+  if (urls.length === 0) return;
+
+  if (pendingFixes.has(message.id)) return;
+  pendingFixes.add(message.id);
+
+  try {
+    const targetUrl = urls[0];
+    const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
+    const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
+    const webhook = await getOrCreateWebhook(message.channel);
+
+    // Message 1: Top Custom Header Embed Box
+    const headerText = webhook ? `shared a [video](${targetUrl})` : `<@${message.author.id}> shared a [video](${targetUrl})`;
+    const customHeaderEmbed = new EmbedBuilder()
+      .setColor('#2B2D31')
+      .setDescription(headerText);
+
+    if (webhook) {
+      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] }).catch(() => {});
+    } else {
+      await message.channel.send({ embeds: [customHeaderEmbed] }).catch(() => {});
+    }
+
+    // Message 2: Playable Video Player using Discord Default Native Embed for targetUrl
+    let sentMsg;
+    const videoContent = `[\u2800](${targetUrl})`;
+
+    if (webhook) {
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: videoContent });
+    } else {
+      sentMsg = await message.channel.send({ content: videoContent });
+    }
+
+    // Delete user's original message
+    await message.delete().catch(() => {});
+
+    // Add automated reactions sequentially: 👍, ❤️, 😂, 😭
+    if (sentMsg && sentMsg.react) {
+      const emojis = ['👍', '❤️', '😂', '😭'];
+      for (const emoji of emojis) {
+        await sentMsg.react(emoji).catch(() => {});
+      }
+    }
+
+  } catch (error) {
+    sysError('Fix Embed Repost Failed', error, { guild: guildId, channel: message.channel.id });
+  } finally {
+    pendingFixes.delete(message.id);
+  }
 }
 
 /**
