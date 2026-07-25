@@ -243,10 +243,9 @@ export async function processFixEmbeds(message, isEdit = false) {
     }
 
     const isImage = mediaInfo?.type === 'image';
-    const authorName = message.author.displayName || message.author.username;
     const mediaWord = isImage ? 'image' : 'video';
-    const formattedText = `${authorName} shared a [${mediaWord}](${targetUrl})`;
     const activeMediaUrl = mediaInfo?.url || targetUrl;
+    const formattedText = `<@${message.author.id}> shared a [${mediaWord}](${activeMediaUrl})`;
 
     let sentMsg;
 
@@ -262,9 +261,8 @@ export async function processFixEmbeds(message, isEdit = false) {
 
       sentMsg = await message.channel.send({ embeds: [embed] });
     } else {
-      // Video Post: Formatted text (only 'video' hyperlinked) + stream/target URL for native playable player
-      const videoContent = `${formattedText}\n${activeMediaUrl}`;
-      sentMsg = await message.channel.send({ content: videoContent });
+      // Video Post: User mention + hyperlinked word 'video' (no raw URL line)
+      sentMsg = await message.channel.send({ content: formattedText });
     }
 
     // Delete user's original message
