@@ -342,7 +342,10 @@ export async function processFixEmbeds(message, isEdit = false) {
   pendingFixes.add(message.id);
 
   try {
-    const fixedContent = instaUrls.map(u => u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com')).join('\n');
+    const fixedContent = instaUrls.map(u => {
+      const kkUrl = u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com');
+      return `[\u2800](${kkUrl})`;
+    }).join('\n');
 
     await message.reply({ content: fixedContent, allowedMentions: { repliedUser: false } }).catch(() => {});
   } catch (error) {
