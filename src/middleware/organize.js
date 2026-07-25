@@ -5,15 +5,17 @@ import { sysLog, sysError } from '../utils/logger.js';
 const filterCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Allowed social media domains for "media_only" rule
+// Allowed social media domains for "media_only" (Socials Only) rule
 const SOCIAL_MEDIA_DOMAINS = [
   'youtube.com', 'youtu.be', 'www.youtube.com', 'm.youtube.com',
-  'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com',
+  'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
   'instagram.com', 'www.instagram.com',
   'reddit.com', 'www.reddit.com', 'old.reddit.com',
   'x.com', 'www.x.com',
   'twitter.com', 'www.twitter.com', 'mobile.twitter.com',
-  'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.watch'
+  'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.watch',
+  'twitch.tv', 'www.twitch.tv', 'clips.twitch.tv', 'm.twitch.tv',
+  'kick.com', 'www.kick.com'
 ];
 
 // Domains used for the "Fix Embeds" feature
@@ -94,11 +96,12 @@ function isSocialMediaUrl(url) {
 }
 
 /**
- * Extract all URLs from message content
+ * Extract all URLs from message content (including markdown targets)
  */
 function extractUrls(content) {
-  const urlPattern = /https?:\/\/[^\s<]+/gi;
-  return content.match(urlPattern) || [];
+  const urlPattern = /https?:\/\/[^\s<>)"']+/gi;
+  const matches = content.match(urlPattern) || [];
+  return matches.map(u => u.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\]\[]+$/, ''));
 }
 
 /**
@@ -132,14 +135,16 @@ export async function checkContentFilter(message) {
   if (applicableRules.length === 0) return false;
 
   const content = (message.content || '').trim();
-  const hasMarkdownLink = /\[[^\]]+\]\(\s*https?:\/\/[^\s)]+\s*\)/i.test(content);
 
   for (const rule of applicableRules) {
     switch (rule) {
       case 'links_only': {
-        if (hasMarkdownLink) break;
-        // Passes if message starts with http:// or https://
-        if (content.startsWith('http://') || content.startsWith('https://')) return false;
+        const urls = extractUrls(content);
+        if (urls.length > 0) {
+          if (content.startsWith('http://') || content.startsWith('https://') || content.startsWith('[')) {
+            if (urls.every(url => url.startsWith('http://') || url.startsWith('https://'))) return false;
+          }
+        }
         break;
       }
       case 'images_only': {
@@ -150,8 +155,7 @@ export async function checkContentFilter(message) {
         break;
       }
       case 'media_only': {
-        if (hasMarkdownLink) break;
-        // Strict Check: If links are present, EVERY link must be a valid social media URL.
+        // Strict Check: If links are present, EVERY link target must be a valid social media URL.
         // If NO links are present, this specific rule fails (may be saved by images_only).
         const urls = extractUrls(content);
         if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url))) return false;
