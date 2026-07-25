@@ -78,22 +78,20 @@ async function runHourlyRefresh(client, isStartup = false) {
     }
 
     // ── STEP 2.5: Apply Richest & Streak role rewards ──
-    if (!isStartup) {
-        const { applyRichestRole, applyStreakRole } = await import('../mvp/role-assignment.js');
-        for (const guildId of guildIds) {
-            await runInGuildContext(guildId, async () => {
-                try {
-                    await applyRichestRole(client, guildId);
-                } catch (err) {
-                    sysError('Richest Role Apply Failed', err, { guild: guildId });
-                }
-                try {
-                    await applyStreakRole(client, guildId);
-                } catch (err) {
-                    sysError('Streak Role Apply Failed', err, { guild: guildId });
-                }
-            });
-        }
+    const { applyRichestRole, applyStreakRole } = await import('../mvp/role-assignment.js');
+    for (const guildId of guildIds) {
+        await runInGuildContext(guildId, async () => {
+            try {
+                await applyRichestRole(client, guildId);
+            } catch (err) {
+                sysError('Richest Role Apply Failed', err, { guild: guildId });
+            }
+            try {
+                await applyStreakRole(client, guildId);
+            } catch (err) {
+                sysError('Streak Role Apply Failed', err, { guild: guildId });
+            }
+        });
     }
 
     // ── STEP 3: Run KotH MVP cycle (roles + coins) for each guild ──
