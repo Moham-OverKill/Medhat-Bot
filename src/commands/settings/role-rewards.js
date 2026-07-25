@@ -175,7 +175,10 @@ export async function showRoleRewardsMenu(interaction) {
             .setCustomId('role_rewards_streaks')
             .setLabel('Streaks')
             .setEmoji('🔥')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
             .setLabel('Back')
@@ -189,7 +192,7 @@ export async function showRoleRewardsMenu(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1]
+        components: [row1, row2]
     });
 }
 
