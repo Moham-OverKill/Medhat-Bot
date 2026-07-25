@@ -337,8 +337,8 @@ export async function processFixEmbeds(message, isEdit = false) {
     const titleLine = metadata.title ? `**${metadata.title}**` : '';
 
     const singleMessageContent = titleLine
-      ? `${prefix}${userHeader}\n${titleLine} [\u2800](${activeMediaUrl})`
-      : `${prefix}${userHeader} [\u2800](${activeMediaUrl})`;
+      ? `${prefix}${userHeader}\n${titleLine}\n${activeMediaUrl}`
+      : `${prefix}${userHeader}\n${activeMediaUrl}`;
 
     let sentMsg;
     if (webhook) {
