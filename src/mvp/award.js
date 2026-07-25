@@ -515,43 +515,30 @@ function describeRemovalError(error) {
  * This handles cases where the bot just joined or roles were assigned manually
  */
 async function fetchMembersWithRoleFallback(guild, roleId) {
-
   const holders = new Map();
-  let lastId;
-  let hasMore = true;
-  let attempt = 0;
+  
+  // 1. Primary: Use cached members on the role object (instant & reliable)
+  const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+  if (!role) return [];
 
-  while (hasMore) {
-    const fetchOptions = { limit: 1000, withPresences: false, force: true };
-    if (lastId) fetchOptions.after = lastId;
-
-    let batch;
-    try {
-      batch = await guild.members.fetch(fetchOptions);
-    } catch (error) {
-      const isTimeoutError = error.message?.toLowerCase().includes('timed out') || error.message?.toLowerCase().includes('timeout');
-      if (isTimeoutError && attempt < ROLE_CLEANUP_MAX_ATTEMPTS) {
-        attempt += 1;
-        await sleep(ROLE_CLEANUP_ATTEMPT_BACKOFF_MS * attempt);
-        continue;
-      }
-      sysError('Role Fetch Failed', error, { guild: guild.id, detail: `Role: ${roleId}` });
-      throw error;
+  if (role.members && role.members.size > 0) {
+    for (const [id, member] of role.members) {
+      holders.set(id, member);
     }
+  }
 
-    if (!batch || batch.size === 0) {
-      break;
-    }
-
-    for (const [memberId, member] of batch) {
-      if (member.roles.cache.has(roleId)) {
-        holders.set(memberId, member);
+  // 2. Best-effort gateway fetch for uncached members with safe catch
+  try {
+    const batch = await guild.members.fetch({ limit: 1000, time: 4000 }).catch(() => null);
+    if (batch) {
+      for (const [memberId, member] of batch) {
+        if (member.roles.cache.has(roleId)) {
+          holders.set(memberId, member);
+        }
       }
     }
-
-    const sortedIds = Array.from(batch.keys()).sort((a, b) => (BigInt(a) > BigInt(b) ? 1 : -1));
-    lastId = sortedIds[sortedIds.length - 1];
-    hasMore = batch.size === 1000;
+  } catch (err) {
+    sysLog('MVP Role Fetch Fallback to Cache', { guild: guild.id, role: roleId, detail: err?.message });
   }
 
   return Array.from(holders.values());
