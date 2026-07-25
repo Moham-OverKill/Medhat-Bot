@@ -12,21 +12,28 @@ import {
     TextInputBuilder,
     TextInputStyle
 } from 'discord.js';
-// Config imports moved to dynamic imports within handlers to prevent scope errors
+import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
-import { handleRewardsSetup as showRewardsPanel } from './rewards.js';
+import { handleRewardsSetup as showRewardsPanel, handleRewardsComponent } from './rewards.js';
 import { showColorPanel as showColorsPanel, handleColorsComponent } from './colors.js';
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from './leaderboard.js';
 import { 
     handleLeaderboardSettings, 
     handleLeaderboardCategorySelect, 
     handleLeaderboardChannelSelect as handleLeaderboardChannelSelectV2,
-    handleLeaderboardRefresh as handleLeaderboardRefreshV2
+    handleLeaderboardRefresh as handleLeaderboardRefreshV2,
+    handleLeaderboardDisable
 } from './settings/leaderboards.js';
+import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
+import { showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
+import { handleLogsSettings, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
+import { handleEconomySettings } from './settings/economy.js';
+import { handleOrganizeComponent } from './settings/organize.js';
+import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { COIN_EMOJI } from '../shared.js';
+import { COIN_EMOJI, getUserLogName } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -562,13 +569,11 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_users_roles') {
-            const { showRoleRewardsMenu } = await import('./settings/role-rewards.js');
             await showRoleRewardsMenu(interaction);
             return;
         }
 
         if (customId.startsWith('role_rewards_')) {
-            const { handleRoleRewardsComponent } = await import('./settings/role-rewards.js');
             await handleRoleRewardsComponent(interaction);
             return;
         }
@@ -589,49 +594,41 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_users') {
-            const { showUserSelector } = await import('./admin-users.js');
             await showUserSelector(interaction);
             return;
         }
 
         if (customId === 'settings_logs') {
-            const { handleLogsSettings } = await import('./settings/logs.js');
             await handleLogsSettings(interaction);
             return;
         }
 
         if (customId === 'settings_economy' || customId.startsWith('economy_') || customId.startsWith('eco_')) {
-            const { handleEconomySettings } = await import('./settings/economy.js');
             await handleEconomySettings(interaction);
             return;
         }
 
         if (customId === 'settings_organize' || customId.startsWith('organize_')) {
-            const { handleOrganizeComponent } = await import('./settings/organize.js');
             await handleOrganizeComponent(interaction);
             return;
         }
 
         if (customId === 'quests_dashboard' || customId.startsWith('quests_')) {
-            const { handleQuestsComponent } = await import('./quests-dashboard.js');
             await handleQuestsComponent(interaction);
             return;
         }
 
         if (customId === 'logs_category_select') {
-            const { handleLogCategorySelect } = await import('./settings/logs.js');
             await handleLogCategorySelect(interaction);
             return;
         }
 
         if (customId.startsWith('logs_channel_select_')) {
-            const { handleLogChannelSelect } = await import('./settings/logs.js');
             await handleLogChannelSelect(interaction);
             return;
         }
 
         if (customId.startsWith('logs_disable_btn_')) {
-            const { handleLogDisable } = await import('./settings/logs.js');
             await handleLogDisable(interaction);
             return;
         }
@@ -647,7 +644,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId.startsWith('lb_disable_')) {
-            const { handleLeaderboardDisable } = await import('./settings/leaderboards.js');
             await handleLeaderboardDisable(interaction);
             return;
         }
@@ -664,7 +660,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'rewards_give_btn' || customId.startsWith('rewards_')) {
-            const { handleRewardsComponent } = await import('./rewards.js');
             await handleRewardsComponent(interaction);
             return;
         }
@@ -675,7 +670,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId.startsWith('admin_user_')) {
-            const { handleAdminUserComponent } = await import('./admin-users.js');
             await handleAdminUserComponent(interaction);
             return;
         }
