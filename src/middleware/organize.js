@@ -224,30 +224,31 @@ async function getOrCreateWebhook(channel) {
 
 /**
  * Tests candidate URLs sequentially until a working video player renders cleanly without errors.
- * Uses <targetUrl> angle brackets when testing proxy candidates to suppress duplicate native embeds.
+ * Renders "@user shared a video" inside a clean top embed box, with the playable video player rendered underneath.
  */
 async function sendVerifiedVideoMessage(channel, webhook, authorUsername, authorAvatar, userId, targetUrl, candidates) {
   let sentMsg = null;
-  const cleanBaseText = `shared a [video](${targetUrl})`;
-  const cleanFallbackText = webhook ? cleanBaseText : `<@${userId}> ${cleanBaseText}`;
+  const headerDescription = webhook ? `shared a [video](${targetUrl})` : `<@${userId}> shared a [video](${targetUrl})`;
+  
+  const customHeaderEmbed = new EmbedBuilder()
+    .setColor('#2B2D31')
+    .setDescription(headerDescription);
 
   for (const candidateUrl of candidates) {
-    const isProxy = candidateUrl !== targetUrl;
-    // Suppress targetUrl embed using angle brackets <targetUrl> if candidateUrl is a proxy
-    const linkText = isProxy ? `[video](<${targetUrl}>)` : `[video](${targetUrl})`;
-    const baseText = `shared a ${linkText}`;
-    const headerText = webhook ? baseText : `<@${userId}> ${baseText}`;
-    const content = isProxy ? `${headerText} [\u2800](${candidateUrl})` : headerText;
+    const payload = {
+      content: `[\u2800](${candidateUrl})`,
+      embeds: [customHeaderEmbed]
+    };
 
     try {
       if (!sentMsg) {
         if (webhook) {
-          sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content });
+          sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, ...payload });
         } else {
-          sentMsg = await channel.send({ content });
+          sentMsg = await channel.send(payload);
         }
       } else {
-        await sentMsg.edit({ content });
+        await sentMsg.edit(payload);
       }
 
       // Poll up to 3.5 seconds (7 iterations) to verify if Discord rendered a valid video embed
@@ -284,14 +285,15 @@ async function sendVerifiedVideoMessage(channel, webhook, authorUsername, author
     }
   }
 
-  // Final Fallback: Edit message to clean text hyperlink without broken proxy embeds
+  // Final Fallback: Edit message to keep clean custom top embed without broken proxy embeds
+  const fallbackPayload = { content: ' ', embeds: [customHeaderEmbed] };
   if (sentMsg) {
-    await sentMsg.edit({ content: cleanFallbackText }).catch(() => {});
+    await sentMsg.edit(fallbackPayload).catch(() => {});
   } else {
     if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: cleanFallbackText });
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, ...fallbackPayload });
     } else {
-      sentMsg = await channel.send({ content: cleanFallbackText });
+      sentMsg = await channel.send(fallbackPayload);
     }
   }
   return sentMsg;
