@@ -247,15 +247,19 @@ async function fetchMediaMetadata(targetUrl) {
 }
 
 /**
- * Check if the previous message in the channel was sent by the bot/webhook within the last 10 minutes.
- * Returns true if a code block separator (``` ```) should be added to prevent grouped message clutter.
+ * Check if the previous message in the channel (excluding the current user link message)
+ * was sent by the bot or a webhook within the last 10 minutes.
  */
-async function shouldAddSeparator(channel) {
+async function shouldAddSeparator(channel, currentMsgId) {
   try {
-    const lastMessages = await channel.messages.fetch({ limit: 2 }).catch(() => null);
+    const lastMessages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
     if (!lastMessages || lastMessages.size === 0) return false;
 
-    const prevMsg = lastMessages.first();
+    // Filter out the incoming user message being processed/deleted
+    const otherMessages = lastMessages.filter(m => m.id !== currentMsgId);
+    if (otherMessages.size === 0) return false;
+
+    const prevMsg = otherMessages.first();
     if (!prevMsg) return false;
 
     const isFromBotOrWebhook = prevMsg.author.bot || !!prevMsg.webhookId;
@@ -310,8 +314,8 @@ export async function processFixEmbeds(message, isEdit = false) {
       })
       .setDescription(`shared ${mediaWord}:`);
 
-    // Conditionally send ``` ``` divider ONLY if previous message was from bot/webhook within <10 mins
-    const addSeparator = await shouldAddSeparator(message.channel);
+    // Conditionally send ``` ``` divider ONLY if previous message in channel was from bot/webhook within <10 mins
+    const addSeparator = await shouldAddSeparator(message.channel, message.id);
     const codeBlockContent = addSeparator ? '```\u2800```' : undefined;
 
     if (webhook) {
