@@ -41,7 +41,7 @@ async function validateRoleChoice(interaction, roleId, currentModule) {
     if (currentModule !== 'streaks' && config.streak_role_id === roleId) usedRoles.push('Streaks');
 
     if (usedRoles.length > 0) {
-        return { ok: false, msg: `❌ This role is already assigned to **${usedRoles.join(', ')}**. Each role reward module must use a unique role.` };
+        return { ok: false, msg: `❌ This role is already assigned to ${usedRoles.join(', ')}.` };
     }
 
     const guild = interaction.guild;
