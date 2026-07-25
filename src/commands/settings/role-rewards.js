@@ -119,19 +119,19 @@ function buildRoleRewardPanel(type, config) {
         .addOptions(winnersOptions);
     components.push(new ActionRowBuilder().addComponents(winnersSelect));
 
-    // Row 3: Toggle + Back
+    // Row 3: Back + Toggle
     components.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_users_roles')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(toggleId)
             .setLabel(enabled ? 'Disable' : 'Enable')
             .setEmoji(enabled ? '✖️' : '▶️')
             .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-            .setDisabled(!canEnable && !enabled),
-        new ButtonBuilder()
-            .setCustomId('settings_users_roles')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(!canEnable && !enabled)
     ));
 
     return { embed, components };
