@@ -168,9 +168,53 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
- * Fix Embeds handler: Deletes original user message and posts:
- * - Message 1: Custom top header embed box (@user shared a video).
- * - Message 2: Discord default native embed for original targetUrl.
+ * Fast oEmbed title extractor for YouTube, TikTok, and web metadata.
+ */
+async function fetchVideoTitle(targetUrl) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+
+    if (/(youtube\.com|youtu\.be)/i.test(targetUrl)) {
+      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(targetUrl)}&format=json`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title) return data.title;
+      }
+    }
+
+    if (/tiktok\.com/i.test(targetUrl)) {
+      const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(targetUrl)}`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title) return data.title;
+      }
+    }
+
+    const res = await fetch(targetUrl, {
+      headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const html = await res.text();
+      const match = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+                    html.match(/<title>([^<]+)<\/title>/i);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+  } catch (err) {}
+  return null;
+}
+
+/**
+ * Fix Embeds handler: Deletes user message and posts a single zero-gap message:
+ * - Line 1: @user shared a video:
+ * - Line 2: [Video Title](targetUrl) [\u2800](targetUrl) (Same line prevents vertical gap!)
+ * - Discord native playable video player card rendered directly underneath.
  * - Sequential automated reactions (👍, ❤️, 😂, 😭).
  */
 export async function processFixEmbeds(message, isEdit = false) {
@@ -196,26 +240,18 @@ export async function processFixEmbeds(message, isEdit = false) {
     const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
     const webhook = await getOrCreateWebhook(message.channel);
 
-    // Message 1: Top Custom Header Embed Box
-    const headerText = webhook ? `shared a [video](${targetUrl})` : `<@${message.author.id}> shared a [video](${targetUrl})`;
-    const customHeaderEmbed = new EmbedBuilder()
-      .setColor('#2B2D31')
-      .setDescription(headerText);
+    const videoTitle = await fetchVideoTitle(targetUrl);
+    const titleLink = videoTitle ? `[**${videoTitle}**](${targetUrl})` : `[video](${targetUrl})`;
 
-    if (webhook) {
-      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] }).catch(() => {});
-    } else {
-      await message.channel.send({ embeds: [customHeaderEmbed] }).catch(() => {});
-    }
+    // Format Line 1 and Line 2 on the exact same text block so invisible link doesn't create Line 3 empty space
+    const userHeader = webhook ? `shared a video:` : `<@${message.author.id}> shared a video:`;
+    const singleMessageContent = `${userHeader}\n${titleLink} [\u2800](${targetUrl})`;
 
-    // Message 2: Playable Video Player using Discord Default Native Embed for targetUrl
     let sentMsg;
-    const videoContent = `[\u2800](${targetUrl})`;
-
     if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: videoContent });
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: singleMessageContent });
     } else {
-      sentMsg = await message.channel.send({ content: videoContent });
+      sentMsg = await message.channel.send({ content: singleMessageContent });
     }
 
     // Delete user's original message
