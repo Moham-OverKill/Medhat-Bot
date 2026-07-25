@@ -113,17 +113,18 @@ export async function processFixEmbeds(message, isEdit = false) {
       } catch (err) {}
     }
 
+    // 1. Universal Check: Attempt media extraction via Cobalt API for ANY URL
+    const cobaltStreamUrl = await fetchCobaltMediaUrl(modifiedUrl);
+    if (cobaltStreamUrl) {
+      fixedUrls.push(cobaltStreamUrl);
+      continue;
+    }
+
+    // 2. Secondary Fallback: If Cobalt returns null, check secondary domain proxies for known sites
     const matchedPlatform = targetPlatforms.find(p => p.pattern.test(modifiedUrl));
-    if (matchedPlatform) {
-      // 1. Primary: Try extracting clean stream via Cobalt Engine API
-      const cobaltStreamUrl = await fetchCobaltMediaUrl(modifiedUrl);
-      if (cobaltStreamUrl) {
-        fixedUrls.push(cobaltStreamUrl);
-      } else {
-        // 2. Secondary Fallback: Use reliable fallback domain proxy
-        const fallbackUrl = modifiedUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
-        fixedUrls.push(fallbackUrl);
-      }
+    if (matchedPlatform && matchedPlatform.fallback) {
+      const fallbackUrl = modifiedUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
+      fixedUrls.push(fallbackUrl);
     }
   }
 
@@ -246,8 +247,9 @@ export async function processFixEmbeds(message, isEdit = false) {
       }
 
     } else if (fetchedBotReply) {
-      // Fail Route: 15 seconds passed and no playable content appeared.
+      // Fail Route: No playable content appeared on bot reply -> delete reply & restore Discord native embed
       await fetchedBotReply.delete().catch(() => {});
+      await message.suppressEmbeds(false).catch(() => {});
       fixedEmbedTracker.delete(message.id);
     }
   } catch (error) {
