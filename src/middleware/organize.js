@@ -204,8 +204,27 @@ async function fetchCobaltMediaUrl(targetUrl) {
 }
 
 /**
+ * Helper to fetch or create a bot-managed webhook for seamless user impersonation reposting.
+ */
+async function getOrCreateWebhook(channel) {
+  try {
+    const webhooks = await channel.fetchWebhooks();
+    let webhook = webhooks.find(w => w.name === 'Medhat-FixEmbeds');
+    if (!webhook) {
+      webhook = await channel.createWebhook({
+        name: 'Medhat-FixEmbeds',
+        reason: 'Automated Social Media Fix Embeds Reposting'
+      });
+    }
+    return webhook;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * Custom Fix Embeds handler: Deletes original user message and posts a standalone custom embed
- * with 3-tier video/image fallbacks and sequential automated reactions.
+ * via Webhook using the user's avatar and name, with 3-tier video/image fallbacks and sequential automated reactions.
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
@@ -247,34 +266,59 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = mediaInfo?.type === 'image';
     const mediaWord = isImage ? 'image' : 'video';
     const activeMediaUrl = mediaInfo?.url || targetUrl;
-    const formattedText = `<@${message.author.id}> shared a [${mediaWord}](${targetUrl})`;
+    const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
+    const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
 
+    const webhook = await getOrCreateWebhook(message.channel);
     let sentMsg;
 
     if (isImage) {
-      // Image Post: Clean embed without profile header, hyperlinking only the word 'image'
+      // Image Post
       const embed = new EmbedBuilder()
         .setColor('#2B2D31')
-        .setDescription(formattedText);
+        .setDescription(`shared an [image](${targetUrl})`);
 
       if (mediaInfo?.url) {
         embed.setImage(mediaInfo.url);
       }
 
-      sentMsg = await message.channel.send({ embeds: [embed] });
+      if (webhook) {
+        sentMsg = await webhook.send({
+          username: authorUsername,
+          avatarURL: authorAvatar,
+          embeds: [embed]
+        });
+      } else {
+        sentMsg = await message.channel.send({
+          content: `<@${message.author.id}> shared an [image](${targetUrl})`,
+          embeds: [embed]
+        });
+      }
     } else {
-      // Video Post: User mention + hyperlinked word 'video' + invisible media link (no raw URL line)
-      const videoContent = `${formattedText} [\u2800](${activeMediaUrl})`;
-      sentMsg = await message.channel.send({ content: videoContent });
+      // Video Post: Webhook post under user's avatar & name with hyperlinked 'video' and invisible media stream link
+      const videoText = `shared a [video](${targetUrl}) [\u2800](${activeMediaUrl})`;
+      if (webhook) {
+        sentMsg = await webhook.send({
+          username: authorUsername,
+          avatarURL: authorAvatar,
+          content: videoText
+        });
+      } else {
+        sentMsg = await message.channel.send({
+          content: `<@${message.author.id}> ${videoText}`
+        });
+      }
     }
 
     // Delete user's original message
     await message.delete().catch(() => {});
 
     // Add automated reactions sequentially: 👍, ❤️, 😂, 😭
-    const emojis = ['👍', '❤️', '😂', '😭'];
-    for (const emoji of emojis) {
-      await sentMsg.react(emoji).catch(() => {});
+    if (sentMsg && sentMsg.react) {
+      const emojis = ['👍', '❤️', '😂', '😭'];
+      for (const emoji of emojis) {
+        await sentMsg.react(emoji).catch(() => {});
+      }
     }
 
   } catch (error) {
