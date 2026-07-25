@@ -324,38 +324,10 @@ async function shouldAddSeparator(channel, currentMsgId) {
 }
 
 /**
- * Fix Embeds handler:
- * When a user sends an Instagram media post/reel link, the bot replies with the fixed ddinstagram.com link.
+ * Fix Embeds handler: Disabled.
  */
-export async function processFixEmbeds(message, isEdit = false) {
-  const guildId = message.guild.id;
-
-  // Guard: Feature must be enabled
-  const cached = filterCache.get(guildId);
-  if (!cached || !cached.fix_embeds) return;
-
-  // Ignore edits or bot messages
-  if (isEdit || message.author.bot) return;
-
-  const content = message.content || '';
-  const instaUrls = extractUrls(content).filter(u => /(instagram\.com|instagr\.am)/i.test(u) && isMediaPostUrl(u));
-  if (instaUrls.length === 0) return;
-
-  if (pendingFixes.has(message.id)) return;
-  pendingFixes.add(message.id);
-
-  try {
-    const fixedContent = instaUrls.map(u => {
-      const kkUrl = u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com');
-      return `[\u2800](${kkUrl})`;
-    }).join('\n');
-
-    await message.reply({ content: fixedContent, allowedMentions: { repliedUser: false } }).catch(() => {});
-  } catch (error) {
-    sysError('Fix Embed Repost Failed', error, { guild: guildId, channel: message.channel.id });
-  } finally {
-    pendingFixes.delete(message.id);
-  }
+export async function processFixEmbeds() {
+  return;
 }
 
 /**
