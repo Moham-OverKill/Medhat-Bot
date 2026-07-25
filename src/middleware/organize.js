@@ -168,9 +168,11 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
- * Fast oEmbed title extractor for YouTube, TikTok, and web metadata.
+ * Fast oEmbed and OpenGraph metadata extractor for YouTube, TikTok, Instagram, and web links.
  */
-async function fetchVideoTitle(targetUrl) {
+async function fetchMediaMetadata(targetUrl) {
+  const isImageExt = /\.(jpe?g|png|webp|gif)$/i.test(targetUrl.split('?')[0]);
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
@@ -180,7 +182,7 @@ async function fetchVideoTitle(targetUrl) {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        if (data.title) return data.title;
+        return { type: 'video', title: data.title };
       }
     }
 
@@ -189,7 +191,7 @@ async function fetchVideoTitle(targetUrl) {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        if (data.title) return data.title;
+        return { type: 'video', title: data.title };
       }
     }
 
@@ -200,22 +202,28 @@ async function fetchVideoTitle(targetUrl) {
     clearTimeout(timeout);
     if (res.ok) {
       const html = await res.text();
-      const match = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
-                    html.match(/<title>([^<]+)<\/title>/i);
-      if (match && match[1]) {
-        return match[1].trim();
-      }
+      const titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+                         html.match(/<title>([^<]+)<\/title>/i);
+      const ogTypeMatch = html.match(/<meta\s+property=["']og:type["']\s+content=["']([^"']+)["']/i);
+      
+      const isPhotoType = isImageExt || (ogTypeMatch && /image|photo/i.test(ogTypeMatch[1]));
+
+      return {
+        type: isPhotoType ? 'image' : 'video',
+        title: titleMatch ? titleMatch[1].trim() : null
+      };
     }
   } catch (err) {}
-  return null;
+
+  return { type: isImageExt ? 'image' : 'video', title: null };
 }
 
 /**
  * Fix Embeds handler: Deletes user message and posts a single zero-gap message:
- * - Line 1: @user shared a video:
- * - Line 2: [Video Title](targetUrl) [\u2800](targetUrl) (Same line prevents vertical gap!)
- * - Discord native playable video player card rendered directly underneath.
- * - Sequential automated reactions (👍, ❤️, 😂, 😭).
+ * 1. @user shared a video: / @user shared an image:
+ * 2. [Title](targetUrl) (Clickable hyperlink)
+ * 3. Discord native clickable video / working image (0 gaps)
+ * 4. Automated Reactions (👍, ❤️, 😂, 😭)
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
@@ -240,11 +248,13 @@ export async function processFixEmbeds(message, isEdit = false) {
     const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
     const webhook = await getOrCreateWebhook(message.channel);
 
-    const videoTitle = await fetchVideoTitle(targetUrl);
-    const titleLink = videoTitle ? `[**${videoTitle}**](${targetUrl})` : `[video](${targetUrl})`;
+    const metadata = await fetchMediaMetadata(targetUrl);
+    const isImage = metadata.type === 'image';
+    const mediaWord = isImage ? 'an image' : 'a video';
+    const fallbackWord = isImage ? 'image' : 'video';
 
-    // Format Line 1 and Line 2 on the exact same text block so invisible link doesn't create Line 3 empty space
-    const userHeader = webhook ? `shared a video:` : `<@${message.author.id}> shared a video:`;
+    const titleLink = metadata.title ? `[**${metadata.title}**](${targetUrl})` : `[${fallbackWord}](${targetUrl})`;
+    const userHeader = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
     const singleMessageContent = `${userHeader}\n${titleLink} [\u2800](${targetUrl})`;
 
     let sentMsg;
