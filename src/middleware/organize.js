@@ -132,7 +132,7 @@ export async function checkContentFilter(message) {
       }
       case 'media_only': {
         const urls = extractUrls(content);
-        if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url))) return false;
+        if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url) && isMediaPostUrl(url))) return false;
         break;
       }
       case 'cmd_only': {
@@ -140,6 +140,31 @@ export async function checkContentFilter(message) {
         break;
       }
     }
+  }
+
+  return true;
+}
+
+/**
+ * Check if a URL is a valid media post (video, reel, photo, tweet) and NOT a user profile link.
+ */
+function isMediaPostUrl(url) {
+  if (!url) return false;
+  
+  if (/(instagram\.com|instagr\.am)/i.test(url)) {
+    return /\/(p|reel|reels|tv)\/[\w-]+/i.test(url);
+  }
+
+  if (/tiktok\.com/i.test(url)) {
+    return /\/(video|photo|v)\/\d+/i.test(url) || /vt\.tiktok\.com/i.test(url);
+  }
+
+  if (/(youtube\.com|youtu\.be)/i.test(url)) {
+    return /(watch\?v=|\/shorts\/|youtu\.be\/)/i.test(url);
+  }
+
+  if (/(twitter\.com|x\.com)/i.test(url)) {
+    return /\/status\/\d+/i.test(url);
   }
 
   return true;
@@ -200,11 +225,11 @@ function decodeHtmlEntities(str) {
 }
 
 /**
- * Get active media URL for embed rendering (e.g. kkinstagram.com for Instagram)
+ * Get active media URL for embed rendering (e.g. ddinstagram.com for Instagram)
  */
 function getActiveMediaUrl(targetUrl) {
   if (/(instagram\.com|instagr\.am)/i.test(targetUrl)) {
-    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://kkinstagram.com');
+    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://ddinstagram.com');
   }
   return targetUrl;
 }
@@ -315,11 +340,19 @@ export async function processFixEmbeds(message, isEdit = false) {
   const urls = extractUrls(content).filter(u => isSocialMediaUrl(u));
   if (urls.length === 0) return;
 
+  // Reject profile links (must be a media post URL like /p/, /reel/, /video/, /shorts/)
+  const mediaUrls = urls.filter(u => isMediaPostUrl(u));
+  if (mediaUrls.length === 0) {
+    // Delete non-media profile links posted in social-only channels
+    await message.delete().catch(() => {});
+    return;
+  }
+
   if (pendingFixes.has(message.id)) return;
   pendingFixes.add(message.id);
 
   try {
-    const targetUrl = urls[0];
+    const targetUrl = mediaUrls[0];
     const activeMediaUrl = getActiveMediaUrl(targetUrl);
     const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
     const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
@@ -336,9 +369,10 @@ export async function processFixEmbeds(message, isEdit = false) {
     const userHeader = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
     const titleLine = metadata.title ? `**${metadata.title}**` : '';
 
+    // Hide blue URL text using invisible braille link [\u2800](activeMediaUrl)
     const singleMessageContent = titleLine
-      ? `${prefix}${userHeader}\n${titleLine}\n${activeMediaUrl}`
-      : `${prefix}${userHeader}\n${activeMediaUrl}`;
+      ? `${prefix}${userHeader}\n${titleLine} [\u2800](${activeMediaUrl})`
+      : `${prefix}${userHeader} [\u2800](${activeMediaUrl})`;
 
     let sentMsg;
     if (webhook) {
