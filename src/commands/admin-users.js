@@ -31,8 +31,13 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Row 2: Roles, Anti-Cheat, Back
+    // Row 2: Back, Roles, Anti-Cheat
     const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_back')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users_roles')
             .setLabel('Roles')
@@ -42,12 +47,7 @@ export async function showUserSelector(interaction) {
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
             .setEmoji('🛡️')
-            .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-            .setCustomId('settings_back')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Primary)
     );
 
     const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';

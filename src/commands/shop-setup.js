@@ -137,7 +137,17 @@ export async function handleShopSetup(interaction) {
           .setCustomId('shop_admin_delete')
           .setLabel('Delete')
           .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger),
+          .setStyle(ButtonStyle.Danger)
+      );
+
+    // Row 2: Back (left) and Post (right)
+    const row2 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('settings_back')
+          .setLabel('Back')
+          .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('shop_admin_post')
           .setLabel('Post')
@@ -145,18 +155,8 @@ export async function handleShopSetup(interaction) {
           .setStyle(ButtonStyle.Secondary)
       );
 
-    // Back button to return to settings menu
-    const backRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('settings_back')
-          .setLabel('Back')
-          .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary)
-      );
-
     // Always use editReply since we likely deferred
-    await interaction.editReply({ content: null, embeds: [embed], components: [row1, backRow] });
+    await interaction.editReply({ content: null, embeds: [embed], components: [row1, row2] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop setup');
   }
