@@ -204,7 +204,7 @@ function decodeHtmlEntities(str) {
  */
 function getActiveMediaUrl(targetUrl) {
   if (/(instagram\.com|instagr\.am)/i.test(targetUrl)) {
-    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://www.kkinstagram.com');
+    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://kkinstagram.com');
   }
   return targetUrl;
 }
@@ -216,34 +216,43 @@ async function fetchMediaMetadata(targetUrl) {
   const isImageExt = /\.(jpe?g|png|webp|gif)$/i.test(targetUrl.split('?')[0]);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-
+    // 1. Fast path for YouTube
     if (/(youtube\.com|youtu\.be)/i.test(targetUrl)) {
-      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(targetUrl)}&format=json`, { signal: controller.signal });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(targetUrl)}&format=json`, { signal: controller.signal }).catch(() => null);
       clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        return { type: 'video', title: decodeHtmlEntities(data.title) };
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.title) return { type: 'video', title: decodeHtmlEntities(data.title) };
       }
     }
 
+    // 2. Fast path for TikTok
     if (/tiktok\.com/i.test(targetUrl)) {
-      const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(targetUrl)}`, { signal: controller.signal });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(targetUrl)}`, { signal: controller.signal }).catch(() => null);
       clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        return { type: 'video', title: decodeHtmlEntities(data.title) };
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.title) return { type: 'video', title: decodeHtmlEntities(data.title) };
       }
     }
 
-    const res = await fetch(targetUrl, {
+    // 3. Fast path for Instagram & generic web links (1.0s strict timeout)
+    const fetchUrl = getActiveMediaUrl(targetUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+
+    const res = await fetch(fetchUrl, {
       headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
       signal: controller.signal
-    });
+    }).catch(() => null);
+
     clearTimeout(timeout);
-    if (res.ok) {
-      const html = await res.text();
+    if (res && res.ok) {
+      const html = await res.text().catch(() => '');
       const titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
                          html.match(/<title>([^<]+)<\/title>/i);
       const ogTypeMatch = html.match(/<meta\s+property=["']og:type["']\s+content=["']([^"']+)["']/i);
