@@ -18,7 +18,8 @@ const FILTER_TYPES = {
     links_only: { label: 'Links Only', emoji: '🔗' },
     images_only: { label: 'Media Only', emoji: '🎬' },
     media_only: { label: 'Socials Only', emoji: '🌐' },
-    cmd_only: { label: 'CMD Only', emoji: '🤖' }
+    cmd_only: { label: 'CMD Only', emoji: '🤖' },
+    auto_react: { label: 'Auto React', emoji: '🎭' }
 };
 
 /**
@@ -57,41 +58,40 @@ async function renderPanel(interaction, activeFilter = null) {
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 
-    // Row 1: Filter type buttons — active one is blue, rest are gray
-    const buttonsRow = new ActionRowBuilder().addComponents(
-        ...Object.entries(FILTER_TYPES).map(([key, meta]) =>
-            new ButtonBuilder()
+    // Row 1: Links Only, Media Only, Socials Only
+    const row1 = new ActionRowBuilder().addComponents(
+        ['links_only', 'images_only', 'media_only'].map(key => {
+            const meta = FILTER_TYPES[key];
+            return new ButtonBuilder()
                 .setCustomId(`organize_${key}`)
                 .setLabel(meta.label)
                 .setEmoji(meta.emoji)
-                .setStyle(activeFilter === key ? ButtonStyle.Primary : ButtonStyle.Secondary)
-        )
+                .setStyle(activeFilter === key ? ButtonStyle.Primary : ButtonStyle.Secondary);
+        })
     );
 
-    const components = [buttonsRow];
-
-    // Row 2: Channel select menu (only shown when a filter tab is active)
-    if (activeFilter && FILTER_TYPES[activeFilter]) {
-        const meta = FILTER_TYPES[activeFilter];
-        const channelSelect = new ChannelSelectMenuBuilder()
-            .setCustomId(`organize_select_${activeFilter}`)
-            .setPlaceholder(`Toggle a channel for ${meta.label}...`)
-            .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
-        components.push(new ActionRowBuilder().addComponents(channelSelect));
-    }
-
-    // Row 3: Back button & Specific Toggles
-    const backRow = new ActionRowBuilder().addComponents(
+    // Row 2: Back button, CMD Only, Auto React (+ Fix Embeds if media_only active)
+    const row2Buttons = [
         new ButtonBuilder()
             .setCustomId('settings_other')
             .setLabel('Back')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_cmd_only')
+            .setLabel(FILTER_TYPES.cmd_only.label)
+            .setEmoji(FILTER_TYPES.cmd_only.emoji)
+            .setStyle(activeFilter === 'cmd_only' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_auto_react')
+            .setLabel(FILTER_TYPES.auto_react.label)
+            .setEmoji(FILTER_TYPES.auto_react.emoji)
+            .setStyle(activeFilter === 'auto_react' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    ];
 
     if (activeFilter === 'media_only') {
         const isFixEmbedsEnabled = !!filters.fix_embeds;
-        backRow.addComponents(
+        row2Buttons.push(
             new ButtonBuilder()
                 .setCustomId('organize_toggle_fix_embeds')
                 .setLabel('Fix Embeds')
@@ -99,7 +99,24 @@ async function renderPanel(interaction, activeFilter = null) {
         );
     }
 
-    components.push(backRow);
+    const row2 = new ActionRowBuilder().addComponents(row2Buttons);
+    const components = [row1, row2];
+
+    // Row 3: Channel select menu (shown when a filter tab is active)
+    if (activeFilter && FILTER_TYPES[activeFilter]) {
+        const meta = FILTER_TYPES[activeFilter];
+        const channelSelect = new ChannelSelectMenuBuilder()
+            .setCustomId(`organize_select_${activeFilter}`)
+            .setPlaceholder(`Toggle a channel for ${meta.label}...`)
+            .setChannelTypes(
+                ChannelType.GuildText,
+                ChannelType.GuildAnnouncement,
+                ChannelType.GuildVoice,
+                ChannelType.PublicThread,
+                ChannelType.PrivateThread
+            );
+        components.push(new ActionRowBuilder().addComponents(channelSelect));
+    }
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
@@ -136,17 +153,25 @@ async function handleChannelToggle(interaction, filterKey) {
     const botMember = interaction.guild.members.me;
     if (botMember) {
         const perms = channel.permissionsFor(botMember);
-        if (!perms || !perms.has(PermissionsBitField.Flags.ViewChannel)) {
-            return interaction.followUp({
-                content: '❌ I do not have **View Channel** permission in that channel.',
-                flags: MessageFlags.Ephemeral
-            });
-        }
-        if (!perms.has(PermissionsBitField.Flags.ManageMessages)) {
-            return interaction.followUp({
-                content: '❌ I do not have **Manage Messages** permission in that channel. I need it to delete filtered messages.',
-                flags: MessageFlags.Ephemeral
-            });
+        if (perms) {
+            if (!perms.has(PermissionsBitField.Flags.ViewChannel)) {
+                return interaction.followUp({
+                    content: '❌ I do not have **View Channel** permission in that channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+            if (filterKey !== 'auto_react' && !perms.has(PermissionsBitField.Flags.ManageMessages)) {
+                return interaction.followUp({
+                    content: '❌ I do not have **Manage Messages** permission in that channel. I need it to delete filtered messages.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+            if (filterKey === 'auto_react' && !perms.has(PermissionsBitField.Flags.AddReactions)) {
+                return interaction.followUp({
+                    content: '❌ I do not have **Add Reactions** permission in that channel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
         }
     }
 
