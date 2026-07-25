@@ -244,6 +244,7 @@ export async function processFixEmbeds(message, isEdit = false) {
 
     const isImage = mediaInfo?.type === 'image';
     const headerText = `<@${message.author.id}> shared a ${isImage ? 'image' : 'video'}:`;
+    const activeMediaUrl = mediaInfo?.url || targetUrl;
 
     // Construct custom embed with clickable blue link
     const embed = new EmbedBuilder()
@@ -259,11 +260,11 @@ export async function processFixEmbeds(message, isEdit = false) {
       embed.setImage(mediaInfo.url);
     }
 
-    // Message payload: For videos, attach stream link to message content for playable player rendering
+    // Message payload: Attach media URL via invisible markdown link for playable video player rendering
     const messagePayload = {
-      content: isImage || !mediaInfo?.url 
+      content: isImage 
         ? headerText 
-        : `${headerText} [\u2800](${mediaInfo.url})`,
+        : `${headerText} [\u2800](${activeMediaUrl})`,
       embeds: [embed]
     };
 
@@ -280,7 +281,7 @@ export async function processFixEmbeds(message, isEdit = false) {
     }
 
     // Tier 3 Validation: If video was attached, verify that Discord generated a video player card
-    if (!isImage && mediaInfo?.url) {
+    if (!isImage) {
       let hasVideoEmbed = false;
       for (let i = 0; i < 20; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
