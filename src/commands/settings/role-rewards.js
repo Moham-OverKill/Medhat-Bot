@@ -271,14 +271,14 @@ export async function handleRoleRewardsComponent(interaction) {
         if (customId === 'role_rewards_richest_role') {
             const selectedRoleId = interaction.values[0];
             if (!isValidSnowflake(selectedRoleId)) {
-                return interaction.update({ content: '❌ Invalid role selection.', embeds: [], components: [] });
+                return interaction.reply({ content: '❌ Invalid role selection.', flags: MessageFlags.Ephemeral });
             }
             if (!checkRateLimit(`${guildId}-richest-config`)) {
-                return interaction.update({ content: '⚠️ Please wait a moment before changing settings again.', embeds: [], components: [] });
+                return interaction.reply({ content: '⚠️ Please wait a moment before changing settings again.', flags: MessageFlags.Ephemeral });
             }
 
             const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId, 'richest');
-            if (!ok) return interaction.update({ content: msg, embeds: [], components: [] });
+            if (!ok) return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
 
             const config = await getGuildConfig(guildId) || {};
             config.richest_role_id = selectedRoleId;
@@ -338,14 +338,14 @@ export async function handleRoleRewardsComponent(interaction) {
         if (customId === 'role_rewards_streaks_role') {
             const selectedRoleId = interaction.values[0];
             if (!isValidSnowflake(selectedRoleId)) {
-                return interaction.update({ content: '❌ Invalid role selection.', embeds: [], components: [] });
+                return interaction.reply({ content: '❌ Invalid role selection.', flags: MessageFlags.Ephemeral });
             }
             if (!checkRateLimit(`${guildId}-streaks-config`)) {
-                return interaction.update({ content: '⚠️ Please wait a moment before changing settings again.', embeds: [], components: [] });
+                return interaction.reply({ content: '⚠️ Please wait a moment before changing settings again.', flags: MessageFlags.Ephemeral });
             }
 
             const { ok, msg, role } = await validateRoleChoice(interaction, selectedRoleId, 'streaks');
-            if (!ok) return interaction.update({ content: msg, embeds: [], components: [] });
+            if (!ok) return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
 
             const config = await getGuildConfig(guildId) || {};
             config.streak_role_id = selectedRoleId;
