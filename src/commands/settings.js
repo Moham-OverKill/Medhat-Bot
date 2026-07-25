@@ -28,7 +28,7 @@ import {
 } from './settings/leaderboards.js';
 import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
-import { handleLogsSettings, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
+import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
@@ -618,13 +618,8 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'logs_category_select') {
+        if (customId.startsWith('logs_assign_') || customId === 'logs_category_select') {
             await handleLogCategorySelect(interaction);
-            return;
-        }
-
-        if (customId.startsWith('logs_channel_select_')) {
-            await handleLogChannelSelect(interaction);
             return;
         }
 
