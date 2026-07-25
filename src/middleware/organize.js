@@ -168,11 +168,11 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
- * Helper to decode HTML entities in web titles
+ * Helper to decode HTML entities and clean Instagram title prefixes and quotes
  */
 function decodeHtmlEntities(str) {
   if (!str) return '';
-  return str
+  let cleaned = str
     .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/&quot;/g, '"')
@@ -182,6 +182,16 @@ function decodeHtmlEntities(str) {
     .replace(/&gt;/g, '>')
     .replace(/\u200e|\u200f/g, '')
     .trim();
+
+  // Strip "User on Instagram:" or "User on Instagram : " prefix
+  cleaned = cleaned.replace(/^[^:]+\s+on\s+Instagram\s*:\s*/i, '');
+
+  // Strip leading and trailing quotes if present
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  return cleaned;
 }
 
 /**
