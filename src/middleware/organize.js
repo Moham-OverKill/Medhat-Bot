@@ -251,11 +251,14 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = metadata.type === 'image';
     const mediaWord = isImage ? 'an image' : 'a video';
 
-    // Message 1: Top Custom Header Embed Box (@user shared a video:)
-    const headerDescription = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
+    // Message 1: Top Custom Header Embed Box with User Profile
     const customHeaderEmbed = new EmbedBuilder()
       .setColor('#2B2D31')
-      .setDescription(headerDescription);
+      .setAuthor({
+        name: authorUsername,
+        iconURL: authorAvatar
+      })
+      .setDescription(`shared ${mediaWord}:`);
 
     if (webhook) {
       await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] }).catch(() => {});
