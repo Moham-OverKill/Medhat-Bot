@@ -168,6 +168,33 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
+ * Helper to decode HTML entities in web titles
+ */
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\u200e|\u200f/g, '')
+    .trim();
+}
+
+/**
+ * Get active media URL for embed rendering (e.g. kkinstagram.com for Instagram)
+ */
+function getActiveMediaUrl(targetUrl) {
+  if (/(instagram\.com|instagr\.am)/i.test(targetUrl)) {
+    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://www.kkinstagram.com');
+  }
+  return targetUrl;
+}
+
+/**
  * Fast oEmbed and OpenGraph metadata extractor for YouTube, TikTok, Instagram, and web links.
  */
 async function fetchMediaMetadata(targetUrl) {
@@ -182,7 +209,7 @@ async function fetchMediaMetadata(targetUrl) {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        return { type: 'video', title: data.title };
+        return { type: 'video', title: decodeHtmlEntities(data.title) };
       }
     }
 
@@ -191,7 +218,7 @@ async function fetchMediaMetadata(targetUrl) {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        return { type: 'video', title: data.title };
+        return { type: 'video', title: decodeHtmlEntities(data.title) };
       }
     }
 
@@ -207,10 +234,11 @@ async function fetchMediaMetadata(targetUrl) {
       const ogTypeMatch = html.match(/<meta\s+property=["']og:type["']\s+content=["']([^"']+)["']/i);
       
       const isPhotoType = isImageExt || (ogTypeMatch && /image|photo/i.test(ogTypeMatch[1]));
+      const decodedTitle = titleMatch ? decodeHtmlEntities(titleMatch[1]) : null;
 
       return {
         type: isPhotoType ? 'image' : 'video',
-        title: titleMatch ? titleMatch[1].trim() : null
+        title: decodedTitle
       };
     }
   } catch (err) {}
@@ -243,6 +271,7 @@ export async function processFixEmbeds(message, isEdit = false) {
 
   try {
     const targetUrl = urls[0];
+    const activeMediaUrl = getActiveMediaUrl(targetUrl);
     const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
     const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
     const webhook = await getOrCreateWebhook(message.channel);
@@ -268,11 +297,11 @@ export async function processFixEmbeds(message, isEdit = false) {
       await message.channel.send({ content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
     }
 
-    // Message 2: Plain text bold title (NOT hyperlinked in blue) + invisible link on exact same line for 0 gaps
+    // Message 2: Plain text bold title (NOT hyperlinked in blue) + active media link (e.g. kkinstagram.com)
     const titleText = metadata.title ? `**${metadata.title}**` : '';
     const message2Content = titleText
-      ? `${titleText} [\u2800](${targetUrl})`
-      : `[\u2800](${targetUrl})`;
+      ? `${titleText} [\u2800](${activeMediaUrl})`
+      : `[\u2800](${activeMediaUrl})`;
 
     let sentMsg;
     if (webhook) {
