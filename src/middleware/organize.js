@@ -167,6 +167,10 @@ function isMediaPostUrl(url) {
     return /\/status\/\d+/i.test(url);
   }
 
+  if (/(facebook\.com|fb\.watch)/i.test(url)) {
+    return /\/(reel|reels|watch|videos|share\/(v|r))\/|watch\?v=|\/posts\//i.test(url) || /fb\.watch\//i.test(url);
+  }
+
   return true;
 }
 
@@ -335,16 +339,23 @@ export async function processFixEmbeds(message, isEdit = false) {
   if (isEdit || message.author.bot) return;
 
   const content = message.content || '';
-  const instaUrls = extractUrls(content).filter(u => /(instagram\.com|instagr\.am)/i.test(u) && isMediaPostUrl(u));
-  if (instaUrls.length === 0) return;
+  const targetUrls = extractUrls(content).filter(u =>
+    /(instagram\.com|instagr\.am|facebook\.com|fb\.watch)/i.test(u) && isMediaPostUrl(u)
+  );
+  if (targetUrls.length === 0) return;
 
   if (pendingFixes.has(message.id)) return;
   pendingFixes.add(message.id);
 
   try {
-    const fixedContent = instaUrls.map(u => {
-      const kkUrl = u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com');
-      return `[\u2800](${kkUrl})`;
+    const fixedContent = targetUrls.map(u => {
+      let proxyUrl = u;
+      if (/(instagram\.com|instagr\.am)/i.test(u)) {
+        proxyUrl = u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com');
+      } else if (/(facebook\.com|fb\.watch)/i.test(u)) {
+        proxyUrl = u.replace(/https?:\/\/(www\.|m\.)?(facebook\.com|fb\.watch)/gi, 'https://fixacebook.com');
+      }
+      return `[\u2800](${proxyUrl})`;
     }).join('\n');
 
     await message.reply({ content: fixedContent, allowedMentions: { repliedUser: false } }).catch(() => {});
