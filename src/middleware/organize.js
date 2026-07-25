@@ -19,12 +19,12 @@ const SOCIAL_MEDIA_DOMAINS = [
   'kick.com', 'www.kick.com'
 ];
 
-// Secondary fallback domain replacers for high availability
-const FALLBACK_DOMAINS = {
-  tiktok: 'vxtiktok.com',
-  instagram: 'kkinstagram.com',
-  facebook: 'fixacebook.com',
-  twitter: 'fixupx.com'
+// Secondary fallback domain matrices for high availability
+const FALLBACK_MATRIX = {
+  tiktok: ['tnktok.com', 'vxtiktok.com'],
+  instagram: ['kkinstagram.com', 'igp.app'],
+  facebook: ['fixacebook.com'],
+  twitter: ['fixupx.com', 'fxtwitter.com']
 };
 
 // Lock to prevent concurrent processing during race conditions
@@ -223,8 +223,77 @@ async function getOrCreateWebhook(channel) {
 }
 
 /**
+ * Tests candidate URLs sequentially until a working video player renders cleanly without errors.
+ */
+async function sendVerifiedVideoMessage(channel, webhook, authorUsername, authorAvatar, userId, targetUrl, candidates) {
+  let sentMsg = null;
+  const baseText = `shared a [video](${targetUrl})`;
+  const fallbackText = webhook ? baseText : `<@${userId}> ${baseText}`;
+
+  for (const candidateUrl of candidates) {
+    const content = `${fallbackText} [\u2800](${candidateUrl})`;
+
+    try {
+      if (!sentMsg) {
+        if (webhook) {
+          sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content });
+        } else {
+          sentMsg = await channel.send({ content });
+        }
+      } else {
+        await sentMsg.edit({ content });
+      }
+
+      // Poll up to 3.5 seconds (7 iterations) to verify if Discord rendered a valid video embed
+      let isValidVideo = false;
+      let hasErrorOrNotice = false;
+
+      for (let attempt = 0; attempt < 7; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const refetched = await channel.messages.fetch(sentMsg.id).catch(() => null);
+        if (!refetched) break;
+
+        const embeds = refetched.embeds || [];
+
+        hasErrorOrNotice = embeds.some(e => {
+          const text = `${e.title || ''} ${e.description || ''} ${e.author?.name || ''}`;
+          return /legal request|no longer available|error|not found|404/i.test(text);
+        });
+
+        isValidVideo = embeds.some(e => e.video || e.data?.video || e.type === 'video');
+
+        if (hasErrorOrNotice) {
+          isValidVideo = false;
+          break; // Reject immediately on legal request / error notice
+        }
+
+        if (isValidVideo) break;
+      }
+
+      if (isValidVideo && !hasErrorOrNotice) {
+        return sentMsg; // Success! Locked in working candidate.
+      }
+    } catch (err) {
+      // Continue to next candidate
+    }
+  }
+
+  // Final Fallback: Edit message to clean text hyperlink without broken proxy embeds
+  if (sentMsg) {
+    await sentMsg.edit({ content: fallbackText }).catch(() => {});
+  } else {
+    if (webhook) {
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: fallbackText });
+    } else {
+      sentMsg = await channel.send({ content: fallbackText });
+    }
+  }
+  return sentMsg;
+}
+
+/**
  * Custom Fix Embeds handler: Deletes original user message and posts a standalone custom embed
- * via Webhook using the user's avatar and name, with 3-tier video/image fallbacks and sequential automated reactions.
+ * via Webhook using the user's avatar and name, with sequential 3-tier video/image verification.
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
@@ -247,33 +316,40 @@ export async function processFixEmbeds(message, isEdit = false) {
     const targetUrl = urls[0];
     let mediaInfo = await fetchCobaltMediaUrl(targetUrl);
 
-    // Secondary Fallback Proxy check
-    const targetPlatforms = [
-      { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
-      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook },
-      { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.tiktok },
-      { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.twitter }
+    // Build candidate list for video testing in order
+    const candidateUrls = [];
+    if (mediaInfo?.url && mediaInfo.type !== 'image') {
+      candidateUrls.push(mediaInfo.url);
+    }
+
+    const platformRules = [
+      { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.tiktok },
+      { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.instagram },
+      { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, matrix: FALLBACK_MATRIX.facebook },
+      { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, matrix: FALLBACK_MATRIX.twitter }
     ];
 
-    if (!mediaInfo) {
-      const matchedPlatform = targetPlatforms.find(p => p.pattern.test(targetUrl));
-      if (matchedPlatform && matchedPlatform.fallback) {
-        const fallbackUrl = targetUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
-        mediaInfo = { type: 'video', url: fallbackUrl };
+    const matchedPlatform = platformRules.find(p => p.pattern.test(targetUrl));
+    if (matchedPlatform && matchedPlatform.matrix) {
+      for (const domain of matchedPlatform.matrix) {
+        const proxyUrl = targetUrl.replace(matchedPlatform.pattern, `$1${domain}`);
+        if (!candidateUrls.includes(proxyUrl)) {
+          candidateUrls.push(proxyUrl);
+        }
       }
+    }
+    if (!candidateUrls.includes(targetUrl)) {
+      candidateUrls.push(targetUrl);
     }
 
     const isImage = mediaInfo?.type === 'image';
-    const mediaWord = isImage ? 'image' : 'video';
-    const activeMediaUrl = mediaInfo?.url || targetUrl;
     const authorUsername = message.member?.displayName || message.author.displayName || message.author.username;
     const authorAvatar = message.author.displayAvatarURL({ dynamic: true });
-
     const webhook = await getOrCreateWebhook(message.channel);
+
     let sentMsg;
 
     if (isImage) {
-      // Image Post
       const embed = new EmbedBuilder()
         .setColor('#2B2D31')
         .setDescription(`shared an [image](${targetUrl})`);
@@ -283,31 +359,13 @@ export async function processFixEmbeds(message, isEdit = false) {
       }
 
       if (webhook) {
-        sentMsg = await webhook.send({
-          username: authorUsername,
-          avatarURL: authorAvatar,
-          embeds: [embed]
-        });
+        sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [embed] });
       } else {
-        sentMsg = await message.channel.send({
-          content: `<@${message.author.id}> shared an [image](${targetUrl})`,
-          embeds: [embed]
-        });
+        sentMsg = await message.channel.send({ content: `<@${message.author.id}> shared an [image](${targetUrl})`, embeds: [embed] });
       }
     } else {
-      // Video Post: Webhook post under user's avatar & name with hyperlinked 'video' and invisible media stream link
-      const videoText = `shared a [video](${targetUrl}) [\u2800](${activeMediaUrl})`;
-      if (webhook) {
-        sentMsg = await webhook.send({
-          username: authorUsername,
-          avatarURL: authorAvatar,
-          content: videoText
-        });
-      } else {
-        sentMsg = await message.channel.send({
-          content: `<@${message.author.id}> ${videoText}`
-        });
-      }
+      // Sequential video verification engine
+      sentMsg = await sendVerifiedVideoMessage(message.channel, webhook, authorUsername, authorAvatar, message.author.id, targetUrl, candidateUrls);
     }
 
     // Delete user's original message
