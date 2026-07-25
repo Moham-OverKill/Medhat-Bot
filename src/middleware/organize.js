@@ -219,11 +219,10 @@ async function fetchMediaMetadata(targetUrl) {
 }
 
 /**
- * Fix Embeds handler: Deletes user message and posts a single zero-gap message:
- * 1. @user shared a video: / @user shared an image:
- * 2. [Title](targetUrl) (Clickable hyperlink)
- * 3. Discord native clickable video / working image (0 gaps)
- * 4. Automated Reactions (👍, ❤️, 😂, 😭)
+ * Fix Embeds handler: Deletes user message and posts:
+ * - Message 1: Custom top header embed box (@user shared a video: / @user shared an image:).
+ * - Message 2: Plain text bold title (NOT hyperlinked in blue) + native media embed (0 gaps).
+ * - Sequential automated reactions (👍, ❤️, 😂, 😭).
  */
 export async function processFixEmbeds(message, isEdit = false) {
   const guildId = message.guild.id;
@@ -251,17 +250,30 @@ export async function processFixEmbeds(message, isEdit = false) {
     const metadata = await fetchMediaMetadata(targetUrl);
     const isImage = metadata.type === 'image';
     const mediaWord = isImage ? 'an image' : 'a video';
-    const fallbackWord = isImage ? 'image' : 'video';
 
-    const titleLink = metadata.title ? `[**${metadata.title}**](${targetUrl})` : `[${fallbackWord}](${targetUrl})`;
-    const userHeader = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
-    const singleMessageContent = `${userHeader}\n${titleLink} [\u2800](${targetUrl})`;
+    // Message 1: Top Custom Header Embed Box (@user shared a video:)
+    const headerDescription = webhook ? `shared ${mediaWord}:` : `<@${message.author.id}> shared ${mediaWord}:`;
+    const customHeaderEmbed = new EmbedBuilder()
+      .setColor('#2B2D31')
+      .setDescription(headerDescription);
+
+    if (webhook) {
+      await webhook.send({ username: authorUsername, avatarURL: authorAvatar, embeds: [customHeaderEmbed] }).catch(() => {});
+    } else {
+      await message.channel.send({ embeds: [customHeaderEmbed] }).catch(() => {});
+    }
+
+    // Message 2: Plain text bold title (NOT hyperlinked in blue) + invisible link on exact same line for 0 gaps
+    const titleText = metadata.title ? `**${metadata.title}**` : '';
+    const message2Content = titleText
+      ? `${titleText} [\u2800](${targetUrl})`
+      : `[\u2800](${targetUrl})`;
 
     let sentMsg;
     if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: singleMessageContent });
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: message2Content });
     } else {
-      sentMsg = await message.channel.send({ content: singleMessageContent });
+      sentMsg = await message.channel.send({ content: message2Content });
     }
 
     // Delete user's original message
