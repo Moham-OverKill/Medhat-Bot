@@ -132,6 +132,28 @@ async function validateRole(guild, roleId) {
     return role;
 }
 
+/**
+ * Resolves up to targetCount valid, non-bot guild members from candidate user IDs.
+ */
+async function resolveValidGuildWinners(guild, candidates, targetCount) {
+    const validMembers = [];
+    for (const candidate of candidates) {
+        if (validMembers.length >= targetCount) break;
+        const userId = typeof candidate === 'string' ? candidate : candidate.user_id;
+        if (!userId) continue;
+
+        try {
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (member && !member.user.bot) {
+                validMembers.push(member);
+            }
+        } catch {
+            // Ignore fetch errors for individual users
+        }
+    }
+    return validMembers;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -156,9 +178,10 @@ export async function applyRichestRole(client, guildId) {
 
         const winnerCount = config.richest_role_winners || 1;
 
-        // Fetch top winners from DB (same query the leaderboard uses)
-        const topUsers = await getTopCoinUsers(guildId, winnerCount);
-        const winnerIds = topUsers.map(u => u.user_id);
+        // Fetch candidate top winners from DB (fetch buffer of 50 to skip left/invalid members)
+        const candidateUsers = await getTopCoinUsers(guildId, 50);
+        const validMembers = await resolveValidGuildWinners(guild, candidateUsers, winnerCount);
+        const winnerIds = validMembers.map(m => m.id);
 
         // Sweep: remove from members who are no longer in top-N
         const currentHolders = await fetchMembersWithRole(guild, role.id);
@@ -168,14 +191,12 @@ export async function applyRichestRole(client, guildId) {
         }
 
         // Assign: add role to new top-N winners
-        for (const userId of winnerIds) {
+        for (const member of validMembers) {
             try {
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member || member.user.bot) continue;
                 if (member.roles.cache.has(role.id)) continue; // already has it
                 await assignRoleToMember(member, role);
             } catch (err) {
-                sysError('Richest Role Assign Failed', err, { guild: guildId, user: userId });
+                sysError('Richest Role Assign Failed', err, { guild: guildId, user: member.id });
             }
         }
 
@@ -207,10 +228,11 @@ export async function applyStreakRole(client, guildId) {
 
         const winnerCount = config.streak_role_winners || 1;
 
-        // Fetch top streak holders from DB (same query the leaderboard uses)
-        const topUsers = await getTopStreakUsers(guildId, winnerCount);
-        // Only include users with an actual active streak > 0
-        const winnerIds = topUsers.filter(u => u.daily_streak > 0).map(u => u.user_id);
+        // Fetch candidate top streak holders from DB (fetch buffer of 50 to skip left/invalid members)
+        const candidateUsers = await getTopStreakUsers(guildId, 50);
+        const activeStreakCandidates = candidateUsers.filter(u => u.daily_streak > 0);
+        const validMembers = await resolveValidGuildWinners(guild, activeStreakCandidates, winnerCount);
+        const winnerIds = validMembers.map(m => m.id);
 
         // Sweep: remove from members who are no longer in top-N
         const currentHolders = await fetchMembersWithRole(guild, role.id);
@@ -220,14 +242,12 @@ export async function applyStreakRole(client, guildId) {
         }
 
         // Assign: add role to new top-N winners
-        for (const userId of winnerIds) {
+        for (const member of validMembers) {
             try {
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member || member.user.bot) continue;
                 if (member.roles.cache.has(role.id)) continue; // already has it
                 await assignRoleToMember(member, role);
             } catch (err) {
-                sysError('Streak Role Assign Failed', err, { guild: guildId, user: userId });
+                sysError('Streak Role Assign Failed', err, { guild: guildId, user: member.id });
             }
         }
 
