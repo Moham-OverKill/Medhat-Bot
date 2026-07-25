@@ -144,6 +144,7 @@ export function setupComponentHandlers(client) {
           'shop_admin_', 'shop_setup_', 'shop_pack_', 'shop_add_', 'shop_edit_',
           'shop_delete_', 'shop_post_', 'shop_cat_', 'shop_assign_', 'shop_select_cat_delete',
           'shop_select_item_delete', 'mass_', 'quests_', 'admin_user_', 'lb_',
+          'role_rewards_',
           // Previously unguarded admin routes — patched in security audit
           'shop_item_edit', 'shop_pack_manage', 'shop_pack_edit', 'shop_cat_manage',
           'shop_item_manage_tiers', 'shop_manage_tiers', 'shop_tier_add', 'shop_cat_settings',
@@ -215,8 +216,15 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
-      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters)
-      if (customId.startsWith('settings_') || customId.startsWith('organize_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('admin_user_') || customId.startsWith('lb_')) {
+      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards)
+      if (
+        customId.startsWith('settings_') ||
+        customId.startsWith('organize_') ||
+        customId.startsWith('leaderboard_channel_') ||
+        customId.startsWith('admin_user_') ||
+        customId.startsWith('lb_') ||
+        customId.startsWith('role_rewards_')
+      ) {
         await handleSettingsComponent(interaction);
         return;
       }
