@@ -244,31 +244,28 @@ export async function processFixEmbeds(message, isEdit = false) {
 
     const isImage = mediaInfo?.type === 'image';
     const authorName = message.author.displayName || message.author.username;
-    const titleText = `${authorName} shared a ${isImage ? 'image' : 'video'}`;
+    const mediaWord = isImage ? 'image' : 'video';
+    const formattedText = `${authorName} shared a [${mediaWord}](${targetUrl})`;
     const activeMediaUrl = mediaInfo?.url || targetUrl;
 
-    // Construct custom embed with Title as clickable blue hyperlink
-    const embed = new EmbedBuilder()
-      .setColor('#2B2D31')
-      .setAuthor({
-        name: authorName,
-        iconURL: message.author.displayAvatarURL({ dynamic: true })
-      })
-      .setTitle(titleText)
-      .setURL(targetUrl);
+    let sentMsg;
 
-    if (isImage && mediaInfo?.url) {
-      embed.setImage(mediaInfo.url);
+    if (isImage) {
+      // Image Post: Clean embed without profile header, hyperlinking only the word 'image'
+      const embed = new EmbedBuilder()
+        .setColor('#2B2D31')
+        .setDescription(formattedText);
+
+      if (mediaInfo?.url) {
+        embed.setImage(mediaInfo.url);
+      }
+
+      sentMsg = await message.channel.send({ embeds: [embed] });
+    } else {
+      // Video Post: Formatted text (only 'video' hyperlinked) + stream/target URL for native playable player
+      const videoContent = `${formattedText}\n${activeMediaUrl}`;
+      sentMsg = await message.channel.send({ content: videoContent });
     }
-
-    // Message payload: Invisible link in content triggers Discord's playable video player rendering
-    const messagePayload = {
-      content: `[\u2800](${activeMediaUrl})`,
-      embeds: [embed]
-    };
-
-    // Post standalone message
-    const sentMsg = await message.channel.send(messagePayload);
 
     // Delete user's original message
     await message.delete().catch(() => {});
@@ -277,25 +274,6 @@ export async function processFixEmbeds(message, isEdit = false) {
     const emojis = ['👍', '❤️', '😂', '😭'];
     for (const emoji of emojis) {
       await sentMsg.react(emoji).catch(() => {});
-    }
-
-    // Tier 3 Validation: If video was attached, verify that Discord generated a video player card
-    if (!isImage) {
-      let hasVideoEmbed = false;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const refetched = await message.channel.messages.fetch(sentMsg.id).catch(() => null);
-        hasVideoEmbed = refetched?.embeds.some(e => e.video || e.data?.video || e.type === 'video');
-        if (hasVideoEmbed) break;
-      }
-
-      // If rendering failed after 10s, edit message to remove stream link from content (Tier 3 fallback)
-      if (!hasVideoEmbed) {
-        await sentMsg.edit({
-          content: ' ',
-          embeds: [embed]
-        }).catch(() => {});
-      }
     }
 
   } catch (error) {
