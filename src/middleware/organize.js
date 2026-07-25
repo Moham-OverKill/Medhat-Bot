@@ -224,14 +224,20 @@ async function getOrCreateWebhook(channel) {
 
 /**
  * Tests candidate URLs sequentially until a working video player renders cleanly without errors.
+ * Uses <targetUrl> angle brackets when testing proxy candidates to suppress duplicate native embeds.
  */
 async function sendVerifiedVideoMessage(channel, webhook, authorUsername, authorAvatar, userId, targetUrl, candidates) {
   let sentMsg = null;
-  const baseText = `shared a [video](${targetUrl})`;
-  const fallbackText = webhook ? baseText : `<@${userId}> ${baseText}`;
+  const cleanBaseText = `shared a [video](${targetUrl})`;
+  const cleanFallbackText = webhook ? cleanBaseText : `<@${userId}> ${cleanBaseText}`;
 
   for (const candidateUrl of candidates) {
-    const content = `${fallbackText} [\u2800](${candidateUrl})`;
+    const isProxy = candidateUrl !== targetUrl;
+    // Suppress targetUrl embed using angle brackets <targetUrl> if candidateUrl is a proxy
+    const linkText = isProxy ? `[video](<${targetUrl}>)` : `[video](${targetUrl})`;
+    const baseText = `shared a ${linkText}`;
+    const headerText = webhook ? baseText : `<@${userId}> ${baseText}`;
+    const content = isProxy ? `${headerText} [\u2800](${candidateUrl})` : headerText;
 
     try {
       if (!sentMsg) {
@@ -280,12 +286,12 @@ async function sendVerifiedVideoMessage(channel, webhook, authorUsername, author
 
   // Final Fallback: Edit message to clean text hyperlink without broken proxy embeds
   if (sentMsg) {
-    await sentMsg.edit({ content: fallbackText }).catch(() => {});
+    await sentMsg.edit({ content: cleanFallbackText }).catch(() => {});
   } else {
     if (webhook) {
-      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: fallbackText });
+      sentMsg = await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: cleanFallbackText });
     } else {
-      sentMsg = await channel.send({ content: fallbackText });
+      sentMsg = await channel.send({ content: cleanFallbackText });
     }
   }
   return sentMsg;
