@@ -18,11 +18,12 @@ const SOCIAL_MEDIA_DOMAINS = [
   'kick.com', 'www.kick.com'
 ];
 
-// Domains used for the "Fix Embeds" feature
-const FIX_SERVICE_DOMAINS = {
-  tiktok: 'tnktok.com',
-  instagram: 'kkinstagram.com',
-  facebook: 'fixacebook.com'
+// Secondary fallback domain replacers for high availability
+const FALLBACK_DOMAINS = {
+  tiktok: 'vxtiktok.com',
+  instagram: 'ddinstagram.com',
+  facebook: 'fixacebook.com',
+  twitter: 'fixupx.com'
 };
 
 // Tracks userMessageId -> { botReplyId, lastFixedUrls }
@@ -35,143 +36,36 @@ const TRACKER_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const pendingFixes = new Set();
 
 /**
- * Load filter config for a guild into the cache
+ * Request high-quality direct video stream URL using the Cobalt API engine.
  */
-async function loadGuildFilters(guildId) {
+async function fetchCobaltMediaUrl(targetUrl) {
   try {
-    const pool = getPool();
-    const result = await pool.query(
-      `SELECT config->'channel_filters' as filters FROM guild_configs WHERE guild_id = $1`,
-      [guildId]
-    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
 
-    const filters = result.rows[0]?.filters;
-    if (!filters || typeof filters !== 'object') {
-      // No filters configured — cache an empty entry so we don't re-query
-      filterCache.set(guildId, {
-        links_only: new Set(),
-        images_only: new Set(),
-        media_only: new Set(),
-        cmd_only: new Set(),
-        hasAnyRule: false,
-        cachedAt: Date.now()
-      });
-      return;
+    const response = await fetch('https://api.cobalt.tools/', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      body: JSON.stringify({ url: targetUrl }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    if (data.url) return data.url;
+    if (data.picker && Array.isArray(data.picker) && data.picker.length > 0 && data.picker[0].url) {
+      return data.picker[0].url;
     }
-
-    const entry = {
-      links_only: new Set(Array.isArray(filters.links_only) ? filters.links_only : []),
-      images_only: new Set(Array.isArray(filters.images_only) ? filters.images_only : []),
-      media_only: new Set(Array.isArray(filters.media_only) ? filters.media_only : []),
-      cmd_only: new Set(Array.isArray(filters.cmd_only) ? filters.cmd_only : []),
-      fix_embeds: !!filters.fix_embeds,
-      cachedAt: Date.now()
-    };
-    entry.hasAnyRule = entry.links_only.size > 0 || entry.images_only.size > 0 ||
-                       entry.media_only.size > 0 || entry.cmd_only.size > 0;
-    filterCache.set(guildId, entry);
-  } catch (error) {
-    sysError('Filter Cache Load Failed', error, { guild: guildId });
+    return null;
+  } catch (err) {
+    return null;
   }
-}
-
-/**
- * Invalidate the filter cache for a specific guild (called when admin changes settings)
- */
-export function invalidateFilterCache(guildId) {
-  filterCache.delete(guildId);
-}
-
-/**
- * Check if a URL belongs to an allowed social media domain
- */
-function isSocialMediaUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname.toLowerCase();
-    return SOCIAL_MEDIA_DOMAINS.some(domain => hostname === domain || hostname.endsWith('.' + domain));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Extract all URLs from message content (including markdown targets)
- */
-function extractUrls(content) {
-  const urlPattern = /https?:\/\/[^\s<>)"']+/gi;
-  const matches = content.match(urlPattern) || [];
-  return matches.map(u => u.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\]\[]+$/, ''));
-}
-
-/**
- * Check if a message should be deleted based on channel content filters.
- * Returns true if the message should be deleted, false if it should be kept.
- * 
- * This is designed for the hot path — uses in-memory Set lookups only.
- */
-export async function checkContentFilter(message) {
-  const guildId = message.guild.id;
-  const channelId = message.channel.id;
-
-  // Load cache if missing or expired
-  let cached = filterCache.get(guildId);
-  if (!cached || (Date.now() - cached.cachedAt > CACHE_TTL_MS)) {
-    await loadGuildFilters(guildId);
-    cached = filterCache.get(guildId);
-  }
-
-  // Early guard: no filters configured for this guild
-  if (!cached || !cached.hasAnyRule) return false;
-
-  // Collect all rules that apply to this specific channel
-  const applicableRules = [];
-  if (cached.links_only.has(channelId)) applicableRules.push('links_only');
-  if (cached.images_only.has(channelId)) applicableRules.push('images_only');
-  if (cached.media_only.has(channelId)) applicableRules.push('media_only');
-  if (cached.cmd_only.has(channelId)) applicableRules.push('cmd_only');
-
-  // No rules apply to this channel — allow everything
-  if (applicableRules.length === 0) return false;
-
-  const content = (message.content || '').trim();
-
-  for (const rule of applicableRules) {
-    switch (rule) {
-      case 'links_only': {
-        const urls = extractUrls(content);
-        if (urls.length > 0) {
-          if (content.startsWith('http://') || content.startsWith('https://') || content.startsWith('[')) {
-            if (urls.every(url => url.startsWith('http://') || url.startsWith('https://'))) return false;
-          }
-        }
-        break;
-      }
-      case 'images_only': {
-        // Passes if message has at least 1 attachment
-        if (message.attachments && message.attachments.size > 0) return false;
-        // Passes if message contains direct Discord attachment links
-        if (content.includes('https://media.discordapp.net') || content.includes('https://cdn.discordapp.com')) return false;
-        break;
-      }
-      case 'media_only': {
-        // Strict Check: If links are present, EVERY link target must be a valid social media URL.
-        // If NO links are present, this specific rule fails (may be saved by images_only).
-        const urls = extractUrls(content);
-        if (urls.length > 0 && urls.every(url => isSocialMediaUrl(url))) return false;
-        break;
-      }
-      case 'cmd_only': {
-        // Passes if the message author is a bot (slash commands are interactions, not messages)
-        // Human messages in CMD-only channels are always deleted
-        if (message.author.bot) return false;
-        break;
-      }
-    }
-  }
-
-  // No rule was satisfied — delete the message
-  return true;
 }
 
 /**
@@ -190,48 +84,49 @@ export async function processFixEmbeds(message, isEdit = false) {
   const urls = content.match(urlPattern) || [];
   
   const fixedUrls = [];
-  const replacers = [
-    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.tiktok}` },
-    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.instagram}` },
-    { pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, replacement: `$1${FIX_SERVICE_DOMAINS.facebook}` }
+  const targetPlatforms = [
+    { name: 'tiktok', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(tiktok\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.tiktok },
+    { name: 'instagram', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(instagram\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.instagram },
+    { name: 'facebook', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(facebook\.com|fb\.watch)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.facebook },
+    { name: 'twitter', pattern: /(https?:\/\/)(www\.)?([a-z0-9]+\.)?(twitter\.com|x\.com)(?=\/|$)/i, fallback: FALLBACK_DOMAINS.twitter }
   ];
 
   for (let url of urls) {
     let modifiedUrl = url;
 
-    // Clean trailing punctuation commonly attached to URLs in chat messages (brackets, parentheses, dots, etc.)
+    // Clean trailing punctuation commonly attached to URLs in chat messages
     modifiedUrl = modifiedUrl.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\]\[]+$/, (match) => {
       return match === '/' ? '/' : '';
     });
 
-    // Expand short links (vm, vt, v) because third-party fixers often fail to follow the redirect
+    // Expand short links (vm, vt, v) for TikTok
     if (/(https?:\/\/)(vm|vt|v)\.tiktok\.com/i.test(modifiedUrl)) {
       try {
         const response = await fetch(modifiedUrl, {
           method: 'GET',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           },
           redirect: 'follow'
         });
         if (response.url && !/(vm|vt|v)\.tiktok\.com/i.test(response.url)) {
-          // Keep the expanded URL and strip any tracking query parameters
           modifiedUrl = response.url.split('?')[0];
         }
-      } catch (err) {
-        // Fall back to original on failure
-      }
+      } catch (err) {}
     }
 
-    let modified = false;
-    for (const { pattern, replacement } of replacers) {
-      if (pattern.test(modifiedUrl)) {
-        modifiedUrl = modifiedUrl.replace(pattern, replacement);
-        modified = true;
-        break;
+    const matchedPlatform = targetPlatforms.find(p => p.pattern.test(modifiedUrl));
+    if (matchedPlatform) {
+      // 1. Primary: Try extracting clean stream via Cobalt Engine API
+      const cobaltStreamUrl = await fetchCobaltMediaUrl(modifiedUrl);
+      if (cobaltStreamUrl) {
+        fixedUrls.push(cobaltStreamUrl);
+      } else {
+        // 2. Secondary Fallback: Use reliable fallback domain proxy
+        const fallbackUrl = modifiedUrl.replace(matchedPlatform.pattern, `$1${matchedPlatform.fallback}`);
+        fixedUrls.push(fallbackUrl);
       }
     }
-    if (modified) fixedUrls.push(modifiedUrl);
   }
 
   // Generate current "invisible links" string
