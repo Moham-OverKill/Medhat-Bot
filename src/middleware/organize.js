@@ -247,6 +247,27 @@ async function fetchMediaMetadata(targetUrl) {
 }
 
 /**
+ * Check if the previous message in the channel was sent by the bot/webhook within the last 10 minutes.
+ * Returns true if a code block separator (``` ```) should be added to prevent grouped message clutter.
+ */
+async function shouldAddSeparator(channel) {
+  try {
+    const lastMessages = await channel.messages.fetch({ limit: 2 }).catch(() => null);
+    if (!lastMessages || lastMessages.size === 0) return false;
+
+    const prevMsg = lastMessages.first();
+    if (!prevMsg) return false;
+
+    const isFromBotOrWebhook = prevMsg.author.bot || !!prevMsg.webhookId;
+    const isRecent = (Date.now() - prevMsg.createdTimestamp) < 10 * 60 * 1000; // < 10 minutes
+
+    return isFromBotOrWebhook && isRecent;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Fix Embeds handler: Deletes user message and posts:
  * - Message 1: Custom top header embed box (@user shared a video: / @user shared an image:).
  * - Message 2: Plain text bold title (NOT hyperlinked in blue) + native media embed (0 gaps).
@@ -280,7 +301,7 @@ export async function processFixEmbeds(message, isEdit = false) {
     const isImage = metadata.type === 'image';
     const mediaWord = isImage ? 'an image' : 'a video';
 
-    // Message 1: Top Custom Header Embed Box with User Profile + Code Block above embed
+    // Message 1: Top Custom Header Embed Box with User Profile
     const customHeaderEmbed = new EmbedBuilder()
       .setColor('#2B2D31')
       .setAuthor({
@@ -289,7 +310,9 @@ export async function processFixEmbeds(message, isEdit = false) {
       })
       .setDescription(`shared ${mediaWord}:`);
 
-    const codeBlockContent = '```\u2800```';
+    // Conditionally send ``` ``` divider ONLY if previous message was from bot/webhook within <10 mins
+    const addSeparator = await shouldAddSeparator(message.channel);
+    const codeBlockContent = addSeparator ? '```\u2800```' : undefined;
 
     if (webhook) {
       await webhook.send({ username: authorUsername, avatarURL: authorAvatar, content: codeBlockContent, embeds: [customHeaderEmbed] }).catch(() => {});
