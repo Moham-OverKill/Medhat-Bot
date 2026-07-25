@@ -10,7 +10,7 @@ import {
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { isValidSnowflake } from '../../shared.js';
 import { sendLog, sysError } from '../../utils/logger.js';
-import { handleInteractionError } from '../../utils/errors.js';
+import { handleInteractionError, diagnoseRolePermissions } from '../../utils/errors.js';
 
 // ── Rate limiting (mirrors mvp.js pattern) ───────────────────────────────────
 const configChangeRateLimit = new Map();
@@ -48,14 +48,17 @@ async function validateRoleChoice(interaction, roleId, currentModule) {
     const role  = await guild.roles.fetch(roleId).catch(() => null);
     if (!role) return { ok: false, msg: '❌ Selected role not found.' };
     if (role.id === guild.id) return { ok: false, msg: '❌ Cannot use @everyone as a reward role.' };
-    if (role.managed)         return { ok: false, msg: '❌ Cannot use managed roles (bot roles, integrations).' };
+
     if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
         return { ok: false, msg: '❌ Reward role must not have Administrator, Manage Server, or Manage Roles permissions.' };
     }
+
     const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
-    if (botMember && role.position >= botMember.roles.highest.position) {
-        return { ok: false, msg: `❌ The bot's highest role must be above the reward role in the role list.` };
+    const diag = diagnoseRolePermissions(guild, role, botMember);
+    if (!diag.hasAll) {
+        return { ok: false, msg: `❌ ${diag.explanation}\n\n**How to fix:**\n${diag.fixInstructions}` };
     }
+
     return { ok: true, role };
 }
 
