@@ -184,11 +184,16 @@ function decodeHtmlEntities(str) {
     .trim();
 
   // Strip "User on Instagram:" or "User on Instagram : " prefix
-  cleaned = cleaned.replace(/^[^:]+\s+on\s+Instagram\s*:\s*/i, '');
+  cleaned = cleaned.replace(/^[^\n:]+?\s+on\s+Instagram\s*:\s*/gi, '');
 
   // Strip leading and trailing quotes if present
   if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
     cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Reject generic Instagram fallbacks
+  if (/Instagram photos and videos|Login • Instagram|Open in App/i.test(cleaned)) {
+    return '';
   }
 
   return cleaned;
