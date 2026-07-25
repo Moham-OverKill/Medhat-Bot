@@ -90,9 +90,9 @@ async function renderPanel(interaction, activeFilter = null) {
     ];
 
     const row2 = new ActionRowBuilder().addComponents(row2Buttons);
-    const components = [row1, row2];
+    const components = [row1];
 
-    // Row 3: Channel select menu (shown when a filter tab is active)
+    // Row 2: Channel select menu (shown when a filter tab is active)
     if (activeFilter && FILTER_TYPES[activeFilter]) {
         const meta = FILTER_TYPES[activeFilter];
         const channelSelect = new ChannelSelectMenuBuilder()
@@ -107,6 +107,9 @@ async function renderPanel(interaction, activeFilter = null) {
             );
         components.push(new ActionRowBuilder().addComponents(channelSelect));
     }
+
+    // Row 3: Action buttons (Back, CMD Only, Auto React)
+    components.push(row2);
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
