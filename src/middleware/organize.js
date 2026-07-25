@@ -225,11 +225,11 @@ function decodeHtmlEntities(str) {
 }
 
 /**
- * Get active media URL for embed rendering (e.g. ddinstagram.com for Instagram)
+ * Get active media URL for embed rendering (e.g. kkinstagram.com for Instagram)
  */
 function getActiveMediaUrl(targetUrl) {
   if (/(instagram\.com|instagr\.am)/i.test(targetUrl)) {
-    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://ddinstagram.com');
+    return targetUrl.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/i, 'https://kkinstagram.com');
   }
   return targetUrl;
 }
@@ -342,7 +342,7 @@ export async function processFixEmbeds(message, isEdit = false) {
   pendingFixes.add(message.id);
 
   try {
-    const fixedContent = instaUrls.map(u => u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://ddinstagram.com')).join('\n');
+    const fixedContent = instaUrls.map(u => u.replace(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)/gi, 'https://kkinstagram.com')).join('\n');
 
     await message.reply({ content: fixedContent, allowedMentions: { repliedUser: false } }).catch(() => {});
   } catch (error) {
