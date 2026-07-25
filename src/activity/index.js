@@ -155,17 +155,16 @@ async function handleMessage(message) {
   return runInGuildContext(message.guild.id, async () => {
     // === CONTENT FILTER CHECK (early guard) ===
     try {
-      const { checkContentFilter, processFixEmbeds } = await import('../middleware/organize.js');
+      const { checkContentFilter, processFixEmbeds, processAutoReact } = await import('../middleware/organize.js');
       const shouldDelete = await checkContentFilter(message);
       if (shouldDelete) {
         await message.delete().catch(() => {});
         return; // Do NOT track activity for deleted messages
       }
       
-      // === FIX EMBEDS (URL Replacer) ===
-      // This MUST run after the filter check, but we do not await its verification delay
-      // to prevent blocking the message activity tracker & quest engine.
+      // === FIX EMBEDS & AUTO REACT ===
       processFixEmbeds(message).catch(err => sysError('Fix Embeds Background Failure', err));
+      processAutoReact(message).catch(err => sysError('Auto React Background Failure', err));
 
     } catch (error) {
       // Never let filter errors block activity tracking
