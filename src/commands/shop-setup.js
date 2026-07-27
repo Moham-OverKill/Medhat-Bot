@@ -2823,6 +2823,21 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const itemCategory = categories.find(c => c.id === item.category_id);
     const categoryDisplay = itemCategory ? itemCategory.name : 'None';
 
+    let durationDisplay = 'Permanent';
+    if (item.duration_seconds) {
+      const days = Math.floor(item.duration_seconds / 86400);
+      const hours = Math.floor((item.duration_seconds % 86400) / 3600);
+      if (days > 0) {
+        durationDisplay = `${days} Day${days !== 1 ? 's' : ''}`;
+        if (hours > 0) durationDisplay += ` ${hours} Hour${hours !== 1 ? 's' : ''}`;
+      } else if (hours > 0) {
+        durationDisplay = `${hours} Hour${hours !== 1 ? 's' : ''}`;
+      } else {
+        const minutes = Math.floor(item.duration_seconds / 60);
+        durationDisplay = `${minutes} Minute${minutes !== 1 ? 's' : ''}`;
+      }
+    }
+
     const customId = interaction.customId || '';
     let view = 'details';
     let page = 1;
