@@ -2862,39 +2862,64 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const PAGE_SIZE = 50;
     const dbUsers = await query(
-      `SELECT user_id, is_active FROM user_inventory
-       WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())`,
+      `SELECT user_id, MAX(CASE WHEN is_active THEN 1 ELSE 0 END) as is_active_db
+       FROM user_inventory
+       WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())
+       GROUP BY user_id`,
       [item.id, interaction.guildId]
     );
 
-    let ownedCount = 0;
-    let equippedCount = 0;
-    let memberRows = [];
+    const dbUserMap = new Map();
+    dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, Number(r.is_active_db)));
+    const ownedCount = dbUserMap.size;
 
-    if (dbUsers.rows.length > 0) {
-      const dbUserIds = dbUsers.rows.map(r => r.user_id);
-      try {
-        const fetchedMembers = await interaction.guild.members.fetch({ user: dbUserIds });
-        const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
+    // Fetch role members directly from Discord API if item grants a role
+    const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
+    const roleMemberMap = new Map(); // key: userId, value: GuildMember
 
-        memberRows = dbUsers.rows
-          .filter(r => fetchedMembers.has(r.user_id))
-          .map(r => {
-            const member = fetchedMembers.get(r.user_id);
-            const isEquipped = firstRoleId
-              ? (member?.roles.cache.has(firstRoleId) ?? false)
-              : !!r.is_active;
-            return { user_id: r.user_id, isEquipped };
-          });
-
-        ownedCount = memberRows.length;
-        equippedCount = memberRows.filter(r => r.isEquipped).length;
-      } catch (err) {
-        ownedCount = dbUsers.rows.length;
-        equippedCount = dbUsers.rows.filter(r => r.is_active).length;
-        memberRows = dbUsers.rows.map(r => ({ user_id: r.user_id, isEquipped: !!r.is_active }));
+    if (roleIds.length > 0) {
+      for (const rid of roleIds) {
+        try {
+          const fetched = await interaction.guild.members.fetch({ role: rid, force: true }).catch(() => null);
+          if (fetched) {
+            for (const [mId, member] of fetched) {
+              roleMemberMap.set(mId, member);
+            }
+          }
+        } catch (err) {
+          // ignore individual role fetch errors
+        }
+      }
+      if (roleMemberMap.size === 0) {
+        for (const rid of roleIds) {
+          for (const [mId, member] of interaction.guild.members.cache) {
+            if (member.roles.cache.has(rid)) {
+              roleMemberMap.set(mId, member);
+            }
+          }
+        }
       }
     }
+
+    let equippedCount = 0;
+    const allUserIds = new Set();
+    dbUserMap.forEach((_, uid) => allUserIds.add(uid));
+    if (roleIds.length > 0) {
+      roleMemberMap.forEach((_, uid) => allUserIds.add(uid));
+      equippedCount = roleMemberMap.size;
+    } else {
+      equippedCount = Array.from(dbUserMap.values()).filter(v => v === 1).length;
+    }
+
+    const memberRows = Array.from(allUserIds).map(uid => {
+      const isEquipped = roleIds.length > 0
+        ? roleMemberMap.has(uid)
+        : (dbUserMap.get(uid) === 1);
+      return { user_id: uid, isEquipped };
+    });
+
+    // Sort equipped users first
+    memberRows.sort((a, b) => (b.isEquipped ? 1 : 0) - (a.isEquipped ? 1 : 0));
 
     const totalPages = Math.max(1, Math.ceil(memberRows.length / PAGE_SIZE));
     if (page > totalPages) page = totalPages;
