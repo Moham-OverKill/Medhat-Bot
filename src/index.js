@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Client, GatewayIntentBits, MessageFlags, Events, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options } from 'discord.js';
 import { createServer } from 'http';
 import crypto from 'crypto';
 import os from 'os';
@@ -51,7 +51,28 @@ const client = new Client({
     Partials.Message,
     Partials.Reaction,
     Partials.User
-  ]
+  ],
+  makeCache: Options.cacheWithLimits({
+    MessageManager: 25,
+    StageInstanceManager: 0,
+    ThreadManager: 0,
+    GuildBanManager: 0,
+    GuildInviteManager: 0,
+    GuildScheduledEventManager: 0,
+    PresenceManager: 0,
+    ReactionManager: 0
+  }),
+  sweepers: {
+    ...Options.DefaultSweeperSettings,
+    messages: {
+      interval: 300,
+      lifetime: 1800
+    },
+    users: {
+      interval: 3600,
+      filter: () => user => !user.bot && user.id !== client.user?.id
+    }
+  }
 });
 
 let keepAliveServer = null;
