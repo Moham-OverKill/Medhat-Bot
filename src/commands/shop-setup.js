@@ -502,14 +502,14 @@ export async function handleItemModalSubmit(interaction) {
         // Block Booster Role as main Item Role
         const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
         if (boosterRoleId && roleId === boosterRoleId) {
-          return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Required Items field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Requirements field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
         }
 
         // Block MVP Role as main Item Role
         const { getGuildConfig } = await import('../storage/config.js');
         const guildConfig = await getGuildConfig(interaction.guildId);
         if (guildConfig && guildConfig.mvpRoleId === roleId) {
-          return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Required Items field to make MVP only items.", flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });
         }
 
         if (!interaction.guild.roles.cache.has(roleId)) {
@@ -650,14 +650,14 @@ export async function handleItemModalSubmit(interaction) {
           // Block Booster Role as main Item Role
           const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
           if (boosterRoleId && roleId === boosterRoleId) {
-            return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Required Items field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Requirements field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
           }
 
           // Block MVP Role as main Item Role
           const { getGuildConfig } = await import('../storage/config.js');
           const guildConfig = await getGuildConfig(interaction.guildId);
           if (guildConfig && guildConfig.mvpRoleId === roleId) {
-            return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Required Items field to make MVP only items.", flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });
           }
 
           if (!interaction.guild.roles.cache.has(roleId.split(/[,\s]+/)[0])) {
@@ -2736,7 +2736,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const embed = new EmbedBuilder()
       .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequired Items: ${prereqDisplay}\nOwned: \`\`${ownedCount}\`\`\nEquipped: \`\`${equippedCount}\`\``)
+      .setDescription(`Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}\nOwned: \`\`${ownedCount}\`\`\nEquipped: \`\`${equippedCount}\`\``)
       .setColor('#3498DB');
 
     // Show item image as thumbnail if available
@@ -2838,7 +2838,7 @@ export async function handleEditItemDetails(interaction) {
 
     const reqInput = new TextInputBuilder()
       .setCustomId('item_required')
-      .setLabel('Required Items (Role IDs)')
+      .setLabel('Requirements (Role IDs)')
       .setStyle(TextInputStyle.Short)
       .setValue(reqPreFill)
       .setRequired(false)
