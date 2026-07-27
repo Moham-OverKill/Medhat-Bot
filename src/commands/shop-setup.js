@@ -3159,15 +3159,15 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_pack_edit_${packId}`) // Rename / Price Modal
-        .setLabel('Edit')
-        .setEmoji('✏️')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
         .setCustomId('shop_edit_pack_start')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_pack_edit_${packId}`) // Rename / Price Modal
+        .setLabel('Edit')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary)
     );
 
     await interaction.editReply({ 
