@@ -530,6 +530,7 @@ async function createTables() {
         required_count INTEGER NOT NULL DEFAULT 1,
         reward_coins INTEGER NOT NULL DEFAULT 10,
         last_active_at INTEGER,
+        custom_title TEXT DEFAULT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -545,6 +546,16 @@ async function createTables() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quests' AND column_name='last_active_at') THEN 
           ALTER TABLE quests ADD COLUMN last_active_at INTEGER; 
         END IF; 
+      END $$;
+    `);
+
+    // Ensure custom_title column exists (migration for existing tables)
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quests' AND column_name='custom_title') THEN
+          ALTER TABLE quests ADD COLUMN custom_title TEXT DEFAULT NULL;
+        END IF;
       END $$;
     `);
 

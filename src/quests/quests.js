@@ -48,7 +48,7 @@ export async function getQuest(questId) {
 /**
  * Add a new quest (enforces max 10 limit)
  */
-export async function addQuest(guildId, { channelId, channelType, actionType, requiredCount, rewardCoins }) {
+export async function addQuest(guildId, { channelId, channelType, actionType, requiredCount, rewardCoins, customTitle }) {
   const pool = getPool();
   try {
     const countResult = await pool.query(
@@ -59,10 +59,11 @@ export async function addQuest(guildId, { channelId, channelType, actionType, re
       return { error: `Maximum of ${MAX_QUESTS_PER_GUILD} quests reached.` };
     }
 
+    const cleanTitle = (customTitle || '').trim() || null;
     const result = await pool.query(
-      `INSERT INTO quests (guild_id, channel_id, channel_type, action_type, required_count, reward_coins)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [guildId, channelId, channelType, actionType, requiredCount, rewardCoins]
+      `INSERT INTO quests (guild_id, channel_id, channel_type, action_type, required_count, reward_coins, custom_title)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [guildId, channelId, channelType, actionType, requiredCount, rewardCoins, cleanTitle]
     );
     return { quest: result.rows[0] };
   } catch (error) {
@@ -72,14 +73,15 @@ export async function addQuest(guildId, { channelId, channelType, actionType, re
 }
 
 /**
- * Update a quest's required count and reward
+ * Update a quest's required count, reward, and optional custom title
  */
-export async function updateQuest(questId, { requiredCount, rewardCoins }) {
+export async function updateQuest(questId, { requiredCount, rewardCoins, customTitle }) {
   const pool = getPool();
   try {
+    const cleanTitle = (customTitle || '').trim() || null;
     await pool.query(
-      `UPDATE quests SET required_count = $1, reward_coins = $2 WHERE id = $3`,
-      [requiredCount, rewardCoins, questId]
+      `UPDATE quests SET required_count = $1, reward_coins = $2, custom_title = $3 WHERE id = $4`,
+      [requiredCount, rewardCoins, cleanTitle, questId]
     );
     return true;
   } catch (error) {
@@ -337,6 +339,7 @@ export async function cleanupOldProgress() {
 
 /**
  * Format the quest task string (e.g., "Send 10 messages")
+ * If a custom_title is saved, it is used as the display text.
  */
 export function formatQuestTask(quest) {
   if (!quest) return '';
@@ -344,32 +347,45 @@ export function formatQuestTask(quest) {
   const type = quest.action_type;
   const channelType = quest.channel_type || 'text';
 
+  let text, unit;
+
   if (type === 'send_messages') {
-    const unit = count === 1 ? 'Message' : 'Messages';
-    return { text: `Send **${count}** ${unit.toLowerCase()}`, unit };
-  }
-  if (type === 'voice_minutes') {
-    const unit = count === 1 ? 'Minute' : 'Minutes';
-    return { text: `Join for **${count}** ${unit.toLowerCase()}`, unit };
-  }
-  if (type === 'react_images') {
-    const unit = count === 1 ? 'Reaction' : 'Reactions';
+    unit = count === 1 ? 'Message' : 'Messages';
+    text = `Send **${count}** ${unit.toLowerCase()}`;
+  } else if (type === 'voice_minutes') {
+    unit = count === 1 ? 'Minute' : 'Minutes';
+    text = `Join for **${count}** ${unit.toLowerCase()}`;
+  } else if (type === 'react_images') {
+    unit = count === 1 ? 'Reaction' : 'Reactions';
     const container = (channelType === 'media' || channelType === 'forum') ? (count === 1 ? 'post' : 'posts') : (count === 1 ? 'message' : 'messages');
-    return { text: `React on **${count}** ${container}`, unit };
-  }
-  if (type === 'upload_images') {
-    const unit = count === 1 ? 'Upload' : 'Uploads';
+    text = `React on **${count}** ${container}`;
+  } else if (type === 'upload_images') {
+    unit = count === 1 ? 'Upload' : 'Uploads';
     const container = count === 1 ? 'file' : 'files';
-    return { text: `Upload **${count}** ${container}`, unit };
+    text = `Upload **${count}** ${container}`;
+  } else {
+    unit = count === 1 ? 'Action' : 'Actions';
+    text = `${formatActionType(type, channelType)} × **${count}**`;
   }
-  
-  return { text: `${formatActionType(type, channelType)} × **${count}**`, unit: count === 1 ? 'Action' : 'Actions' };
+
+  // Use custom title as the display text when set (unit stays for progress bar label)
+  if (quest.custom_title?.trim()) {
+    text = quest.custom_title.trim();
+  }
+
+  return { text, unit };
 }
 
 /**
  * Generate a compact bold action sentence for UI.
+ * If a custom_title is saved, it is returned instead of the auto-generated sentence.
  */
 export function formatCompactQuest(quest) {
+  // If the quest has a custom title, display it in bold instead
+  if (quest.custom_title?.trim()) {
+    return `**${quest.custom_title.trim()}**`;
+  }
+
   const count = quest.required_count;
   const type = quest.action_type;
   const channelType = quest.channel_type || 'text';
@@ -442,4 +458,38 @@ export function getActionsForChannelType(channelType) {
     { value: 'upload_images', label: '🖼️ Upload Files' },
     { value: 'react_images', label: '👍 React to Messages' }
   ];
+}
+
+/**
+ * Generate a plain-text default quest title for use as a modal placeholder.
+ * Mirrors the logic of formatCompactQuest but outputs plain text (no markdown, no mentions).
+ *
+ * @param {string} actionType - The quest action type
+ * @param {string} channelType - The internal channel type bucket ('text', 'voice', 'media')
+ * @param {number} requiredCount - The quest count requirement
+ * @param {string} [channelName] - Optional plain channel name (e.g. "general")
+ * @returns {string} Plain text default title
+ */
+export function generateDefaultTitle(actionType, channelType, requiredCount, channelName) {
+  const count = requiredCount || 5;
+  const ch = channelName ? `#${channelName}` : 'the channel';
+  const cType = channelType || 'text';
+
+  if (actionType === 'send_messages') {
+    const unit = count === 1 ? 'message' : 'messages';
+    return `Send ${count} ${unit} in ${ch}`;
+  }
+  if (actionType === 'voice_minutes') {
+    const unit = count === 1 ? 'minute' : 'minutes';
+    return `Join ${ch} for ${count} ${unit}`;
+  }
+  if (actionType === 'react_images') {
+    const container = (cType === 'media' || cType === 'forum') ? (count === 1 ? 'post' : 'posts') : (count === 1 ? 'message' : 'messages');
+    return `React to ${count} ${container} in ${ch}`;
+  }
+  if (actionType === 'upload_images') {
+    const unit = count === 1 ? 'file' : 'files';
+    return `Upload ${count} ${unit} in ${ch}`;
+  }
+  return `Complete ${formatActionType(actionType, cType)} x${count} in ${ch}`;
 }
