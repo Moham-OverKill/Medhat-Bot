@@ -2918,7 +2918,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isOnUsers || page >= totalPages || !hasPagination);
 
-    const rowNav = new ActionRowBuilder().addComponents(prevBtn, detailsBtn, usersBtn, nextBtn);
+    const rowNav = new ActionRowBuilder().addComponents(prevBtn, usersBtn, revokeBtn, nextBtn);
 
     const backBtn = new ButtonBuilder()
       .setCustomId('shop_edit_item')
@@ -2938,7 +2938,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Danger);
 
-    const rowActions = new ActionRowBuilder().addComponents(backBtn, editDetailsBtn, revokeBtn);
+    const rowActions = new ActionRowBuilder().addComponents(backBtn, editDetailsBtn, detailsBtn);
 
     await interaction.editReply({
       content: successHeader || null,
