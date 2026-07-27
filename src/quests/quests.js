@@ -368,11 +368,6 @@ export function formatQuestTask(quest) {
     text = `${formatActionType(type, channelType)} × **${count}**`;
   }
 
-  // Use custom title as the display text when set (unit stays for progress bar label)
-  if (quest.custom_title?.trim()) {
-    text = quest.custom_title.trim();
-  }
-
   return { text, unit };
 }
 

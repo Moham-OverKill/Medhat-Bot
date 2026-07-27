@@ -55,10 +55,14 @@ export async function showQuestsDashboard(interaction) {
     const refreshes = config.quests_refreshes_per_day || 1;
     const perRefresh = config.quests_per_refresh || 3;
 
-    // Build Quest list display
     let questListText = quests.length === 0
       ? '*No quests created yet.*'
-      : quests.map((m, i) => `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** coins`).join('\n');
+      : quests.map((m, i) => {
+          if (m.custom_title?.trim()) {
+            return `**${i + 1}.** ${m.custom_title.trim()}`;
+          }
+          return `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** coins`;
+        }).join('\n');
 
     const embed = new EmbedBuilder()
       .setTitle('🎯 Quests Control Panel')
