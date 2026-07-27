@@ -2662,8 +2662,8 @@ export async function handleRevokeItemStart(interaction) {
       .setDescription(
         `You are about to revoke all owned copies of **${item.name}**.\n\n` +
         `**This will:**\n` +
-        `• Remove it from **every** user's inventory\n` +
-        `• Strip the item's Discord role from **all** members who currently have it, regardless of any active timers\n` +
+        `• Remove it from every user's inventory\n` +
+        `• Strip the item's role from all members who currently have it\n` +
         `• Keep the item in the shop database for future purchases or assignments\n\n` +
         `After confirmation, **0 users** will own or hold this item. This action cannot be undone.`
       )
@@ -2678,7 +2678,7 @@ export async function handleRevokeItemStart(interaction) {
     const cancelBtn = new ButtonBuilder()
       .setCustomId(`shop_item_edit_select_${itemId}`)
       .setLabel('Back')
-      .setEmoji('◀️')
+      .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(cancelBtn, confirmBtn);
@@ -2752,7 +2752,7 @@ export async function handleRevokeItemConfirm(interaction) {
     const backBtn = new ButtonBuilder()
       .setCustomId(`shop_item_edit_select_${itemId}`)
       .setLabel('Back to Item')
-      .setEmoji('◀️')
+      .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(backBtn);
