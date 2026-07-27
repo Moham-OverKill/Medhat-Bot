@@ -2766,7 +2766,23 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
   if (interaction.isAnySelectMenu()) {
     itemId = interaction.values[0];
   } else {
-    itemId = interaction.customId.split('_').pop();
+    const cid = interaction.customId;
+    // Strip known prefixes so the remaining value is always the full itemId (UUID-safe)
+    const prefixes = [
+      'shop_item_view_details_',
+      'shop_item_view_users_',
+      'shop_item_page_prev_',
+      'shop_item_page_next_',
+      'shop_item_edit_select_',
+    ];
+    const matched = prefixes.find(p => cid.startsWith(p));
+    if (matched) {
+      // For pagination buttons the format is: prefix{itemId}_p{page} — strip the page suffix
+      const raw = cid.slice(matched.length);
+      itemId = raw.includes('_p') ? raw.slice(0, raw.lastIndexOf('_p')) : raw;
+    } else {
+      itemId = cid.split('_').pop();
+    }
   }
 
   try {
@@ -2938,7 +2954,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Danger);
 
-    const rowActions = new ActionRowBuilder().addComponents(backBtn, editDetailsBtn, detailsBtn);
+    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
 
     await interaction.editReply({
       content: successHeader || null,
