@@ -2660,11 +2660,11 @@ export async function handleRevokeItemStart(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('⚠️ Confirm Revoke')
       .setDescription(
-        `You are about to permanently revoke **${item.name}**.\n\n` +
+        `You are about to revoke all owned copies of **${item.name}**.\n\n` +
         `**This will:**\n` +
-        `• Delete the item from the shop database permanently\n` +
         `• Remove it from **every** user's inventory\n` +
-        `• Strip the item's Discord role from **all** members who currently have it, regardless of any active timers\n\n` +
+        `• Strip the item's Discord role from **all** members who currently have it, regardless of any active timers\n` +
+        `• Keep the item in the shop database for future purchases or assignments\n\n` +
         `After confirmation, **0 users** will own or hold this item. This action cannot be undone.`
       )
       .setColor('#E74C3C');
@@ -2678,7 +2678,7 @@ export async function handleRevokeItemStart(interaction) {
     const cancelBtn = new ButtonBuilder()
       .setCustomId(`shop_item_edit_select_${itemId}`)
       .setLabel('Back')
-      .setEmoji('⬅️')
+      .setEmoji('◀️')
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(cancelBtn, confirmBtn);
@@ -2689,7 +2689,8 @@ export async function handleRevokeItemStart(interaction) {
 }
 
 /**
- * Executes the Revoke: strips roles from all holders, clears inventory, deletes the item.
+ * Executes the Revoke: strips roles from all holders and clears inventory records,
+ * but keeps the item in shop_items.
  */
 export async function handleRevokeItemConfirm(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
@@ -2731,31 +2732,31 @@ export async function handleRevokeItemConfirm(interaction) {
       }
     }
 
-    // 3. Delete item — cascades to user_inventory via deleteShopItem
-    await deleteShopItem(itemId, interaction.guildId);
+    // 3. Clear inventory records for this item (keeps the item in shop_items)
+    await query(
+      `DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
+      [itemId, interaction.guildId]
+    );
 
     // 4. Audit log
     sendLog(
-      interaction.guild, 'shop', 'red', '🗑️ Item Revoked',
-      `Admin **<@${interaction.user.id}>** revoked item **${itemName}** — removed from all inventories and database.`
+      interaction.guild, 'shop', 'red', '⚠️ Item Revoked from Users',
+      `Admin **<@${interaction.user.id}>** revoked item **${itemName}** — removed from all user inventories (item remains in shop).`
     );
 
-    // 5. Show success with a back button
+    // 5. Show success with a back button leading back to the item's edit view
     const successEmbed = new EmbedBuilder()
-      .setDescription(`✅ **${itemName}** has been fully revoked. All inventory records and role assignments have been removed.`)
+      .setDescription(`✅ **${itemName}** has been revoked from all users. All inventory records and role assignments have been cleared.`)
       .setColor('#2ECC71');
 
     const backBtn = new ButtonBuilder()
-      .setCustomId('shop_edit_item')
-      .setLabel('Back to Items')
-      .setEmoji('⬅️')
+      .setCustomId(`shop_item_edit_select_${itemId}`)
+      .setLabel('Back to Item')
+      .setEmoji('◀️')
       .setStyle(ButtonStyle.Secondary);
 
-    await interaction.editReply({
-      content: null,
-      embeds: [successEmbed],
-      components: [new ActionRowBuilder().addComponents(backBtn)]
-    });
+    const row = new ActionRowBuilder().addComponents(backBtn);
+    await interaction.editReply({ content: null, embeds: [successEmbed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item confirm');
   }
