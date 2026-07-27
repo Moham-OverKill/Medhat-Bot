@@ -44,6 +44,10 @@ const pendingPosts = new Map();
 // (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
+// Tracks which browser folder the admin was in before opening an item,
+// so the Back button on the Edit Item view can return them there.
+const pendingEditItemBackFolder = new Map();
+
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
   .setName('shop')
@@ -2610,9 +2614,17 @@ export async function handleAdminBrowserSelect(interaction) {
   if (selection.startsWith('item_')) {
       const itemId = selection.replace('item_', '');
       
-      // Clear the map context *before* passing off the flow
-      // since the deep handlers don't know about it.
+      // Save the current folder so Back can return here
       const action = context.action;
+      if (action === 'edit_item') {
+        pendingEditItemBackFolder.set(interaction.user.id, {
+          action: context.action,
+          folder: context.folder,
+          message: null
+        });
+      }
+
+      // Clear the browser context before passing off the flow
       pendingAdminBrowser.delete(interaction.user.id);
       
       // Inject the choice into the interaction object so the older handlers pick it up correctly
@@ -2631,6 +2643,15 @@ export async function handleAdminBrowserSelect(interaction) {
 export async function handleEditItemStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
+    // If the admin came here via Back from the Edit Item view, restore their last folder
+    const savedBack = pendingEditItemBackFolder.get(interaction.user.id);
+    if (savedBack) {
+      pendingEditItemBackFolder.delete(interaction.user.id);
+      pendingAdminBrowser.set(interaction.user.id, savedBack);
+      return renderAdminBrowser(interaction, savedBack);
+    }
+
     const context = { action: 'edit_item', folder: 'root', message: null };
     pendingAdminBrowser.set(interaction.user.id, context);
     await renderAdminBrowser(interaction, context);
