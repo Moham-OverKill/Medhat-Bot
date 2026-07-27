@@ -12,6 +12,7 @@ import {
   ChannelType
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
+import { COIN_EMOJI } from '../shared.js';
 import {
   getQuests,
   getQuest,
@@ -61,7 +62,7 @@ export async function showQuestsDashboard(interaction) {
           if (m.custom_title?.trim()) {
             return `**${i + 1}.** ${m.custom_title.trim()}`;
           }
-          return `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** coins`;
+          return `**${i + 1}.** <#${m.channel_id}> → ${formatQuestTask(m).text} → **${Number(m.reward_coins).toLocaleString()}** ${COIN_EMOJI}`;
         }).join('\n');
 
     const embed = new EmbedBuilder()
@@ -261,7 +262,7 @@ export async function showQuestDetail(interaction, questId) {
     fields.push(
       { name: '📺 Channel', value: `<#${quest.channel_id}>`, inline: false },
       { name: '🎮 Actions', value: formatQuestTask(quest).text, inline: false },
-      { name: '💰 Rewards', value: `**${Number(quest.reward_coins).toLocaleString()}** Coins`, inline: false }
+      { name: `${COIN_EMOJI} Rewards`, value: `**${Number(quest.reward_coins).toLocaleString()}** Coins`, inline: false }
     );
 
     const embed = new EmbedBuilder()
