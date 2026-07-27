@@ -2751,7 +2751,7 @@ export async function handleRevokeItemConfirm(interaction) {
 
     const backBtn = new ButtonBuilder()
       .setCustomId(`shop_item_edit_select_${itemId}`)
-      .setLabel('Back to Item')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
 
