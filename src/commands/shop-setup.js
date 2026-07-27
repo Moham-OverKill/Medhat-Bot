@@ -666,9 +666,9 @@ export async function handleItemModalSubmit(interaction) {
           updates.role_id = roleId;
         }
 
-        if (durationRaw !== '') {
+        {
           const days = parseInt(durationRaw, 10);
-          updates.duration_seconds = isNaN(days) || days === 0 ? null : days * 86400;
+          updates.duration_seconds = (durationRaw === '' || isNaN(days) || days === 0) ? null : days * 86400;
         }
 
         try {
@@ -2892,7 +2892,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       embed = new EmbedBuilder()
         .setTitle(`⚙️ Edit Item: ${item.name}`)
         .setDescription(
-          `Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
+          `Role: ${roleMention}\nDuration: \`\`${durationDisplay}\`\`\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
         )
         .setColor('#3498DB');
     } else {
