@@ -21,7 +21,8 @@ import {
   formatActionType,
   getActionsForChannelType,
   formatQuestTask,
-  formatCompactQuest
+  formatCompactQuest,
+  generateDefaultTitle
 } from '../quests/quests.js';
 import { sysError, sysLog } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -249,14 +250,20 @@ export async function showQuestDetail(interaction, questId) {
       return;
     }
 
+    const fields = [];
+    if (quest.custom_title) {
+      fields.push({ name: '📝 Title', value: quest.custom_title, inline: false });
+    }
+    fields.push(
+      { name: '📺 Channel', value: `<#${quest.channel_id}>`, inline: false },
+      { name: '🎮 Actions', value: formatQuestTask(quest).text, inline: false },
+      { name: '💰 Rewards', value: `**${Number(quest.reward_coins).toLocaleString()}** Coins`, inline: false }
+    );
+
     const embed = new EmbedBuilder()
       .setTitle('🎯 Quest Details')
       .setColor('#3498DB')
-      .addFields(
-        { name: '📺 Channel', value: `<#${quest.channel_id}>`, inline: false },
-        { name: '🎮 Actions', value: formatQuestTask(quest).text, inline: false },
-        { name: '💰 Rewards', value: `**${Number(quest.reward_coins).toLocaleString()}** Coins`, inline: false }
-      );
+      .addFields(fields);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -405,17 +412,31 @@ export async function handleAddActionSelect(interaction) {
 }
 
 async function showAddQuestModal(interaction, actionType) {
+  const pending = pendingQuestAdd.get(interaction.user.id);
   const actionLabel = formatActionType(actionType);
+
+  const channel = pending?.channelId ? interaction.guild?.channels.cache.get(pending.channelId) : null;
+  const channelName = channel?.name || '';
+  const defaultCount = actionType === 'voice_minutes' ? 10 : 5;
+  const titlePlaceholder = generateDefaultTitle(actionType, pending?.channelType, defaultCount, channelName);
 
   const modal = new ModalBuilder()
     .setCustomId('quests_add_modal')
     .setTitle('Quest Configuration');
 
+  const titleInput = new TextInputBuilder()
+    .setCustomId('custom_title')
+    .setLabel('Title (Optional)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder(titlePlaceholder)
+    .setRequired(false)
+    .setMaxLength(100);
+
   const countInput = new TextInputBuilder()
     .setCustomId('required_count')
     .setLabel(`How many? (${actionLabel})`)
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder(actionType === 'voice_minutes' ? '10' : '5')
+    .setPlaceholder(String(defaultCount))
     .setRequired(true);
 
   const rewardInput = new TextInputBuilder()
@@ -426,6 +447,7 @@ async function showAddQuestModal(interaction, actionType) {
     .setRequired(true);
 
   modal.addComponents(
+    new ActionRowBuilder().addComponents(titleInput),
     new ActionRowBuilder().addComponents(countInput),
     new ActionRowBuilder().addComponents(rewardInput)
   );
@@ -443,6 +465,7 @@ export async function handleAddQuestModal(interaction) {
       return;
     }
 
+    const customTitle = interaction.fields.getTextInputValue('custom_title')?.trim() || null;
     const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
     const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
 
@@ -460,7 +483,8 @@ export async function handleAddQuestModal(interaction) {
       channelType: pending.channelType,
       actionType: pending.actionType,
       requiredCount,
-      rewardCoins
+      rewardCoins,
+      customTitle
     });
 
     pendingQuestAdd.delete(interaction.user.id);
@@ -488,10 +512,25 @@ export async function handleEditQuest(interaction, questId) {
   }
 
   const actionLabel = formatActionType(quest.action_type, quest.channel_type);
+  const channel = interaction.guild?.channels.cache.get(quest.channel_id);
+  const channelName = channel?.name || '';
+  const titlePlaceholder = generateDefaultTitle(quest.action_type, quest.channel_type, quest.required_count, channelName);
 
   const modal = new ModalBuilder()
     .setCustomId(`quests_edit_modal_${questId}`)
     .setTitle('Edit Quest');
+
+  const titleInput = new TextInputBuilder()
+    .setCustomId('custom_title')
+    .setLabel('Title (Optional)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder(titlePlaceholder)
+    .setRequired(false)
+    .setMaxLength(100);
+
+  if (quest.custom_title) {
+    titleInput.setValue(quest.custom_title);
+  }
 
   const countInput = new TextInputBuilder()
     .setCustomId('required_count')
@@ -508,6 +547,7 @@ export async function handleEditQuest(interaction, questId) {
     .setRequired(true);
 
   modal.addComponents(
+    new ActionRowBuilder().addComponents(titleInput),
     new ActionRowBuilder().addComponents(countInput),
     new ActionRowBuilder().addComponents(rewardInput)
   );
@@ -520,6 +560,7 @@ export async function handleEditQuestModal(interaction) {
     await interaction.deferUpdate();
 
     const questId = parseInt(interaction.customId.split('_').pop(), 10);
+    const customTitle = interaction.fields.getTextInputValue('custom_title')?.trim() || null;
     const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
     const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);
 
@@ -532,7 +573,7 @@ export async function handleEditQuestModal(interaction) {
       return;
     }
 
-    const success = await updateQuest(questId, { requiredCount, rewardCoins });
+    const success = await updateQuest(questId, { requiredCount, rewardCoins, customTitle });
     if (!success) {
       await interaction.followUp({ content: '❌ Failed to update Quest.', flags: MessageFlags.Ephemeral });
       return;
@@ -546,6 +587,7 @@ export async function handleEditQuestModal(interaction) {
       if (idx !== -1) {
         config.active_quest_snapshot[idx].required_count = requiredCount;
         config.active_quest_snapshot[idx].reward_coins = rewardCoins;
+        config.active_quest_snapshot[idx].custom_title = customTitle;
         await setGuildConfig(guildId, config);
       }
     }
