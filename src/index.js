@@ -315,6 +315,23 @@ client.once(Events.ClientReady, async () => {
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
+    const initMem = process.memoryUsage();
+    sysLog('Memory Optimization Active', { 
+      v8MaxHeap: '384MB', 
+      msgCacheCap: '25 per channel', 
+      heapUsed: `${Math.round(initMem.heapUsed / 1024 / 1024)}MB`,
+      rss: `${Math.round(initMem.rss / 1024 / 1024)}MB`
+    });
+
+    // Periodic memory check every 30 minutes
+    setInterval(() => {
+      const mem = process.memoryUsage();
+      sysLog('Memory Check', {
+        heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB / 384MB`,
+        rss: `${Math.round(mem.rss / 1024 / 1024)}MB`
+      });
+    }, 30 * 60 * 1000);
+
     // Real-time maintenance is now handled by event listeners (guildRoleDelete, guildChannelDelete)
 
     // Run booster color audit in background (don't block startup)
