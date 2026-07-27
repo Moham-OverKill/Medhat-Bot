@@ -2645,10 +2645,123 @@ export async function handleEditItemCategorySelect(interaction) {
   await handleEditItemStart(interaction);
 }
 
+/**
+ * Shows the Revoke confirmation screen (in-place message update).
+ */
+export async function handleRevokeItemStart(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+  try {
+    const itemId = interaction.customId.split('_').pop();
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const embed = new EmbedBuilder()
+      .setTitle('⚠️ Confirm Revoke')
+      .setDescription(
+        `You are about to permanently revoke **${item.name}**.\n\n` +
+        `**This will:**\n` +
+        `• Delete the item from the shop database permanently\n` +
+        `• Remove it from **every** user's inventory\n` +
+        `• Strip the item's Discord role from **all** members who currently have it, regardless of any active timers\n\n` +
+        `After confirmation, **0 users** will own or hold this item. This action cannot be undone.`
+      )
+      .setColor('#E74C3C');
+
+    const confirmBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_revoke_confirm_${itemId}`)
+      .setLabel('Confirm Revoke')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger);
+
+    const cancelBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_edit_select_${itemId}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary);
+
+    const row = new ActionRowBuilder().addComponents(confirmBtn, cancelBtn);
+    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'revoke item start');
+  }
+}
+
+/**
+ * Executes the Revoke: strips roles from all holders, clears inventory, deletes the item.
+ */
+export async function handleRevokeItemConfirm(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+  try {
+    // customId format: shop_item_revoke_confirm_{itemId}
+    const parts = interaction.customId.split('_');
+    const itemId = parts[parts.length - 1];
+
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const itemName = item.name;
+
+    // 1. Fetch all holders from inventory (including expired records — strip everything)
+    const holders = await query(
+      `SELECT DISTINCT user_id FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
+      [itemId, interaction.guildId]
+    );
+
+    // 2. Strip Discord role from every holder still in the server
+    if (item.role_id && holders.rows.length > 0) {
+      const roleIds = item.role_id.split(/[,\s]+/).filter(Boolean);
+      const holderIds = holders.rows.map(r => r.user_id);
+      try {
+        const fetchedMembers = await interaction.guild.members.fetch({ user: holderIds });
+        const stripPromises = [];
+        for (const member of fetchedMembers.values()) {
+          for (const rid of roleIds) {
+            if (member.roles.cache.has(rid)) {
+              stripPromises.push(
+                member.roles.remove(rid, `Item Revoked: ${itemName}`).catch(() => null)
+              );
+            }
+          }
+        }
+        await Promise.allSettled(stripPromises);
+      } catch (err) {
+        sysError('Revoke Role Strip Failed', err, { guild: interaction.guildId, item: itemId });
+      }
+    }
+
+    // 3. Delete item — cascades to user_inventory via deleteShopItem
+    await deleteShopItem(itemId, interaction.guildId);
+
+    // 4. Audit log
+    sendLog(
+      interaction.guild, 'shop', 'red', '🗑️ Item Revoked',
+      `Admin **<@${interaction.user.id}>** revoked item **${itemName}** — removed from all inventories and database.`
+    );
+
+    // 5. Show success with a back button
+    const successEmbed = new EmbedBuilder()
+      .setDescription(`✅ **${itemName}** has been fully revoked. All inventory records and role assignments have been removed.`)
+      .setColor('#2ECC71');
+
+    const backBtn = new ButtonBuilder()
+      .setCustomId('shop_edit_item')
+      .setLabel('Back to Items')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary);
+
+    await interaction.editReply({
+      content: null,
+      embeds: [successEmbed],
+      components: [new ActionRowBuilder().addComponents(backBtn)]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'revoke item confirm');
+  }
+}
+
 export async function handleEditItemSelect(interaction, successHeader = null) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   
-  // This might come from a select menu (values[0]) or a button (customId split)
   let itemId;
   if (interaction.isAnySelectMenu()) {
     itemId = interaction.values[0];
@@ -2660,20 +2773,14 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-    // Ensure we are not editing a pack in the item editor
     if (item.is_pack || item.item_type === 'pack') {
       sysLog('Shop Admin Warning', { guild: interaction.guildId, detail: `Attempted to edit Pack ${item.id} in Item Editor` });
-      // Redirect or error
-      // Since we have handleEditPackSelect, we could redirect, but safer to error
       return interaction.followUp({ content: '❌ This is a pack. Please use "Edit Pack" instead.', flags: MessageFlags.Ephemeral });
     }
 
-    // Calculate Statistics
-    const catCount = item.category_id ? 1 : 0;
     const packCount = await getItemUsageCount(item.id, interaction.guildId);
     const roleMention = item.role_id ? `<@&${item.role_id}>` : 'None';
 
-    // Show prerequisites
     let prereqDisplay = '``None``';
     let reqItems = item.required_items;
     if (typeof reqItems === 'string') {
@@ -2683,13 +2790,8 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       const allItems = await getShopItems(interaction.guildId, null, 'name', true);
       const reqDisplays = reqItems
         .map(id => {
-            // Check for Booster & MVP Markers
-            if (typeof id === 'string' && id.startsWith('booster:')) {
-              return '🚀 **Server Booster**';
-            }
-            if (typeof id === 'string' && id.startsWith('mvp:')) {
-              return '🏆 **Active Server MVP**';
-            }
+            if (typeof id === 'string' && id.startsWith('booster:')) return '🚀 **Server Booster**';
+            if (typeof id === 'string' && id.startsWith('mvp:')) return '🏆 **Active Server MVP**';
             const match = allItems.find(i => i.id === id);
             if (!match || !match.role_id) return null;
             return `<@&${match.role_id}>`;
@@ -2698,88 +2800,150 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : '``None``';
     }
 
-    // Get category name for display
     const categories = await getShopCategories(interaction.guildId);
     const itemCategory = categories.find(c => c.id === item.category_id);
     const categoryDisplay = itemCategory ? itemCategory.name : 'None';
 
-    // Calculate owned and equipped counts (filtering to current guild members)
-    let ownedCount = 0;
-    let equippedCount = 0;
+    const customId = interaction.customId || '';
+    let view = 'details';
+    let page = 1;
 
+    if (customId.startsWith('shop_item_view_users_') || customId.startsWith('shop_item_page_')) {
+      view = 'users';
+      const pageMatch = customId.match(/_p(\d+)$/);
+      if (pageMatch) page = parseInt(pageMatch[1], 10);
+    }
+
+    const PAGE_SIZE = 50;
     const dbUsers = await query(
-      `SELECT user_id, is_active FROM user_inventory 
+      `SELECT user_id, is_active FROM user_inventory
        WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())`,
       [item.id, interaction.guildId]
     );
+
+    let ownedCount = 0;
+    let equippedCount = 0;
+    let memberRows = [];
 
     if (dbUsers.rows.length > 0) {
       const dbUserIds = dbUsers.rows.map(r => r.user_id);
       try {
         const fetchedMembers = await interaction.guild.members.fetch({ user: dbUserIds });
-        const activeMemberIds = new Set(fetchedMembers.keys());
-        
-        ownedCount = dbUsers.rows.filter(r => activeMemberIds.has(r.user_id)).length;
-        
-        if (item.role_id) {
-          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-          equippedCount = fetchedMembers.filter(m => m.roles.cache.has(firstRoleId)).size;
-        } else {
-          equippedCount = dbUsers.rows.filter(r => r.is_active && activeMemberIds.has(r.user_id)).length;
-        }
+        const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
+
+        memberRows = dbUsers.rows
+          .filter(r => fetchedMembers.has(r.user_id))
+          .map(r => {
+            const member = fetchedMembers.get(r.user_id);
+            const isEquipped = firstRoleId
+              ? (member?.roles.cache.has(firstRoleId) ?? false)
+              : !!r.is_active;
+            return { user_id: r.user_id, isEquipped };
+          });
+
+        ownedCount = memberRows.length;
+        equippedCount = memberRows.filter(r => r.isEquipped).length;
       } catch (err) {
-        // Fallback to database-only counts if member fetch fails
         ownedCount = dbUsers.rows.length;
         equippedCount = dbUsers.rows.filter(r => r.is_active).length;
+        memberRows = dbUsers.rows.map(r => ({ user_id: r.user_id, isEquipped: !!r.is_active }));
       }
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`⚙️ Edit Item: ${item.name}`)
-      .setDescription(`Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}\nOwned: \`\`${ownedCount}\`\`\nEquipped: \`\`${equippedCount}\`\``)
-      .setColor('#3498DB');
+    const totalPages = Math.max(1, Math.ceil(memberRows.length / PAGE_SIZE));
+    if (page > totalPages) page = totalPages;
 
-    // Show item image as thumbnail if available
+    let embed;
+    if (view === 'details') {
+      embed = new EmbedBuilder()
+        .setTitle(`⚙️ Edit Item: ${item.name}`)
+        .setDescription(
+          `Role: ${roleMention}\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
+        )
+        .setColor('#3498DB');
+    } else {
+      const pageSlice = memberRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+      const userLines = pageSlice.length > 0
+        ? pageSlice.map(r => `${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}>`).join('\n')
+        : '*No users on this page.*';
+
+      embed = new EmbedBuilder()
+        .setTitle(`👥 Users: ${item.name}`)
+        .setDescription(`Owned: \`\`${ownedCount}\`\`  •  Equipped: \`\`${equippedCount}\`\`\n\n${userLines}`)
+        .setFooter({ text: `Page ${page} / ${totalPages}` })
+        .setColor('#3498DB');
+    }
+
     const itemImg = getItemImage(item);
     if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
-      { label: '🏷️ No Category', value: 'null' }, 
-      ...categories.map(c => ({ 
-        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
-        value: c.id.toString(), 
-        default: c.id == item.category_id 
+      { label: '🏷️ No Category', value: 'null' },
+      ...categories.map(c => ({
+        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
+        value: c.id.toString(),
+        default: c.id == item.category_id
       }))
     ];
-
     const catSelect = new StringSelectMenuBuilder()
       .setCustomId(`shop_assign_cat_select_manage_${itemId}`)
       .setPlaceholder('Select')
       .addOptions(catOptions);
-
     const rowCat = new ActionRowBuilder().addComponents(catSelect);
 
-    const actionRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_item_edit_details_${itemId}`)
-          .setLabel('Edit Details')
-          .setEmoji('✏️')
-          .setStyle(ButtonStyle.Primary)
-      );
+    const isOnUsers = view === 'users';
+    const hasPagination = memberRows.length > PAGE_SIZE;
 
-    const backRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_edit_item') // Back to Item List
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
+    const prevBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!isOnUsers || page <= 1);
+
+    const detailsBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_view_details_${itemId}`)
+      .setLabel('Details')
+      .setStyle(view === 'details' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(view === 'details');
+
+    const usersBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_view_users_${itemId}_p${page}`)
+      .setLabel('Users')
+      .setStyle(view === 'users' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(view === 'users');
+
+    const nextBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
+      .setEmoji('➡️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!isOnUsers || page >= totalPages || !hasPagination);
+
+    const rowNav = new ActionRowBuilder().addComponents(prevBtn, detailsBtn, usersBtn, nextBtn);
+
+    const backBtn = new ButtonBuilder()
+      .setCustomId('shop_edit_item')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary);
+
+    const editDetailsBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_edit_details_${itemId}`)
+      .setLabel('Edit Details')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Primary);
+
+    const revokeBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_revoke_${itemId}`)
+      .setLabel('Revoke')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger);
+
+    const rowActions = new ActionRowBuilder().addComponents(backBtn, editDetailsBtn, revokeBtn);
 
     await interaction.editReply({
       content: successHeader || null,
       embeds: [embed],
-      components: [rowCat, actionRow, backRow]
+      components: [rowCat, rowNav, rowActions]
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit item select');
