@@ -2651,7 +2651,9 @@ export async function handleEditItemCategorySelect(interaction) {
 export async function handleRevokeItemStart(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   try {
-    const itemId = interaction.customId.split('_').pop();
+    const itemId = interaction.customId.startsWith('shop_item_revoke_')
+      ? interaction.customId.slice('shop_item_revoke_'.length)
+      : interaction.customId.split('_').pop();
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
@@ -2679,7 +2681,7 @@ export async function handleRevokeItemStart(interaction) {
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
 
-    const row = new ActionRowBuilder().addComponents(confirmBtn, cancelBtn);
+    const row = new ActionRowBuilder().addComponents(cancelBtn, confirmBtn);
     await interaction.editReply({ content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item start');
@@ -2692,9 +2694,9 @@ export async function handleRevokeItemStart(interaction) {
 export async function handleRevokeItemConfirm(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   try {
-    // customId format: shop_item_revoke_confirm_{itemId}
-    const parts = interaction.customId.split('_');
-    const itemId = parts[parts.length - 1];
+    const itemId = interaction.customId.startsWith('shop_item_revoke_confirm_')
+      ? interaction.customId.slice('shop_item_revoke_confirm_'.length)
+      : interaction.customId.split('_').pop();
 
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
