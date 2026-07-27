@@ -2880,7 +2880,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     } else {
       const pageSlice = memberRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
       const userLines = pageSlice.length > 0
-        ? pageSlice.map(r => `${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}>`).join('\n')
+        ? pageSlice.map(r => `- ${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}>`).join('\n')
         : '*No users on this page.*';
 
       embed = new EmbedBuilder()
@@ -2950,9 +2950,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const editDetailsBtn = new ButtonBuilder()
       .setCustomId(`shop_item_edit_details_${itemId}`)
-      .setLabel('Edit Details')
+      .setLabel('Edit')
       .setEmoji('✏️')
-      .setStyle(ButtonStyle.Primary);
+      .setStyle(ButtonStyle.Secondary);
 
     const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
 
