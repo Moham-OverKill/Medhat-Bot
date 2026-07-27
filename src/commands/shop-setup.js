@@ -2934,6 +2934,12 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isOnUsers || page >= totalPages || !hasPagination);
 
+    const revokeBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_revoke_${itemId}`)
+      .setLabel('Revoke')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger);
+
     const rowNav = new ActionRowBuilder().addComponents(prevBtn, usersBtn, revokeBtn, nextBtn);
 
     const backBtn = new ButtonBuilder()
@@ -2947,12 +2953,6 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setLabel('Edit Details')
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Primary);
-
-    const revokeBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_revoke_${itemId}`)
-      .setLabel('Revoke')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Danger);
 
     const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
 
@@ -2971,7 +2971,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
 export async function handleEditItemDetails(interaction) {
   try {
-    const itemId = interaction.customId.split('_').pop();
+    const itemId = interaction.customId.startsWith('shop_item_edit_details_')
+      ? interaction.customId.slice('shop_item_edit_details_'.length)
+      : interaction.customId.split('_').pop();
     const item = await getShopItem(itemId, interaction.guildId);
 
     if (!item) {
