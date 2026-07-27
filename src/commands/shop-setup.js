@@ -2914,7 +2914,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const prevBtn = new ButtonBuilder()
       .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-      .setEmoji('⬅️')
+      .setEmoji('◀️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isOnUsers || page <= 1);
 
@@ -2932,7 +2932,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const nextBtn = new ButtonBuilder()
       .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-      .setEmoji('➡️')
+      .setEmoji('▶️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isOnUsers || page >= totalPages || !hasPagination);
 
