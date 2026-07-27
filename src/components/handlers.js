@@ -77,7 +77,9 @@ import {
   handleShopPostNewLayout,
   handleShopPostEditLayout,
   handleShopEditPostUrlSubmit,
-  handleShopPostUpdate
+  handleShopPostUpdate,
+  handleRevokeItemStart,
+  handleRevokeItemConfirm
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -282,6 +284,18 @@ export function setupComponentHandlers(client) {
         await handleEditItemStart(interaction);
       } else if (customId === 'shop_admin_browser_select') {
         await handleAdminBrowserSelect(interaction);
+      } else if (customId.startsWith('shop_item_view_details_')) {
+        await handleEditItemSelect(interaction);
+      } else if (customId.startsWith('shop_item_view_users_')) {
+        await handleEditItemSelect(interaction);
+      } else if (customId.startsWith('shop_item_page_prev_') || customId.startsWith('shop_item_page_next_')) {
+        await handleEditItemSelect(interaction);
+      } else if (customId.startsWith('shop_item_edit_select_')) {
+        await handleEditItemSelect(interaction);
+      } else if (customId.startsWith('shop_item_revoke_confirm_')) {
+        await handleRevokeItemConfirm(interaction);
+      } else if (customId.startsWith('shop_item_revoke_')) {
+        await handleRevokeItemStart(interaction);
       } else if (customId.startsWith('shop_item_edit_details_')) {
         await handleEditItemDetails(interaction);
       } else if (customId.startsWith('shop_pack_edit_')) {
