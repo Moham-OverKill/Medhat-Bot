@@ -3139,48 +3139,12 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
       }
     }
 
-    // Calculate owned and equipped counts (filtering to current guild members)
-    let ownedCount = 0;
-    let equippedCount = 0;
-
-    const dbUsers = await query(
-      `SELECT user_id, is_active FROM user_inventory 
-       WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [item.id, interaction.guildId]
-    );
-
-    if (dbUsers.rows.length > 0) {
-      const dbUserIds = dbUsers.rows.map(r => r.user_id);
-      try {
-        const fetchedMembers = await interaction.guild.members.fetch({ user: dbUserIds });
-        const activeMemberIds = new Set(fetchedMembers.keys());
-        
-        ownedCount = dbUsers.rows.filter(r => activeMemberIds.has(r.user_id)).length;
-        
-        if (item.role_id) {
-          const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-          equippedCount = fetchedMembers.filter(m => m.roles.cache.has(firstRoleId)).size;
-        } else {
-          equippedCount = dbUsers.rows.filter(r => r.is_active && activeMemberIds.has(r.user_id)).length;
-        }
-      } catch (err) {
-        // Fallback to database-only counts if member fetch fails
-        ownedCount = dbUsers.rows.length;
-        equippedCount = dbUsers.rows.filter(r => r.is_active).length;
-      }
-    }
-
     const embed = new EmbedBuilder()
       .setTitle(`📦 Edit Pack: ${item.name}`)
-      .setDescription(`**Contents:** ${contentsDisplay}\n**Owned:** \`\`${ownedCount}\`\`\n**Equipped:** \`\`${equippedCount}\`\``)
+      .setDescription(`**Contents:** ${contentsDisplay}`)
       .setColor('#8E44AD'); // Purple for packs
 
     const actionRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_pack_edit_${packId}`) // Rename / Price Modal
-        .setLabel('Edit')
-        .setEmoji('✏️')
-        .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`shop_pack_add_${packId}`)
         .setLabel('Add Items')
@@ -3195,12 +3159,16 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
 
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId(`shop_pack_edit_${packId}`) // Rename / Price Modal
+        .setLabel('Edit')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
         .setCustomId('shop_edit_pack_start')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
-
 
     await interaction.editReply({ 
       content: successHeader || null, 
