@@ -2871,6 +2871,27 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const dbUserMap = new Map();
     dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, Number(r.is_active_db)));
+
+    // Verify guild membership to filter out users who left the server
+    const dbUserIds = Array.from(dbUserMap.keys());
+    if (dbUserIds.length > 0) {
+      let fetchedBatch = null;
+      try {
+        fetchedBatch = await interaction.guild.members.fetch({ user: dbUserIds }).catch(() => null);
+      } catch (err) {}
+
+      for (const uid of dbUserIds) {
+        const isPresent = (fetchedBatch && fetchedBatch.has(uid)) || interaction.guild.members.cache.has(uid);
+        if (!isPresent) {
+          // Double check individual fetch to be 100% certain
+          const member = await interaction.guild.members.fetch(uid).catch(() => null);
+          if (!member) {
+            dbUserMap.delete(uid);
+          }
+        }
+      }
+    }
+
     const ownedCount = dbUserMap.size;
 
     // Fetch role members directly from Discord API if item grants a role
