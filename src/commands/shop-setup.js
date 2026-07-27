@@ -44,10 +44,6 @@ const pendingPosts = new Map();
 // (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
-// Tracks which browser folder the admin was in before opening an item,
-// so the Back button on the Edit Item view can return them there.
-const pendingEditItemBackFolder = new Map();
-
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
   .setName('shop')
@@ -2614,17 +2610,8 @@ export async function handleAdminBrowserSelect(interaction) {
   if (selection.startsWith('item_')) {
       const itemId = selection.replace('item_', '');
       
-      // Save the current folder so Back can return here
-      const action = context.action;
-      if (action === 'edit_item') {
-        pendingEditItemBackFolder.set(interaction.user.id, {
-          action: context.action,
-          folder: context.folder,
-          message: null
-        });
-      }
-
       // Clear the browser context before passing off the flow
+      const action = context.action;
       pendingAdminBrowser.delete(interaction.user.id);
       
       // Inject the choice into the interaction object so the older handlers pick it up correctly
@@ -2644,14 +2631,18 @@ export async function handleEditItemStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-    // If the admin came here via Back from the Edit Item view, restore their last folder
-    const savedBack = pendingEditItemBackFolder.get(interaction.user.id);
-    if (savedBack) {
-      pendingEditItemBackFolder.delete(interaction.user.id);
-      pendingAdminBrowser.set(interaction.user.id, savedBack);
-      return renderAdminBrowser(interaction, savedBack);
+    // If the Back button encoded a folder ID, restore the browser at that folder.
+    // customId format: 'shop_edit_item_back_<folderId>' (folderId = category UUID or 'root')
+    const cid = interaction.customId || '';
+    const BACK_PREFIX = 'shop_edit_item_back_';
+    if (cid.startsWith(BACK_PREFIX)) {
+      const folderId = cid.slice(BACK_PREFIX.length);
+      const context = { action: 'edit_item', folder: folderId, message: null };
+      pendingAdminBrowser.set(interaction.user.id, context);
+      return renderAdminBrowser(interaction, context);
     }
 
+    // Fresh entry — always start from root
     const context = { action: 'edit_item', folder: 'root', message: null };
     pendingAdminBrowser.set(interaction.user.id, context);
     await renderAdminBrowser(interaction, context);
@@ -2981,8 +2972,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const rowNav = new ActionRowBuilder().addComponents(prevBtn, usersBtn, revokeBtn, nextBtn);
 
+    const backFolderId = item.category_id || 'root';
     const backBtn = new ButtonBuilder()
-      .setCustomId('shop_edit_item')
+      .setCustomId(`shop_edit_item_back_${backFolderId}`)
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
