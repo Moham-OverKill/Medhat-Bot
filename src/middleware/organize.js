@@ -163,7 +163,7 @@ function isMediaPostUrl(url) {
   }
 
   if (/(youtube\.com|youtu\.be)/i.test(url)) {
-    return /(watch\?v=|\/shorts\/|youtu\.be\/)/i.test(url);
+    return /(watch\?v=|\/shorts\/|\/live\/|\/v\/|\/embed\/|youtu\.be\/)/i.test(url);
   }
 
   if (/(twitter\.com|x\.com)/i.test(url)) {
