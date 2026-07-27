@@ -280,7 +280,7 @@ export function setupComponentHandlers(client) {
         await handleEditCategoryStart(interaction);
       } else if (customId === 'shop_edit_pack_start') {
         await handleEditPackStart(interaction);
-      } else if (customId === 'shop_edit_item') {
+      } else if (customId === 'shop_edit_item' || customId.startsWith('shop_edit_item_back_')) {
         await handleEditItemStart(interaction);
       } else if (customId === 'shop_admin_browser_select') {
         await handleAdminBrowserSelect(interaction);
