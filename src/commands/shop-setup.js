@@ -1940,11 +1940,6 @@ export async function handleEditCategorySelect(interaction, successHeader = null
     const actionRow = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
-          .setCustomId(`shop_cat_settings_${categoryId}`)
-          .setLabel('Edit')
-          .setEmoji('⚙️')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
           .setCustomId(`shop_cat_add_${categoryId}`)
           .setLabel('Add Items')
           .setEmoji('➕')
@@ -1961,7 +1956,12 @@ export async function handleEditCategorySelect(interaction, successHeader = null
         .setCustomId('shop_edit_category_start') // Back to list
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_cat_settings_${categoryId}`)
+        .setLabel('Edit')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary)
     );
 
     await interaction.editReply({ content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
