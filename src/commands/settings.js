@@ -181,40 +181,36 @@ export async function showOtherSubMenu(interaction) {
         .setDescription('Configure additional server utilities.')
         .setColor(0x2F3136);
 
-    // Row 1: Logs - Economy
+    // Row 1: Customize - Organize
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
+            .setCustomId('settings_customize')
+            .setLabel('Customize')
+            .setEmoji('✨')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_organize')
+            .setLabel('Organize')
+            .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 2: Back - Economy - Logs
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_economy')
             .setLabel('Economy')
             .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Organize - Customize
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_organize')
-            .setLabel('Organize')
-            .setEmoji('🧹')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_customize')
-            .setLabel('Customize')
-            .setEmoji('✨')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Back
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back')
-            .setEmoji('⬅️')
+            .setCustomId('settings_logs')
+            .setLabel('Logs')
+            .setEmoji('📜')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -222,7 +218,7 @@ export async function showOtherSubMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2]
     });
 }
 
