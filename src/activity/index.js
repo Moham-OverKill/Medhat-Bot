@@ -315,15 +315,8 @@ async function checkQuestProgress(message) {
   const guildId = message.guild.id;
   
   const quests = activeQuestsCache.get(guildId);
-  if (quests === undefined) {
-    // LAZY LOAD: If cache is empty, attempt one-time sync before skipping
-    if (syncingGuilds.has(guildId)) return; // Wait for current sync
-    syncingGuilds.add(guildId);
-    try {
-        await syncQuestChannelCache(guildId);
-    } finally {
-        syncingGuilds.delete(guildId);
-    }
+  if (!quests) {
+    await syncQuestChannelCache(guildId);
   }
 
   const finalQuests = activeQuestsCache.get(guildId);
@@ -334,17 +327,16 @@ async function checkQuestProgress(message) {
 
   // Robust Parent ID fetching for threads
   if (!actualParentId && message.channel.isThread?.()) {
-    if (!actualParentId) {
-       try {
-         const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
-         if (fetched?.parentId) actualParentId = fetched.parentId;
-       } catch {}
-    }
+    try {
+      const fetched = await message.client.channels.fetch(actualChannelId).catch(() => null);
+      if (fetched?.parentId) actualParentId = fetched.parentId;
+    } catch {}
   }
 
   let content = '';
-  let hasAttachment = false;
+  let hasAttachments = false;
   let hasSticker = false;
+  let hasMedia = false;
   let isThreadStarter = false;
   let inPostChannel = false;
 
@@ -353,11 +345,25 @@ async function checkQuestProgress(message) {
 
   try {
     content = (message.content || '').trim();
-    hasAttachment = (message.attachments?.size || 0) > 0;
+    hasAttachments = (message.attachments?.size || 0) > 0;
     hasSticker = (message.stickers?.size || 0) > 0;
+    
+    const hasEmbedMedia = message.embeds?.some(e => e.image || e.video || e.thumbnail);
+    const hasMediaUrl = content.includes('cdn.discordapp.com') || 
+                        content.includes('media.discordapp.net') ||
+                        /https?:\/\/[^\s<>]+\.(png|jpe?g|gif|webp|mp4|mov|webm)/i.test(content) ||
+                        /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|x\.com|twitter\.com|tenor\.com|imgur\.com)/i.test(content);
 
+    hasMedia = hasAttachments || hasEmbedMedia || hasMediaUrl;
+
+    const isThread = message.channel.isThread?.() || false;
     inPostChannel = await isPostChannel(message.channel);
-    isThreadStarter = inPostChannel && (message.id === message.channel?.id);
+
+    isThreadStarter = isThread && (
+      message.id === message.channel.id ||
+      (message.channel.starterMessageId && message.id === message.channel.starterMessageId) ||
+      (!message.reference && message.channel.ownerId === userId && (message.channel.messageCount === undefined || message.channel.messageCount <= 1))
+    );
   } catch (error) {
     sysError('Message Parse Error (Quest Engine)', error, { user: userId, guild: guildId, detail: 'Failed to read message properties' });
     return; // Fast fail
@@ -367,7 +373,7 @@ async function checkQuestProgress(message) {
 
   let cooldownApplied = false;
 
-  for (const quest of quests) {
+  for (const quest of finalQuests) {
     // 1. Channel Isolation & Container Matching (Threads/Posts/Normal)
     const isChannelMatch = (quest.channel_id === actualChannelId || quest.channel_id === actualParentId);
     if (!isChannelMatch) continue;
@@ -382,18 +388,18 @@ async function checkQuestProgress(message) {
     if (quest.action_type === 'send_messages') {
       if (inPostChannel) {
         // POST CHANNEL: Only comments qualify (NOT the new-post starter message)
-        qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasAttachment);
+        qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasMedia);
       } else {
-        // NORMAL CHANNEL: Any message with text, sticker, custom emoji, or attachment counts
-        qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasAttachment;
+        // NORMAL CHANNEL: Any message with text, sticker, or media counts
+        qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasMedia;
       }
     } else if (quest.action_type === 'upload_images') {
       if (inPostChannel) {
-        // POST CHANNEL: Only New Posts (thread starter with attachment) qualify
-        qualifies = isThreadStarter && hasAttachment;
+        // POST CHANNEL: New post starter message with media qualifies
+        qualifies = isThreadStarter && hasMedia;
       } else {
-        // NORMAL CHANNEL: Any message with an attachment counts — double-dip allowed
-        qualifies = hasAttachment;
+        // NORMAL CHANNEL: Any message with media counts
+        qualifies = hasMedia;
       }
     }
 
@@ -542,8 +548,13 @@ export async function checkReactionQuest(reaction, user) {
   try {
     const reactChannel = reaction.message.channel;
     inPostChannel = await isPostChannel(reactChannel);
+    const isThread = reactChannel.isThread?.() || false;
     isOriginalPost = inPostChannel
-      ? (reaction.message.id === reactChannel?.id)
+      ? (isThread && (
+          reaction.message.id === reactChannel.id ||
+          (reactChannel.starterMessageId && reaction.message.id === reactChannel.starterMessageId) ||
+          (!reaction.message.reference && reactChannel.ownerId === reaction.message.author?.id)
+        ))
       : true; // Normal channels: any message qualifies
   } catch (err) {
     sysError('Reaction Parse Error (Quest Engine)', err, { user: userId, guild: guildId });
