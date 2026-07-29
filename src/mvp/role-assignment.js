@@ -1,4 +1,4 @@
-import { sysLog, sysError } from '../utils/logger.js';
+import { sysLog, sysError, sendLog } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
 import { sleep, executeWithRetry } from '../shared.js';
 import { getTopCoinUsers, getTopStreakUsers } from '../commands/leaderboard.js';
@@ -188,16 +188,25 @@ export async function applyRichestRole(client, guildId) {
         const toRemove = currentHolders.filter(m => !winnerIds.includes(m.id));
         if (toRemove.length > 0) {
             await removeRoleFromMembers(toRemove, role, guildId);
+            const userMentions = toRemove.map(m => `<@${m.id}>`).join(', ');
+            sendLog(guild, 'audit', 'red', '🗑️ Richest Role Revoked', `Role <@&${role.id}> was removed from: ${userMentions}`);
         }
 
         // Assign: add role to new top-N winners
+        const newlyAssigned = [];
         for (const member of validMembers) {
             try {
                 if (member.roles.cache.has(role.id)) continue; // already has it
-                await assignRoleToMember(member, role);
+                const ok = await assignRoleToMember(member, role);
+                if (ok) newlyAssigned.push(member);
             } catch (err) {
                 sysError('Richest Role Assign Failed', err, { guild: guildId, user: member.id });
             }
+        }
+
+        if (newlyAssigned.length > 0) {
+            const winnerMentions = newlyAssigned.map(m => `<@${m.id}>`).join(', ');
+            sendLog(guild, 'economy', 'gold', '💰 Richest Role Awarded', `Role <@&${role.id}> was awarded to the top richest member(s): ${winnerMentions}`);
         }
 
         sysLog('Richest Role Applied', { guild: guildId, winners: winnerIds.length, removed: toRemove.length });
@@ -239,16 +248,25 @@ export async function applyStreakRole(client, guildId) {
         const toRemove = currentHolders.filter(m => !winnerIds.includes(m.id));
         if (toRemove.length > 0) {
             await removeRoleFromMembers(toRemove, role, guildId);
+            const userMentions = toRemove.map(m => `<@${m.id}>`).join(', ');
+            sendLog(guild, 'audit', 'red', '🗑️ Streak Role Revoked', `Role <@&${role.id}> was removed from: ${userMentions}`);
         }
 
         // Assign: add role to new top-N winners
+        const newlyAssigned = [];
         for (const member of validMembers) {
             try {
                 if (member.roles.cache.has(role.id)) continue; // already has it
-                await assignRoleToMember(member, role);
+                const ok = await assignRoleToMember(member, role);
+                if (ok) newlyAssigned.push(member);
             } catch (err) {
                 sysError('Streak Role Assign Failed', err, { guild: guildId, user: member.id });
             }
+        }
+
+        if (newlyAssigned.length > 0) {
+            const winnerMentions = newlyAssigned.map(m => `<@${m.id}>`).join(', ');
+            sendLog(guild, 'economy', 'orange', '🔥 Streak Role Awarded', `Role <@&${role.id}> was awarded to the top streak member(s): ${winnerMentions}`);
         }
 
         sysLog('Streak Role Applied', { guild: guildId, winners: winnerIds.length, removed: toRemove.length });

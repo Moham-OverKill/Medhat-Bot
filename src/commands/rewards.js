@@ -344,7 +344,7 @@ export async function handleRewardsModal(interaction) {
         const recipientUser = await interaction.client.users.fetch(targetUserId).catch(() => null);
         const recipientLogName = recipientUser ? getUserLogName(recipientUser) : targetUserId;
 
-        sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed',
+        sendLog(interaction.guild, 'economy', 'green', '💰 Admin Coins Granted',
           `**Target:** \`${recipientLogName}\`\n` +
           `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
           `**Admin:** \`${logName}\`\n` +

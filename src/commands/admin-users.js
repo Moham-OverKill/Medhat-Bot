@@ -216,9 +216,9 @@ export async function handleBalanceModal(interaction) {
         const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
         
         if (delta > 0) {
-            sendLog(interaction.guild, 'audit', 'orange', '🎁 Rewards Claimed',
+            sendLog(interaction.guild, 'economy', 'green', '💰 Balance Adjusted',
                 `**Target:** \`${targetLogName}\`\n` +
-                `**Amount:** \`+${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
+                `**Addition:** \`+${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
                 `**Admin:** \`${adminLogName}\` (via User Settings)`
             );
         } else {
