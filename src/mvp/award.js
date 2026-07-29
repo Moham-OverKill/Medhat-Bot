@@ -955,8 +955,7 @@ export async function awardMvp(client, guildId, options = {}) {
       const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
       const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
 
-      sendLog(guild, 'economy', 'orange', '🎁 Rewards Claimed', 
-        `**Type:** \`MVP Payout\`\n` +
+      sendLog(guild, 'economy', 'gold', '⭐ MVP Awarded', 
         `**Winners:** ${winnerLogList}\n` +
         `**Reward:** \`${totalReward.toLocaleString()}\` ${COIN_EMOJI} per winner`
       );

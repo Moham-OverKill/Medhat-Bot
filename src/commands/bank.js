@@ -223,7 +223,7 @@ export async function handleBankDaily(interaction) {
     // 2.5 Log to Discord Logs
     const logUsername = getUserLogName(member);
     const initialBal = result.balance - result.amount;
-    sendLog(interaction.guild, 'economy', 'orange', '🎁 Rewards Claimed',
+    sendLog(interaction.guild, 'economy', 'orange', '💰 Daily Claimed',
       `**User:** \`${logUsername}\`\n` +
       `**Reward:** \`${result.amount.toLocaleString()}\` ${COIN_EMOJI} (Daily)\n` +
       `**Streak:** \`${result.streak} days\`\n` +
@@ -1441,7 +1441,7 @@ export async function handleItemClaim(interaction) {
       }
 
       // 3. Log Audit
-      sendLog(interaction.guild, 'inventory', 'green', '\uD83C\uDF81 Item Claimed', `**${getUserLogName(interaction.member)}** claimed **${res.item.name}**.\nDrop ID: \`${dropId}\``);
+      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Picked Up', `**${getUserLogName(interaction.member)}** picked up **${res.item.name}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
     const errorMsgStr = error.message || '';
