@@ -295,29 +295,29 @@ export async function getTopStreakUsers(guildId, limit = 50) {
     // Import Cairo time helpers
     const { isStreakValid } = await import('../utils/time.js');
 
-    // Fetch users with any streak history (including last_daily for validation)
+    // Fetch all users with positive daily_streak to avoid sql LIMIT truncating active streaks before JS validation
     const result = await pool.query(`
         SELECT user_id, daily_streak, last_daily
         FROM user_balances
-        WHERE guild_id = $1
+        WHERE guild_id = $1 AND daily_streak > 0 AND last_daily IS NOT NULL
         ORDER BY daily_streak DESC, user_id ASC
-        LIMIT $2
-    `, [guildId, limit]);
+    `, [guildId]);
 
-    // Validate each streak - if stale, set to 0 for display
-    const validatedRows = result.rows.map(row => {
-        const isValid = isStreakValid(row.last_daily);
-        return {
-            user_id: row.user_id,
-            daily_streak: isValid ? row.daily_streak : 0
-        };
-    });
+    // Validate each streak - if stale, filter out
+    const validatedRows = result.rows
+        .map(row => {
+            const isValid = isStreakValid(row.last_daily);
+            return {
+                user_id: row.user_id,
+                daily_streak: isValid ? (parseInt(row.daily_streak, 10) || 0) : 0
+            };
+        })
+        .filter(row => row.daily_streak > 0);
 
-    // Re-sort: valid streaks first (DESC), then 0s at bottom
+    // Re-sort: valid streaks first (DESC)
     validatedRows.sort((a, b) => b.daily_streak - a.daily_streak);
 
-    // Filter to only include users with any activity (have a last_daily record)
-    return validatedRows.filter(row => result.rows.some(r => r.user_id === row.user_id && r.last_daily));
+    return validatedRows.slice(0, limit);
 }
 
 /**

@@ -648,16 +648,16 @@ export async function handleInventoryButton(interaction) {
         `${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`
       );
 
-    // 6. Build Category Buttons (All Blue/Primary, including "Other")
+    // 6. Build Category Buttons (All Secondary/Gray)
     const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
 
-    // Create button definitions - all categories are Blue
+    // Create button definitions - all categories are Secondary (Gray)
     const buttonDefs = validCategories.map(c => ({
       id: `bank_inv_cat_${c.id}`,
       label: c.name
     }));
 
-    // "Other" is also Blue, treated like a category
+    // "Other" is also Secondary (Gray), treated like a category
     if (otherCount > 0) {
       buttonDefs.push({
         id: 'bank_inv_cat_null',
@@ -665,60 +665,64 @@ export async function handleInventoryButton(interaction) {
       });
     }
 
-    // Pagination Logic
-    // Extract page from customId (e.g., bank_inv_page_1 or bank_inventory)
-    // For slash commands, customId is undefined - default to page 0
+    // Pagination & Layout Logic (4 buttons per row max, max 4 rows = 16 categories per page)
     let page = 0;
     const customId = interaction.customId || '';
     if (customId.startsWith('bank_inv_page_')) {
-      page = parseInt(customId.split('_').pop()) || 0;
+      const pageVal = parseInt(customId.split('_').pop());
+      if (!isNaN(pageVal)) page = pageVal;
     }
 
-    const CATS_PER_PAGE = 4; // 4 categories per page (fits with arrows)
-    const totalPages = Math.ceil(buttonDefs.length / CATS_PER_PAGE);
+    const CATS_PER_ROW = 4;
+    const MAX_CAT_ROWS = 4;
+    const CATS_PER_PAGE = CATS_PER_ROW * MAX_CAT_ROWS; // 16 category buttons per page
+    const totalPages = Math.max(1, Math.ceil(buttonDefs.length / CATS_PER_PAGE));
 
-    // Ensure page is within bounds
     if (page < 0) page = 0;
-    if (page >= totalPages && totalPages > 0) page = totalPages - 1;
+    if (page >= totalPages) page = totalPages - 1;
 
     const startIdx = page * CATS_PER_PAGE;
     const pageButtons = buttonDefs.slice(startIdx, startIdx + CATS_PER_PAGE);
 
-    // Build Single Row: [◀️?] [Cat1] [Cat2] [Cat3] [Cat4] [▶️?]
-    const row = new ActionRowBuilder();
+    const rows = [];
 
-    // 1. Left Arrow - only if page > 0
-    if (page > 0) {
-      row.addComponents(
+    // Build Category Rows (4 buttons each)
+    for (let i = 0; i < pageButtons.length; i += CATS_PER_ROW) {
+      const chunk = pageButtons.slice(i, i + CATS_PER_ROW);
+      const row = new ActionRowBuilder();
+      chunk.forEach(btn => {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(btn.id)
+            .setLabel(btn.label)
+            .setStyle(ButtonStyle.Secondary)
+        );
+      });
+      rows.push(row);
+    }
+
+    // Navigation Row (Row 5 - only if totalPages > 1)
+    if (totalPages > 1) {
+      const navRow = new ActionRowBuilder();
+      navRow.addComponents(
         new ButtonBuilder()
           .setCustomId(`bank_inv_page_${page - 1}`)
           .setEmoji('◀️')
           .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
-    // 2. Category Buttons - all Blue
-    pageButtons.forEach(btn => {
-      row.addComponents(
+          .setDisabled(page === 0),
         new ButtonBuilder()
-          .setCustomId(btn.id)
-          .setLabel(btn.label)
-          .setStyle(ButtonStyle.Primary)
-      );
-    });
-
-    // 3. Right Arrow - only if more pages exist
-    if (page < totalPages - 1) {
-      row.addComponents(
+          .setCustomId('bank_inv_page_indicator')
+          .setLabel(`${page + 1}/${totalPages}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true),
         new ButtonBuilder()
           .setCustomId(`bank_inv_page_${page + 1}`)
           .setEmoji('▶️')
           .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page >= totalPages - 1)
       );
+      rows.push(navRow);
     }
-
-    const rows = [];
-    if (row.components.length > 0) rows.push(row);
 
     await interaction.editReply({
       content: null,
@@ -765,44 +769,8 @@ export async function handleInventoryCategorySelect(interaction) {
     items = await sortItemsByRolePosition(items, interaction.guild);
 
     if (items.length === 0) {
-      // Category is empty - build main inventory directly with fresh data
-      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
-      const totalCount = activeItems.length;
-      const userBal = await getUserBalance(interaction.guildId, interaction.user.id);
-      const currentBalance = parseInt(userBal.balance);
-
-      // Count items per category
-      const categoryCounts = {};
-      let otherCount = 0;
-      for (const item of activeItems) {
-        if (item.category_id) {
-          categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + 1;
-        } else {
-          otherCount++;
-        }
-      }
-
-      const validCategoryIds = Object.keys(categoryCounts).map(Number);
-      const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
-
-      const embed = new EmbedBuilder()
-        .setTitle('🎒 Inventory')
-        .setColor('#3498DB')
-        .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
-
-      const buttonDefs = validCategories.map(c => ({ id: `bank_inv_cat_${c.id}`, label: c.name }));
-      if (otherCount > 0) buttonDefs.push({ id: 'bank_inv_cat_null', label: 'Other' });
-
-      const rows = [];
-      if (buttonDefs.length > 0) {
-        const row = new ActionRowBuilder();
-        buttonDefs.slice(0, 4).forEach(btn => {
-          row.addComponents(new ButtonBuilder().setCustomId(btn.id).setLabel(btn.label).setStyle(ButtonStyle.Primary));
-        });
-        rows.push(row);
-      }
-
-      return interaction.editReply({ content: null, embeds: [embed], components: rows });
+      // Category is empty - return to main inventory dashboard
+      return handleInventoryButton(interaction);
     }
 
     // Get Category Name
