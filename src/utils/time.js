@@ -34,6 +34,10 @@ export function getNextDailyTime(lastDailyDate) {
  * Uses Intl.DateTimeFormat for robust DST handling
  */
 export function getCairoDateString(date) {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+
   // Create a formatter for Cairo time
   const formatter = new Intl.DateTimeFormat('en-CA', { // en-CA gives YYYY-MM-DD format
     timeZone: 'Africa/Cairo',
@@ -42,7 +46,7 @@ export function getCairoDateString(date) {
     day: '2-digit'
   });
 
-  return formatter.format(date);
+  return formatter.format(d);
 }
 
 /**
@@ -88,10 +92,12 @@ export function isStreakValid(lastClaimDate) {
   if (!lastClaimDate) return false;
 
   const claimDateStr = getCairoDateString(lastClaimDate);
-  const today = getTodayCairo();
+  if (!claimDateStr) return false;
+
   const yesterday = getYesterdayCairo();
 
-  return claimDateStr === today || claimDateStr === yesterday;
+  // Streak is valid if last claim date is yesterday, today, or in the future (handles clock drift)
+  return claimDateStr >= yesterday;
 }
 
 /**
