@@ -365,6 +365,13 @@ export async function handleRewardsModal(interaction) {
 
         await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
         await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
+
+        // Real-time role re-evaluation for Richest Role
+        import('../mvp/role-assignment.js').then(({ applyRichestRole }) => {
+            applyRichestRole(interaction.client, guildId).catch(err => {
+                sysError('Richest Role Auto-update Failed', err, { guild: guildId });
+            });
+        }).catch(() => {});
       } catch (error) {
         sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
         await interaction.followUp({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });

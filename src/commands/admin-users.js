@@ -230,6 +230,13 @@ export async function handleBalanceModal(interaction) {
         }
 
         await showUserDashboard(interaction, targetUserId);
+
+        // Real-time role re-evaluation for Richest Role
+        import('../mvp/role-assignment.js').then(({ applyRichestRole }) => {
+            applyRichestRole(interaction.client, guildId).catch(err => {
+                sysError('Richest Role Auto-update Failed', err, { guild: guildId });
+            });
+        }).catch(() => {});
     } catch (error) {
         sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, guild: guildId, detail: `Balance adjust: ${targetUserId}` });
         await interaction.followUp({ content: '❌ Failed to update balance.', flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -318,6 +325,13 @@ export async function handleStreakModal(interaction) {
         );
 
         await showUserDashboard(interaction, targetUserId);
+
+        // Real-time role re-evaluation for Streak Role
+        import('../mvp/role-assignment.js').then(({ applyStreakRole }) => {
+            applyStreakRole(interaction.client, guildId).catch(err => {
+                sysError('Streak Role Auto-update Failed', err, { guild: guildId });
+            });
+        }).catch(() => {});
     } catch (error) {
         sysError('Infrastructure Audit Failure', error, { user: interaction.user.id, target: targetUserId, guild: guildId, detail: `Streak adjust: ${targetUserId}` });
         await interaction.followUp({ content: '❌ Failed to update streak.', flags: MessageFlags.Ephemeral }).catch(() => {});
