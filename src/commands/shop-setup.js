@@ -3116,7 +3116,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       embed = new EmbedBuilder()
         .setTitle(`⚙️ Edit Item: ${item.name}`)
         .setDescription(
-          `Role: ${roleMention}\nDuration: \`\`${durationDisplay}\`\`\nCategory: \`\`${categoryDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
+          `Role: ${roleMention}\nDuration: \`\`${durationDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
         )
         .setColor('#3498DB');
     } else {
