@@ -3217,10 +3217,15 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
 
+    // Only show the 3 attribute dropdowns on the Details view — hide them on the Users page
+    const components = view === 'details'
+      ? [rowCat, rowRarity, rowTradable, rowNav, rowActions]
+      : [rowNav, rowActions];
+
     await interaction.editReply({
       content: successHeader || null,
       embeds: [embed],
-      components: [rowCat, rowRarity, rowTradable, rowNav, rowActions]
+      components
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit item select');
