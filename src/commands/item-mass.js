@@ -102,6 +102,8 @@ async function handleMassItemSubcommand(interaction) {
         ids: ids,
         categoryId: null,
         packId: null,
+        rarity: 'common',
+        is_tradable: true,
         price: null  // Always null - set at post time
     });
     
@@ -171,7 +173,33 @@ async function renderMassPanel(interaction, userId) {
 
     components.push(new ActionRowBuilder().addComponents(packSelect));
 
-    // Row 3: Buttons
+    // Row 3: Rarity Select
+    const rarityOptions = [
+        { label: '⚪ Common',    value: 'common',    description: 'Default rarity' },
+        { label: '🟢 Uncommon',  value: 'uncommon' },
+        { label: '🔵 Rare',      value: 'rare' },
+        { label: '🟣 Epic',      value: 'epic' },
+        { label: '🟡 Legendary', value: 'legendary' }
+    ];
+    const { rarity: currentRarity, is_tradable: currentTradable } = state;
+    const raritySelect = new StringSelectMenuBuilder()
+        .setCustomId('mass_select_rarity')
+        .setPlaceholder('Rarity')
+        .addOptions(rarityOptions.map(o => ({ ...o, default: o.value === currentRarity })));
+    components.push(new ActionRowBuilder().addComponents(raritySelect));
+
+    // Row 4: Tradability Select
+    const tradableOptions = [
+        { label: '✅ Tradable',   value: 'tradable' },
+        { label: '🔒 Untradable', value: 'untradable' }
+    ];
+    const tradableSelect = new StringSelectMenuBuilder()
+        .setCustomId('mass_select_tradable')
+        .setPlaceholder('Status')
+        .addOptions(tradableOptions.map(o => ({ ...o, default: (o.value === 'tradable') === currentTradable })));
+    components.push(new ActionRowBuilder().addComponents(tradableSelect));
+
+    // Row 5: Buttons
     const buttonRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('mass_create_cat_start')
@@ -212,6 +240,10 @@ export async function handleMassSelect(interaction) {
         state.categoryId = value === 'null' ? null : value;
     } else if (interaction.customId === 'mass_select_pack') {
         state.packId = value === 'null' ? null : value;
+    } else if (interaction.customId === 'mass_select_rarity') {
+        state.rarity = value;
+    } else if (interaction.customId === 'mass_select_tradable') {
+        state.is_tradable = value === 'tradable';
     }
     
     await renderMassPanel(interaction, userId);
@@ -301,7 +333,7 @@ export async function handleMassSave(interaction) {
     
     if (!state) return interaction.editReply({ content: '❌ Session expired.', components: [] });
     
-    const { ids, categoryId, packId, price } = state;
+    const { ids, categoryId, packId, rarity, is_tradable, price } = state;
     
     try {
         let created = 0;
@@ -370,7 +402,7 @@ export async function handleMassSave(interaction) {
                     const role = guild.roles.cache.get(roleId);
                     const name = role ? role.name : `Role ${roleId}`;
                     // Price is null — must be set at post time via the Post panel
-                    const newItem = await addShopItem(guild.id, categoryId, roleId, name, '', null, null, null, 'role');
+                    const newItem = await addShopItem(guild.id, categoryId, roleId, name, '', null, null, null, 'role', [], [], null, rarity, is_tradable);
                     created++;
                     if (categoryId) addedToCategory++;
                     processedItemIds.push(newItem.id);

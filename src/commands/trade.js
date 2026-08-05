@@ -715,6 +715,7 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
         tradableItems = allItems.filter(i => {
            const source = (i.purchase_source || '').toLowerCase();
            if (source !== 'shop' || i.item_type === 'pack') return false; 
+           if (i.is_tradable === false) return false;
            if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
 
            const firstRole = i.role_id?.split(/[,\s]+/)[0];
@@ -740,6 +741,7 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
         tradableItems = allItems.filter(i => {
             const source = (i.purchase_source || '').toLowerCase();
             if (source !== 'shop' || i.item_type === 'pack') return false;
+            if (i.is_tradable === false) return false;
             if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
 
             const firstRole = i.role_id?.split(/[,\s]+/)[0];

@@ -79,7 +79,11 @@ import {
   handleShopEditPostUrlSubmit,
   handleShopPostUpdate,
   handleRevokeItemStart,
-  handleRevokeItemConfirm
+  handleRevokeItemConfirm,
+  handleNewItemAttrSelect,
+  handleNewItemSave,
+  handleEditItemRaritySelect,
+  handleEditItemTradableSelect
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -272,6 +276,12 @@ export function setupComponentHandlers(client) {
         else await handleEditCategorySelect(interaction);
       } else if (customId.startsWith('shop_assign_cat_select_')) {
         await handleManageItemCategorySelect(interaction);
+      } else if (customId.startsWith('shop_new_cat_select_') || customId.startsWith('shop_new_rarity_select_') || customId.startsWith('shop_new_tradable_select_')) {
+        await handleNewItemAttrSelect(interaction);
+      } else if (customId.startsWith('shop_edit_rarity_select_')) {
+        await handleEditItemRaritySelect(interaction);
+      } else if (customId.startsWith('shop_edit_tradable_select_')) {
+        await handleEditItemTradableSelect(interaction);
       } else if (customId === 'bank_shop_item') {
         await handleShopItemSelect(interaction);
       } else if (customId === 'shop_edit_item_select' || customId === 'shop_select_item_edit' || customId === 'shop_item_edit_select') {
@@ -351,6 +361,8 @@ export function setupComponentHandlers(client) {
       // Shop Setup Button Routing
       else if (customId === 'shop_admin_add' || customId === 'shop_setup_add') {
         await handleShopAdminAdd(interaction);
+      } else if (customId.startsWith('shop_new_save_')) {
+        await handleNewItemSave(interaction);
       } else if (customId === 'shop_admin_edit' || customId === 'shop_setup_edit') {
         await handleShopAdminEdit(interaction);
       } else if (customId === 'shop_admin_delete' || customId === 'shop_setup_delete') {
