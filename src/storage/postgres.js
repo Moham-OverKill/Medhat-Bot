@@ -466,6 +466,10 @@ async function createTables() {
       // Unified Image System: Store item default image at creation time
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS default_image_url TEXT`);
 
+      // Rarity & Tradability System: Per-item rarity tier and trade eligibility flag
+      await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS rarity TEXT DEFAULT 'common'`);
+      await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS is_tradable BOOLEAN DEFAULT TRUE`);
+
       // Null-Price System: Price is now set at post-time, not creation-time
       // This drops the NOT NULL constraint so new items can be created without a price.
       // Existing items keep their prices untouched.

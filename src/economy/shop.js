@@ -287,7 +287,7 @@ export async function getItemUsageCount(itemId) {
 /**
  * Add a new item to the shop
  */
-export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null) {
+export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null, rarity = 'common', isTradable = true) {
   try {
     // Map itemType to is_pack
     const isPack = itemType === 'pack';
@@ -295,10 +295,10 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
     const contentsJson = JSON.stringify(contents || []);
 
     const result = await query(
-      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13)
+      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url, rarity, is_tradable)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13, $14, $15)
        RETURNING *`,
-      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), defaultImageUrl || null]
+      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), defaultImageUrl || null, rarity, isTradable]
     );
 
     return result.rows[0];
@@ -313,7 +313,7 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
  */
 export async function updateShopItem(itemId, updates) {
   try {
-    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url'];
+    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url', 'rarity', 'is_tradable'];
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
@@ -1282,7 +1282,7 @@ export async function getUserInventory(userId, guildId) {
     // Use INNER JOIN to only return items that still exist in shop_items
     // This prevents "ghost" items from deleted shop entries
     const result = await query(
-      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price
+      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price, s.is_tradable, s.rarity
        FROM user_inventory i
        INNER JOIN shop_items s ON i.shop_item_id = s.id
        WHERE i.user_id = $1 AND i.guild_id = $2
