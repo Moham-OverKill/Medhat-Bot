@@ -796,7 +796,11 @@ export async function handleManageItemCategorySelect(interaction) {
       customId: `shop_item_edit_${itemId}`,
       values: [String(itemId)],
       isAnySelectMenu: () => true,
-      guildId: interaction.guildId
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
     };
     const message = categoryId ? `✅ Moved to category **${catName}**.` : '✅ Removed from category.';
     await handleEditItemSelect(mock, message);
@@ -929,14 +933,16 @@ export async function handleNewItemSave(interaction) {
   const item = await getShopItem(itemId, interaction.guildId);
   if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
+  const catId = (state.categoryId !== null && state.categoryId !== 'null') ? parseInt(state.categoryId) : null;
+
   await updateShopItem(itemId, {
-    category_id: state.categoryId ? parseInt(state.categoryId) : null,
+    category_id: catId,
     rarity: state.rarity,
     is_tradable: state.is_tradable
-  });
+  }, interaction.guildId);
 
-  if (state.categoryId) {
-    const catName = (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [state.categoryId, interaction.guildId])).rows[0]?.name ?? state.categoryId;
+  if (catId) {
+    const catName = (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [catId, interaction.guildId])).rows[0]?.name ?? catId;
     sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin **<@${interaction.user.id}>** assigned item **${item.name}** to category **${catName}**.`);
   }
 
@@ -3246,7 +3252,7 @@ export async function handleEditItemRaritySelect(interaction) {
   const item = await getShopItem(itemId, interaction.guildId);
   if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-  await updateShopItem(itemId, { rarity });
+  await updateShopItem(itemId, { rarity }, interaction.guildId);
 
   const rarityLabel = RARITY_OPTIONS.find(o => o.value === rarity)?.label ?? rarity;
   const mock = {
@@ -3277,7 +3283,7 @@ export async function handleEditItemTradableSelect(interaction) {
   const item = await getShopItem(itemId, interaction.guildId);
   if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-  await updateShopItem(itemId, { is_tradable: isTradable });
+  await updateShopItem(itemId, { is_tradable: isTradable }, interaction.guildId);
 
   const tradableLabel = isTradable ? '✅ Tradable' : '🔒 Untradable';
   const mock = {

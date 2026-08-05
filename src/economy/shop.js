@@ -103,12 +103,20 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
 /**
  * Get a specific shop item
  */
-export async function getShopItem(itemId) {
+export async function getShopItem(itemId, guildId = null) {
   try {
-    const result = await query(
-      'SELECT * FROM shop_items WHERE id = $1',
-      [itemId]
-    );
+    let result;
+    if (guildId) {
+      result = await query(
+        'SELECT * FROM shop_items WHERE id = $1 AND guild_id = $2',
+        [itemId, String(guildId)]
+      );
+    } else {
+      result = await query(
+        'SELECT * FROM shop_items WHERE id = $1',
+        [itemId]
+      );
+    }
 
     return result.rows[0] || null;
   } catch (error) {
@@ -311,7 +319,7 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
 /**
  * Update a shop item
  */
-export async function updateShopItem(itemId, updates) {
+export async function updateShopItem(itemId, updates, guildId = null) {
   try {
     const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url', 'rarity', 'is_tradable'];
     const setClauses = [];
@@ -339,8 +347,15 @@ export async function updateShopItem(itemId, updates) {
     setClauses.push(`updated_at = NOW()`);
     values.push(itemId);
 
+    let whereClause = `WHERE id = $${paramIndex}`;
+    if (guildId) {
+      paramIndex++;
+      whereClause += ` AND guild_id = $${paramIndex}`;
+      values.push(String(guildId));
+    }
+
     const result = await query(
-      `UPDATE shop_items SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE shop_items SET ${setClauses.join(', ')} ${whereClause} RETURNING *`,
       values
     );
 
@@ -1317,7 +1332,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     await purgeUserInventory(userId, guildId, member);
 
     const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity
        FROM user_inventory ui
        LEFT JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
