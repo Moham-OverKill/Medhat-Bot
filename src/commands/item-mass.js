@@ -382,13 +382,15 @@ export async function handleMassSave(interaction) {
                 
                 if (existing.rows.length > 0) {
                     const item = existing.rows[0];
+                    const updates = { rarity, is_tradable };
                     if (categoryId && item.category_id != categoryId) {
-                        await updateShopItem(item.id, { category_id: categoryId });
-                        updated++;
+                        updates.category_id = categoryId;
                         addedToCategory++;
                     } else if (categoryId && item.category_id == categoryId) {
                         addedToCategory++;
                     }
+                    await updateShopItem(item.id, updates, guild.id);
+                    updated++;
                     processedItemIds.push(item.id);
                 } else {
                     // Check 2: Role uniqueness (should pass since we checked existing above)
