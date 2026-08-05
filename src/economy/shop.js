@@ -1123,7 +1123,7 @@ export async function dropItem(userId, guildId, invId, member) {
 
     // 1. Fetch Item details
     const invRes = await client.query(
-      `SELECT ui.*, si.name, si.role_id 
+      `SELECT ui.*, si.name, si.role_id, si.is_tradable 
        FROM user_inventory ui
        JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3`,
@@ -1136,6 +1136,11 @@ export async function dropItem(userId, guildId, invId, member) {
     }
 
     const item = invRes.rows[0];
+
+    if (item.is_tradable === false) {
+      await client.query('ROLLBACK');
+      throw new Error('This item is untradable and cannot be dropped');
+    }
 
     // 2. Role removal (STRICT: Try to remove Discord roles FIRST)
     // If we can't remove the role, we MUST NOT delete the item from the DB.

@@ -1012,11 +1012,12 @@ export async function handleInventoryItemSelect(interaction) {
     }
 
     // STRICT MODIFIABILITY RULES:
-    // 1. Owned Items (non-temp) = Fully Modifiable
+    // 1. Owned Items (non-temp, tradable) = Fully Modifiable
     // 2. Admin Granted = Not Modifiable
-    // 3. Owned Temporary Items = Half Modifiable (Toggle OK, Drop NO)
-    const cannotSell = isAdminGranted || isTemp; // Drop DISABLED for temp
-    const cannotToggle = isAdminGranted;        // Toggle ENABLED for temp
+    // 3. Owned Temporary or Untradable Items = Cannot be dropped
+    const isUntradable = item.is_tradable === false;
+    const cannotSell = isAdminGranted || isTemp || isUntradable; // Drop DISABLED for temp/untradable
+    const cannotToggle = isAdminGranted;                        // Toggle ENABLED for temp/untradable
 
     if (item.expires_at) {
       desc += `\n⏳ **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
@@ -1153,7 +1154,7 @@ export async function handleInventoryAction(interaction) {
         await interaction.deferUpdate().catch(() => { });
       }
       const [item] = await query(
-        `SELECT si.name, si.duration_seconds, si.duration_hours, ui.expires_at 
+        `SELECT si.name, si.duration_seconds, si.duration_hours, si.is_tradable, ui.expires_at 
          FROM user_inventory ui 
          JOIN shop_items si ON ui.shop_item_id = si.id 
          WHERE ui.id = $1`,
@@ -1162,10 +1163,14 @@ export async function handleInventoryAction(interaction) {
 
       if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-      // STRICT: Block any non-permanent item from being dropped
+      // STRICT: Block any non-permanent or untradable item from being dropped
       const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
       if (isTemp) {
         return interaction.followUp({ content: '❌ This item is temporary and cannot be dropped.', flags: MessageFlags.Ephemeral });
+      }
+
+      if (item.is_tradable === false) {
+        return interaction.followUp({ content: '❌ This item is untradable and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
       const confirmEmbed = new EmbedBuilder()
