@@ -44,6 +44,10 @@ const pendingPosts = new Map();
 // (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
+// Temporary storage for new-item attribute selection (itemId -> { categoryId, rarity, is_tradable })
+// State is held in memory until the admin clicks Save on the Item Created panel.
+const pendingItemAttrs = new Map();
+
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
   .setName('shop')
@@ -579,41 +583,73 @@ export async function handleItemModalSubmit(interaction) {
 
         sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
 
+        // Initialise pending attrs state for this new item (nothing is saved until Save is clicked)
+        pendingItemAttrs.set(String(item.id), { categoryId: null, rarity: 'common', is_tradable: true });
+
         const categories = await getShopCategories(interaction.guildId);
         const catOptions = [
-          { label: '🏷️ No Category', value: 'null' }, 
-          ...categories.slice(0, 24).map(c => ({ 
-            label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
-            value: c.id.toString() 
+          { label: '🏷️ No Category', value: 'null', default: true },
+          ...categories.slice(0, 24).map(c => ({
+            label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
+            value: c.id.toString()
           }))
         ];
-
-        const select = new StringSelectMenuBuilder()
-          .setCustomId(`shop_assign_cat_select_${item.id}`)
-          .setPlaceholder('Add to category')
-          .addOptions(catOptions);
 
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
           .setTitle('Item Created')
           .setDescription(successDescription);
-        
+
         const img = getItemImage(item);
         if (img) confirmEmbed.setThumbnail(img);
 
-        const rowSelect = new ActionRowBuilder().addComponents(select);
-        const rowBack = new ActionRowBuilder().addComponents(
+        const rowCat = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`shop_new_cat_select_${item.id}`)
+            .setPlaceholder('Category')
+            .addOptions(catOptions)
+        );
+
+        const rowRarity = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`shop_new_rarity_select_${item.id}`)
+            .setPlaceholder('Rarity')
+            .addOptions([
+              { label: '⚪ Common',    value: 'common',    default: true },
+              { label: '🟢 Uncommon',  value: 'uncommon',  default: false },
+              { label: '🔵 Rare',      value: 'rare',      default: false },
+              { label: '🟣 Epic',      value: 'epic',      default: false },
+              { label: '🟡 Legendary', value: 'legendary', default: false }
+            ])
+        );
+
+        const rowTradable = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`shop_new_tradable_select_${item.id}`)
+            .setPlaceholder('Status')
+            .addOptions([
+              { label: '✅ Tradable',   value: 'tradable',   default: true },
+              { label: '🔒 Untradable', value: 'untradable', default: false }
+            ])
+        );
+
+        const rowActions = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('shop_admin_add')
             .setLabel('Back')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`shop_new_save_${item.id}`)
+            .setLabel('Save')
+            .setEmoji('💾')
+            .setStyle(ButtonStyle.Success)
         );
 
-        await interaction.editReply({ 
-          content: successHeader, 
-          embeds: [confirmEmbed], 
-          components: [rowSelect, rowBack] 
+        await interaction.editReply({
+          content: successHeader,
+          embeds: [confirmEmbed],
+          components: [rowCat, rowRarity, rowTradable, rowActions]
         });
         return;
 
@@ -777,7 +813,137 @@ export async function handleAssignCategorySelect(interaction) {
   await handleManageItemCategorySelect(interaction);
 }
 
-// --- Shop Post Handlers ---
+// ============================================================
+// NEW ITEM ATTRIBUTE HANDLERS (Item Created panel - no auto-save)
+// ============================================================
+
+const RARITY_OPTIONS = [
+  { label: '⚪ Common',    value: 'common' },
+  { label: '🟢 Uncommon',  value: 'uncommon' },
+  { label: '🔵 Rare',      value: 'rare' },
+  { label: '🟣 Epic',      value: 'epic' },
+  { label: '🟡 Legendary', value: 'legendary' }
+];
+
+const TRADABLE_OPTIONS = [
+  { label: '✅ Tradable',   value: 'tradable' },
+  { label: '🔒 Untradable', value: 'untradable' }
+];
+
+/**
+ * Handles select menu changes on the Item Created panel.
+ * Updates the in-memory pendingItemAttrs state and re-renders the panel.
+ * Nothing is written to the DB here.
+ */
+export async function handleNewItemAttrSelect(interaction) {
+  await interaction.deferUpdate();
+  const cid = interaction.customId;
+  const itemId = cid.split('_').pop();
+  const value = interaction.values[0];
+
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+  // Retrieve or create pending state
+  const state = pendingItemAttrs.get(String(itemId)) || { categoryId: null, rarity: 'common', is_tradable: true };
+
+  if (cid.startsWith('shop_new_cat_select_')) {
+    state.categoryId = value === 'null' ? null : value;
+  } else if (cid.startsWith('shop_new_rarity_select_')) {
+    state.rarity = value;
+  } else if (cid.startsWith('shop_new_tradable_select_')) {
+    state.is_tradable = value === 'tradable';
+  }
+  pendingItemAttrs.set(String(itemId), state);
+
+  // Re-render the panel with updated default selections
+  const categories = await getShopCategories(interaction.guildId);
+  const catOptions = [
+    { label: '🏷️ No Category', value: 'null', default: state.categoryId === null },
+    ...categories.slice(0, 24).map(c => ({
+      label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
+      value: c.id.toString(),
+      default: String(c.id) === String(state.categoryId)
+    }))
+  ];
+
+  const img = getItemImage(item);
+  const embed = new EmbedBuilder()
+    .setColor('#2ECC71')
+    .setTitle('Item Created')
+    .setDescription('Use the **Post** panel to set a price and publish it.');
+  if (img) embed.setThumbnail(img);
+
+  const rowCat = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`shop_new_cat_select_${itemId}`)
+      .setPlaceholder('Category')
+      .addOptions(catOptions)
+  );
+
+  const rowRarity = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`shop_new_rarity_select_${itemId}`)
+      .setPlaceholder('Rarity')
+      .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === state.rarity })))
+  );
+
+  const rowTradable = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`shop_new_tradable_select_${itemId}`)
+      .setPlaceholder('Status')
+      .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: (o.value === 'tradable') === state.is_tradable })))
+  );
+
+  const rowActions = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('shop_admin_add')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`shop_new_save_${itemId}`)
+      .setLabel('Save')
+      .setEmoji('💾')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  await interaction.editReply({
+    content: `✅ **Item Created: ${item.name}**`,
+    embeds: [embed],
+    components: [rowCat, rowRarity, rowTradable, rowActions]
+  });
+}
+
+/**
+ * Handles the Save button on the Item Created panel.
+ * Persists category, rarity, and is_tradable to the DB.
+ */
+export async function handleNewItemSave(interaction) {
+  await interaction.deferUpdate();
+  const itemId = interaction.customId.slice('shop_new_save_'.length);
+
+  const state = pendingItemAttrs.get(String(itemId)) || { categoryId: null, rarity: 'common', is_tradable: true };
+  pendingItemAttrs.delete(String(itemId));
+
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+  await updateShopItem(itemId, {
+    category_id: state.categoryId ? parseInt(state.categoryId) : null,
+    rarity: state.rarity,
+    is_tradable: state.is_tradable
+  });
+
+  if (state.categoryId) {
+    const catName = (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [state.categoryId, interaction.guildId])).rows[0]?.name ?? state.categoryId;
+    sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin **<@${interaction.user.id}>** assigned item **${item.name}** to category **${catName}**.`);
+  }
+
+  await handleShopAdminAdd(interaction);
+}
+
+
 
 // Updated Post Item Handlers - Staging Panel
 export async function handleShopPostStart(interaction) {
@@ -2970,7 +3136,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
-      { label: '🏷️ No Category', value: 'null' },
+      { label: '🏷️ No Category', value: 'null', default: !item.category_id },
       ...categories.map(c => ({
         label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
         value: c.id.toString(),
@@ -2982,6 +3148,24 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setPlaceholder('Select')
       .addOptions(catOptions);
     const rowCat = new ActionRowBuilder().addComponents(catSelect);
+
+    // Rarity select (auto-saves on change)
+    const itemRarity = item.rarity || 'common';
+    const rowRarity = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`shop_edit_rarity_select_${itemId}`)
+        .setPlaceholder('Rarity')
+        .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === itemRarity })))
+    );
+
+    // Tradability select (auto-saves on change)
+    const itemTradable = item.is_tradable !== false; // default true for existing items
+    const rowTradable = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`shop_edit_tradable_select_${itemId}`)
+        .setPlaceholder('Status')
+        .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: (o.value === 'tradable') === itemTradable })))
+    );
 
     const isOnUsers = view === 'users';
     const hasPagination = memberRows.length > PAGE_SIZE;
@@ -3036,7 +3220,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     await interaction.editReply({
       content: successHeader || null,
       embeds: [embed],
-      components: [rowCat, rowNav, rowActions]
+      components: [rowCat, rowRarity, rowTradable, rowNav, rowActions]
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit item select');
@@ -3045,6 +3229,69 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
 // Old handleManageItemCategorySelect removed to prevent duplicate declaration
 // The active version is defined earlier in the file.
+
+/**
+ * Auto-saves rarity change on the Edit Item panel.
+ */
+export async function handleEditItemRaritySelect(interaction) {
+  await interaction.deferUpdate();
+  const itemId = interaction.customId.slice('shop_edit_rarity_select_'.length);
+  const rarity = interaction.values[0];
+
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+  await updateShopItem(itemId, { rarity });
+
+  const rarityLabel = RARITY_OPTIONS.find(o => o.value === rarity)?.label ?? rarity;
+  const mock = {
+    deferred: true, replied: false,
+    deferUpdate: async () => {},
+    editReply: interaction.editReply.bind(interaction),
+    followUp: interaction.followUp.bind(interaction),
+    customId: `shop_item_edit_select_${itemId}`,
+    values: [String(itemId)],
+    isAnySelectMenu: () => true,
+    guildId: interaction.guildId,
+    user: interaction.user,
+    guild: interaction.guild,
+    member: interaction.member,
+    memberPermissions: interaction.memberPermissions
+  };
+  await handleEditItemSelect(mock, `✅ Rarity set to **${rarityLabel}**.`);
+}
+
+/**
+ * Auto-saves tradability change on the Edit Item panel.
+ */
+export async function handleEditItemTradableSelect(interaction) {
+  await interaction.deferUpdate();
+  const itemId = interaction.customId.slice('shop_edit_tradable_select_'.length);
+  const isTradable = interaction.values[0] === 'tradable';
+
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+  await updateShopItem(itemId, { is_tradable: isTradable });
+
+  const tradableLabel = isTradable ? '✅ Tradable' : '🔒 Untradable';
+  const mock = {
+    deferred: true, replied: false,
+    deferUpdate: async () => {},
+    editReply: interaction.editReply.bind(interaction),
+    followUp: interaction.followUp.bind(interaction),
+    customId: `shop_item_edit_select_${itemId}`,
+    values: [String(itemId)],
+    isAnySelectMenu: () => true,
+    guildId: interaction.guildId,
+    user: interaction.user,
+    guild: interaction.guild,
+    member: interaction.member,
+    memberPermissions: interaction.memberPermissions
+  };
+  await handleEditItemSelect(mock, `✅ Status set to **${tradableLabel}**.`);
+}
+
 
 export async function handleEditItemDetails(interaction) {
   try {
