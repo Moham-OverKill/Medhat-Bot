@@ -2970,6 +2970,11 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     }
   }
 
+  // Strip 'item_' prefix if present
+  if (typeof itemId === 'string' && itemId.startsWith('item_')) {
+    itemId = itemId.replace('item_', '');
+  }
+
   try {
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
