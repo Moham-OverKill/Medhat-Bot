@@ -68,7 +68,7 @@ export async function getShopCategories(guildId) {
 /**
  * Get all active shop items for a guild
  */
-export async function getShopItems(guildId, categoryId = null, sortBy = 'price', includeInactive = false) {
+export async function getShopItems(guildId, categoryId = null, sortBy = 'price', includeInactive = false, excludeLocked = false) {
   try {
     let sql = `SELECT si.*, sc.name as category_name 
                FROM shop_items si
@@ -80,9 +80,13 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
       sql += ' AND si.is_active = true';
     }
 
+    if (excludeLocked) {
+      sql += ' AND (si.is_tradable IS TRUE OR si.is_tradable IS NULL)';
+    }
+
     if (categoryId !== null) {
-      sql += ' AND si.category_id = $2';
       params.push(categoryId);
+      sql += ` AND si.category_id = $${params.length}`;
     }
 
     if (sortBy === 'name') {
@@ -98,6 +102,17 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
     logSystemError(`Failed to get shop items for guild ${guildId}: ${sanitizeError(error)}`);
     return [];
   }
+}
+
+/**
+ * Get items eligible for loot boxes / chests / random drops.
+ * STRICT RULE: Locked items (is_tradable = false) are NEVER included in loot boxes.
+ *
+ * @param {string} guildId - Discord Guild ID
+ * @returns {Promise<Array>} Array of active, unlocked shop items eligible for loot boxes
+ */
+export async function getLootBoxPool(guildId) {
+  return getShopItems(guildId, null, 'price', false, true);
 }
 
 /**
@@ -1139,7 +1154,7 @@ export async function dropItem(userId, guildId, invId, member) {
 
     if (item.is_tradable === false) {
       await client.query('ROLLBACK');
-      throw new Error('This item is untradable and cannot be dropped');
+      throw new Error('This item is locked and cannot be dropped');
     }
 
     // 2. Role removal (STRICT: Try to remove Discord roles FIRST)
