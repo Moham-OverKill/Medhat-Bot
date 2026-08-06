@@ -2748,10 +2748,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
 export async function handleAdminBrowserSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const selection = interaction.values[0];
-  const context = pendingAdminBrowser.get(interaction.user.id);
-  
+  let context = pendingAdminBrowser.get(interaction.user.id);
+
   if (!context) {
-     return interaction.editReply({ content: '❌ Your session expired. Please start over.', embeds: [], components: [] });
+     context = { action: 'edit_item', folder: 'root', message: null };
+     pendingAdminBrowser.set(interaction.user.id, context);
   }
 
   // Handle navigating back up to the root layer
@@ -2781,14 +2782,11 @@ export async function handleAdminBrowserSelect(interaction) {
   // Handle selecting the actual item/pack
   if (selection.startsWith('item_')) {
       const itemId = selection.replace('item_', '');
-      
-      // Clear the browser context before passing off the flow
-      const action = context.action;
-      pendingAdminBrowser.delete(interaction.user.id);
-      
+      const action = context.action || 'edit_item';
+
       // Inject the choice into the interaction object so the older handlers pick it up correctly
       interaction.values = [itemId];
-      
+
       // Route it to the original handlers exactly as if they clicked a direct menu in the old system
       if (action === 'edit_item') return handleEditItemSelect(interaction);
       if (action === 'delete_item') return handleDeleteItemSelect(interaction);
