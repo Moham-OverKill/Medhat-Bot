@@ -3054,51 +3054,17 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const dbUserMap = new Map();
     dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, Number(r.is_active_db)));
 
-    // Verify guild membership to filter out users who left the server
-    const dbUserIds = Array.from(dbUserMap.keys());
-    if (dbUserIds.length > 0) {
-      let fetchedBatch = null;
-      try {
-        fetchedBatch = await interaction.guild.members.fetch({ user: dbUserIds }).catch(() => null);
-      } catch (err) {}
-
-      for (const uid of dbUserIds) {
-        const isPresent = (fetchedBatch && fetchedBatch.has(uid)) || interaction.guild.members.cache.has(uid);
-        if (!isPresent) {
-          // Double check individual fetch to be 100% certain
-          const member = await interaction.guild.members.fetch(uid).catch(() => null);
-          if (!member) {
-            dbUserMap.delete(uid);
-          }
-        }
-      }
-    }
-
     const ownedCount = dbUserMap.size;
 
-    // Fetch role members directly from Discord API if item grants a role
+    // Fast cache-only role member lookup — avoids slow per-user API calls on the dashboard
     const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
     const roleMemberMap = new Map(); // key: userId, value: GuildMember
-
     if (roleIds.length > 0) {
-      for (const rid of roleIds) {
-        try {
-          const fetched = await interaction.guild.members.fetch({ role: rid, force: true }).catch(() => null);
-          if (fetched) {
-            for (const [mId, member] of fetched) {
-              roleMemberMap.set(mId, member);
-            }
-          }
-        } catch (err) {
-          // ignore individual role fetch errors
-        }
-      }
-      if (roleMemberMap.size === 0) {
+      for (const [mId, member] of interaction.guild.members.cache) {
         for (const rid of roleIds) {
-          for (const [mId, member] of interaction.guild.members.cache) {
-            if (member.roles.cache.has(rid)) {
-              roleMemberMap.set(mId, member);
-            }
+          if (member.roles.cache.has(rid)) {
+            roleMemberMap.set(mId, member);
+            break;
           }
         }
       }
