@@ -190,8 +190,8 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 4: Status Select
     const tradableOptions = [
-        { label: '🔓 Unlocked', value: 'tradable' },
-        { label: '🔒 Locked',   value: 'untradable' }
+        { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes' },
+        { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes' }
     ];
     const tradableSelect = new StringSelectMenuBuilder()
         .setCustomId('mass_select_tradable')
