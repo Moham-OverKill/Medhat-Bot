@@ -628,8 +628,8 @@ export async function handleItemModalSubmit(interaction) {
             .setCustomId(`shop_new_tradable_select_${item.id}`)
             .setPlaceholder('Status')
             .addOptions([
-              { label: '🔓 Unlocked', value: 'tradable',   default: true },
-              { label: '🔒 Locked',   value: 'untradable', default: false }
+              { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes', default: true },
+              { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes', default: false }
             ])
         );
 
@@ -830,8 +830,8 @@ const RARITY_OPTIONS = [
 ];
 
 const TRADABLE_OPTIONS = [
-  { label: '🔓 Unlocked', value: 'tradable' },
-  { label: '🔒 Locked',   value: 'untradable' }
+  { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes' },
+  { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes' }
 ];
 
 /**
