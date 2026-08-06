@@ -996,11 +996,8 @@ export async function handleInventoryItemSelect(interaction) {
       legendary: '🟡 Legendary'
     };
     const rarityText = RARITY_DISPLAY[item.rarity] || '⚪ Common';
-    const lockText = item.is_tradable === false ? '🔒 Locked' : '🔓 Unlocked';
-
     let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
     desc += `\n**Rarity:** ${rarityText}`;
-    desc += `\n**Lock Status:** ${lockText}`;
 
     // Show acquisition info (Purchased vs Admin-Granted)
     if (isAdminGranted) {
