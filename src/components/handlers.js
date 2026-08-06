@@ -463,6 +463,13 @@ export function setupComponentHandlers(client) {
         await handleColorButton(interaction);
       } else if (customId.startsWith('quest_')) {
         await handleQuestInteraction(interaction);
+      } else if (customId.startsWith('help_')) {
+        const { handleHelpSelect, handleHelpStepNavigation } = await import('../commands/help.js');
+        if (customId === 'help_select_topic') {
+          await handleHelpSelect(interaction);
+        } else {
+          await handleHelpStepNavigation(interaction);
+        }
       } else if (interaction.customId.startsWith('trade_')) {
         if (customId.startsWith('trade_setup_') || customId.startsWith('trade_cat_')) {
           await handleTradeSetupInteraction(interaction);
