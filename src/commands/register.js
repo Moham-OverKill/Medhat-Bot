@@ -11,6 +11,7 @@ import { itemMassCommand } from './item-mass.js';
 import { settingsCommand } from './settings.js';
 import { data as questCommand } from './quest.js';
 import { tradeCommand } from './trade.js';
+import { helpCommand } from './help.js';
 import { voteCommand } from './vote.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,7 +47,8 @@ export async function registerSlashCommands(client) {
     itemMassCommand.toJSON(),
     questCommand.toJSON(),
     tradeCommand.toJSON(),
-    voteCommand.toJSON()
+    voteCommand.toJSON(),
+    helpCommand.toJSON()
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
