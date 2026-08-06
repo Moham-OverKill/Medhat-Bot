@@ -988,7 +988,19 @@ export async function handleInventoryItemSelect(interaction) {
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
+    const RARITY_DISPLAY = {
+      common: '⚪ Common',
+      uncommon: '🟢 Uncommon',
+      rare: '🔵 Rare',
+      epic: '🟣 Epic',
+      legendary: '🟡 Legendary'
+    };
+    const rarityText = RARITY_DISPLAY[item.rarity] || '⚪ Common';
+    const lockText = item.is_tradable === false ? '🔒 Locked' : '🔓 Unlocked';
+
     let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    desc += `\n**Rarity:** ${rarityText}`;
+    desc += `\n**Lock Status:** ${lockText}`;
 
     // Show acquisition info (Purchased vs Admin-Granted)
     if (isAdminGranted) {
@@ -1170,7 +1182,7 @@ export async function handleInventoryAction(interaction) {
       }
 
       if (item.is_tradable === false) {
-        return interaction.followUp({ content: '❌ This item is untradable and cannot be dropped.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
       const confirmEmbed = new EmbedBuilder()
