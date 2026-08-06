@@ -188,10 +188,10 @@ async function renderMassPanel(interaction, userId) {
         .addOptions(rarityOptions.map(o => ({ ...o, default: o.value === currentRarity })));
     components.push(new ActionRowBuilder().addComponents(raritySelect));
 
-    // Row 4: Tradability Select
+    // Row 4: Status Select
     const tradableOptions = [
-        { label: '✅ Tradable',   value: 'tradable' },
-        { label: '🔒 Untradable', value: 'untradable' }
+        { label: '🔓 Unlocked', value: 'tradable' },
+        { label: '🔒 Locked',   value: 'untradable' }
     ];
     const tradableSelect = new StringSelectMenuBuilder()
         .setCustomId('mass_select_tradable')

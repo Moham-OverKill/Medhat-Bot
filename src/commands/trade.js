@@ -726,7 +726,7 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
 
         if (tradableItems.length === 0) {
             if (isGive) setup.givingFolder = null;
-            return interaction.followUp({ content: '❌ You do not have any tradable items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ You do not have any unlocked items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
         }
     } else {
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
@@ -752,7 +752,7 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
 
         if (tradableItems.length === 0) {
             if (!isGive) setup.requestingFolder = null;
-            return interaction.followUp({ content: '❌ The target user does not have any tradable items that you don\'t already own.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ The target user does not have any unlocked items that you don\'t already own.', flags: MessageFlags.Ephemeral });
         }
     }
 

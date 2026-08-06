@@ -628,8 +628,8 @@ export async function handleItemModalSubmit(interaction) {
             .setCustomId(`shop_new_tradable_select_${item.id}`)
             .setPlaceholder('Status')
             .addOptions([
-              { label: '✅ Tradable',   value: 'tradable',   default: true },
-              { label: '🔒 Untradable', value: 'untradable', default: false }
+              { label: '🔓 Unlocked', value: 'tradable',   default: true },
+              { label: '🔒 Locked',   value: 'untradable', default: false }
             ])
         );
 
@@ -830,8 +830,8 @@ const RARITY_OPTIONS = [
 ];
 
 const TRADABLE_OPTIONS = [
-  { label: '✅ Tradable',   value: 'tradable' },
-  { label: '🔒 Untradable', value: 'untradable' }
+  { label: '🔓 Unlocked', value: 'tradable' },
+  { label: '🔒 Locked',   value: 'untradable' }
 ];
 
 /**
@@ -3285,7 +3285,7 @@ export async function handleEditItemTradableSelect(interaction) {
 
   await updateShopItem(itemId, { is_tradable: isTradable }, interaction.guildId);
 
-  const tradableLabel = isTradable ? '✅ Tradable' : '🔒 Untradable';
+  const tradableLabel = isTradable ? '🔓 Unlocked' : '🔒 Locked';
   const mock = {
     deferred: true, replied: false,
     deferUpdate: async () => {},
