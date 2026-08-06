@@ -6,6 +6,7 @@ import { handleItemMassCommand } from './item-mass.js';
 import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
 import { handleHelpCommand } from './help.js';
+import { handleVoteCommand } from './vote.js';
 import { sysLog } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
