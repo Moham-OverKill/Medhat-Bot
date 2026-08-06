@@ -3054,39 +3054,35 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const dbUserMap = new Map();
     dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, Number(r.is_active_db)));
 
-    const dbUserIds = Array.from(dbUserMap.keys());
+    // Owned = unique users with this item in their inventory (DB is source of truth)
+    const ownedCount = dbUserMap.size;
+
     const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
-
-    // Run both Discord API lookups in parallel — single batch call each, not per-user loops
-    const roleFetchPromises = roleIds.map(rid =>
-      interaction.guild.members.fetch({ role: rid }).catch(() => null)
-    );
-    const ownedFetchPromise = dbUserIds.length > 0
-      ? interaction.guild.members.fetch({ user: dbUserIds }).catch(() => null)
-      : Promise.resolve(null);
-
-    const [ownedFetchResult, ...roleFetchResults] = await Promise.all([
-      ownedFetchPromise,
-      ...roleFetchPromises
-    ]);
-
-    // Equipped: count of server members who currently hold the item's role
     const roleMembersSet = new Set();
-    for (const fetched of roleFetchResults) {
-      if (fetched) for (const uid of fetched.keys()) roleMembersSet.add(uid);
+    let equippedCount = 0;
+
+    if (roleIds.length > 0) {
+      // Full guild member fetch populates cache via WebSocket gateway chunks (not per-user HTTP).
+      // For a 1500-member server this is ~2 gateway events — fast and accurate.
+      try {
+        await interaction.guild.members.fetch();
+      } catch (err) { /* proceed with whatever is cached */ }
+
+      // After cache is populated, role.members is accurate
+      for (const rid of roleIds) {
+        const role = interaction.guild.roles.cache.get(rid);
+        if (role) {
+          for (const uid of role.members.keys()) roleMembersSet.add(uid);
+        }
+      }
+      equippedCount = roleMembersSet.size;
+    } else {
+      // No role linked — use DB is_active as equipped proxy
+      equippedCount = Array.from(dbUserMap.values()).filter(v => v === 1).length;
     }
-    const equippedCount = roleIds.length > 0
-      ? roleMembersSet.size
-      : Array.from(dbUserMap.values()).filter(v => v === 1).length;
 
-    // Owned: inventory users who are still in the server (filter out people who left)
-    const activeOwnerIds = ownedFetchResult
-      ? new Set(ownedFetchResult.keys())
-      : new Set(dbUserIds); // fallback: don't filter if fetch failed
-    const ownedCount = activeOwnerIds.size;
-
-    // Build user list: only current server members from inventory, equipped users first
-    const memberRows = Array.from(activeOwnerIds).map(uid => ({
+    // User list: DB owners, equipped (role holders) sorted first
+    const memberRows = Array.from(dbUserMap.keys()).map(uid => ({
       user_id: uid,
       isEquipped: roleIds.length > 0 ? roleMembersSet.has(uid) : (dbUserMap.get(uid) === 1)
     }));
