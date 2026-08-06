@@ -120,16 +120,19 @@ export async function getLootBoxPool(guildId) {
  */
 export async function getShopItem(itemId, guildId = null) {
   try {
+    const numId = parseInt(itemId, 10);
+    if (isNaN(numId)) return null;
+
     let result;
     if (guildId) {
       result = await query(
         'SELECT * FROM shop_items WHERE id = $1 AND guild_id = $2',
-        [itemId, String(guildId)]
+        [numId, String(guildId)]
       );
     } else {
       result = await query(
         'SELECT * FROM shop_items WHERE id = $1',
-        [itemId]
+        [numId]
       );
     }
 
@@ -336,6 +339,9 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
  */
 export async function updateShopItem(itemId, updates, guildId = null) {
   try {
+    const numId = parseInt(itemId, 10);
+    if (isNaN(numId)) throw new Error(`Invalid item ID: ${itemId}`);
+
     const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url', 'rarity', 'is_tradable'];
     const setClauses = [];
     const values = [];
@@ -360,7 +366,7 @@ export async function updateShopItem(itemId, updates, guildId = null) {
     }
 
     setClauses.push(`updated_at = NOW()`);
-    values.push(itemId);
+    values.push(numId);
 
     let whereClause = `WHERE id = $${paramIndex}`;
     if (guildId) {
@@ -384,15 +390,20 @@ export async function updateShopItem(itemId, updates, guildId = null) {
 /**
  * Delete a shop item and remove from all user inventories and pack contents
  */
-export async function deleteShopItem(itemId) {
+export async function deleteShopItem(itemId, guildId = null) {
   try {
-    // 1. Remove from user inventories
-    await query('DELETE FROM user_inventory WHERE shop_item_id = $1', [itemId]);
+    const numId = parseInt(itemId, 10);
+    if (isNaN(numId)) return false;
 
-    // 2. Delete the shop item itself
-    await query('DELETE FROM shop_items WHERE id = $1', [itemId]);
+    if (guildId) {
+      await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+      await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, String(guildId)]);
+    } else {
+      await query('DELETE FROM user_inventory WHERE shop_item_id = $1', [numId]);
+      await query('DELETE FROM shop_items WHERE id = $1', [numId]);
+    }
 
-    sysLog('Shop Item Deleted', { detail: `ItemID: ${itemId}` });
+    sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}` });
     return true;
   } catch (error) {
     logSystemError(`Failed to delete shop item: ${sanitizeError(error)}`);
