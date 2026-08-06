@@ -3153,12 +3153,20 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     let prevBtn, nextBtn;
 
     if (view === 'details') {
-      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category
-      const siblingItems = await getShopItems(interaction.guildId, item.category_id || null, 'name', true);
-      const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack');
-      const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
-      const prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
-      const nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
+      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category.
+      // Standalone items (no category) or categories with only 1 item have disabled arrows.
+      let prevSibling = null;
+      let nextSibling = null;
+
+      if (item.category_id) {
+        const siblingItems = await getShopItems(interaction.guildId, item.category_id, 'name', true);
+        const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack');
+        if (siblingShopItems.length > 1) {
+          const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
+          prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
+          nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
+        }
+      }
 
       prevBtn = new ButtonBuilder()
         .setCustomId(prevSibling ? `shop_item_view_details_${prevSibling.id}` : `shop_item_nav_noop_prev`)
