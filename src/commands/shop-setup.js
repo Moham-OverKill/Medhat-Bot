@@ -2746,52 +2746,59 @@ export async function renderAdminBrowser(interaction, contextMap) {
 }
 
 export async function handleAdminBrowserSelect(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const selection = interaction.values[0];
-  let context = pendingAdminBrowser.get(interaction.user.id);
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
+    }
 
-  if (!context) {
-     context = { action: 'edit_item', folder: 'root', message: null };
-     pendingAdminBrowser.set(interaction.user.id, context);
-  }
+    const selection = interaction.values[0];
+    let context = pendingAdminBrowser.get(interaction.user.id);
 
-  // Handle navigating back up to the root layer
-  if (selection === 'action_back_root') {
-     context.folder = 'root';
-     context.message = null;
-     pendingAdminBrowser.set(interaction.user.id, context);
-     return renderAdminBrowser(interaction, context);
-  }
+    if (!context) {
+      context = { action: 'edit_item', folder: 'root', message: null };
+      pendingAdminBrowser.set(interaction.user.id, context);
+    }
 
-  // Handle navigating to the categories list
-  if (selection === 'action_browse_categorized') {
-     context.folder = 'browse_categories';
-     context.message = null;
-     pendingAdminBrowser.set(interaction.user.id, context);
-     return renderAdminBrowser(interaction, context);
-  }
+    // Handle navigating back up to the root layer
+    if (selection === 'action_back_root') {
+      context.folder = 'root';
+      context.message = null;
+      pendingAdminBrowser.set(interaction.user.id, context);
+      return renderAdminBrowser(interaction, context);
+    }
 
-  // Handle drilling into a specific Category folder
-  if (selection.startsWith('cat_')) {
+    // Handle navigating to the categories list
+    if (selection === 'action_browse_categorized') {
+      context.folder = 'browse_categories';
+      context.message = null;
+      pendingAdminBrowser.set(interaction.user.id, context);
+      return renderAdminBrowser(interaction, context);
+    }
+
+    // Handle drilling into a specific Category folder
+    if (selection.startsWith('cat_')) {
       context.folder = selection;
       context.message = null;
       pendingAdminBrowser.set(interaction.user.id, context);
       return renderAdminBrowser(interaction, context);
-  }
+    }
 
-  // Handle selecting the actual item/pack
-  if (selection.startsWith('item_')) {
+    // Handle selecting the actual item/pack
+    if (selection.startsWith('item_')) {
       const itemId = selection.replace('item_', '');
       const action = context.action || 'edit_item';
 
-      // Inject the choice into the interaction object so the older handlers pick it up correctly
+      // Inject the clean numeric ID directly so handleEditItemSelect doesn't need to re-parse
       interaction.values = [itemId];
 
-      // Route it to the original handlers exactly as if they clicked a direct menu in the old system
-      if (action === 'edit_item') return handleEditItemSelect(interaction);
-      if (action === 'delete_item') return handleDeleteItemSelect(interaction);
-      if (action === 'edit_pack') return handleEditPackSelect(interaction);
-      if (action === 'delete_pack') return handleDeletePackSelect(interaction);
+      // Route to the correct handler
+      if (action === 'edit_item') return await handleEditItemSelect(interaction);
+      if (action === 'delete_item') return await handleDeleteItemSelect(interaction);
+      if (action === 'edit_pack') return await handleEditPackSelect(interaction);
+      if (action === 'delete_pack') return await handleDeletePackSelect(interaction);
+    }
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'admin browser select');
   }
 }
 
