@@ -3056,46 +3056,20 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const ownedCount = dbUserMap.size;
 
-    // Batch fetch role members (single API call per role) for accurate Equipped count
-    const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
-    const roleMemberMap = new Map(); // key: userId, value: GuildMember
-    if (roleIds.length > 0) {
-      for (const rid of roleIds) {
-        try {
-          const fetched = await interaction.guild.members.fetch({ role: rid }).catch(() => null);
-          if (fetched) {
-            for (const [mId, member] of fetched) {
-              roleMemberMap.set(mId, member);
-            }
-          }
-        } catch (err) {
-          // Fallback to cache if API call fails
-          for (const [mId, member] of interaction.guild.members.cache) {
-            if (member.roles.cache.has(rid)) roleMemberMap.set(mId, member);
-          }
-        }
-      }
-    }
+    // Equipped = users with is_active = true in inventory (DB is source of truth, no Discord API needed)
+    const equippedFromDb = Array.from(dbUserMap.values()).filter(v => v === 1).length;
 
-    let equippedCount = 0;
-    const allUserIds = new Set();
-    dbUserMap.forEach((_, uid) => allUserIds.add(uid));
-    if (roleIds.length > 0) {
-      roleMemberMap.forEach((_, uid) => allUserIds.add(uid));
-      equippedCount = roleMemberMap.size;
-    } else {
-      equippedCount = Array.from(dbUserMap.values()).filter(v => v === 1).length;
-    }
-
-    const memberRows = Array.from(allUserIds).map(uid => {
-      const isEquipped = roleIds.length > 0
-        ? roleMemberMap.has(uid)
-        : (dbUserMap.get(uid) === 1);
-      return { user_id: uid, isEquipped };
-    });
-
-    // Sort equipped users first
+    // For the user list, sort equipped (is_active=1) first
+    const memberRows = Array.from(dbUserMap.entries()).map(([uid, isActiveVal]) => ({
+      user_id: uid,
+      isEquipped: isActiveVal === 1
+    }));
     memberRows.sort((a, b) => (b.isEquipped ? 1 : 0) - (a.isEquipped ? 1 : 0));
+
+    const equippedCount = equippedFromDb;
+
+
+
 
     const totalPages = Math.max(1, Math.ceil(memberRows.length / PAGE_SIZE));
     if (page > totalPages) page = totalPages;
