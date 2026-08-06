@@ -679,8 +679,75 @@ export async function runDependencySweep(userId, guildId, member, client = null)
 
 
 /**
+ * Cleans up inventory for a user who has left the server.
+ * Called from the guildMemberRemove event handler.
+ * Marks all their active inventory records as inactive (does NOT delete them —
+ * historical records are preserved for admin auditing).
+ *
+ * @param {string} userId  - The departed user's ID
+ * @param {string} guildId - The guild they left
+ */
+export async function cleanupDepartedMember(userId, guildId) {
+  try {
+    await query(
+      `UPDATE user_inventory SET is_active = false
+       WHERE user_id = $1 AND guild_id = $2 AND is_active = true`,
+      [userId, guildId]
+    );
+    sysLog('Member Leave Cleanup', { user: userId, guild: guildId, detail: 'Inventory deactivated on member leave' });
+  } catch (error) {
+    sysError('Member Leave Cleanup Failed', error, { user: userId, guild: guildId });
+  }
+}
+
+/**
+ * Startup reconciliation: fetches all current guild members and deactivates
+ * inventory records for users who left while the bot was offline.
+ * Runs once per guild on bot ready — safe to call in background.
+ *
+ * @param {Guild} guild - The Discord.js Guild object
+ */
+export async function reconcileGuildInventory(guild) {
+  try {
+    // Fetch all current guild members
+    const members = await guild.members.fetch();
+    const memberIds = new Set(members.keys());
+
+    // Find all user_ids that have active inventory records in this guild
+    const result = await query(
+      `SELECT DISTINCT user_id FROM user_inventory
+       WHERE guild_id = $1 AND is_active = true`,
+      [guild.id]
+    );
+
+    const departed = result.rows
+      .map(r => r.user_id)
+      .filter(uid => !memberIds.has(uid));
+
+    if (departed.length === 0) return;
+
+    // Deactivate inventory for all departed users in one query
+    await query(
+      `UPDATE user_inventory SET is_active = false
+       WHERE guild_id = $1 AND user_id = ANY($2::text[]) AND is_active = true`,
+      [guild.id, departed]
+    );
+
+    sysLog('Startup Inventory Reconciliation', {
+      guild: guild.id,
+      detail: `Deactivated inventory for ${departed.length} users who left while offline`
+    });
+  } catch (error) {
+    sysError('Startup Inventory Reconciliation Failed', error, { guild: guild.id });
+  }
+}
+
+
+
+/**
  * Purchase an item from the shop
  * @param {string} userId - The buyer's user ID
+
  * @param {string} guildId - The guild ID
  * @param {number} itemId - The shop item ID
  * @param {object} member - The Discord member object
