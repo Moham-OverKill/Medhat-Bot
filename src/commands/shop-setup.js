@@ -3150,11 +3150,41 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     const isOnUsers = view === 'users';
     const hasPagination = memberRows.length > PAGE_SIZE;
 
-    const prevBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-      .setEmoji('◀️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isOnUsers || page <= 1);
+    let prevBtn, nextBtn;
+
+    if (view === 'details') {
+      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category
+      const siblingItems = await getShopItems(interaction.guildId, item.category_id || null, 'name', true);
+      const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack');
+      const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
+      const prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
+      const nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
+
+      prevBtn = new ButtonBuilder()
+        .setCustomId(prevSibling ? `shop_item_view_details_${prevSibling.id}` : `shop_item_nav_noop_prev`)
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!prevSibling);
+
+      nextBtn = new ButtonBuilder()
+        .setCustomId(nextSibling ? `shop_item_view_details_${nextSibling.id}` : `shop_item_nav_noop_next`)
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!nextSibling);
+    } else {
+      // On Users view: ⬅️ and ➡️ navigate between pages of users
+      prevBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page <= 1);
+
+      nextBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
+        .setEmoji('➡️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages || !hasPagination);
+    }
 
     const detailsBtn = new ButtonBuilder()
       .setCustomId(`shop_item_view_details_${itemId}`)
@@ -3167,12 +3197,6 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setLabel('Users')
       .setStyle(view === 'users' ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(view === 'users');
-
-    const nextBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-      .setEmoji('▶️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isOnUsers || page >= totalPages || !hasPagination);
 
     const revokeBtn = new ButtonBuilder()
       .setCustomId(`shop_item_revoke_${itemId}`)
