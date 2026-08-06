@@ -615,11 +615,11 @@ export async function handleItemModalSubmit(interaction) {
             .setCustomId(`shop_new_rarity_select_${item.id}`)
             .setPlaceholder('Rarity')
             .addOptions([
-              { label: '⚪ Common',    value: 'common',    default: true },
-              { label: '🟢 Uncommon',  value: 'uncommon',  default: false },
-              { label: '🔵 Rare',      value: 'rare',      default: false },
-              { label: '🟣 Epic',      value: 'epic',      default: false },
-              { label: '🟡 Legendary', value: 'legendary', default: false }
+              { label: '⚪ Common',    value: 'common',    description: 'Highest drop rate (~60% chance in loot boxes)', default: true },
+              { label: '🟢 Uncommon',  value: 'uncommon',  description: 'Moderate drop rate (~25% chance in loot boxes)', default: false },
+              { label: '🔵 Rare',      value: 'rare',      description: 'Low drop rate (~10% chance in loot boxes)', default: false },
+              { label: '🟣 Epic',      value: 'epic',      description: 'Very low drop rate (~4% chance in loot boxes)', default: false },
+              { label: '🟡 Legendary', value: 'legendary', description: 'Ultra rare drop (~1% chance in loot boxes)', default: false }
             ])
         );
 
@@ -822,11 +822,11 @@ export async function handleAssignCategorySelect(interaction) {
 // ============================================================
 
 const RARITY_OPTIONS = [
-  { label: '⚪ Common',    value: 'common' },
-  { label: '🟢 Uncommon',  value: 'uncommon' },
-  { label: '🔵 Rare',      value: 'rare' },
-  { label: '🟣 Epic',      value: 'epic' },
-  { label: '🟡 Legendary', value: 'legendary' }
+  { label: '⚪ Common',    value: 'common',    description: 'Highest drop rate (~60% chance in loot boxes)' },
+  { label: '🟢 Uncommon',  value: 'uncommon',  description: 'Moderate drop rate (~25% chance in loot boxes)' },
+  { label: '🔵 Rare',      value: 'rare',      description: 'Low drop rate (~10% chance in loot boxes)' },
+  { label: '🟣 Epic',      value: 'epic',      description: 'Very low drop rate (~4% chance in loot boxes)' },
+  { label: '🟡 Legendary', value: 'legendary', description: 'Ultra rare drop (~1% chance in loot boxes)' }
 ];
 
 const TRADABLE_OPTIONS = [
