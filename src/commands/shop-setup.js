@@ -3056,15 +3056,22 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const ownedCount = dbUserMap.size;
 
-    // Fast cache-only role member lookup — avoids slow per-user API calls on the dashboard
+    // Batch fetch role members (single API call per role) for accurate Equipped count
     const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
     const roleMemberMap = new Map(); // key: userId, value: GuildMember
     if (roleIds.length > 0) {
-      for (const [mId, member] of interaction.guild.members.cache) {
-        for (const rid of roleIds) {
-          if (member.roles.cache.has(rid)) {
-            roleMemberMap.set(mId, member);
-            break;
+      for (const rid of roleIds) {
+        try {
+          const fetched = await interaction.guild.members.fetch({ role: rid }).catch(() => null);
+          if (fetched) {
+            for (const [mId, member] of fetched) {
+              roleMemberMap.set(mId, member);
+            }
+          }
+        } catch (err) {
+          // Fallback to cache if API call fails
+          for (const [mId, member] of interaction.guild.members.cache) {
+            if (member.roles.cache.has(rid)) roleMemberMap.set(mId, member);
           }
         }
       }
