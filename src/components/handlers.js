@@ -503,7 +503,7 @@ export function setupComponentHandlers(client) {
           detail: `Handled: ${errorMsg}` 
         });
       } else {
-        sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: guildId, detail: 'InteractionCreate event' });
+        sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'InteractionCreate event' });
         await handleInteractionError(interaction, error, `Component Handler (${interaction.customId || 'Unknown'})`);
       }
     } finally {
