@@ -1616,7 +1616,7 @@ export async function handleItemClaim(interaction) {
       }
 
       // 3. Log Audit
-      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Picked Up', `**${getUserLogName(interaction.member)}** picked up **${res.item.name}**.\nDrop ID: \`${dropId}\``);
+      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Picked Up', `**${getUserLogName(interaction.member)}** picked up **${claimLabel}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
     const errorMsgStr = error.message || '';
