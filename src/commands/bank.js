@@ -1380,9 +1380,8 @@ export async function handleInventoryAction(interaction) {
 
       const qtyInput = new TextInputBuilder()
         .setCustomId('drop_quantity')
-        .setLabel(`How many? You have ${currentQty} cop${currentQty === 1 ? 'y' : 'ies'}`)
-        .setPlaceholder(`Enter 1 to ${currentQty}`)
-        .setValue(String(currentQty))
+        .setLabel('Enter the amount you want to drop')
+        .setPlaceholder(String(currentQty))
         .setMinLength(1)
         .setMaxLength(3)
         .setStyle(TextInputStyle.Short)
