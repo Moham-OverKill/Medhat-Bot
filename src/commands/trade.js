@@ -503,12 +503,12 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
         .addFields(
             {
                 name: '📤 You Give',
-                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI} (Your Balance: ${Number(senderBalance.balance).toLocaleString()})\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
+                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                 inline: true
             },
             {
                 name: '📥 You Request',
-                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI} (Target Balance: ${Number(targetBalance.balance).toLocaleString()})\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
+                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                 inline: true
             }
         )
@@ -625,6 +625,9 @@ export async function handleTradeSetupInteraction(interaction) {
 
         // Coins Give Modal
         if (customId === 'trade_setup_give_coins') {
+            const senderBalance = await getUserBalance(setup.senderId, setup.guildId);
+            const balanceNum = Number(senderBalance.balance) || 0;
+
             const modal = new ModalBuilder()
                 .setCustomId('trade_modal_give_coins')
                 .setTitle('Amount to Give');
@@ -632,7 +635,7 @@ export async function handleTradeSetupInteraction(interaction) {
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('How many coins are you giving?')
-                .setPlaceholder('Enter a positive number...')
+                .setPlaceholder(balanceNum.toLocaleString())
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true);
 
@@ -642,6 +645,9 @@ export async function handleTradeSetupInteraction(interaction) {
 
         // Coins Request Modal
         if (customId === 'trade_setup_request_coins') {
+            const targetBalance = await getUserBalance(setup.targetId, setup.guildId);
+            const balanceNum = Number(targetBalance.balance) || 0;
+
             const modal = new ModalBuilder()
                 .setCustomId('trade_modal_request_coins')
                 .setTitle('Amount to Request');
@@ -649,7 +655,7 @@ export async function handleTradeSetupInteraction(interaction) {
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('How many coins are you requesting?')
-                .setPlaceholder('Enter a positive number...')
+                .setPlaceholder(balanceNum.toLocaleString())
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true);
 
