@@ -360,23 +360,25 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
     if (categoryId === null) {
         // Show category selection view
+        const [userBal] = await Promise.all([
+            getUserBalance(guildId, targetUserId)
+        ]);
+        const currentBalance = parseInt(userBal?.balance || 0);
+        const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
+
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`🎒 Managing Inventory: ${targetMember.displayName}`, 256))
-            .setColor(0x2ECC71);
-
-        if (visibleItems.length === 0) {
-            embed.setDescription('This user has no items in their inventory.');
-        } else {
-            embed.setDescription('Select a category to view and revoke items.');
-        }
+            .setColor(0x2ECC71)
+            .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}\n\nSelect a category to view and revoke items.`);
 
         const categoryCounts = {};
         let otherCount = 0;
         for (const item of visibleItems) {
+            const itemQty = parseInt(item.quantity) || 1;
             if (item.category_id) {
-                categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + 1;
+                categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
             } else {
-                otherCount++;
+                otherCount += itemQty;
             }
         }
 
@@ -419,59 +421,72 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         items = await sortItemsByRolePosition(items, interaction.guild);
 
         let catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
+        const listLines = items.map(i => formatInventoryItemLine(i));
+
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`📂 ${catName}: ${targetMember.displayName}`, 256))
-            .setColor(0x2ECC71);
-
-        // Standardize: Use shared formatting (removes bullets, matches emojis)
-        const listLines = items.map(i => formatInventoryItemLine(i));
-        embed.setDescription(listLines.length > 0 ? listLines.join('\n') : 'No items found in this category.');
+            .setColor(0x2ECC71)
+            .setDescription(listLines.length > 0 ? listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : '') : 'No items found in this category.');
 
         const rows = [];
         if (items.length > 0) {
-            const select = new StringSelectMenuBuilder()
-                .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
-                .setPlaceholder('Select an Item to Manage')
-                .addOptions(items.slice(0, 25).map((i, idx) => {
+            const selectOptions = [
+                {
+                    label: 'Back',
+                    value: 'back_to_categories',
+                    emoji: '⬅️'
+                },
+                ...items.slice(0, 24).map((i, idx) => {
                     const isAdminIdentified = i.source === 'SYNC';
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
                     
-                    let statusEmoji = '🔳';
+                    let statusEmoji = '⬜';
                     let statusText = 'Unknown';
 
                     if (isAdminIdentified) {
                         statusEmoji = '🛡️';
-                        statusText = 'Granted by admin';
+                        statusText = 'Admin Granted';
                     } else if (isTemp) {
-                        statusEmoji = i.is_active ? '✅' : '🔳';
+                        statusEmoji = i.is_active ? '✅' : '⬜';
                         statusText = i.is_active ? 'Active' : 'Inactive';
                     } else {
-                        statusEmoji = i.is_active ? '✅' : '🔳';
+                        statusEmoji = i.is_active ? '✅' : '⬜';
                         statusText = i.is_active ? 'Equipped' : 'Unequipped';
                     }
 
+                    const itemQty = parseInt(i.quantity) || 1;
+                    const qtyBadge = (!isAdminIdentified && itemQty > 1) ? ` (x${itemQty})` : '';
+                    const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+
                     return {
-                        label: i.name,
+                        label: `${baseName}${qtyBadge}`,
                         value: `${i.id}_${idx}`,
                         description: statusText,
                         emoji: statusEmoji
                     };
-                }));
+                })
+            ];
+
+            const select = new StringSelectMenuBuilder()
+                .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
+                .setPlaceholder('Select an Item to Manage')
+                .addOptions(selectOptions);
+
             rows.push(new ActionRowBuilder().addComponents(select));
+        } else {
+            rows.push(new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`admin_user_items_${targetUserId}`)
+                    .setLabel('Back')
+                    .setEmoji('⬅️')
+                    .setStyle(ButtonStyle.Secondary)
+            ));
         }
 
-        const backRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`admin_user_items_${targetUserId}`)
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
         const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-        await interaction[responseMethod]({ embeds: [embed], components: [...rows, backRow] });
+        await interaction[responseMethod]({ embeds: [embed], components: rows });
     }
 }
 
@@ -480,68 +495,128 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
  */
 export async function showItemRevokePanel(interaction, targetUserId, invId, categoryId) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const pool = getPool();
-    const isAdminGranted = invId.toString().startsWith('admin_');
-
-    let item;
-    if (isAdminGranted) {
-        // Synthesized item: fetch directly from shop_items
-        const shopItemId = invId.replace('admin_', '');
-        const res = await pool.query('SELECT * FROM shop_items WHERE id = $1', [shopItemId]);
-        if (res.rowCount === 0) return interaction.followUp({ content: '❌ Shop item not found.', flags: MessageFlags.Ephemeral });
-        item = res.rows[0];
-    } else {
-        // Standard item: fetch from inventory
-        const result = await pool.query(
-            `SELECT i.*, s.name, s.role_id 
-             FROM user_inventory i 
-             JOIN shop_items s ON i.shop_item_id = s.id 
-             WHERE i.id = $1`, 
-            [invId]
-        );
-
-        if (result.rowCount === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
-        item = result.rows[0];
-    }
+    const guildId = interaction.guildId;
+    const isOther = categoryId === 'null';
+    const catId = isOther ? null : (categoryId ? parseInt(categoryId) : null);
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    const displayName = targetMember ? targetMember.displayName : targetUserId;
+    if (!targetMember) return interaction.followUp({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
+
+    const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
+    const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
+    let items = visibleItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
+    items = await sortItemsByRolePosition(items, interaction.guild);
+
+    const item = items.find(i => String(i.id) === String(invId)) || items[0];
+    if (!item) {
+        return showUserItems(interaction, targetUserId, categoryId);
+    }
+
+    const isAdminGranted = item.source === 'SYNC' || String(item.id).startsWith('admin_');
+    const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
+    const displayQty = parseInt(item.quantity) || 1;
+    const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
+
+    const RARITY_DISPLAY = {
+      common: '⚪ Common',
+      uncommon: '🟢 Uncommon',
+      rare: '🔵 Rare',
+      epic: '🟣 Epic',
+      legendary: '🟡 Legendary'
+    };
+    const rarityText = RARITY_DISPLAY[item.rarity] || '⚪ Common';
+
+    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    desc += `\n**Quantity:** ${displayQty}`;
+    desc += `\n**Rarity:** ${rarityText}`;
+
+    if (isAdminGranted) {
+      const joinDate = targetMember.joinedAt || new Date();
+      desc += `\n**Acquired:** <t:${Math.floor(joinDate.getTime() / 1000)}:D>`;
+      desc += `\n**Status:** 🛡️ Admin Granted`;
+      desc += `\n\n*This item was granted directly via Discord roles. To remove it, manage the member's Discord roles directly.*`;
+    } else {
+      const purchasedAt = item.purchased_at ? new Date(item.purchased_at) : new Date();
+      desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
+      if (isTemp) {
+        desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⏸️ Inactive'}`;
+      } else {
+        desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⚪ Unequipped'}`;
+      }
+    }
+
+    let embedColor = '#3498DB';
+    if (firstRoleId) {
+      const role = interaction.guild.roles.cache.get(firstRoleId);
+      if (role && role.color) embedColor = role.hexColor;
+    }
 
     const embed = new EmbedBuilder()
-        .setTitle(safeTruncate(`Revoke Item: ${item.name}`, 256))
-        .setDescription(
-            isAdminGranted 
-            ? `This is an **Admin-Granted** item (Discord Role).\n\n` +
-              `The bot cannot "Revoke" this because it was not purchased through the economy system. It is a direct Discord role granted by an administrator.\n\n` +
-              `To remove it, you must remove the role from the user manually in their Discord profile.`
-            : `Are you sure you want to permanently revoke this item from **${displayName}**?\n\n` +
-              `⚠️ **This will:**\n` +
-              `• Delete the item from their database inventory\n` +
-              `• Remove the Discord role(s) from the user\n` +
-              `• NOT provide a refund\n\n` +
-              `The user must buy it again to get it back.`
-        )
-        .setColor(isAdminGranted ? 0x808080 : 0xED4245);
+        .setTitle(safeTruncate(`Manage: ${item.name}`, 256))
+        .setColor(embedColor)
+        .setDescription(desc);
+
+    const itemImg = getItemImage(item);
+    if (itemImg) embed.setThumbnail(itemImg);
 
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`admin_user_revoke_${targetUserId}_${invId}_${categoryId}`)
-            .setLabel('Permanently Revoke')
+            .setCustomId(`admin_user_revoke_${targetUserId}_${item.id}_${categoryId}`)
+            .setLabel('Revoke')
             .setEmoji('🗑️')
             .setStyle(ButtonStyle.Danger)
             .setDisabled(isAdminGranted)
     );
 
-    const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`admin_user_icat_${targetUserId}_${categoryId}`)
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
+    const selectOptions = [
+        {
+            label: 'Back',
+            value: 'back_to_categories',
+            emoji: '⬅️'
+        },
+        ...items.slice(0, 24).map((i, idx) => {
+            const isItemTemp = !!(i.expires_at || 
+                           (i.duration_seconds && i.duration_seconds > 0) || 
+                           (i.duration_hours && i.duration_hours > 0));
+            const isAdminIdent = i.source === 'SYNC';
+
+            let statusEmoji = '⬜';
+            let statusText = 'Unknown';
+
+            if (isAdminIdent) {
+                statusEmoji = '🛡️';
+                statusText = 'Admin Granted';
+            } else if (isItemTemp) {
+                statusEmoji = i.is_active ? '✅' : '⬜';
+                statusText = i.is_active ? 'Active' : 'Inactive';
+            } else {
+                statusEmoji = i.is_active ? '✅' : '⬜';
+                statusText = i.is_active ? 'Equipped' : 'Unequipped';
+            }
+
+            const itemQty = parseInt(i.quantity) || 1;
+            const qtyBadge = (!isAdminIdent && itemQty > 1) ? ` (x${itemQty})` : '';
+            const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+
+            return {
+                label: `${baseName}${qtyBadge}`,
+                value: `${i.id}_${idx}`,
+                description: statusText,
+                emoji: statusEmoji,
+                default: String(i.id) === String(item.id)
+            };
+        })
+    ];
+
+    const itemSelect = new StringSelectMenuBuilder()
+        .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
+        .setPlaceholder('Select an Item to Manage')
+        .addOptions(selectOptions);
+
+    const selectRow = new ActionRowBuilder().addComponents(itemSelect);
 
     const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
-    await interaction[responseMethod]({ embeds: [embed], components: [actionRow, backRow] });
+    await interaction[responseMethod]({ embeds: [embed], components: [actionRow, selectRow] });
 }
 
 /**
@@ -771,11 +846,14 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             }
             case 'isel': {
-                const partsValue = interaction.values[0].split('_');
-                // Handle cases where ID contains underscores (like admin_123)
-                partsValue.pop(); 
-                const invId = partsValue.join('_');
+                const selectedVal = interaction.values[0];
                 const catId = parts[4];
+                if (selectedVal === 'back_to_categories') {
+                    await showUserItems(interaction, targetUserId, null);
+                    break;
+                }
+                const lastUnderscore = selectedVal.lastIndexOf('_');
+                const invId = (lastUnderscore !== -1) ? selectedVal.slice(0, lastUnderscore) : selectedVal;
                 await showItemRevokePanel(interaction, targetUserId, invId, catId);
                 break;
             }
