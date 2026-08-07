@@ -1319,9 +1319,16 @@ export async function handleInventoryAction(interaction) {
 
 
     const action = parts[2]; // drop, equip, dropconfirm, dropcancel
-    const invId = parseInt(parts[3]);
-    const catIdStr = parts[4] || 'null';
-    const currentIndex = parseInt(parts[5]) || 0;
+    let invId, catIdStr, currentIndex;
+    if (parts[3] === 'admin') {
+      invId = `admin_${parts[4]}`;
+      catIdStr = parts[5] || 'null';
+      currentIndex = parseInt(parts[6]) || 0;
+    } else {
+      invId = parts[3];
+      catIdStr = parts[4] || 'null';
+      currentIndex = parseInt(parts[5]) || 0;
+    }
 
     // --- SECURITY LOCK: Trade Concurrency ---
     // Prevent dropping items if the user is in a pending trade (prevents duplication/ghost trades)
@@ -1797,9 +1804,16 @@ export async function handleInventoryDropModalSubmit(interaction) {
   try {
     const parts = interaction.customId.split('_');
     // bank(0) inv(1) drop(2) qty(3) [invId](4) [catIdStr](5) [currentIndex](6)
-    const invId = parseInt(parts[4]);
-    const catIdStr = parts[5] || 'null';
-    const currentIndex = parseInt(parts[6]) || 0;
+    let invId, catIdStr, currentIndex;
+    if (parts[4] === 'admin') {
+      invId = `admin_${parts[5]}`;
+      catIdStr = parts[6] || 'null';
+      currentIndex = parseInt(parts[7]) || 0;
+    } else {
+      invId = parts[4];
+      catIdStr = parts[5] || 'null';
+      currentIndex = parseInt(parts[6]) || 0;
+    }
 
     const rawQty = interaction.fields.getTextInputValue('drop_quantity');
     const qty = parseInt(rawQty, 10);
