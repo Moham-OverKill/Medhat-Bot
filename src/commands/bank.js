@@ -34,6 +34,7 @@ import {
   dropItem,
   claimItem,
   runDependencySweep,
+  purgeUserInventory,
   query
 } from '../economy/shop.js';
 
