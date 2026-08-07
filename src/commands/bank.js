@@ -984,7 +984,13 @@ export async function handleInventoryCategorySelect(interaction) {
 
   } catch (error) {
     sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
-    await interaction.editReply({ content: '❌ Error loading category.' });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '❌ Error loading category.', components: [] });
+      } else {
+        await interaction.reply({ content: '❌ Error loading category.', flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) { }
   }
 }
 
@@ -1291,9 +1297,13 @@ export async function handleInventoryItemSelect(interaction) {
 
   } catch (error) {
     sysError('Item Manage Error', error, { user: interaction.user.id, guild: interaction.guildId });
-    if (!interaction.replied) {
-      await interaction.editReply({ content: '❌ Error loading item.' });
-    }
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '❌ Error loading item.', components: [] });
+      } else {
+        await interaction.reply({ content: '❌ Error loading item.', flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) { }
   }
 }
 
