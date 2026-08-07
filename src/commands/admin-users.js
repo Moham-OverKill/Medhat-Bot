@@ -458,7 +458,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                     }
 
                     const itemQty = parseInt(i.quantity) || 1;
-                    const qtyBadge = (!isAdminIdentified && itemQty > 1) ? ` (x${itemQty})` : '';
+                    const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
                     const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
 
                     return {
