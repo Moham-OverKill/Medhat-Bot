@@ -984,7 +984,7 @@ export async function handleTradeSelect(interaction) {
         return interaction.followUp({ content: '❌ The recipient already has the maximum of 999 copies of this item.', flags: MessageFlags.Ephemeral });
     }
 
-    if (availableQty > 1) {
+    if (availableQty >= 1) {
         const modalTitle = safeTruncate(`${isGive ? 'Giving' : 'Requesting'} ${item.name}`, 45);
         const modal = new ModalBuilder()
             .setCustomId(`trade_modal_item_qty_${isGive ? 'give' : 'req'}_${invId}`)
