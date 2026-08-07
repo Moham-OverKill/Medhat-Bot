@@ -1679,22 +1679,27 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             const targetUsername = getUserLogName(targetMember);
 
             // Build human-readable item lists with quantity labels
-            const buildItemList = async (itemIds) => {
-                if (!itemIds || itemIds.length === 0) return null;
-                const safe = itemIds.map(Number).filter(n => !isNaN(n));
-                if (safe.length === 0) return null;
-                const pool = getPool();
-                const rows = await pool.query(
-                    `SELECT s.name, COALESCE(ui.quantity, 1) as qty
-                     FROM user_inventory ui JOIN shop_items s ON ui.shop_item_id = s.id
-                     WHERE ui.id = ANY($1::int[])`,
-                    [safe]
-                );
-                return rows.rows.map(r => parseInt(r.qty) > 1 ? `${r.qty}x ${r.name}` : r.name).join(', ');
+            const buildItemList = (rawItems) => {
+                if (!rawItems) return null;
+                let list = rawItems;
+                if (typeof rawItems === 'string') {
+                    try { list = JSON.parse(rawItems); } catch (_) { list = []; }
+                }
+                if (!Array.isArray(list) || list.length === 0) return null;
+
+                const parts = list.map(i => {
+                    if (typeof i === 'object' && i !== null) {
+                        const q = parseInt(i.qty || i.quantity) || 1;
+                        const name = i.name || `Item #${i.shop_item_id || i.id}`;
+                        return q > 1 ? `${q}x ${name}` : name;
+                    }
+                    return `Item #${i}`;
+                });
+                return parts.join(', ');
             };
 
-            const sItemNames = await buildItemList(sItems);
-            const tItemNames = await buildItemList(tItems);
+            const sItemNames = buildItemList(sItems);
+            const tItemNames = buildItemList(tItems);
 
             const offerText = `${Number(trade.sender_coins) > 0 ? `**${Number(trade.sender_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${sItemNames ? (Number(trade.sender_coins) > 0 ? ' and ' : '') + `**${sItemNames}**` : ''}` || 'Nothing';
             const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItemNames ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItemNames}**` : ''}` || 'Nothing';
