@@ -1164,7 +1164,7 @@ export async function handleInventoryItemSelect(interaction) {
       legendary: '\uD83D\uDFE1 Legendary'
     };
     const rarityText = RARITY_DISPLAY[item.rarity] || '\u26AA Common';
-    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    let desc = `**Role:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
     desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
 
