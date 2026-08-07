@@ -705,17 +705,18 @@ export async function handleInventoryButton(interaction) {
     // ========== FILTER VISIBLE ITEMS ==========
     // Exclude packs (hidden from inventory view)
     const items = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
-    const totalCount = items.length;
+    const totalCount = items.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
     const currentBalance = parseInt(userBal.balance);
 
-    // Count items per category (including admin-granted ones)
+    // Count items per category (summing quantities)
     const categoryCounts = {};
     let otherCount = 0;
     for (const item of items) {
+      const itemQty = parseInt(item.quantity) || 1;
       if (item.category_id) {
-        categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + 1;
+        categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
       } else {
-        otherCount++;
+        otherCount += itemQty;
       }
     }
 
@@ -992,17 +993,18 @@ export async function handleInventoryItemSelect(interaction) {
       ]);
 
       const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
-      const totalCount = activeItems.length;
+      const totalCount = activeItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
       const currentBalance = parseInt(userBal.balance);
 
-      // Count items per category
+      // Count items per category (summing quantities)
       const categoryCounts = {};
       let otherCount = 0;
       for (const item of activeItems) {
+        const itemQty = parseInt(item.quantity) || 1;
         if (item.category_id) {
-          categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + 1;
+          categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
         } else {
-          otherCount++;
+          otherCount += itemQty;
         }
       }
 
