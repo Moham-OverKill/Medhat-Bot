@@ -525,48 +525,7 @@ export async function handleShopBuyButton(interaction) {
     });
 
     // STEP 3: Live UI Refresh
-    try {
-      const { getShopItem } = await import('../economy/shop.js');
-      const updatedItem = await getShopItem(itemId, guildId);
-
-      if (updatedItem && interaction.message && interaction.message.editable) {
-        const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-
-        let stockHeader = '\u267E\uFE0F Stock';
-        let stockValue = 'Unlimited';
-        if (updatedItem.stock !== null) {
-          if (updatedItem.stock <= 0) {
-            stockHeader = '\uD83D\uDD34 Stock';
-            stockValue = 'Sold Out';
-            embed.setColor('#808080');
-          } else {
-            stockHeader = '\uD83D\uDFE2 Stock';
-            stockValue = `**${updatedItem.stock}** Left`;
-          }
-        }
-
-        const updatedFields = (embed.data.fields || []).map(f => {
-          if (f.name.includes('Stock')) {
-            return { name: stockHeader, value: stockValue, inline: true };
-          }
-          return f;
-        });
-        embed.setFields(updatedFields);
-
-        const isSoldOut = updatedItem.stock !== null && updatedItem.stock <= 0;
-        const row = ActionRowBuilder.from(interaction.message.components[0]);
-        const buyBtn = ButtonBuilder.from(row.components[0]);
-        buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
-        row.setComponents(buyBtn);
-
-        await interaction.message.edit({
-          embeds: [embed],
-          components: [row]
-        }).catch(() => { /* original message might be deleted */ });
-      }
-    } catch (refreshErr) {
-      sysError('Live UI Refresh Failed', refreshErr, { guild: guildId });
-    }
+    await refreshShopMessageUI(interaction, itemId, guildId);
 
     if (!result.success) {
       if (result.error === 'Insufficient balance') {
@@ -666,6 +625,9 @@ export async function handleShopBuyModalSubmit(interaction) {
       overridePrice,
       quantity: qty
     });
+
+    // Refresh live shop message embed stock counter upon purchase completion
+    await refreshShopMessageUI(interaction, itemId, guildId);
 
     if (!result.success) {
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
