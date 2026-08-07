@@ -802,7 +802,7 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
 
     const options = folderItems.slice(0, 24).map(row => {
         const qty = parseInt(row.quantity) || 1;
-        const qtyLabel = qty > 1 ? ` (x${qty})` : '';
+        const qtyLabel = ` (x${qty})`;
         return {
             label: `🏷️ ${row.name}${qtyLabel}`,
             value: row.id.toString()
