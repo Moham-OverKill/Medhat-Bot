@@ -492,132 +492,110 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 }
 
 /**
- * Handle single item management (Revoke view)
+ * Modal submission handler for setting a member's item quantity as an Admin.
+ * customId: admin_user_setqty_[targetUserId]_[invId]_[catId]
  */
-export async function showItemRevokePanel(interaction, targetUserId, invId, categoryId) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+export async function handleAdminSetQuantity(interaction) {
+    const customId = interaction.customId;
+    const parts = customId.split('_');
+    const targetUserId = parts[3];
+    const invId = parts[4];
+    const categoryId = parts[5];
+
+    const rawQty = interaction.fields.getTextInputValue('new_quantity');
+    const newQty = parseInt(rawQty, 10);
+
+    if (isNaN(newQty) || newQty < 0 || newQty > 999) {
+        return interaction.reply({
+            content: '❌ Please enter a valid quantity between 0 and 999.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
+    const pool = getPool();
+    const client = await pool.connect();
     const guildId = interaction.guildId;
-    const isOther = categoryId === 'null';
-    const catId = isOther ? null : (categoryId ? parseInt(categoryId) : null);
 
-    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    if (!targetMember) return interaction.followUp({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
+    try {
+        await client.query('BEGIN');
 
-    const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
-    const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
-    let items = visibleItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
-    items = await sortItemsByRolePosition(items, interaction.guild);
+        const itemRes = await client.query(
+            `SELECT i.*, s.name, s.role_id 
+             FROM user_inventory i 
+             JOIN shop_items s ON i.shop_item_id = s.id 
+             WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3`,
+            [invId, targetUserId, guildId]
+        );
 
-    const item = items.find(i => String(i.id) === String(invId)) || items[0];
-    if (!item) {
-        return showUserItems(interaction, targetUserId, categoryId);
-    }
+        if (itemRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return showUserItems(interaction, targetUserId, categoryId);
+        }
 
-    const isAdminGranted = item.source === 'SYNC' || String(item.id).startsWith('admin_');
-    const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
-    const displayQty = parseInt(item.quantity) || 1;
-    const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
+        const item = itemRes.rows[0];
+        const oldQty = parseInt(item.quantity) || 1;
 
-    const RARITY_DISPLAY = {
-      common: '⚪ Common',
-      uncommon: '🟢 Uncommon',
-      rare: '🔵 Rare',
-      epic: '🟣 Epic',
-      legendary: '🟡 Legendary'
-    };
-    const rarityText = RARITY_DISPLAY[item.rarity] || '⚪ Common';
+        if (newQty === 0) {
+            // Delete inventory item
+            await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
 
-    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
-    desc += `\n**Quantity:** ${displayQty}`;
-    desc += `\n**Rarity:** ${rarityText}`;
+            // Check if total remaining quantity across all rows hits 0
+            const totalRemainingRes = await client.query(
+                `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as remaining
+                 FROM user_inventory
+                 WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+                [targetUserId, guildId, item.shop_item_id]
+            );
+            const totalRemaining = parseInt(totalRemainingRes.rows[0]?.remaining || 0);
 
-    if (isAdminGranted) {
-      const joinDate = targetMember.joinedAt || new Date();
-      desc += `\n**Acquired:** <t:${Math.floor(joinDate.getTime() / 1000)}:D>`;
-      desc += `\n**Status:** 🛡️ Admin Granted`;
-      desc += `\n\n*This item was granted directly via Discord roles. To remove it, manage the member's Discord roles directly.*`;
-    } else {
-      const purchasedAt = item.purchased_at ? new Date(item.purchased_at) : new Date();
-      desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
-      if (isTemp) {
-        desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⏸️ Inactive'}`;
-      } else {
-        desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⚪ Unequipped'}`;
-      }
-    }
-
-    let embedColor = '#3498DB';
-    if (firstRoleId) {
-      const role = interaction.guild.roles.cache.get(firstRoleId);
-      if (role && role.color) embedColor = role.hexColor;
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle(safeTruncate(`Manage: ${item.name}`, 256))
-        .setColor(embedColor)
-        .setDescription(desc);
-
-    const itemImg = getItemImage(item);
-    if (itemImg) embed.setThumbnail(itemImg);
-
-    const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`admin_user_revoke_${targetUserId}_${item.id}_${categoryId}`)
-            .setLabel('Revoke')
-            .setEmoji('🗑️')
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(isAdminGranted)
-    );
-
-    const selectOptions = [
-        {
-            label: 'Back',
-            value: 'back_to_categories',
-            emoji: '⬅️'
-        },
-        ...items.slice(0, 24).map((i, idx) => {
-            const isItemTemp = !!(i.expires_at || 
-                           (i.duration_seconds && i.duration_seconds > 0) || 
-                           (i.duration_hours && i.duration_hours > 0));
-            const isAdminIdent = i.source === 'SYNC';
-
-            let statusEmoji = '⬜';
-            let statusText = 'Unknown';
-
-            if (isAdminIdent) {
-                statusEmoji = '🛡️';
-                statusText = 'Admin Granted';
-            } else if (isItemTemp) {
-                statusEmoji = i.is_active ? '✅' : '⬜';
-                statusText = i.is_active ? 'Active' : 'Inactive';
-            } else {
-                statusEmoji = i.is_active ? '✅' : '⬜';
-                statusText = i.is_active ? 'Equipped' : 'Unequipped';
+            if (totalRemaining <= 0 && item.role_id) {
+                const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+                if (targetMember) {
+                    const rIds = item.role_id.split(/[,\s]+/);
+                    const botMember = interaction.guild.members.me;
+                    for (const rId of rIds) {
+                        const role = interaction.guild.roles.cache.get(rId);
+                        if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
+                            await targetMember.roles.remove(role).catch(() => {});
+                        }
+                    }
+                    const { runDependencySweep } = await import('../economy/shop.js');
+                    await runDependencySweep(targetUserId, guildId, targetMember, client);
+                }
             }
 
-            const itemQty = parseInt(i.quantity) || 1;
-            const qtyBadge = (!isAdminIdent && itemQty > 1) ? ` (x${itemQty})` : '';
-            const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+            sysLog('Admin Item Revoked', { user: interaction.user.id, guild: guildId, detail: `Set ${item.name} quantity to 0 for ${targetUserId}` });
+            sendLog(interaction.guild, 'inventory', 'red', '🗑️ Item Revoked (Admin)',
+                `**${getUserLogName(interaction.member)}** set **${item.name}** quantity to 0 (revoked item) for <@${targetUserId}>.`);
+        } else {
+            // Update quantity
+            await client.query('UPDATE user_inventory SET quantity = $1, updated_at = NOW() WHERE id = $2', [newQty, invId]);
 
-            return {
-                label: `${baseName}${qtyBadge}`,
-                value: `${i.id}_${idx}`,
-                description: statusText,
-                emoji: statusEmoji,
-                default: String(i.id) === String(item.id)
-            };
-        })
-    ];
+            sysLog('Admin Item Quantity Set', { user: interaction.user.id, guild: guildId, detail: `Changed ${item.name} quantity from ${oldQty} to ${newQty} for ${targetUserId}` });
+            sendLog(interaction.guild, 'inventory', 'blue', '⚙️ Item Quantity Updated (Admin)',
+                `**${getUserLogName(interaction.member)}** changed **${item.name}** quantity from ${oldQty} to **${newQty}** for <@${targetUserId}>.`);
+        }
 
-    const itemSelect = new StringSelectMenuBuilder()
-        .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
-        .setPlaceholder('Select an Item to Manage')
-        .addOptions(selectOptions);
+        await client.query('COMMIT');
 
-    const selectRow = new ActionRowBuilder().addComponents(itemSelect);
+        // Refresh category inventory view directly in place
+        return showUserItems(interaction, targetUserId, categoryId);
 
-    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'update';
-    await interaction[responseMethod]({ embeds: [embed], components: [actionRow, selectRow] });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        sysError('Admin Set Quantity Error', err, { user: interaction.user.id, guild: guildId });
+        if (interaction.deferred || interaction.replied) {
+            await interaction.followUp({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
+        } else {
+            await interaction.reply({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
+        }
+    } finally {
+        client.release();
+    }
 }
 
 /**
@@ -821,6 +799,11 @@ export async function handleAdminUserComponent(interaction) {
             return;
         }
 
+        if (interaction.isModalSubmit() && customId.startsWith('admin_user_setqty_')) {
+            await handleAdminSetQuantity(interaction);
+            return;
+        }
+
         const parts = customId.split('_');
         const action = parts[2];
         const targetUserId = parts[3];
@@ -855,7 +838,47 @@ export async function handleAdminUserComponent(interaction) {
                 }
                 const lastUnderscore = selectedVal.lastIndexOf('_');
                 const invId = (lastUnderscore !== -1) ? selectedVal.slice(0, lastUnderscore) : selectedVal;
-                await showItemRevokePanel(interaction, targetUserId, invId, catId);
+
+                if (String(invId).startsWith('admin_')) {
+                    return interaction.reply({
+                        content: '❌ Admin-granted items are managed directly via Discord roles.',
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+
+                const pool = getPool();
+                const itemRes = await pool.query(
+                    `SELECT ui.quantity, si.name 
+                     FROM user_inventory ui 
+                     JOIN shop_items si ON ui.shop_item_id = si.id 
+                     WHERE ui.id = $1`,
+                    [invId]
+                );
+
+                if (itemRes.rowCount === 0) {
+                    await showUserItems(interaction, targetUserId, catId);
+                    break;
+                }
+
+                const currentQty = parseInt(itemRes.rows[0].quantity) || 1;
+                const itemName = itemRes.rows[0].name || 'Item';
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`admin_user_setqty_${targetUserId}_${invId}_${catId}`)
+                    .setTitle(safeTruncate(`Edit Quantity: ${itemName}`, 45));
+
+                const qtyInput = new TextInputBuilder()
+                    .setCustomId('new_quantity')
+                    .setLabel('Enter new quantity (0 to remove)')
+                    .setPlaceholder(String(currentQty))
+                    .setValue(String(currentQty))
+                    .setMinLength(1)
+                    .setMaxLength(3)
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+                await interaction.showModal(modal);
                 break;
             }
             case 'revoke': {
