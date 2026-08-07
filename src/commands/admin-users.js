@@ -370,7 +370,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`🎒 Managing Inventory: ${targetMember.displayName}`, 256))
             .setColor(0x2ECC71)
-            .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}\n\nSelect a category to view and revoke items.`);
+            .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
 
         const categoryCounts = {};
         let otherCount = 0;
