@@ -1127,9 +1127,8 @@ export async function handleInventoryItemSelect(interaction) {
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
-    // Quantity badge: only show for non-admin, non-temp items with qty > 1
+    // Quantity count
     const displayQty = parseInt(item.quantity) || 1;
-    const qtyBadge = (!isAdminGranted && displayQty > 1) ? ` x${displayQty}` : '';
 
     const RARITY_DISPLAY = {
       common: '\u26AA Common',
@@ -1139,7 +1138,8 @@ export async function handleInventoryItemSelect(interaction) {
       legendary: '\uD83D\uDFE1 Legendary'
     };
     const rarityText = RARITY_DISPLAY[item.rarity] || '\u26AA Common';
-    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}${qtyBadge ? ` \`${qtyBadge.trim()}\`` : ''}`;
+    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
 
     if (isAdminGranted) {
@@ -1161,11 +1161,6 @@ export async function handleInventoryItemSelect(interaction) {
       desc += `\n**Status:** ${item.is_active ? '\u2705 Equipped' : '\u2B1C Unequipped'}`;
     }
 
-    // Show quantity on its own line for unlocked stackable items
-    if (!isAdminGranted && !isTemp && displayQty > 1) {
-      desc += `\n**Quantity:** ${displayQty} copies`;
-    }
-
     const isUntradable = item.is_tradable === false;
     const cannotSell = isAdminGranted || isTemp || isUntradable;
     const cannotToggle = isAdminGranted;
@@ -1174,10 +1169,9 @@ export async function handleInventoryItemSelect(interaction) {
       desc += `\n\u23F3 **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
     }
 
-    // Title with pagination and quantity badge
-    const titleQty = (!isAdminGranted && displayQty > 1) ? ` (x${displayQty})` : '';
+    // Embed Title without pagination number
     const embed = new EmbedBuilder()
-      .setTitle(`Manage: ${item.name}${titleQty} (${currentIndex + 1} / ${items.length})`)
+      .setTitle(`Manage: ${item.name}`)
       .setColor(embedColor)
       .setDescription(desc);
 
