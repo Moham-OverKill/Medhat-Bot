@@ -1016,9 +1016,15 @@ export async function handleInventoryItemSelect(interaction) {
       }
 
       // From select menu: value = "invId_index"
-      const [itemId, idx] = selectedVal.split('_');
-      invId = itemId; // Can be string (admin_id) or number
-      currentIndex = parseInt(idx) || 0;
+      // Use lastIndexOf('_') because invId for Admin-Granted items can contain underscores (e.g. admin_299)
+      const lastUnderscore = selectedVal.lastIndexOf('_');
+      if (lastUnderscore !== -1) {
+        invId = selectedVal.slice(0, lastUnderscore);
+        currentIndex = parseInt(selectedVal.slice(lastUnderscore + 1)) || 0;
+      } else {
+        invId = selectedVal;
+        currentIndex = 0;
+      }
 
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
       categoryId = catPart === 'null' ? null : parseInt(catPart);
