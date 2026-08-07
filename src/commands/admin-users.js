@@ -359,11 +359,12 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
     const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
 
     if (categoryId === null) {
-        // Show category selection view
-        const [userBal] = await Promise.all([
-            getUserBalance(guildId, targetUserId)
-        ]);
-        const currentBalance = parseInt(userBal?.balance || 0);
+        const pool = getPool();
+        const userBalRes = await pool.query(
+            'SELECT balance FROM user_balances WHERE guild_id = $1 AND user_id = $2',
+            [guildId, targetUserId]
+        );
+        const currentBalance = parseInt(userBalRes.rows[0]?.balance || 0);
         const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
         const embed = new EmbedBuilder()
