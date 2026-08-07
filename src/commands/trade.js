@@ -1510,7 +1510,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 );
                 if (targetCheck.rows.length > 0) {
                     await client.query(
-                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1, updated_at = NOW() WHERE id = $2`,
+                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
                         [tradedQty, targetCheck.rows[0].id]
                     );
                 } else {
@@ -1550,7 +1550,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 );
                 if (senderCheck.rows.length > 0) {
                     await client.query(
-                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1, updated_at = NOW() WHERE id = $2`,
+                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
                         [tradedQty, senderCheck.rows[0].id]
                     );
                 } else {
