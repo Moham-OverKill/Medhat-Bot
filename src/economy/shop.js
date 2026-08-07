@@ -857,15 +857,15 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // ========== LOCKED ITEM RULES ==========
     // Locked items operate the old way: max 1 copy per user, no bulk purchase.
     if (isLocked) {
-      // Lock user's inventory row to prevent concurrent spam purchases
+      // Lock user's inventory rows to prevent concurrent spam purchases (no aggregate with FOR UPDATE!)
       const lockedCheck = await client.query(
-        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
+        `SELECT id, COALESCE(quantity, 1) as quantity
          FROM user_inventory
          WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
          FOR UPDATE`,
         [userId, guildId, itemId]
       );
-      const lockedTotal = parseInt(lockedCheck.rows[0]?.total || 0);
+      const lockedTotal = lockedCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
       if (lockedTotal >= 1) {
         await client.query('ROLLBACK');
         sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Locked item already owned (qty: ${lockedTotal})` });
@@ -894,13 +894,13 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // Prevents integer overflow or runaway stacking.
     if (!isLocked && item.item_type !== 'pack') {
       const capCheck = await client.query(
-        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
+        `SELECT id, COALESCE(quantity, 1) as quantity
          FROM user_inventory
          WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
          FOR UPDATE`,
         [userId, guildId, itemId]
       );
-      const currentTotal = parseInt(capCheck.rows[0]?.total || 0);
+      const currentTotal = capCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
       if (currentTotal + qty > 999) {
         await client.query('ROLLBACK');
         const remaining = 999 - currentTotal;
