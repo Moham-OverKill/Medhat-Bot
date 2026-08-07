@@ -212,6 +212,12 @@ export function setupComponentHandlers(client) {
           await handleTradeFinalConfirmation(interaction);
         } else if (interaction.customId.startsWith('settings_')) {
           await handleSettingsComponent(interaction);
+        } else if (interaction.customId.startsWith('shop_buy_qty_modal_')) {
+          const { handleShopBuyModalSubmit } = await import('../commands/bank.js');
+          await handleShopBuyModalSubmit(interaction);
+        } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
+          const { handleInventoryDropModalSubmit } = await import('../commands/bank.js');
+          await handleInventoryDropModalSubmit(interaction);
         }
         return;
       }
