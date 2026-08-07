@@ -570,7 +570,7 @@ export async function handleAdminSetQuantity(interaction) {
 
             sysLog('Admin Item Revoked', { user: interaction.user.id, guild: guildId, detail: `Set ${item.name} quantity to 0 for ${targetUserId}` });
             sendLog(interaction.guild, 'inventory', 'red', '🗑️ Item Revoked (Admin)',
-                `**${getUserLogName(interaction.member)}** set **${item.name}** quantity to 0 (revoked item) for <@${targetUserId}>.`);
+                `**${getUserLogName(interaction.member)}** set **${item.name}** quantity to 0 (revoked ${oldQty} copy/copies) for <@${targetUserId}>.`);
         } else {
             // Update quantity
             await client.query('UPDATE user_inventory SET quantity = $1 WHERE id = $2', [newQty, invId]);
