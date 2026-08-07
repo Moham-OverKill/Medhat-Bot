@@ -933,7 +933,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
 
     const { selectMenu } = buildPaginatedSelectMenu({
       items,
-      page,
+      page: targetPage,
       customId: `bank_inv_item_select_${isOther ? 'null' : categoryId}`,
       placeholder: 'Select an Item to Manage',
       backOption: { label: 'Back', value: 'back_to_inventory', emoji: '⬅️' },
