@@ -193,7 +193,7 @@ export function formatInventoryItemLine(item) {
   }
 
   const qty = parseInt(item.quantity) || 1;
-  const qtyBadge = (!isAdminIdentified && qty > 1) ? ` \`x${qty}\`` : '';
+  const qtyBadge = !isAdminIdentified ? ` \`x${qty}\`` : '';
 
   return `${statusEmoji} ${nameDisplay}${qtyBadge}`;
 }
