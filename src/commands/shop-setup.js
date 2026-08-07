@@ -3044,7 +3044,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const PAGE_SIZE = 50;
     const dbUsers = await query(
-      `SELECT user_id, MAX(CASE WHEN is_active THEN 1 ELSE 0 END) as is_active_db
+      `SELECT user_id, 
+              MAX(CASE WHEN is_active THEN 1 ELSE 0 END) as is_active_db,
+              COALESCE(SUM(COALESCE(quantity, 1)), 0) as total_qty
        FROM user_inventory
        WHERE shop_item_id = $1 AND guild_id = $2 AND (expires_at IS NULL OR expires_at > NOW())
        GROUP BY user_id`,
@@ -3052,7 +3054,10 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     );
 
     const dbUserMap = new Map();
-    dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, Number(r.is_active_db)));
+    dbUsers.rows.forEach(r => dbUserMap.set(r.user_id, {
+      isActive: Number(r.is_active_db),
+      qty: parseInt(r.total_qty) || 1
+    }));
 
     // Owned = unique users with this item in their inventory (DB is source of truth)
     const ownedCount = dbUserMap.size;
@@ -3078,13 +3083,14 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       equippedCount = roleMembersSet.size;
     } else {
       // No role linked — use DB is_active as equipped proxy
-      equippedCount = Array.from(dbUserMap.values()).filter(v => v === 1).length;
+      equippedCount = Array.from(dbUserMap.values()).filter(v => v.isActive === 1).length;
     }
 
     // User list: DB owners, equipped (role holders) sorted first
-    const memberRows = Array.from(dbUserMap.keys()).map(uid => ({
+    const memberRows = Array.from(dbUserMap.entries()).map(([uid, info]) => ({
       user_id: uid,
-      isEquipped: roleIds.length > 0 ? roleMembersSet.has(uid) : (dbUserMap.get(uid) === 1)
+      qty: info.qty,
+      isEquipped: roleIds.length > 0 ? roleMembersSet.has(uid) : (info.isActive === 1)
     }));
     memberRows.sort((a, b) => (b.isEquipped ? 1 : 0) - (a.isEquipped ? 1 : 0));
 
@@ -3102,7 +3108,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     } else {
       const pageSlice = memberRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
       const userLines = pageSlice.length > 0
-        ? pageSlice.map(r => `- ${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}>`).join('\n')
+        ? pageSlice.map(r => `- ${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}> (x${r.qty})`).join('\n')
         : '*No users on this page.*';
 
       embed = new EmbedBuilder()
