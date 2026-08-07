@@ -445,7 +445,15 @@ export async function handleShopBuyButton(interaction) {
       if (item) {
         const isLocked = item.is_tradable === false;
         if (!isLocked && !isForce) {
-          // Fetch current user inventory count for this item to show as placeholder
+          // Check stock before showing modal
+          if (item.stock !== null && item.stock <= 0) {
+            return interaction.reply({
+              content: '\u274C This item is out of stock.',
+              flags: MessageFlags.Ephemeral
+            });
+          }
+
+          // Fetch current user inventory count for this item
           const pool = getPool();
           const qtyRes = await pool.query(
             `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
@@ -453,14 +461,17 @@ export async function handleShopBuyButton(interaction) {
             [userId, guildId, itemId]
           );
           const alreadyOwned = parseInt(qtyRes.rows[0]?.total || 0);
-          const remaining = 999 - alreadyOwned;
+          const remainingCap = 999 - alreadyOwned;
 
-          if (remaining <= 0) {
+          if (remainingCap <= 0) {
             return interaction.reply({
               content: '\u2755 You have reached the maximum of 999 copies of this item.',
               flags: MessageFlags.Ephemeral
             });
           }
+
+          // Placeholder: "999" if unlimited stock (item.stock === null), otherwise current stock count
+          const placeholderText = item.stock !== null ? String(item.stock) : '999';
 
           // Show quantity modal
           const modal = new ModalBuilder()
@@ -469,8 +480,8 @@ export async function handleShopBuyButton(interaction) {
 
           const qtyInput = new TextInputBuilder()
             .setCustomId('buy_quantity')
-            .setLabel(`How many? (Max ${remaining} remaining)`)
-            .setPlaceholder(`Enter 1 to ${remaining}`)
+            .setLabel('Enter the amount you want to buy')
+            .setPlaceholder(placeholderText)
             .setMinLength(1)
             .setMaxLength(3)
             .setStyle(TextInputStyle.Short)
