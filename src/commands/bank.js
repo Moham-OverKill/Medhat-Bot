@@ -582,6 +582,58 @@ export async function handleShopBuyButton(interaction) {
 }
 
 /**
+ * Live-refreshes the posted shop message embed (stock count & button state) after a purchase.
+ */
+export async function refreshShopMessageUI(interaction, itemId, guildId) {
+  try {
+    if (!interaction.message || !interaction.message.editable) return;
+    const { getShopItem } = await import('../economy/shop.js');
+    const updatedItem = await getShopItem(itemId, guildId);
+
+    if (updatedItem && interaction.message.embeds && interaction.message.embeds.length > 0) {
+      const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+      let stockHeader = '\u267E\uFE0F Stock';
+      let stockValue = 'Unlimited';
+      if (updatedItem.stock !== null && updatedItem.stock !== undefined) {
+        if (updatedItem.stock <= 0) {
+          stockHeader = '\uD83D\uDD34 Stock';
+          stockValue = 'Sold Out';
+        } else {
+          stockHeader = '\uD83D\uDFE2 Stock';
+          stockValue = `**${updatedItem.stock}** Left`;
+        }
+      }
+
+      const updatedFields = (embed.data.fields || []).map(f => {
+        if (f.name && f.name.includes('Stock')) {
+          return { name: stockHeader, value: stockValue, inline: true };
+        }
+        return f;
+      });
+      embed.setFields(updatedFields);
+
+      const isSoldOut = updatedItem.stock !== null && updatedItem.stock <= 0;
+      if (interaction.message.components && interaction.message.components.length > 0) {
+        const row = ActionRowBuilder.from(interaction.message.components[0]);
+        if (row.components && row.components.length > 0) {
+          const buyBtn = ButtonBuilder.from(row.components[0]);
+          buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
+          row.setComponents(buyBtn);
+
+          await interaction.message.edit({
+            embeds: [embed],
+            components: [row]
+          }).catch(() => { });
+        }
+      }
+    }
+  } catch (refreshErr) {
+    sysError('Live UI Refresh Failed', refreshErr, { guild: guildId, detail: `ItemID: ${itemId}` });
+  }
+}
+
+/**
  * Modal submission handler for the shop bulk-buy quantity modal.
  * customId: shop_buy_qty_modal_[itemId]_[sellerId]_[payoutStr]_[overridePrice]
  */
