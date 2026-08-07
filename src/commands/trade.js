@@ -1521,8 +1521,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     );
                 } else {
                     await client.query(
-                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, false, 'SHOP')`,
-                        [trade.target_id, trade.guild_id, row.shop_item_id, tradedQty]
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, $5, false, 'SHOP')`,
+                        [trade.target_id, trade.guild_id, row.shop_item_id, row.role_id || '', tradedQty]
                     );
                 }
             }
@@ -1561,8 +1561,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     );
                 } else {
                     await client.query(
-                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, false, 'SHOP')`,
-                        [trade.sender_id, trade.guild_id, row.shop_item_id, tradedQty]
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, $5, false, 'SHOP')`,
+                        [trade.sender_id, trade.guild_id, row.shop_item_id, row.role_id || '', tradedQty]
                     );
                 }
             }
