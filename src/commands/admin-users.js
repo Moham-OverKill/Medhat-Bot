@@ -94,9 +94,10 @@ export async function showUserDashboard(interaction, targetUserId) {
         const balance = parseInt(userResult.rows[0].balance);
         const streak = parseInt(userResult.rows[0].daily_streak) || 0;
 
-        // Fetch synthesized inventory to get accurate item count
+        // Fetch synthesized inventory to get accurate item count (summing quantities)
         const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
-        const itemCount = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack)).length;
+        const activeItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
+        const itemCount = activeItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
         sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Building management UI for ${targetUserId}` });
 
