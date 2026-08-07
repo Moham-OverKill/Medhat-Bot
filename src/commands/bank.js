@@ -1369,18 +1369,17 @@ export async function handleInventoryAction(interaction) {
         return interaction.followUp({ content: '\u274C Item not found.', flags: MessageFlags.Ephemeral });
       }
 
-      const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
-      if (isTemp) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.followUp({ content: '\u274C This item is temporary and cannot be dropped.', flags: MessageFlags.Ephemeral });
-      }
-
       if (item.is_tradable === false) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.followUp({ content: '\u274C This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
-      const currentQty = parseInt(item.quantity) || 1;
+      const rawQty = parseInt(item.quantity) || 1;
+      const availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
+      if (availableToDrop <= 0) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '❌ An active running temporary item cannot be dropped.', flags: MessageFlags.Ephemeral });
+      }
 
       // Show the quantity modal directly on the original interaction (no defer!)
       const modal = new ModalBuilder()
@@ -1390,7 +1389,7 @@ export async function handleInventoryAction(interaction) {
       const qtyInput = new TextInputBuilder()
         .setCustomId('drop_quantity')
         .setLabel('Enter the amount you want to drop')
-        .setPlaceholder(String(currentQty))
+        .setPlaceholder(String(availableToDrop))
         .setMinLength(1)
         .setMaxLength(3)
         .setStyle(TextInputStyle.Short)
