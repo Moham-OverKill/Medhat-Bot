@@ -1874,8 +1874,13 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
         // Check if actually expired
         const expiresAt = new Date(item.expires_at);
         if (expiresAt < new Date()) {
-          // Item has expired since last interaction - purge it
-          await client.query('DELETE FROM user_inventory WHERE id = $1', [inventoryId]);
+          // Item has expired since last interaction - decrement quantity or purge if 1 left
+          const currentQty = parseInt(item.quantity) || 1;
+          if (currentQty > 1) {
+            await client.query('UPDATE user_inventory SET quantity = quantity - 1, expires_at = NULL, is_active = false WHERE id = $1', [inventoryId]);
+          } else {
+            await client.query('DELETE FROM user_inventory WHERE id = $1', [inventoryId]);
+          }
           // Clean roles just in case
           if (item.source_roles) {
              const rIds = item.source_roles.split(/[,\s]+/);
@@ -1884,7 +1889,12 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
              }
           }
           await client.query('COMMIT');
-          return { success: false, error: 'This item has expired and has been removed.' };
+          return { 
+            success: false, 
+            error: currentQty > 1 
+              ? `This consumable item expired. 1 copy was consumed (${currentQty - 1} remaining in inventory).` 
+              : 'This item has expired and has been removed.' 
+          };
         }
       }
     }
@@ -1978,26 +1988,38 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
  */
 export async function purgeUserInventory(userId, guildId, member = null) {
   try {
-    // 1. Delete all items belonging to this user that have passed their expiration
-    const result = await query(
-      `DELETE FROM user_inventory 
-       WHERE user_id = $1 AND guild_id = $2
-       AND expires_at IS NOT NULL 
-       AND expires_at < NOW()
-       RETURNING id, shop_item_id, role_id`,
+    // 1. Fetch expired items belonging to this user
+    const expiredQuery = await query(
+      `SELECT i.id, i.shop_item_id, i.role_id, COALESCE(i.quantity, 1) as quantity
+       FROM user_inventory i
+       WHERE i.user_id = $1 AND i.guild_id = $2
+       AND i.expires_at IS NOT NULL 
+       AND i.expires_at < NOW()`,
       [userId, guildId]
     );
 
-    if (result.rows.length === 0) return 0;
+    if (expiredQuery.rows.length === 0) return 0;
 
-    // 2. Fetch Item Names for logging accurately
-    const expiredItems = result.rows;
+    const expiredItems = expiredQuery.rows;
     const itemIds = expiredItems.map(i => i.shop_item_id);
     const shopItems = await query(`SELECT id, name FROM shop_items WHERE id = ANY($1)`, [itemIds]);
     const nameMap = Object.fromEntries(shopItems.rows.map(s => [s.id, s.name]));
 
     for (const item of expiredItems) {
       const itemName = nameMap[item.shop_item_id] || 'Unknown Item';
+      const currentQty = parseInt(item.quantity) || 1;
+
+      // 2. Decrement quantity by 1 if quantity > 1, or DELETE if quantity <= 1
+      if (currentQty > 1) {
+        await query(
+          `UPDATE user_inventory 
+           SET quantity = quantity - 1, expires_at = NULL, is_active = false 
+           WHERE id = $1`,
+          [item.id]
+        );
+      } else {
+        await query(`DELETE FROM user_inventory WHERE id = $1`, [item.id]);
+      }
 
       // 3. Strip Discord Role (Only if member is provided)
       if (member && item.role_id) {
@@ -2017,16 +2039,16 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       }
 
       // 4. Log to Audit
-      sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Reason: Lazy Purge` });
+      sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Quantity Remaining: ${currentQty - 1} | Reason: Lazy Purge` });
       
       try {
-        // B-06 FIX: Corrected import path (was '../commands/bank.js', which is wrong)
+        const remainingNotice = currentQty > 1 ? ` (1 copy consumed, ${currentQty - 1} remaining in inventory)` : '';
         sendLog(
           { id: guildId, name: member?.guild?.name || 'Server' }, 
           'inventory', 
           'red', 
           '⏳ Item Expired', 
-          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired and was removed.`
+          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired${remainingNotice}.`
         );
       } catch (e) {
         // Silently fail if sendLog execution fails
