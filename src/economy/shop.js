@@ -1023,8 +1023,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       const existing = await client.query(
         `SELECT id FROM user_inventory
          WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
-           AND is_active = false AND expires_at IS NULL
-         LIMIT 1`,
+           AND expires_at IS NULL
+         ORDER BY is_active DESC LIMIT 1`,
         [userId, guildId, targetItem.id]
       );
 
@@ -1435,8 +1435,8 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     const existingClaim = await client.query(
       `SELECT id FROM user_inventory
        WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
-         AND is_active = false AND expires_at IS NULL
-       LIMIT 1`,
+         AND expires_at IS NULL
+       ORDER BY is_active DESC LIMIT 1`,
       [claimerId, guildId, drop.shop_item_id]
     );
 
@@ -1561,7 +1561,40 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
     await runDependencySweep(userId, guildId, freshMember);
 
-    return inventory.rows;
+    // Auto-consolidate any duplicate permanent item rows for the user
+    const permanentItemMap = new Map();
+    const rowsToDelete = [];
+    const consolidatedRows = [];
+
+    for (const row of inventory.rows) {
+      if (row.expires_at !== null) {
+        consolidatedRows.push(row);
+        continue;
+      }
+      const key = `${row.shop_item_id}`;
+      if (!permanentItemMap.has(key)) {
+        permanentItemMap.set(key, row);
+        consolidatedRows.push(row);
+      } else {
+        const primaryRow = permanentItemMap.get(key);
+        primaryRow.quantity = (parseInt(primaryRow.quantity) || 1) + (parseInt(row.quantity) || 1);
+        if (!primaryRow.is_active && row.is_active) {
+          primaryRow.is_active = true;
+        }
+        rowsToDelete.push(row.id);
+      }
+    }
+
+    if (rowsToDelete.length > 0) {
+      for (const delId of rowsToDelete) {
+        await query(`DELETE FROM user_inventory WHERE id = $1`, [delId]);
+      }
+      for (const primaryRow of permanentItemMap.values()) {
+        await query(`UPDATE user_inventory SET quantity = $1, is_active = $2 WHERE id = $3`, [primaryRow.quantity, primaryRow.is_active, primaryRow.id]);
+      }
+    }
+
+    return consolidatedRows;
   } catch (error) {
     sysError('Inventory Sync Error', error, { user: userId, guild: guildId });
     return [];
