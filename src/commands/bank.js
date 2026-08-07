@@ -1028,12 +1028,13 @@ export async function handleInventoryItemSelect(interaction) {
 
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
       categoryId = catPart === 'null' ? null : parseInt(catPart);
-    } else if (interaction.customId.startsWith('inv_nav_')) {
-      // From carousel navigation: inv_nav_categoryId_index_direction
+    } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
+      // From drop modal submit: bank_inv_drop_qty_[invId]_[catIdStr]_[currentIndex]
       const parts = interaction.customId.split('_');
-      const catPart = parts[2];
-      categoryId = catPart === 'null' ? null : parseInt(catPart);
-      currentIndex = parseInt(parts[3]) || 0;
+      invId = parts[4];
+      const catPart = parts[5];
+      categoryId = (catPart === 'null' || !catPart) ? null : parseInt(catPart);
+      currentIndex = parseInt(parts[6]) || 0;
     } else if (interaction.customId.startsWith('bank_inv_')) {
       // From action buttons: bank_inv_ACTION_invId_categoryId_currentIndex
       const parts = interaction.customId.split('_');
@@ -1805,27 +1806,36 @@ export async function handleInventoryDropModalSubmit(interaction) {
 
     if (isNaN(qty) || qty < 1 || qty > 999) {
       return interaction.reply({
-        content: '\u274C Please enter a valid quantity (1 or more).',
+        content: '❌ Please enter a valid quantity (1 or more).',
         flags: MessageFlags.Ephemeral
       });
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    // Trade lock check before executing
+    // Trade lock check
     const { query: dbQuery } = await import('../storage/postgres.js');
     const tradeCheck = await dbQuery(
       `SELECT id FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
       [interaction.user.id, interaction.guildId]
     );
     if (tradeCheck.rows.length > 0) {
-      return interaction.editReply({ content: '\u274C You cannot drop items while you have a pending trade.' });
+      return interaction.reply({
+        content: '❌ You cannot drop items while you have a pending trade.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Defer update on original inventory message directly (no new ephemeral message)
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => { });
     }
 
     const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member, qty);
 
     if (!res.success) {
-      return interaction.editReply({ content: `\u274C ${res.error || 'Drop failed.'}` });
+      return interaction.followUp({
+        content: `❌ ${res.error || 'Drop failed.'}`,
+        flags: MessageFlags.Ephemeral
+      });
     }
 
     const droppedQty = res.quantity || qty;
@@ -1836,7 +1846,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     const dropImg = getItemImage(droppedShopItem);
 
     const publicEmbed = new EmbedBuilder()
-      .setTitle('\uD83D\uDCE6 Item Dropped!')
+      .setTitle('📦 Item Dropped!')
       .setColor('#F1C40F')
       .setDescription(`${interaction.user} dropped **${droppedLabel}** <@&${res.item.role_id}>!`)
       .setTimestamp();
@@ -1847,7 +1857,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
       new ButtonBuilder()
         .setCustomId(`bank_item_claim_${res.dropId}`)
         .setLabel(droppedQty > 1 ? `Claim All ${droppedQty}x` : 'Claim Item')
-        .setEmoji('\uD83C\uDF81')
+        .setEmoji('🎁')
         .setStyle(ButtonStyle.Success)
     );
 
@@ -1857,29 +1867,19 @@ export async function handleInventoryDropModalSubmit(interaction) {
 
     sysLog('Item Dropped (Modal)', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${droppedLabel} | DropID: ${res.dropId}` });
 
-    sendLog(interaction.guild, 'inventory', 'orange', '\uD83D\uDDD1\uFE0F Item Dropped',
+    sendLog(interaction.guild, 'inventory', 'orange', '🗑️ Item Dropped',
       `**${getUserLogName(interaction.member)}** dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
 
-    const backRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('bank_inventory')
-        .setLabel('Back to Inventory')
-        .setEmoji('\uD83C\uDF92')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    return interaction.editReply({
-      content: `\u2705 **${droppedLabel}** dropped successfully!`,
-      components: [backRow]
-    });
+    // Update current inventory message directly (in place)
+    return handleInventoryItemSelect(interaction);
 
   } catch (error) {
     sysError('Drop Modal Submit Error', error, { user: interaction.user.id, guild: interaction.guildId });
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: `\u274C Error: ${error.message}` });
+        await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: `\u274C Error: ${error.message}`, flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
       }
     } catch (_) { }
   }
