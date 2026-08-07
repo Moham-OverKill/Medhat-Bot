@@ -539,17 +539,17 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
             .setStyle(ButtonStyle.Primary)
     );
 
-    // Row 3: Finalize (Green & Gray)
+    // Row 3: Finalize (Reset on left, Trade on right)
     const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`trade_setup_reset`)
+            .setLabel('Reset')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(`trade_setup_post`)
             .setLabel('Trade')
             .setStyle(ButtonStyle.Success)
-            .setDisabled(setup.senderCoins === 0 && setup.targetCoins === 0 && setup.senderItems.length === 0 && setup.targetItems.length === 0),
-        new ButtonBuilder()
-            .setCustomId(`trade_setup_reset`)
-            .setLabel('Reset')
-            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(setup.senderCoins === 0 && setup.targetCoins === 0 && setup.senderItems.length === 0 && setup.targetItems.length === 0)
     );
 
     const components = [row1, row2, row3];
