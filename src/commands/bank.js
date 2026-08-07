@@ -1665,7 +1665,7 @@ export async function handleBankHistory(interaction) {
     const result = await pool.query(
       `SELECT * FROM transactions 
        WHERE guild_id = $1 AND user_id = $2 
-       ORDER BY created_at DESC 
+       ORDER BY created_at DESC, id DESC 
        LIMIT $3 OFFSET $4`,
       [interaction.guildId, interaction.user.id, LIMIT, offset]
     );
