@@ -587,10 +587,11 @@ export async function handleShopBuyButton(interaction) {
  * Live-refreshes the posted shop message embed (stock count & button state) after a purchase.
  */
 export async function refreshShopMessageUI(interaction, itemId, guildId) {
+  const gId = guildId || interaction?.guildId;
   try {
     if (!interaction.message || !interaction.message.editable) return;
     const { getShopItem } = await import('../economy/shop.js');
-    const updatedItem = await getShopItem(itemId, guildId);
+    const updatedItem = await getShopItem(itemId, gId);
 
     if (updatedItem && interaction.message.embeds && interaction.message.embeds.length > 0) {
       const embed = EmbedBuilder.from(interaction.message.embeds[0]);
@@ -631,7 +632,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       }
     }
   } catch (refreshErr) {
-    sysError('Live UI Refresh Failed', refreshErr, { guild: guildId, detail: `ItemID: ${itemId}` });
+    sysError('Live UI Refresh Failed', refreshErr, { guild: gId, detail: `ItemID: ${itemId}` });
   }
 }
 
@@ -928,11 +929,14 @@ export async function handleInventoryCategorySelect(interaction) {
       .setColor('#2ECC71')
       .setDescription(listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : ''));
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`bank_inv_item_select_${isOther ? 'null' : categoryId}`)
-      .setPlaceholder('Select an Item to Manage')
-      .addOptions(items.slice(0, 25).map((i, idx) => {
-        // Check if item is temporary (has duration/expiry) or permanent
+    const itemOptions = [
+      {
+        label: '◀ Back to Inventory',
+        value: 'back_to_inventory',
+        description: 'Return to main inventory overview',
+        emoji: '◀️'
+      },
+      ...items.slice(0, 24).map((i, idx) => {
         const isTemp = !!(i.expires_at ||
           (i.duration_seconds && i.duration_seconds > 0) ||
           (i.duration_hours && i.duration_hours > 0));
@@ -952,28 +956,30 @@ export async function handleInventoryCategorySelect(interaction) {
           statusText = i.is_active ? 'Equipped' : 'Unequipped';
         }
 
+        const itemQty = parseInt(i.quantity) || 1;
+        const qtyBadge = (!isAdminIdentified && itemQty > 1) ? ` x${itemQty}` : '';
+        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+
         return {
-          label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
+          label: `${baseName}${qtyBadge}`,
           value: `${i.id}_${idx}`,
           description: statusText,
           emoji: statusEmoji
         };
-      }));
+      })
+    ];
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`bank_inv_item_select_${isOther ? 'null' : categoryId}`)
+      .setPlaceholder('Select an Item to Manage')
+      .addOptions(itemOptions);
 
     const row1 = new ActionRowBuilder().addComponents(select);
-
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('bank_inventory')
-        .setLabel('Back')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('⬅️')
-    );
 
     await interaction.editReply({
       content: null,
       embeds: [embed],
-      components: [row1, row2]
+      components: [row1]
     });
 
   } catch (error) {
@@ -997,8 +1003,15 @@ export async function handleInventoryItemSelect(interaction) {
     let categoryId, currentIndex, invId;
 
     if (interaction.values) {
+      const selectedVal = interaction.values[0];
+
+      // Handle "Back to Inventory" dropdown option selection
+      if (selectedVal === 'back_to_inventory') {
+        return handleInventoryButton(interaction);
+      }
+
       // From select menu: value = "invId_index"
-      const [itemId, idx] = interaction.values[0].split('_');
+      const [itemId, idx] = selectedVal.split('_');
       invId = itemId; // Can be string (admin_id) or number
       currentIndex = parseInt(idx) || 0;
 
@@ -1182,7 +1195,7 @@ export async function handleInventoryItemSelect(interaction) {
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
-    // ROW 1: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate] [⬅️ Back]
+    // ROW 1: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate]
     const row1 = new ActionRowBuilder();
 
     // [🗑️ Drop]
@@ -1221,44 +1234,47 @@ export async function handleInventoryItemSelect(interaction) {
         .setDisabled(cannotToggle)
     );
 
-    // [⬅️ Back]
-    row1.addComponents(
-      new ButtonBuilder()
-        .setCustomId('bank_inv_back')
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
+    // ROW 2: Item Selection Dropdown List (Includes Back as Option 0)
+    const selectOptions = [
+      {
+        label: '◀ Back to Inventory',
+        value: 'back_to_inventory',
+        description: 'Return to main inventory overview',
+        emoji: '◀️'
+      },
+      ...items.slice(0, 24).map((i, idx) => {
+        const isItemTemp = !!(i.expires_at ||
+          (i.duration_seconds && i.duration_seconds > 0) ||
+          (i.duration_hours && i.duration_hours > 0));
+        const isAdminIdentified = i.source === 'SYNC';
 
-    // ROW 2: Item Selection Dropdown List
-    const selectOptions = items.slice(0, 25).map(i => {
-      const isItemTemp = !!(i.expires_at ||
-        (i.duration_seconds && i.duration_seconds > 0) ||
-        (i.duration_hours && i.duration_hours > 0));
-      const isAdminIdentified = i.source === 'SYNC';
+        let statusEmoji = '⬜';
+        let statusText = 'Unknown';
 
-      let statusEmoji = '⬜';
-      let statusText = 'Unknown';
+        if (isAdminIdentified) {
+          statusEmoji = '🛡️';
+          statusText = 'Admin Granted';
+        } else if (isItemTemp) {
+          statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Active' : 'Inactive';
+        } else {
+          statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Equipped' : 'Unequipped';
+        }
 
-      if (isAdminIdentified) {
-        statusEmoji = '🛡️';
-        statusText = 'Admin Granted';
-      } else if (isItemTemp) {
-        statusEmoji = i.is_active ? '✅' : '⬜';
-        statusText = i.is_active ? 'Active' : 'Inactive';
-      } else {
-        statusEmoji = i.is_active ? '✅' : '⬜';
-        statusText = i.is_active ? 'Equipped' : 'Unequipped';
-      }
+        const itemQty = parseInt(i.quantity) || 1;
+        const qtyBadge = (!isAdminIdentified && itemQty > 1) ? ` x${itemQty}` : '';
+        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
 
-      return {
-        label: i.name,
-        value: String(i.id),
-        description: statusText,
-        emoji: statusEmoji,
-        default: String(i.id) === String(item.id)
-      };
-    });
+        return {
+          label: `${baseName}${qtyBadge}`,
+          value: `${i.id}_${idx}`,
+          description: statusText,
+          emoji: statusEmoji,
+          default: String(i.id) === String(item.id)
+        };
+      })
+    ];
 
     const itemSelect = new StringSelectMenuBuilder()
       .setCustomId(`bank_inv_item_select_${catIdStr}`)
