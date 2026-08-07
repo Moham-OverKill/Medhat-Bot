@@ -1292,9 +1292,10 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
       throw new Error('This item is locked and cannot be dropped');
     }
 
-    if (qty > currentQty) {
+    const availableToDrop = item.expires_at ? Math.max(0, currentQty - 1) : currentQty;
+    if (qty > availableToDrop) {
       await client.query('ROLLBACK');
-      throw new Error(`You only have ${currentQty} of this item. You cannot drop ${qty}.`);
+      throw new Error(`You can only drop up to ${availableToDrop} unactivated cop${availableToDrop === 1 ? 'y' : 'ies'} of this item.`);
     }
 
     // 2. Calculate remaining quantity after the drop
