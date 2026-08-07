@@ -14,7 +14,7 @@ import {
     InteractionType
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
