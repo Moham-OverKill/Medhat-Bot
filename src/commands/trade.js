@@ -726,7 +726,9 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
            const source = (i.purchase_source || '').toLowerCase();
            if (source !== 'shop' || i.item_type === 'pack') return false; 
            if (i.is_tradable === false) return false; // Filter out Locked items
-           if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false; // Filter out temp items
+           const rawQty = parseInt(i.quantity) || 1;
+           const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
+           if (availToTrade <= 0) return false;
 
            const recipientTotalQty = targetQtyMap[i.shop_item_id] || 0;
            return recipientTotalQty < 999;
@@ -753,7 +755,9 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
             const source = (i.purchase_source || '').toLowerCase();
             if (source !== 'shop' || i.item_type === 'pack') return false;
             if (i.is_tradable === false) return false;
-            if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
+            const rawQty = parseInt(i.quantity) || 1;
+            const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
+            if (availToTrade <= 0) return false;
 
             const requesterTotalQty = senderQtyMap[i.shop_item_id] || 0;
             return requesterTotalQty < 999;
@@ -863,7 +867,8 @@ export async function handleTradeModal(interaction) {
         );
         const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
         const maxAllowedByCap = 999 - recipientTotal;
-        const itemOwnedQty = parseInt(item.quantity) || 1;
+        const rawOwned = parseInt(item.quantity) || 1;
+        const itemOwnedQty = item.expires_at ? Math.max(0, rawOwned - 1) : rawOwned;
         const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
 
         if (qty > availableQty) {
@@ -963,10 +968,11 @@ export async function handleTradeSelect(interaction) {
         return interaction.followUp({ content: '❌ This item is locked and cannot be traded.', flags: MessageFlags.Ephemeral });
     }
 
-    const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
-    if (isTemp) {
+    const rawOwned = parseInt(item.quantity) || 1;
+    const itemOwnedQty = item.expires_at ? Math.max(0, rawOwned - 1) : rawOwned;
+    if (itemOwnedQty <= 0) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.followUp({ content: '❌ Temporary items cannot be traded.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '❌ An active running temporary item cannot be traded.', flags: MessageFlags.Ephemeral });
     }
 
     const recipientId = isGive ? setup.targetId : setup.senderId;
@@ -976,7 +982,6 @@ export async function handleTradeSelect(interaction) {
     );
     const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
     const maxAllowedByCap = 999 - recipientTotal;
-    const itemOwnedQty = parseInt(item.quantity) || 1;
     const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
 
     if (availableQty <= 0) {
