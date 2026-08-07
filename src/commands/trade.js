@@ -985,15 +985,15 @@ export async function handleTradeSelect(interaction) {
     }
 
     if (availableQty > 1) {
+        const modalTitle = safeTruncate(`${isGive ? 'Giving' : 'Requesting'} ${item.name}`, 45);
         const modal = new ModalBuilder()
             .setCustomId(`trade_modal_item_qty_${isGive ? 'give' : 'req'}_${invId}`)
-            .setTitle(`${isGive ? 'Offer' : 'Request'}: ${item.name}`);
+            .setTitle(modalTitle);
 
         const qtyInput = new TextInputBuilder()
             .setCustomId('trade_qty')
-            .setLabel(`How many? (1 to ${availableQty})`)
-            .setPlaceholder(`Enter 1 to ${availableQty}`)
-            .setValue('1')
+            .setLabel(isGive ? 'How many are you giving?' : 'How many are you requesting?')
+            .setPlaceholder(String(itemOwnedQty))
             .setMinLength(1)
             .setMaxLength(3)
             .setStyle(TextInputStyle.Short)
