@@ -931,10 +931,10 @@ export async function handleInventoryCategorySelect(interaction) {
 
     const itemOptions = [
       {
-        label: '◀ Back to Inventory',
+        label: 'Back',
         value: 'back_to_inventory',
         description: 'Return to main inventory overview',
-        emoji: '◀️'
+        emoji: '⬅️'
       },
       ...items.slice(0, 24).map((i, idx) => {
         const isTemp = !!(i.expires_at ||
@@ -1237,10 +1237,10 @@ export async function handleInventoryItemSelect(interaction) {
     // ROW 2: Item Selection Dropdown List (Includes Back as Option 0)
     const selectOptions = [
       {
-        label: '◀ Back to Inventory',
+        label: 'Back',
         value: 'back_to_inventory',
         description: 'Return to main inventory overview',
-        emoji: '◀️'
+        emoji: '⬅️'
       },
       ...items.slice(0, 24).map((i, idx) => {
         const isItemTemp = !!(i.expires_at ||
