@@ -14,6 +14,7 @@ import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage } from '../economy/shop.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 /**
@@ -342,7 +343,7 @@ export async function handleStreakModal(interaction) {
 /**
  * Show user inventory (items)
  */
-export async function showUserItems(interaction, targetUserId, categoryId = null) {
+export async function showUserItems(interaction, targetUserId, categoryId = null, page = 1) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const guildId = interaction.guildId;
     const isOther = categoryId === 'null';
@@ -431,51 +432,34 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
         const rows = [];
         if (items.length > 0) {
-            const selectOptions = [
-                {
-                    label: 'Back',
-                    value: 'back_to_categories',
-                    emoji: '⬅️'
-                },
-                ...items.slice(0, 24).map((i, idx) => {
+            const { selectMenu } = buildPaginatedSelectMenu({
+                items,
+                page,
+                customId: `admin_user_isel_${targetUserId}_${categoryId}`,
+                placeholder: 'Select an Item to Manage',
+                backOption: { label: 'Back', value: 'back_to_categories', emoji: '⬅️' },
+                pageNavPrefix: 'admin_page_',
+                pageSize: 20,
+                mapOption: (i, idx) => {
                     const isAdminIdentified = i.source === 'SYNC';
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
-                    
-                    let statusEmoji = '⬜';
-                    let statusText = 'Unknown';
-
-                    if (isAdminIdentified) {
-                        statusEmoji = '🛡️';
-                        statusText = 'Admin Granted';
-                    } else if (isTemp) {
-                        statusEmoji = i.is_active ? '✅' : '⬜';
-                        statusText = i.is_active ? 'Active' : 'Inactive';
-                    } else {
-                        statusEmoji = i.is_active ? '✅' : '⬜';
-                        statusText = i.is_active ? 'Equipped' : 'Unequipped';
-                    }
-
+                    let statusEmoji = isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '✅' : '⬜') : (i.is_active ? '✅' : '⬜'));
+                    let statusText = isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped'));
                     const itemQty = parseInt(i.quantity) || 1;
                     const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
                     const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
-
                     return {
                         label: `${baseName}${qtyBadge}`,
                         value: `${i.id}_${idx}`,
                         description: statusText,
                         emoji: statusEmoji
                     };
-                })
-            ];
+                }
+            });
 
-            const select = new StringSelectMenuBuilder()
-                .setCustomId(`admin_user_isel_${targetUserId}_${categoryId}`)
-                .setPlaceholder('Select an Item to Manage')
-                .addOptions(selectOptions);
-
-            rows.push(new ActionRowBuilder().addComponents(select));
+            rows.push(new ActionRowBuilder().addComponents(selectMenu));
         } else {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -834,6 +818,11 @@ export async function handleAdminUserComponent(interaction) {
                 const catId = parts[4];
                 if (selectedVal === 'back_to_categories') {
                     await showUserItems(interaction, targetUserId, null);
+                    break;
+                }
+                if (selectedVal.startsWith('admin_page_')) {
+                    const targetPage = parseInt(selectedVal.replace('admin_page_', ''), 10) || 1;
+                    await showUserItems(interaction, targetUserId, catId, targetPage);
                     break;
                 }
                 const lastUnderscore = selectedVal.lastIndexOf('_');

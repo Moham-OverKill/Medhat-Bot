@@ -18,6 +18,7 @@ import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
+import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import {
   getShopCategories,
   getShopItems,
@@ -880,7 +881,7 @@ export async function handleInventoryButton(interaction) {
 
 
 // VIEW 2: Category Content View
-export async function handleInventoryCategorySelect(interaction) {
+export async function handleInventoryCategorySelect(interaction, targetPage = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => { });
@@ -930,13 +931,15 @@ export async function handleInventoryCategorySelect(interaction) {
       .setColor('#2ECC71')
       .setDescription(listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : ''));
 
-    const itemOptions = [
-      {
-        label: 'Back',
-        value: 'back_to_inventory',
-        emoji: '⬅️'
-      },
-      ...items.slice(0, 24).map((i, idx) => {
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items,
+      page,
+      customId: `bank_inv_item_select_${isOther ? 'null' : categoryId}`,
+      placeholder: 'Select an Item to Manage',
+      backOption: { label: 'Back', value: 'back_to_inventory', emoji: '⬅️' },
+      pageNavPrefix: 'inv_page_',
+      pageSize: 20,
+      mapOption: (i, idx) => {
         const isTemp = !!(i.expires_at ||
           (i.duration_seconds && i.duration_seconds > 0) ||
           (i.duration_hours && i.duration_hours > 0));
@@ -966,15 +969,10 @@ export async function handleInventoryCategorySelect(interaction) {
           description: statusText,
           emoji: statusEmoji
         };
-      })
-    ];
+      }
+    });
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`bank_inv_item_select_${isOther ? 'null' : categoryId}`)
-      .setPlaceholder('Select an Item to Manage')
-      .addOptions(itemOptions);
-
-    const row1 = new ActionRowBuilder().addComponents(select);
+    const row1 = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.editReply({
       content: null,
@@ -1014,6 +1012,12 @@ export async function handleInventoryItemSelect(interaction) {
       // Handle "Back to Inventory" dropdown option selection
       if (selectedVal === 'back_to_inventory') {
         return handleInventoryButton(interaction);
+      }
+
+      // Handle Page Navigation dropdown option selection (inv_page_N)
+      if (selectedVal.startsWith('inv_page_')) {
+        const targetPage = parseInt(selectedVal.replace('inv_page_', ''), 10) || 1;
+        return handleInventoryCategorySelect(interaction, targetPage);
       }
 
       // From select menu: value = "invId_index"

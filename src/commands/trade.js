@@ -18,6 +18,7 @@ import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, ge
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
+import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { getCachedGuildConfig } from '../activity/tracker.js';
@@ -706,7 +707,7 @@ export async function handleTradeSetupInteraction(interaction) {
 /**
  * Render Item/Category Select Menu for Trade (Preserves folder state across selections)
  */
-async function renderTradeItemMenu(interaction, setup, aspect) {
+async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     const isGive = aspect === 'give';
     const selectedCatId = isGive ? setup.givingFolder : setup.requestingFolder;
     
@@ -800,26 +801,28 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
         return renderTradeItemMenu(interaction, setup, aspect);
     }
 
-    const options = folderItems.slice(0, 24).map(row => {
-        const qty = parseInt(row.quantity) || 1;
-        const qtyLabel = ` (x${qty})`;
-        return {
-            label: `🏷️ ${row.name}${qtyLabel}`,
-            value: row.id.toString()
-        };
+    const { selectMenu } = buildPaginatedSelectMenu({
+        items: folderItems,
+        page,
+        customId: `trade_select_${isGive ? 'give' : 'req'}_item`,
+        placeholder: `Select an item to ${isGive ? 'give' : 'request'}...`,
+        backOption: { label: 'Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}`, emoji: '⬅️' },
+        pageNavPrefix: `trade_page_${isGive ? 'give' : 'req'}_`,
+        pageSize: 20,
+        mapOption: row => {
+            const qty = parseInt(row.quantity) || 1;
+            const qtyLabel = ` (x${qty})`;
+            return {
+                label: `🏷️ ${row.name}${qtyLabel}`,
+                value: row.id.toString()
+            };
+        }
     });
-
-    options.unshift({ label: '⬅️ Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}` });
-
-    const select = new StringSelectMenuBuilder()
-        .setCustomId(`trade_select_${isGive ? 'give' : 'req'}_item`)
-        .setPlaceholder(`Select an item to ${isGive ? 'give' : 'request'}...`)
-        .addOptions(options);
 
     if (isGive) setup.givingFolder = finalCatId ?? -1;
     else setup.requestingFolder = finalCatId ?? -1;
     
-    return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(select));
+    return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(selectMenu));
 }
 
 /**
@@ -937,6 +940,14 @@ export async function handleTradeSelect(interaction) {
     if (!setup) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    }
+
+    if (interaction.values[0]?.startsWith('trade_page_')) {
+        const parts = interaction.values[0].split('_'); // trade_page_[give/req]_[page]
+        const aspect = parts[2];
+        const targetPage = parseInt(parts[3], 10) || 1;
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return renderTradeItemMenu(interaction, setup, aspect, targetPage);
     }
 
     const invId = parseInt(interaction.values[0], 10);
