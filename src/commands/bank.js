@@ -509,12 +509,10 @@ export async function handleShopBuyButton(interaction) {
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const { getShopItem } = await import('../economy/shop.js');
     const itemForPrice = await getShopItem(itemId);
-    const itemPrice = (overridePrice !== null && overridePrice !== undefined) ? overridePrice : (itemForPrice?.price || 0);
     const customPayout = parseInt(payoutStr) || 0;
-    let payoutAmount = hasSeller ? customPayout : 0;
+    const payoutAmount = hasSeller ? customPayout : 0;
 
     // STEP 2: Call purchaseItem (quantity=1 for locked items and force-buy)
-    const { purgeUserInventory } = await import('../economy/shop.js');
     await purgeUserInventory(userId, guildId, member);
 
     const result = await purchaseItem(userId, guildId, itemId, member, {
@@ -523,9 +521,6 @@ export async function handleShopBuyButton(interaction) {
       overridePrice,
       quantity: 1
     });
-
-    // STEP 3: Live UI Refresh
-    await refreshShopMessageUI(interaction, itemId, guildId);
 
     if (!result.success) {
       if (result.error === 'Insufficient balance') {
@@ -554,6 +549,13 @@ export async function handleShopBuyButton(interaction) {
       }
     }
 
+    // STEP 3: Live UI Refresh (Safely isolated so post-purchase UI updates cannot break success response)
+    try {
+      await refreshShopMessageUI(interaction, itemId, guildId);
+    } catch (uiErr) {
+      sysError('Shop UI Refresh Error', uiErr, { user: userId, guild: guildId });
+    }
+
     // STEP 4: Success message
     let msg;
     const boughtQty = result.quantity || 1;
@@ -563,7 +565,7 @@ export async function handleShopBuyButton(interaction) {
     } else {
       msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    await interaction.editReply({
+    return interaction.editReply({
       content: msg,
       components: []
     });
@@ -678,15 +680,19 @@ export async function handleShopBuyModalSubmit(interaction) {
       quantity: qty
     });
 
-    // Refresh live shop message embed stock counter upon purchase completion
-    await refreshShopMessageUI(interaction, itemId, guildId);
-
     if (!result.success) {
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
       return interaction.editReply({
         content: isCapOrOwned ? `\u2755 ${result.error}` : `\u274C ${result.error}`,
         components: []
       });
+    }
+
+    // Refresh live shop message embed stock counter upon purchase completion (safely isolated)
+    try {
+      await refreshShopMessageUI(interaction, itemId, guildId);
+    } catch (uiErr) {
+      sysError('Shop UI Refresh Error', uiErr, { user: userId, guild: guildId });
     }
 
     const boughtQty = result.quantity || qty;
