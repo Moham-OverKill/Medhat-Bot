@@ -933,7 +933,6 @@ export async function handleInventoryCategorySelect(interaction) {
       {
         label: 'Back',
         value: 'back_to_inventory',
-        description: 'Return to main inventory overview',
         emoji: '⬅️'
       },
       ...items.slice(0, 24).map((i, idx) => {
@@ -1245,7 +1244,6 @@ export async function handleInventoryItemSelect(interaction) {
       {
         label: 'Back',
         value: 'back_to_inventory',
-        description: 'Return to main inventory overview',
         emoji: '⬅️'
       },
       ...items.slice(0, 24).map((i, idx) => {
