@@ -755,7 +755,9 @@ export async function reconcileGuildInventory(guild) {
  * @param {boolean} options.skipBalanceDeduction - If true, skip balance check/deduction (used when * @param {Object} options - Additional options including seller information and payout
  */
 export async function purchaseItem(userId, guildId, itemId, member, options = {}) {
-  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null } = options;
+  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null, quantity = 1 } = options;
+  // qty is the validated integer quantity the user wants to buy (always >= 1)
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
   const pool = getPool();
   const client = await pool.connect();
   let transactionId = null;
@@ -814,11 +816,11 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       return { success: false, error: 'This item is no longer available' };
     }
 
-    // Check stock
-    if (item.stock !== null && item.stock <= 0) {
+    // Check stock (must have enough for the full requested quantity)
+    if (item.stock !== null && item.stock < qty) {
       await client.query('ROLLBACK');
-      sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Out of stock` });
-      return { success: false, error: 'Item out of stock' };
+      sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Out of stock (need ${qty}, have ${item.stock})` });
+      return { success: false, error: item.stock <= 0 ? 'Item out of stock' : `Only ${item.stock} left in stock.` };
     }
 
     // Capture initial balances for logging (BEFORE update)
@@ -850,61 +852,60 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     // Check for Temporary Item Logic
     const isTemp = (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
+    const isLocked = item.is_tradable === false;
 
-    // ========== TEMP ITEM CHECK (Highest Priority) ==========
-    // Check if item is currently active in DB (expires_at > NOW) or exists inactive/unequipped
-    // We do this BEFORE role check so we give the correct status message
+    // ========== LOCKED ITEM RULES ==========
+    // Locked items operate the old way: max 1 copy per user, no bulk purchase.
+    if (isLocked) {
+      // Lock user's inventory row to prevent concurrent spam purchases
+      const lockedCheck = await client.query(
+        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
+         FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+         FOR UPDATE`,
+        [userId, guildId, itemId]
+      );
+      const lockedTotal = parseInt(lockedCheck.rows[0]?.total || 0);
+      if (lockedTotal >= 1) {
+        await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Locked item already owned (qty: ${lockedTotal})` });
+        return { success: false, error: 'You already have that item.' };
+      }
+    }
+
+    // ========== TEMP ITEM CHECK ==========
+    // Temporary items can be stacked (multiple inactive copies in inventory).
+    // We no longer block buying if an inactive temp exists — the user can buy more and stack durations.
     if (isTemp) {
       const activeTemp = await client.query(
         `SELECT id, expires_at FROM user_inventory 
-                  WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND is_active = true AND expires_at > NOW()`,
         [userId, guildId, itemId]
       );
-
-      if (activeTemp.rows.length > 0) {
-        const hasActive = activeTemp.rows.some(r => r.expires_at && new Date(r.expires_at) > new Date());
-        const hasInactive = activeTemp.rows.some(r => !r.expires_at);
-
-        if (hasActive) {
-          await client.query('ROLLBACK');
-          sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already active temporary item` });
-          return { success: false, error: 'Wait for the item to expire before buying it again.' };
-        }
-
-        if (hasInactive) {
-          await client.query('ROLLBACK');
-          sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Inactive temporary item exists` });
-          return { success: false, error: 'You already have this item in your inventory. Please equip it first!' };
-        }
+      // If already active, only block if also Locked (Locked+Temp = strict 1 copy)
+      if (activeTemp.rows.length > 0 && isLocked) {
+        await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Locked temporary item already active` });
+        return { success: false, error: 'Wait for the item to expire before buying it again.' };
       }
     }
 
-    // ========== REAL-TIME ROLE CHECK ==========
-    // Check if user ALREADY HAS the role (even if admin-granted, not in DB)
-    // This prevents buying items they already own via Discord role
-      // Discovery Logic Removed: We no longer write Admin-granted items to the DB.
-    // They are now synthesized live in the view layer (bank.js).
-    if (item.role_id) {
-      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-      if (member.roles.cache.has(firstRoleId)) {
-        await client.query('ROLLBACK');
-        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Role already owned in Discord` });
-        return { success: false, error: 'You already have that item.' };
-      }
-    }
-
-    // ========== CHECK OWNERSHIP (Permanent Items) ==========
-    if (!isTemp && item.item_type !== 'pack') {
-      // Permanent item check: already owned?
-      const existing = await client.query(
-        'SELECT * FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3',
+    // ========== UNLOCKED ITEMS: 999 CAP CHECK ==========
+    // Prevents integer overflow or runaway stacking.
+    if (!isLocked && item.item_type !== 'pack') {
+      const capCheck = await client.query(
+        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
+         FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+         FOR UPDATE`,
         [userId, guildId, itemId]
       );
-
-      if (existing.rows.length > 0) {
+      const currentTotal = parseInt(capCheck.rows[0]?.total || 0);
+      if (currentTotal + qty > 999) {
         await client.query('ROLLBACK');
-        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Already owned in Database` });
-        return { success: false, error: 'You already have that item.' };
+        const remaining = 999 - currentTotal;
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: 999 cap exceeded (have ${currentTotal}, want ${qty})` });
+        return { success: false, error: remaining > 0 ? `You can only hold up to 999 copies. You can buy ${remaining} more.` : 'You have reached the maximum of 999 copies of this item.' };
       }
     }
 
@@ -964,7 +965,10 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     }
 
     // ========== STEP 3: Verify User Balance (Lock Wallet) ==========
-    // Skip if balance was already deducted atomically by caller
+    // Total cost is effectivePrice * qty for unlocked bulk purchases.
+    // Locked items always use qty=1 (enforced above).
+    const totalCost = isLocked ? effectivePrice : effectivePrice * qty;
+
     let currentBalance = 0;
     if (!skipBalanceDeduction) {
       const balanceResult = await client.query(
@@ -981,40 +985,80 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
       currentBalance = parseInt(balanceResult.rows[0]?.balance || 0);
 
-      if (currentBalance < effectivePrice) {
+      if (currentBalance < totalCost) {
         await client.query('ROLLBACK');
-        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Insufficient funds (Bal: ${currentBalance}, Req: ${effectivePrice})` });
-        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `**${getUserLogName(member)}** tried to buy **${item.name}** but has insufficient funds.\n• Required: **${effectivePrice.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Insufficient funds (Bal: ${currentBalance}, Req: ${totalCost})` });
+        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `**${getUserLogName(member)}** tried to buy **${qty > 1 ? `${qty}x ` : ''}${item.name}** but has insufficient funds.\n• Required: **${totalCost.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
         return { success: false, error: 'Insufficient balance' };
       }
     }
 
     // ========== STEP 4: Handle Inventory & Contents (Add FIRST) ==========
 
-    // Define helper to add item to inventory (Consumable Mode: Deactivated by default, no timer)
-    const addToInventory = async (targetItem, purchaseSource = 'shop') => {
-      // RULE: All new acquisitions enter DEACTIVATED with NO expires_at (Stasis)
+    // Define helper to add item to inventory using UPSERT quantity stacking.
+    // For packs and locked items, always inserts a new row (no stacking).
+    // For unlocked items, increments quantity on an existing inactive row, or inserts new.
+    const addToInventory = async (targetItem, purchaseSource = 'shop', addQty = 1) => {
       const isActive = false;
       const expiresAt = null;
+      const targetIsLocked = targetItem.is_tradable === false;
 
+      // Packs and locked items: always insert a new row (no quantity stacking)
+      if (targetIsLocked || targetItem.item_type === 'pack') {
+        const res = await client.query(
+          `INSERT INTO user_inventory (
+              user_id, guild_id, shop_item_id, role_id, expires_at,
+              purchase_source, is_active, source, quantity
+            )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'SHOP', 1)
+             RETURNING *`,
+          [userId, guildId, targetItem.id, targetItem.role_id, expiresAt, purchaseSource, isActive]
+        );
+        return { inventoryItem: res.rows[0], isActive };
+      }
+
+      // Unlocked items: UPSERT — increment quantity on the existing inactive row (no active/expires_at row)
+      // INSERT ... ON CONFLICT is not suitable here since there's no unique constraint on (user_id, shop_item_id).
+      // Instead, SELECT the existing inactive row first, then UPDATE or INSERT.
+      const existing = await client.query(
+        `SELECT id FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+           AND is_active = false AND expires_at IS NULL
+         LIMIT 1`,
+        [userId, guildId, targetItem.id]
+      );
+
+      if (existing.rows.length > 0) {
+        // Increment existing inactive stack
+        const res = await client.query(
+          `UPDATE user_inventory
+           SET quantity = COALESCE(quantity, 1) + $1, purchase_source = $2, purchased_at = NOW()
+           WHERE id = $3
+           RETURNING *`,
+          [addQty, purchaseSource, existing.rows[0].id]
+        );
+        return { inventoryItem: res.rows[0], isActive: false };
+      }
+
+      // No existing inactive row — insert new
       const res = await client.query(
         `INSERT INTO user_inventory (
-            user_id, guild_id, shop_item_id, role_id, expires_at, 
-            purchase_source, is_active, source
+            user_id, guild_id, shop_item_id, role_id, expires_at,
+            purchase_source, is_active, source, quantity
           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'SHOP')
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'SHOP', $8)
            RETURNING *`,
-        [userId, guildId, targetItem.id, targetItem.role_id, expiresAt, purchaseSource, isActive]
+        [userId, guildId, targetItem.id, targetItem.role_id, expiresAt, purchaseSource, isActive, addQty]
       );
       return { inventoryItem: res.rows[0], isActive };
     };
 
-    // Add Main Item (for packs, this adds the pack itself as a "container" record)
-    const { isActive: mainActive } = await addToInventory(item, 'shop');
+    // Add Main Item — pass the full requested qty (locked always uses 1 enforced above)
+    const { isActive: mainActive } = await addToInventory(item, 'shop', isLocked ? 1 : qty);
 
-    // Handle Pack Contents - ONLY add MISSING items with valid roles
+    // Handle Pack Contents — grant ALL bundled items (quantity stacking applies per item)
+    // Locked items inside a pack still obey the 1-copy rule.
     if (packInfo && packInfo.missingIds.length > 0) {
-      // Fetch only the missing items
       const contentItemsRes = await client.query(
         `SELECT * FROM shop_items WHERE id = ANY($1) AND guild_id = $2`,
         [packInfo.missingIds, guildId]
@@ -1032,13 +1076,26 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
             continue;
           }
         }
-        await addToInventory(contentItem, 'pack');
+        // If content item is Locked, check if user already owns 1 copy before adding
+        if (contentItem.is_tradable === false) {
+          const lockCheck = await client.query(
+            `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory
+             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+            [userId, guildId, contentItem.id]
+          );
+          if (parseInt(lockCheck.rows[0]?.total || 0) >= 1) {
+            sysLog('Pack Locked Skip', { user: userId, guild: guildId, detail: `Skipping locked item "${contentItem.name}" — already owned` });
+            skippedCount++;
+            continue;
+          }
+        }
+        await addToInventory(contentItem, 'pack', 1);
       }
       if (skippedCount > 0) {
         packInfo.skippedCount = skippedCount;
       }
     } else if (!packInfo && item.contents && Array.isArray(item.contents) && item.contents.length > 0) {
-      // Non-pack item with contents (shouldn't happen, but fallback)
+      // Non-pack item with contents (fallback)
       const contentIds = item.contents;
       const contentItemsRes = await client.query(
         `SELECT * FROM shop_items WHERE id = ANY($1) AND guild_id = $2`,
@@ -1046,7 +1103,6 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       );
 
       for (const contentItem of contentItemsRes.rows) {
-        // Validate role exists before adding
         if (contentItem.role_id) {
           const firstRoleId = contentItem.role_id.split(/[,\s]+/)[0];
           if (!member.guild.roles.cache.has(firstRoleId)) {
@@ -1054,22 +1110,15 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
             continue;
           }
         }
-        const check = await client.query(
-          'SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2',
-          [userId, contentItem.id]
-        );
-        if (check.rows.length === 0) {
-          await addToInventory(contentItem, 'pack');
-        }
+        await addToInventory(contentItem, 'pack', 1);
       }
     }
 
     // ========== STEP 5: Deduct Coins (Charge SECOND) ==========
-    // Skip if balance was already deducted atomically by caller
-    let newBalance = currentBalance - effectivePrice;
+    let newBalance = currentBalance - totalCost;
 
     if (!skipBalanceDeduction) {
-      // Enforce non-negative balance check again (though logic above ensures it)
+      // Atomic non-negative guard
       if (newBalance < 0) {
         await client.query('ROLLBACK');
         sysLog('Purchase Rejection', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Atomic balance fault check` });
@@ -1080,16 +1129,16 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         `UPDATE user_balances 
          SET balance = $1, total_spent = total_spent + $2, updated_at = NOW()
          WHERE user_id = $3 AND guild_id = $4`,
-        [newBalance, effectivePrice, userId, guildId]
+        [newBalance, totalCost, userId, guildId]
       );
 
+      const itemLabel = qty > 1 ? `${qty}x ${item.name}` : item.name;
       await client.query(
         `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
          VALUES ($1, $2, $3, $4, 'purchase', $5, $6)`,
-        [userId, guildId, -effectivePrice, newBalance, `Purchased: ${item.name}`, itemId.toString()]
+        [userId, guildId, -totalCost, newBalance, `Purchased: ${itemLabel}`, itemId.toString()]
       );
     } else {
-      // Balance was already deducted, just get current balance for return value
       const balResult = await client.query(
         'SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2',
         [userId, guildId]
@@ -1097,11 +1146,12 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       newBalance = parseInt(balResult.rows[0]?.balance || 0);
     }
 
-    // Update stock
+    // Update stock — decrement by qty
     if (item.stock !== null) {
+      const effectiveQty = isLocked ? 1 : qty;
       await client.query(
-        'UPDATE shop_items SET stock = stock - 1, updated_at = NOW() WHERE id = $1',
-        [itemId]
+        'UPDATE shop_items SET stock = stock - $1, updated_at = NOW() WHERE id = $2',
+        [effectiveQty, itemId]
       );
     }
 
@@ -1155,20 +1205,21 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     // ========== DISCORD LOGS (Dual Receipt) ==========
     const buyerLogName = getUserLogName(member);
-    const buyerAfter = buyerBefore - effectivePrice;
-    
-    // Final Success Log
+    const buyerAfter = buyerBefore - totalCost;
+    const itemLabel = (isLocked ? 1 : qty) > 1 ? `${qty}x ${item.name}` : item.name;
+    const lockedTag = isLocked ? ' (Locked)' : '';
+
     sysLog('Purchase Success', { 
       user: userId, 
       guild: guildId, 
-      detail: `Item: ${item.name} | Paid: ${effectivePrice} | New Bal: ${newBalance}` 
+      detail: `Item: ${itemLabel}${lockedTag} | Paid: ${totalCost} | New Bal: ${newBalance}` 
     });
 
     // 1. Buyer Log [Discord]
     sendLog(member.guild, 'shop', 'green', '🛒 Item Purchased', 
       `**User:** \`${buyerLogName}\`\n` +
-      `**Item:** \`${item.name}\`\n` +
-      `**Price:** \`${effectivePrice.toLocaleString()}\` ${COIN_EMOJI}\n` +
+      `**Item:** \`${itemLabel}\`${lockedTag ? ` \`${lockedTag.trim()}\`` : ''}\n` +
+      `**Price:** \`${totalCost.toLocaleString()}\` ${COIN_EMOJI}\n` +
       `**Balance:** \`${buyerBefore.toLocaleString()}\` ➡️ \`${buyerAfter.toLocaleString()}\``
     );
 
@@ -1180,7 +1231,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
       sendLog(member.guild, 'shop', 'green', '💰 Item Sold (Payout)', 
         `**User:** \`${sellerLogName}\`\n` +
-        `**Item:** \`${item.name}\` (Sold)\n` +
+        `**Item:** \`${itemLabel}\` (Sold)\n` +
         `**Payout:** \`${payoutAmount.toLocaleString()}\` ${COIN_EMOJI}\n` +
         `**Balance:** \`${sellerBefore.toLocaleString()}\` ➡️ \`${sellerAfter.toLocaleString()}\``
       );
@@ -1190,8 +1241,9 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       success: true,
       newBalance,
       item,
-      pricePaid: effectivePrice,
-      packInfo: packInfo // Include pack info for feedback (null if not a pack)
+      quantity: isLocked ? 1 : qty,
+      pricePaid: totalCost,
+      packInfo: packInfo
     };
 
   } catch (error) {
@@ -1207,19 +1259,23 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 /**
  * Drop an item from inventory (Multiplayer System)
  */
-export async function dropItem(userId, guildId, invId, member) {
+export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
   const pool = getPool();
   const client = await pool.connect();
+
+  // Validate drop quantity
+  const qty = Math.max(1, Math.floor(Number(dropQty) || 1));
 
   try {
     await client.query('BEGIN');
 
-    // 1. Fetch Item details
+    // 1. Fetch and lock the inventory row
     const invRes = await client.query(
       `SELECT ui.*, si.name, si.role_id, si.is_tradable 
        FROM user_inventory ui
        JOIN shop_items si ON ui.shop_item_id = si.id
-       WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3`,
+       WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
+       FOR UPDATE`,
       [invId, userId, guildId]
     );
 
@@ -1229,28 +1285,43 @@ export async function dropItem(userId, guildId, invId, member) {
     }
 
     const item = invRes.rows[0];
+    const currentQty = parseInt(item.quantity) || 1;
 
     if (item.is_tradable === false) {
       await client.query('ROLLBACK');
       throw new Error('This item is locked and cannot be dropped');
     }
 
-    // 2. Role removal (STRICT: Try to remove Discord roles FIRST)
-    // If we can't remove the role, we MUST NOT delete the item from the DB.
-    if (item.role_id) {
+    if (qty > currentQty) {
+      await client.query('ROLLBACK');
+      throw new Error(`You only have ${currentQty} of this item. You cannot drop ${qty}.`);
+    }
+
+    // 2. Calculate remaining quantity after the drop
+    const remainingQty = currentQty - qty;
+
+    // 3. Role removal — only strip role if the user's total remaining quantity across ALL rows hits 0
+    //    (they may have another active copy we should not strip)
+    const totalRemainingRes = await client.query(
+      `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) - $1 as remaining
+       FROM user_inventory
+       WHERE user_id = $2 AND guild_id = $3 AND shop_item_id = $4`,
+      [qty, userId, guildId, item.shop_item_id]
+    );
+    const totalRemaining = parseInt(totalRemainingRes.rows[0]?.remaining || 0);
+    const shouldRemoveRole = totalRemaining <= 0;
+
+    if (shouldRemoveRole && item.role_id) {
       const rIds = item.role_id.split(/[,\s]+/);
       const botMember = member.guild.members.me;
-      
+
       for (const rId of rIds) {
         const role = member.guild.roles.cache.get(rId);
         if (role) {
-          // Check Hierarchy
           if (role.comparePositionTo(botMember.roles.highest) >= 0) {
             await client.query('ROLLBACK');
             throw new Error(`❌ Failed to drop item: I cannot remove the role "${role.name}" due to hierarchy permissions.`);
           }
-
-          // Strict removal
           try {
             await member.roles.remove(role);
           } catch (err) {
@@ -1262,28 +1333,38 @@ export async function dropItem(userId, guildId, invId, member) {
       }
     }
 
-    // 3. Database Wipe (Only after roles are successfully confirmed gone)
-    await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
+    // 4. Decrement or delete the inventory row
+    if (remainingQty <= 0) {
+      await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
+    } else {
+      await client.query(
+        'UPDATE user_inventory SET quantity = $1 WHERE id = $2',
+        [remainingQty, invId]
+      );
+    }
 
-    // 4. Create Drop Record (Expires after 24 hours)
+    // 5. Create Drop Record with quantity
     const dropRes = await client.query(
-      `INSERT INTO dropped_items (guild_id, dropper_id, shop_item_id, status)
-       VALUES ($1, $2, $3, 'available')
+      `INSERT INTO dropped_items (guild_id, dropper_id, shop_item_id, status, quantity)
+       VALUES ($1, $2, $3, 'available', $4)
        RETURNING id`,
-      [guildId, userId, item.shop_item_id]
+      [guildId, userId, item.shop_item_id, qty]
     );
 
-    // 5. Dependency Sweep (Unequip items that lost requirements)
+    // 6. Dependency Sweep
     await runDependencySweep(userId, guildId, member, client);
 
     await client.query('COMMIT');
 
-    sysLog('Item Dropped', { user: userId, guild: guildId, detail: `Item: ${item.name} | DropID: ${dropRes.rows[0].id}` });
+    const itemLabel = qty > 1 ? `${qty}x ${item.name}` : item.name;
+    sysLog('Item Dropped', { user: userId, guild: guildId, detail: `Item: ${itemLabel} | DropID: ${dropRes.rows[0].id} | Remaining: ${totalRemaining}` });
 
     return { 
       success: true, 
-      item: item, 
-      dropId: dropRes.rows[0].id 
+      item: item,
+      quantity: qty,
+      dropId: dropRes.rows[0].id,
+      roleRemoved: shouldRemoveRole
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1330,19 +1411,12 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     }
 
     const drop = dropRes.rows[0];
+    const claimedQty = parseInt(drop.quantity) || 1;
 
     // 2. Rules Verification
     // [Self-Claiming Enabled]: Droppers can now claim their own items.
-
-    // Check Database Ownership
-    const ownCheck = await client.query(
-      'SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
-      [claimerId, drop.shop_item_id, guildId]
-    );
-    if (ownCheck.rows.length > 0) {
-      await client.query('ROLLBACK');
-      throw new Error('You already own that item.');
-    }
+    // NOTE: We no longer block claiming if the user already owns copies — quantity stacking is allowed.
+    // Locked items dropped before being locked are still claimable (legacy grace).
 
     // 3. Join Date Gate
     const guildConfigRes = await client.query('SELECT config FROM guild_configs WHERE guild_id = $1', [guildId]);
@@ -1357,12 +1431,27 @@ export async function claimItem(claimerId, guildId, dropId, member) {
       }
     }
 
-    // 4. Acquisition (Skip Pre-reqs, add Unequipped)
-    await client.query(
-      `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source)
-       VALUES ($1, $2, $3, $4, false, 'SHOP')`,
-      [claimerId, guildId, drop.shop_item_id, drop.role_id]
+    // 4. Acquisition — UPSERT into claimer's inventory stack
+    const existingClaim = await client.query(
+      `SELECT id FROM user_inventory
+       WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+         AND is_active = false AND expires_at IS NULL
+       LIMIT 1`,
+      [claimerId, guildId, drop.shop_item_id]
     );
+
+    if (existingClaim.rows.length > 0) {
+      await client.query(
+        'UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2',
+        [claimedQty, existingClaim.rows[0].id]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, quantity)
+         VALUES ($1, $2, $3, $4, false, 'SHOP', $5)`,
+        [claimerId, guildId, drop.shop_item_id, drop.role_id, claimedQty]
+      );
+    }
 
     // 5. Finalize Drop record
     await client.query(
@@ -1372,11 +1461,13 @@ export async function claimItem(claimerId, guildId, dropId, member) {
 
     await client.query('COMMIT');
 
-    sysLog('Item Claimed', { user: claimerId, guild: guildId, detail: `Item: ${drop.name} | From Drop: ${dropId}` });
+    const itemLabel = claimedQty > 1 ? `${claimedQty}x ${drop.name}` : drop.name;
+    sysLog('Item Claimed', { user: claimerId, guild: guildId, detail: `Item: ${itemLabel} | From Drop: ${dropId}` });
 
     return { 
       success: true, 
       item: drop,
+      quantity: claimedQty,
       dropped_at: drop.created_at
     };
   } catch (err) {

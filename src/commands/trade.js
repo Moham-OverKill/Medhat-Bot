@@ -503,12 +503,12 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
         .addFields(
             {
                 name: '📤 You Give',
-                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI} (Your Balance: ${Number(senderBalance.balance).toLocaleString()})\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => `**${i.name}**`).join(', ')}`,
+                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI} (Your Balance: ${Number(senderBalance.balance).toLocaleString()})\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                 inline: true
             },
             {
                 name: '📥 You Request',
-                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI} (Target Balance: ${Number(targetBalance.balance).toLocaleString()})\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => `**${i.name}**`).join(', ')}`,
+                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI} (Target Balance: ${Number(targetBalance.balance).toLocaleString()})\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                 inline: true
             }
         )
@@ -708,35 +708,40 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
     if (isGive) {
         const allItems = await getUserInventory(setup.senderId, setup.guildId);
         const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
-        const targetRoleIds = targetMember ? targetMember.roles.cache.map(r => r.id) : [];
         const targetInv = targetMember ? await getUserInventory(setup.targetId, setup.guildId) : [];
-        const targetOwnedItemIds = targetInv.map(i => i.shop_item_id);
+
+        // Count recipient's current total quantity per shop_item_id
+        const targetQtyMap = {};
+        for (const item of targetInv) {
+            targetQtyMap[item.shop_item_id] = (targetQtyMap[item.shop_item_id] || 0) + (parseInt(item.quantity) || 1);
+        }
 
         tradableItems = allItems.filter(i => {
            const source = (i.purchase_source || '').toLowerCase();
            if (source !== 'shop' || i.item_type === 'pack') return false; 
-           if (i.is_tradable === false) return false;
-           if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
+           if (i.is_tradable === false) return false; // Filter out Locked items
+           if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false; // Filter out temp items
 
-           const firstRole = i.role_id?.split(/[,\s]+/)[0];
-           const recipientHasRole = firstRole && targetRoleIds.includes(firstRole);
-           const recipientHasItem = targetOwnedItemIds.includes(i.shop_item_id);
-           return !recipientHasRole && !recipientHasItem;
+           const recipientTotalQty = targetQtyMap[i.shop_item_id] || 0;
+           return recipientTotalQty < 999;
         });
 
         if (tradableItems.length === 0) {
             if (isGive) setup.givingFolder = null;
-            return interaction.followUp({ content: '❌ You do not have any unlocked items that the recipient doesn\'t already own.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ You do not have any unlocked items that the recipient doesn\'t already have at maximum capacity.', flags: MessageFlags.Ephemeral });
         }
     } else {
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
         if (!member) return interaction.editReply({ content: '❌ Target member not found.', components: [], embeds: [] });
         
         const allItems = await getUserInventory(setup.targetId, setup.guildId);
-        const senderMember = interaction.member || await interaction.guild.members.fetch(setup.senderId).catch(() => null);
-        const senderRoleIds = senderMember ? senderMember.roles.cache.map(r => r.id) : [];
         const senderInv = await getUserInventory(setup.senderId, setup.guildId);
-        const senderOwnedItemIds = senderInv.map(i => i.shop_item_id);
+
+        // Count requester's current total quantity per shop_item_id
+        const senderQtyMap = {};
+        for (const item of senderInv) {
+            senderQtyMap[item.shop_item_id] = (senderQtyMap[item.shop_item_id] || 0) + (parseInt(item.quantity) || 1);
+        }
 
         tradableItems = allItems.filter(i => {
             const source = (i.purchase_source || '').toLowerCase();
@@ -744,15 +749,13 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
             if (i.is_tradable === false) return false;
             if (i.expires_at || (i.duration_seconds && i.duration_seconds > 0) || (i.duration_hours && i.duration_hours > 0)) return false;
 
-            const firstRole = i.role_id?.split(/[,\s]+/)[0];
-            const requesterHasRole = firstRole && senderRoleIds.includes(firstRole);
-            const requesterHasItem = senderOwnedItemIds.includes(i.shop_item_id);
-            return !requesterHasRole && !requesterHasItem;
+            const requesterTotalQty = senderQtyMap[i.shop_item_id] || 0;
+            return requesterTotalQty < 999;
         });
 
         if (tradableItems.length === 0) {
             if (!isGive) setup.requestingFolder = null;
-            return interaction.followUp({ content: '❌ The target user does not have any unlocked items that you don\'t already own.', flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: '❌ The target user does not have any unlocked items that you don\'t already have at maximum capacity.', flags: MessageFlags.Ephemeral });
         }
     }
 
@@ -787,10 +790,14 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
         return renderTradeItemMenu(interaction, setup, aspect);
     }
 
-    const options = folderItems.slice(0, 24).map(row => ({
-        label: `🏷️ ${row.name}`,
-        value: row.id.toString()
-    }));
+    const options = folderItems.slice(0, 24).map(row => {
+        const qty = parseInt(row.quantity) || 1;
+        const qtyLabel = qty > 1 ? ` (x${qty})` : '';
+        return {
+            label: `🏷️ ${row.name}${qtyLabel}`,
+            value: row.id.toString()
+        };
+    });
 
     options.unshift({ label: '⬅️ Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}` });
 
@@ -809,10 +816,67 @@ async function renderTradeItemMenu(interaction, setup, aspect) {
  * Handle Modal Submissions for coins
  */
 export async function handleTradeModal(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
-    if (!setup) return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    if (!setup) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    }
+
+    if (interaction.customId.startsWith('trade_modal_item_qty_')) {
+        const parts = interaction.customId.split('_');
+        // trade(0) modal(1) item(2) qty(3) aspect(4: give/req) invId(5)
+        const aspect = parts[4];
+        const isGive = aspect === 'give';
+        const invId = parseInt(parts[5], 10);
+        const itemOwnerId = isGive ? interaction.user.id : setup.targetId;
+
+        const rawQty = interaction.fields.getTextInputValue('trade_qty');
+        const qty = parseInt(rawQty, 10);
+        if (isNaN(qty) || qty < 1) {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+            return interaction.followUp({ content: '❌ Please enter a valid quantity of 1 or more.', flags: MessageFlags.Ephemeral });
+        }
+
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+
+        const result = await query(
+            `SELECT i.id, i.shop_item_id, i.source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable 
+             FROM user_inventory i
+             JOIN shop_items s ON i.shop_item_id = s.id 
+             WHERE i.id = $1 AND i.guild_id = $2 AND i.user_id = $3`,
+            [invId, setup.guildId, itemOwnerId]
+        );
+        if (result.rows.length === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+        const item = result.rows[0];
+
+        const recipientId = isGive ? setup.targetId : setup.senderId;
+        const recipientRes = await query(
+            'SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
+            [recipientId, item.shop_item_id, setup.guildId]
+        );
+        const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
+        const maxAllowedByCap = 999 - recipientTotal;
+        const itemOwnedQty = parseInt(item.quantity) || 1;
+        const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
+
+        if (qty > availableQty) {
+            return interaction.followUp({ content: `❌ You can only trade up to ${availableQty} cop${availableQty === 1 ? 'y' : 'ies'} of this item.`, flags: MessageFlags.Ephemeral });
+        }
+
+        const targetList = isGive ? setup.senderItems : setup.targetItems;
+        const existingIdx = targetList.findIndex(i => i.id === invId);
+        const itemObj = { ...item, quantity: qty };
+        if (existingIdx !== -1) {
+            targetList[existingIdx] = itemObj;
+        } else {
+            targetList.push(itemObj);
+        }
+
+        return renderTradeItemMenu(interaction, setup, aspect);
+    }
+
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
 
     const amountStr = interaction.fields.getTextInputValue('amount');
     
@@ -830,7 +894,6 @@ export async function handleTradeModal(interaction) {
             flags: MessageFlags.Ephemeral 
         });
     }
-
 
     if (interaction.customId === 'trade_modal_give_coins') {
         const balance = await getUserBalance(setup.senderId, setup.guildId);
@@ -853,85 +916,96 @@ export async function handleTradeModal(interaction) {
  * Handle Select Menu for items
  */
 export async function handleTradeSelect(interaction) {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-
-    // INTEGRATED BACK NAVIGATION: If the user picked "Back" from the menu, reroute to setup
     if (interaction.values[0]?.startsWith('trade_folder_back_')) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return handleTradeSetupInteraction(interaction);
     }
 
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
-    if (!setup) return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    if (!setup) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    }
 
     const invId = parseInt(interaction.values[0], 10);
     const isGive = interaction.customId === 'trade_select_give_item';
     const itemOwnerId = isGive ? interaction.user.id : setup.targetId;
 
-    // Fetch item details (including source and expiry to check if soulbound)
     const result = await query(
-        `SELECT i.id, i.shop_item_id, i.source, i.expires_at, s.name, s.duration_hours, s.duration_seconds, s.role_id 
+        `SELECT i.id, i.shop_item_id, i.source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable 
          FROM user_inventory i
          JOIN shop_items s ON i.shop_item_id = s.id 
          WHERE i.id = $1 AND i.guild_id = $2 AND i.user_id = $3`,
         [invId, setup.guildId, itemOwnerId]
     );
 
-    if (result.rows.length === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    if (result.rows.length === 0) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    }
 
     const item = result.rows[0];
-    const isSoulbound = item.source !== 'SHOP';
 
-    // Layer 2: Selection Check (only block admin-granted items)
-    if (isSoulbound) {
+    if (item.source !== 'SHOP') {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.followUp({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
     }
 
-    if (isGive) {
-        // Prevent duplicates in offer
-        if (setup.senderItems.find(i => i.id === invId)) {
-            return interaction.followUp({ content: '❌ Item already added to offer.', flags: MessageFlags.Ephemeral });
-        }
-        
-        // Prevent giving permanent items the target already owns
-        const targetMember = await interaction.guild.members.fetch(setup.targetId);
-        const hasExplicit = targetMember.roles.cache.has(item.role_id?.split(/[,\s]+/)[0]);
-        
-        const dbCheck = await query(
-            'SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
-            [setup.targetId, item.shop_item_id, setup.guildId]
-        );
+    if (item.is_tradable === false) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '❌ This item is locked and cannot be traded.', flags: MessageFlags.Ephemeral });
+    }
 
-        if (dbCheck.rows.length > 0 || hasExplicit) {
-            return interaction.followUp({ content: `❌ The recipient already has this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
-        }
+    const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
+    if (isTemp) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '❌ Temporary items cannot be traded.', flags: MessageFlags.Ephemeral });
+    }
 
-        setup.senderItems.push(item);
-        return renderTradeItemMenu(interaction, setup, 'give');
+    const recipientId = isGive ? setup.targetId : setup.senderId;
+    const recipientRes = await query(
+        'SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
+        [recipientId, item.shop_item_id, setup.guildId]
+    );
+    const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
+    const maxAllowedByCap = 999 - recipientTotal;
+    const itemOwnedQty = parseInt(item.quantity) || 1;
+    const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
+
+    if (availableQty <= 0) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '❌ The recipient already has the maximum of 999 copies of this item.', flags: MessageFlags.Ephemeral });
+    }
+
+    if (availableQty > 1) {
+        const modal = new ModalBuilder()
+            .setCustomId(`trade_modal_item_qty_${isGive ? 'give' : 'req'}_${invId}`)
+            .setTitle(`${isGive ? 'Offer' : 'Request'}: ${item.name}`);
+
+        const qtyInput = new TextInputBuilder()
+            .setCustomId('trade_qty')
+            .setLabel(`How many? (1 to ${availableQty})`)
+            .setPlaceholder(`Enter 1 to ${availableQty}`)
+            .setValue('1')
+            .setMinLength(1)
+            .setMaxLength(3)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+        return await interaction.showModal(modal);
     } else {
-        // Prevent duplicates in request
-        if (setup.targetItems.find(i => i.id === invId)) {
-            return interaction.followUp({ content: '❌ Item already added to request.', flags: MessageFlags.Ephemeral });
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        const targetList = isGive ? setup.senderItems : setup.targetItems;
+        const existingIdx = targetList.findIndex(i => i.id === invId);
+        const itemObj = { ...item, quantity: 1 };
+        if (existingIdx !== -1) {
+            targetList[existingIdx] = itemObj;
+        } else {
+            targetList.push(itemObj);
         }
-
-        // Prevent requesting permanent items you already own correctly
-        const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
-        if (!isTemp) {
-            const senderMember = await interaction.guild.members.fetch(setup.senderId);
-            const hasExplicit = senderMember.roles.cache.has(item.role_id?.split(/[,\s]+/)[0]);
-
-            const dbCheck = await query(
-                'SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
-                [setup.senderId, item.shop_item_id, setup.guildId]
-            );
-
-            if (dbCheck.rows.length > 0 || hasExplicit) {
-                return interaction.followUp({ content: `❌ You already possess this role (Owned or Admin-Granted).`, flags: MessageFlags.Ephemeral });
-            }
-        }
-
-        setup.targetItems.push(item);
-        return renderTradeItemMenu(interaction, setup, 'req');
+        return renderTradeItemMenu(interaction, setup, isGive ? 'give' : 'req');
     }
 }
 
@@ -969,8 +1043,8 @@ async function finalizeTradePosting(interaction, setup) {
                 setup.targetId,
                 setup.senderCoins,
                 setup.targetCoins,
-                JSON.stringify(setup.senderItems.map(i => i.id)),
-                JSON.stringify(setup.targetItems.map(i => i.id)),
+                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1) }))),
+                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1) }))),
                 expiryDate
             ]
         );
@@ -983,12 +1057,12 @@ async function finalizeTradePosting(interaction, setup) {
             .addFields(
                 {
                     name: `📤 ${getUserDisplayName(await interaction.guild.members.fetch(setup.senderId))} Offers`,
-                    value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => `**${i.name}**`).join(', ')}`,
+                    value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                     inline: false
                 },
                 {
                     name: `📥 Requested from ${getUserDisplayName(await interaction.guild.members.fetch(setup.targetId))}`,
-                    value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => `**${i.name}**`).join(', ')}`,
+                    value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
                     inline: false
                 }
             )
@@ -1216,54 +1290,84 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         if (sBal < parseInt(trade.sender_coins)) throw new Error('Sender has insufficient balance.');
         if (tBal < parseInt(trade.target_coins)) throw new Error('Target has insufficient balance.');
 
-        // BUG FIX: JSONB arrays from pg can contain strings or mixed types. Cast to integers
-        // so that ANY($1) works correctly against integer primary keys in user_inventory.
-        const sItems = (trade.sender_items || []).map(Number);
-        const tItems = (trade.target_items || []).map(Number);
+        // Helper to normalize trade item structures (handles both legacy ID arrays and new object arrays)
+        const extractTradeItemObjects = (rawItems) => {
+            if (!rawItems || !Array.isArray(rawItems)) return [];
+            return rawItems.map(item => {
+                if (typeof item === 'number' || typeof item === 'string') {
+                    const id = parseInt(item, 10);
+                    return isNaN(id) ? null : { id, qty: 1 };
+                } else if (typeof item === 'object' && item !== null) {
+                    const id = parseInt(item.id || item.invId, 10);
+                    const qty = parseInt(item.qty || item.quantity, 10) || 1;
+                    return isNaN(id) ? null : { id, shop_item_id: item.shop_item_id, qty };
+                }
+                return null;
+            }).filter(Boolean);
+        };
 
-        // Pre-compute booster status BEFORE entering any DB query that holds a FOR UPDATE lock.
-        // Calling isMemberBooster() (a Discord API call) inside the transaction can delay
-        // lock release and cause deadlocks or lock timeout errors.
+        const sItemObjects = extractTradeItemObjects(trade.sender_items);
+        const tItemObjects = extractTradeItemObjects(trade.target_items);
+        const sItems = sItemObjects.map(i => i.id);
+        const tItems = tItemObjects.map(i => i.id);
+
+        // Pre-compute booster status BEFORE entering DB transaction
         const senderIsBooster = senderMember ? await isMemberBooster(senderMember) : false;
         const targetIsBooster = targetMember ? await isMemberBooster(targetMember) : false;
 
         // ========== JIT (JUST-IN-TIME) VERIFICATION ==========
-        // This is THE most critical security gate. Even if the UI allowed 
-        // the setup, we re-verify everything here BEFORE the swap.
-        // It prevents race conditions (e.g. user sells item while accepting trade).
-        
-        // Ensure recipients don't already possess the items they are about to receive
-        const jitVerify = async (receiverId, itemIds, roleContextMember) => {
-            if (!itemIds || itemIds.length === 0) return;
+        const jitVerify = async (senderId, receiverId, itemObjects, roleContextMember) => {
+            if (!itemObjects || itemObjects.length === 0) return;
             
-            // Ensure all IDs are integers (JSONB parsing can produce strings in some pg driver versions)
-            const safeIds = itemIds.map(Number).filter(n => !isNaN(n));
+            const safeIds = itemObjects.map(i => i.id).filter(n => !isNaN(n));
             if (safeIds.length === 0) return;
 
-            // Get role info for JIT items — use explicit ::int[] cast to prevent type inference errors
-            const res = await client.query(`
-                SELECT s.role_id, s.name, s.id as shop_item_id 
-                FROM shop_items s 
-                WHERE s.id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1::int[]))
-            `, [safeIds]);
-            
-            // Get current receiver state
-            const receiverInv = await client.query('SELECT shop_item_id FROM user_inventory WHERE user_id = $1 AND guild_id = $2', [receiverId, trade.guild_id]);
-            const receiverOwnedItemIds = receiverInv.rows.map(r => r.shop_item_id);
-            
-            for (const row of res.rows) {
-                const firstRole = row.role_id?.split(/[,\s]+/)[0];
-                const hasRoleResult = firstRole && roleContextMember && roleContextMember.roles.cache.has(firstRole);
-                const hasItemResult = receiverOwnedItemIds.includes(row.shop_item_id);
-                
-                if (hasRoleResult || hasItemResult) {
-                    throw new Error(`Recipient already possesses role/item: **${row.name}**`);
+            // Lock offered inventory rows and verify sender still owns them (quantity-aware)
+            const senderItemsRes = await client.query(`
+                SELECT i.id, i.shop_item_id, i.quantity, s.name, s.is_tradable, s.role_id
+                FROM user_inventory i
+                JOIN shop_items s ON i.shop_item_id = s.id
+                WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3
+                FOR UPDATE
+            `, [safeIds, senderId, trade.guild_id]);
+
+            if (senderItemsRes.rowCount !== safeIds.length) {
+                throw new Error('One or more items you offered are no longer in your inventory.');
+            }
+
+            for (const row of senderItemsRes.rows) {
+                const offerObj = itemObjects.find(o => o.id === row.id);
+                const offerQty = offerObj ? (offerObj.qty || 1) : 1;
+                const isLocked = row.is_tradable === false;
+
+                if (isLocked) {
+                    const receiverHas = await client.query(
+                        `SELECT 1 FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 LIMIT 1`,
+                        [receiverId, trade.guild_id, row.shop_item_id]
+                    );
+                    if (receiverHas.rows.length > 0) {
+                        throw new Error(`Recipient already owns **${row.name}** (Locked item — only 1 copy allowed).`);
+                    }
+                    const firstRole = row.role_id?.split(/[,\s]+/)[0];
+                    if (firstRole && roleContextMember && roleContextMember.roles.cache.has(firstRole)) {
+                        throw new Error(`Recipient already has the role for **${row.name}** (Locked item).`);
+                    }
+                } else {
+                    const receiverQtyRes = await client.query(
+                        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) AS total
+                         FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+                        [receiverId, trade.guild_id, row.shop_item_id]
+                    );
+                    const receiverCurrentQty = parseInt(receiverQtyRes.rows[0]?.total || 0);
+                    if (receiverCurrentQty + offerQty > 999) {
+                        throw new Error(`Trading **${row.name}** would push recipient over the 999-copy limit.`);
+                    }
                 }
             }
         };
 
-        await jitVerify(trade.target_id, sItems, targetMember); // Verify Target doesn't already have Sender's items
-        await jitVerify(trade.sender_id, tItems, senderMember); // Verify Sender doesn't already have Target's items
+        await jitVerify(trade.sender_id, trade.target_id, sItemObjects, targetMember);
+        await jitVerify(trade.target_id, trade.sender_id, tItemObjects, senderMember);
 
         // 4. ATOMIC COIN SWAP (FEE-FIRST MODEL)
         if (sItems.length > 0) {
@@ -1290,15 +1394,10 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             if (res.rowCount !== tItems.length) throw new Error('One or more target items are missing or transferred.');
         }
 
-        // 4. ATOMIC SWAP - Coins (FEE-FIRST MODEL)
-        // IMPORTANT: All queries use the existing `client` (same connection, same transaction).
-        // Never call updateBalance() here — it opens a NEW connection which deadlocks against
-        // the FOR UPDATE locks already held by this transaction.
         const processCoinSwap = async (giverId, receiverId, rawAmount, giverMember, receiverMember, isGiverBoosterPrecomputed) => {
             const amount = parseInt(rawAmount, 10) || 0;
             if (amount <= 0) return null;
 
-            // Use pre-computed booster status to avoid Discord API calls inside the transaction.
             const { fee, senderPaysExtra } = calculateTradeTax(amount, isGiverBoosterPrecomputed);
 
             const gBalRes = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE', [giverId, trade.guild_id]);
@@ -1325,7 +1424,6 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             const gName = getUserDisplayName(giverMember) || giverId;
             const rName = getUserDisplayName(receiverMember) || receiverId;
 
-            // Deduct from giver (inline — same transaction, no deadlock)
             await client.query(
                 `UPDATE user_balances SET balance = balance - $1, total_spent = total_spent + $1, updated_at = NOW()
                  WHERE user_id = $2 AND guild_id = $3`,
@@ -1337,7 +1435,6 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 [giverId, trade.guild_id, -finalSenderDeduction, `P2P Trade to ${rName}`, tradeId]
             );
 
-            // Credit receiver (inline)
             await client.query(
                 `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
                  VALUES ($1, $2, $3, $3)
@@ -1352,7 +1449,6 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                  `P2P Trade from ${gName}${phase === 2 && finalFee > 0 ? ` (after ${finalFee} fee)` : ''}`, tradeId]
             );
 
-            // Log fee entry separately if sender paid it on top
             if (finalSenderDeduction > amount) {
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
@@ -1364,7 +1460,6 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             return { senderDeduction: finalSenderDeduction, recipientIntake: finalRecipientIntake, fee: finalFee, phase };
         };
 
-        // Capture pre-trade balances for logging
         const initialSenderBal = parseInt(senderBal.rows[0]?.balance || 0);
         const initialTargetBal = parseInt(targetBal.rows[0]?.balance || 0);
 
@@ -1378,41 +1473,92 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             tOutcome = await processCoinSwap(trade.target_id, trade.sender_id, trade.target_coins, targetMember, senderMember, targetIsBooster);
         }
 
-        // Fetch final balances after commission/fee deductions
         const finalSenderDetails = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2', [trade.sender_id, trade.guild_id]);
         const finalTargetDetails = await client.query('SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2', [trade.target_id, trade.guild_id]);
         const finalSenderBal = parseInt(finalSenderDetails.rows[0]?.balance || 0);
         const finalTargetBal = parseInt(finalTargetDetails.rows[0]?.balance || 0);
 
-        // 5. ATOMIC SWAP - Items (Layer 4: Failsafe - only transfer SHOP-sourced items)
-        // Capture shop_item_ids BEFORE the swap for Domino Sweep
+        // 5. ATOMIC SWAP - Items (Quantity-Aware Transfer & UPSERT)
         let senderLostShopItemIds = [];
         let targetLostShopItemIds = [];
 
-        if (sItems.length > 0) {
-            // Re-verify restricted items before swap (STRICT OWNERSHIP CHECK)
-            const validSRes = await client.query(
-                `SELECT i.id, i.shop_item_id, i.role_id FROM user_inventory i 
-                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
-                [sItems, trade.sender_id, trade.guild_id]
-            );
-            const validSIds = validSRes.rows.map(r => r.id);
-            senderLostShopItemIds = validSRes.rows.map(r => r.shop_item_id);
-            if (validSIds.length > 0) {
-                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2::int[]) AND guild_id = $3', [trade.target_id, validSIds, trade.guild_id]);
+        if (sItemObjects.length > 0) {
+            for (const offer of sItemObjects) {
+                const rowRes = await client.query(
+                    `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
+                     FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'
+                     FOR UPDATE`,
+                    [offer.id, trade.sender_id, trade.guild_id]
+                );
+                if (rowRes.rows.length === 0) continue;
+                const row = rowRes.rows[0];
+                senderLostShopItemIds.push(row.shop_item_id);
+
+                const currentQty = parseInt(row.quantity) || 1;
+                const tradedQty = Math.min(offer.qty || 1, currentQty);
+
+                if (currentQty - tradedQty <= 0) {
+                    await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
+                } else {
+                    await client.query('UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2', [tradedQty, row.id]);
+                }
+
+                const targetCheck = await client.query(
+                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 LIMIT 1 FOR UPDATE`,
+                    [trade.target_id, row.shop_item_id, trade.guild_id]
+                );
+                if (targetCheck.rows.length > 0) {
+                    await client.query(
+                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1, updated_at = NOW() WHERE id = $2`,
+                        [tradedQty, targetCheck.rows[0].id]
+                    );
+                } else {
+                    await client.query(
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, false, 'SHOP')`,
+                        [trade.target_id, trade.guild_id, row.shop_item_id, tradedQty]
+                    );
+                }
             }
         }
 
-        if (tItems.length > 0) {
-            const validTRes = await client.query(
-                `SELECT i.id, i.shop_item_id, i.role_id FROM user_inventory i 
-                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'`,
-                [tItems, trade.target_id, trade.guild_id]
-            );
-            const validTIds = validTRes.rows.map(r => r.id);
-            targetLostShopItemIds = validTRes.rows.map(r => r.shop_item_id);
-            if (validTIds.length > 0) {
-                await client.query('UPDATE user_inventory SET user_id = $1, is_active = false WHERE id = ANY($2::int[]) AND guild_id = $3', [trade.sender_id, validTIds, trade.guild_id]);
+        if (tItemObjects.length > 0) {
+            for (const offer of tItemObjects) {
+                const rowRes = await client.query(
+                    `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
+                     FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'
+                     FOR UPDATE`,
+                    [offer.id, trade.target_id, trade.guild_id]
+                );
+                if (rowRes.rows.length === 0) continue;
+                const row = rowRes.rows[0];
+                targetLostShopItemIds.push(row.shop_item_id);
+
+                const currentQty = parseInt(row.quantity) || 1;
+                const tradedQty = Math.min(offer.qty || 1, currentQty);
+
+                if (currentQty - tradedQty <= 0) {
+                    await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
+                } else {
+                    await client.query('UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2', [tradedQty, row.id]);
+                }
+
+                const senderCheck = await client.query(
+                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 LIMIT 1 FOR UPDATE`,
+                    [trade.sender_id, row.shop_item_id, trade.guild_id]
+                );
+                if (senderCheck.rows.length > 0) {
+                    await client.query(
+                        `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1, updated_at = NOW() WHERE id = $2`,
+                        [tradedQty, senderCheck.rows[0].id]
+                    );
+                } else {
+                    await client.query(
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, false, 'SHOP')`,
+                        [trade.sender_id, trade.guild_id, row.shop_item_id, tradedQty]
+                    );
+                }
             }
         }
 
@@ -1448,33 +1594,38 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             }, 500);
         }
         
-        // 7. REAL-TIME ROLE SWAP (Prevent duplication glitches)
+        // 7. REAL-TIME ROLE SWAP (Remove role ONLY if user's remaining total quantity === 0)
         try {
             if (senderMember || targetMember) {
                 // Items GIVEN (Sender -> Target)
-                if (sItems.length > 0 && senderMember) {
-                    const res = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [sItems]);
+                if (senderLostShopItemIds.length > 0 && senderMember) {
+                    const res = await query('SELECT id as shop_item_id, role_id FROM shop_items WHERE id = ANY($1::int[])', [senderLostShopItemIds]);
                     for (const row of res.rows) {
                         if (row.role_id) {
-                            // strictly remove from sender, do NOT add to target (they must manually equip)
-                            await senderMember.roles.remove(row.role_id).catch(() => null);
+                            const remRes = await query('SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3', [trade.sender_id, row.shop_item_id, trade.guild_id]);
+                            const remQty = parseInt(remRes.rows[0]?.total || 0);
+                            if (remQty === 0) {
+                                await senderMember.roles.remove(row.role_id).catch(() => null);
+                            }
                         }
                     }
                 }
                 // Items REQUESTED (Target -> Sender)
-                if (tItems.length > 0 && targetMember) {
-                    const res = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [tItems]);
+                if (targetLostShopItemIds.length > 0 && targetMember) {
+                    const res = await query('SELECT id as shop_item_id, role_id FROM shop_items WHERE id = ANY($1::int[])', [targetLostShopItemIds]);
                     for (const row of res.rows) {
                         if (row.role_id) {
-                            // strictly remove from target, do NOT add to sender (they must manually equip)
-                            await targetMember.roles.remove(row.role_id).catch(() => null);
+                            const remRes = await query('SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3', [trade.target_id, row.shop_item_id, trade.guild_id]);
+                            const remQty = parseInt(remRes.rows[0]?.total || 0);
+                            if (remQty === 0) {
+                                await targetMember.roles.remove(row.role_id).catch(() => null);
+                            }
                         }
                     }
                 }
             }
         } catch (roleError) {
             sysError('Failed to swap roles after trade', roleError, { guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
-            // Non-critical, sync cycle will catch it eventually, but we tried!
         }
 
         // 7b. DOMINO SWEEP (Post-Trade Cascading Unequip)
@@ -1520,8 +1671,27 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         try {
             const senderUsername = getUserLogName(senderMember);
             const targetUsername = getUserLogName(targetMember);
-            const offerText = `${Number(trade.sender_coins) > 0 ? `**${Number(trade.sender_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${sItems.length > 0 ? (Number(trade.sender_coins) > 0 ? ' and ' : '') + `**${sItems.length} items**` : ''}` || 'Nothing';
-            const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItems.length > 0 ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItems.length} items**` : ''}` || 'Nothing';
+
+            // Build human-readable item lists with quantity labels
+            const buildItemList = async (itemIds) => {
+                if (!itemIds || itemIds.length === 0) return null;
+                const safe = itemIds.map(Number).filter(n => !isNaN(n));
+                if (safe.length === 0) return null;
+                const pool = getPool();
+                const rows = await pool.query(
+                    `SELECT s.name, COALESCE(ui.quantity, 1) as qty
+                     FROM user_inventory ui JOIN shop_items s ON ui.shop_item_id = s.id
+                     WHERE ui.id = ANY($1::int[])`,
+                    [safe]
+                );
+                return rows.rows.map(r => parseInt(r.qty) > 1 ? `${r.qty}x ${r.name}` : r.name).join(', ');
+            };
+
+            const sItemNames = await buildItemList(sItems);
+            const tItemNames = await buildItemList(tItems);
+
+            const offerText = `${Number(trade.sender_coins) > 0 ? `**${Number(trade.sender_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${sItemNames ? (Number(trade.sender_coins) > 0 ? ' and ' : '') + `**${sItemNames}**` : ''}` || 'Nothing';
+            const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItemNames ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItemNames}**` : ''}` || 'Nothing';
 
             let impactDetails = `**Financial Impact:**\n` +
               `• **${senderUsername}:** \`${initialSenderBal.toLocaleString()}\` ➡️ \`${finalSenderBal.toLocaleString()}\` ${COIN_EMOJI}`;

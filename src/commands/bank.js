@@ -394,15 +394,14 @@ export async function handleShopBuyButton(interaction) {
   try {
     const isForce = interaction.customId.startsWith('force_buy_');
 
-    // Parse customId: 
-    // bank_shop_buy_[itemId]_[sellerId]_[payout] OR 
-    // force_buy_[itemId]_[sellerId]_[payout]
+    // Parse customId:
+    // bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice] OR
+    // force_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
     const parts = interaction.customId.split('_');
     const offset = isForce ? 0 : 1;
     const itemId = parseInt(parts[2 + offset]);
     const sellerId = parts[3 + offset] || '0';
     const payoutStr = parts[4 + offset] || '0';
-    const customPayout = parseInt(payoutStr) || 0;
     const overridePriceStr = parts[5 + offset] || null;
     const overridePrice = (overridePriceStr !== null && overridePriceStr !== '') ? parseInt(overridePriceStr) : null;
 
@@ -410,9 +409,7 @@ export async function handleShopBuyButton(interaction) {
     const userId = interaction.user.id;
     const member = interaction.member;
 
-    // ===========================================
     // STEP 0: Interstitial Prerequisite Check
-    // ===========================================
     if (!isForce) {
       const { getShopItem, checkPrerequisites, formatPrerequisiteError } = await import('../economy/shop.js');
       const item = await getShopItem(itemId, guildId);
@@ -441,9 +438,51 @@ export async function handleShopBuyButton(interaction) {
           });
         }
       }
+
+      // ========== LOCKED CHECK: Show modal or bypass? ==========
+      // If item is Locked (is_tradable = false), skip the quantity modal and buy directly (1 copy).
+      // If item is Unlocked, show a quantity modal so users can buy in bulk.
+      if (item) {
+        const isLocked = item.is_tradable === false;
+        if (!isLocked && !isForce) {
+          // Fetch current user inventory count for this item to show as placeholder
+          const pool = getPool();
+          const qtyRes = await pool.query(
+            `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
+             FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+            [userId, guildId, itemId]
+          );
+          const alreadyOwned = parseInt(qtyRes.rows[0]?.total || 0);
+          const remaining = 999 - alreadyOwned;
+
+          if (remaining <= 0) {
+            return interaction.reply({
+              content: '\u2755 You have reached the maximum of 999 copies of this item.',
+              flags: MessageFlags.Ephemeral
+            });
+          }
+
+          // Show quantity modal
+          const modal = new ModalBuilder()
+            .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
+            .setTitle(`Buy: ${item.name}`);
+
+          const qtyInput = new TextInputBuilder()
+            .setCustomId('buy_quantity')
+            .setLabel(`How many? (Max ${remaining} remaining)`)
+            .setPlaceholder(`Enter 1 to ${remaining}`)
+            .setMinLength(1)
+            .setMaxLength(3)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+          modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+          return await interaction.showModal(modal);
+        }
+      }
     }
 
-    // 1. Defer Update/Reply
+    // 1. Defer Update/Reply (for locked / force-buy flow — goes straight to purchase)
     if (isForce) {
       sysLog('Bypass Button Clicked', { user: userId, guild: guildId, detail: `Action: ForceBuy | ItemID: ${itemId}` });
       await interaction.deferUpdate();
@@ -454,32 +493,27 @@ export async function handleShopBuyButton(interaction) {
     const guildName = interaction.guild.name;
     const buyerName = interaction.user.username;
 
-    // ===========================================
-    // STEP 1: Calculate Seller Payout (Pre-check)
-    // ===========================================
+    // STEP 1: Calculate Seller Payout
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const { getShopItem } = await import('../economy/shop.js');
     const itemForPrice = await getShopItem(itemId);
     const itemPrice = (overridePrice !== null && overridePrice !== undefined) ? overridePrice : (itemForPrice?.price || 0);
-
+    const customPayout = parseInt(payoutStr) || 0;
     let payoutAmount = hasSeller ? customPayout : 0;
 
-    // ===========================================
-    // STEP 2: Call purchaseItem (handles ALL validation + item granting + payout)
-    // ===========================================
+    // STEP 2: Call purchaseItem (quantity=1 for locked items and force-buy)
     const { purgeUserInventory } = await import('../economy/shop.js');
     await purgeUserInventory(userId, guildId, member);
 
     const result = await purchaseItem(userId, guildId, itemId, member, {
       sellerId,
       payoutAmount,
-      overridePrice
+      overridePrice,
+      quantity: 1
     });
 
-    // ===========================================
-    // STEP 3: Live UI Refresh (Update original message on EVERY click)
-    // ===========================================
+    // STEP 3: Live UI Refresh
     try {
       const { getShopItem } = await import('../economy/shop.js');
       const updatedItem = await getShopItem(itemId, guildId);
@@ -487,21 +521,19 @@ export async function handleShopBuyButton(interaction) {
       if (updatedItem && interaction.message && interaction.message.editable) {
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
 
-        // Update Stock field
-        let stockHeader = '♾️ Stock';
+        let stockHeader = '\u267E\uFE0F Stock';
         let stockValue = 'Unlimited';
         if (updatedItem.stock !== null) {
           if (updatedItem.stock <= 0) {
-            stockHeader = '🔴 Stock';
+            stockHeader = '\uD83D\uDD34 Stock';
             stockValue = 'Sold Out';
-            embed.setColor('#808080'); // Dark Grey for Sold Out
+            embed.setColor('#808080');
           } else {
-            stockHeader = '🟢 Stock';
+            stockHeader = '\uD83D\uDFE2 Stock';
             stockValue = `**${updatedItem.stock}** Left`;
           }
         }
 
-        // Update fields array while preserving others
         const updatedFields = (embed.data.fields || []).map(f => {
           if (f.name.includes('Stock')) {
             return { name: stockHeader, value: stockValue, inline: true };
@@ -510,12 +542,9 @@ export async function handleShopBuyButton(interaction) {
         });
         embed.setFields(updatedFields);
 
-        // Update Button State
         const isSoldOut = updatedItem.stock !== null && updatedItem.stock <= 0;
         const row = ActionRowBuilder.from(interaction.message.components[0]);
         const buyBtn = ButtonBuilder.from(row.components[0]);
-
-        // Force Secondary (Grey) style and update disabled state
         buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
         row.setComponents(buyBtn);
 
@@ -529,7 +558,6 @@ export async function handleShopBuyButton(interaction) {
     }
 
     if (!result.success) {
-      // Handle specific errors with user-friendly messages
       if (result.error === 'Insufficient balance') {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0);
@@ -543,7 +571,7 @@ export async function handleShopBuyButton(interaction) {
           content: '\u274C Error: I cannot assign this role. Please contact an admin.',
           components: []
         });
-      } else if (result.error.includes('already') || result.error.includes('expire')) {
+      } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
         return interaction.editReply({
           content: `\u2755 ${result.error}`,
           components: []
@@ -556,14 +584,14 @@ export async function handleShopBuyButton(interaction) {
       }
     }
 
-    // ===========================================
     // STEP 4: Success message
-    // ===========================================
     let msg;
+    const boughtQty = result.quantity || 1;
+    const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! new balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     } else {
-      msg = `✅ Bought **${result.item.name}**! new balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
     await interaction.editReply({
       content: msg,
@@ -572,14 +600,94 @@ export async function handleShopBuyButton(interaction) {
 
   } catch (error) {
     sysError('Transaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop purchase handler' });
-    await interaction.editReply({
-      content: '\u274C An unexpected error occurred. Please try again.',
-      components: []
-    }).catch(() => { });
+    const errMsg = `\u274C An error occurred. Please try again.`;
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: errMsg, components: [] });
+      } else {
+        await interaction.reply({ content: errMsg, flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) { }
+  }
+}
+
+/**
+ * Modal submission handler for the shop bulk-buy quantity modal.
+ * customId: shop_buy_qty_modal_[itemId]_[sellerId]_[payoutStr]_[overridePrice]
+ */
+export async function handleShopBuyModalSubmit(interaction) {
+  try {
+    const parts = interaction.customId.split('_');
+    // shop(0) buy(1) qty(2) modal(3) [itemId](4) [sellerId](5) [payoutStr](6) [overridePrice](7)
+    const itemId = parseInt(parts[4]);
+    const sellerId = parts[5] || '0';
+    const payoutStr = parts[6] || '0';
+    const overridePriceStr = parts[7] || null;
+    const overridePrice = (overridePriceStr !== null && overridePriceStr !== '') ? parseInt(overridePriceStr) : null;
+
+    const rawQty = interaction.fields.getTextInputValue('buy_quantity');
+    const qty = parseInt(rawQty, 10);
+
+    if (isNaN(qty) || qty < 1 || qty > 999) {
+      return interaction.reply({
+        content: '\u274C Please enter a valid quantity between 1 and 999.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const userId = interaction.user.id;
+    const guildId = interaction.guildId;
+    const member = interaction.member;
+
+    const isSelfPurchase = sellerId !== '0' && sellerId === userId;
+    const hasSeller = sellerId !== '0' && !isSelfPurchase;
+    const customPayout = parseInt(payoutStr) || 0;
+    const payoutAmount = hasSeller ? customPayout : 0;
+
+    const { purgeUserInventory } = await import('../economy/shop.js');
+    await purgeUserInventory(userId, guildId, member);
+
+    const result = await purchaseItem(userId, guildId, itemId, member, {
+      sellerId,
+      payoutAmount,
+      overridePrice,
+      quantity: qty
+    });
+
+    if (!result.success) {
+      const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
+      return interaction.editReply({
+        content: isCapOrOwned ? `\u2755 ${result.error}` : `\u274C ${result.error}`,
+        components: []
+      });
+    }
+
+    const boughtQty = result.quantity || qty;
+    const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
+    let msg;
+    if (result.packInfo && result.packInfo.ownedCount > 0) {
+      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+    } else {
+      msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+    }
+    return interaction.editReply({ content: msg, components: [] });
+
+  } catch (error) {
+    sysError('BuyModalSubmit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '\u274C An error occurred. Please try again.', components: [] });
+      } else {
+        await interaction.reply({ content: '\u274C An error occurred.', flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) { }
   }
 }
 
 // Deprecated confirmation handlers (kept to prevent import errors if referenced, but unused)
+
 export async function handleShopConfirmBuy(interaction) {
   await interaction.reply({ content: '❌ This interaction is outdated.', flags: MessageFlags.Ephemeral });
 }
@@ -929,9 +1037,9 @@ export async function handleInventoryItemSelect(interaction) {
       const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
 
       const embed = new EmbedBuilder()
-        .setTitle('🎒 Inventory')
+        .setTitle('\uD83C\uDF92 Inventory')
         .setColor('#3498DB')
-        .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
+        .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   \uD83D\uDCE6 **Total Items:** ${totalCount}`);
 
       const buttonDefs = validCategories.map(c => ({ id: `bank_inv_cat_${c.id}`, label: c.name }));
       if (otherCount > 0) buttonDefs.push({ id: 'bank_inv_cat_null', label: 'Other' });
@@ -952,9 +1060,9 @@ export async function handleInventoryItemSelect(interaction) {
     if (interaction.customId.startsWith('inv_nav_')) {
       const direction = interaction.customId.split('_').pop();
       if (direction === 'prev') {
-        currentIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1; // Loop to end
+        currentIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
       } else if (direction === 'next') {
-        currentIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1; // Loop to start
+        currentIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
       }
     }
 
@@ -963,10 +1071,10 @@ export async function handleInventoryItemSelect(interaction) {
     if (currentIndex < 0) currentIndex = items.length - 1;
 
     const item = items[currentIndex];
-    if (!item) return interaction.editReply({ content: '❌ Item not found.' });
+    if (!item) return interaction.editReply({ content: '\u274C Item not found.' });
 
     // Get role color for embed
-    let embedColor = '#3498DB'; // Default blue
+    let embedColor = '#3498DB';
     if (item.role_id) {
       const firstRoleId = item.role_id.split(/[,\s]+/)[0];
       const role = interaction.guild.roles.cache.get(firstRoleId);
@@ -978,28 +1086,29 @@ export async function handleInventoryItemSelect(interaction) {
     // Build description
     const firstRoleId = item.role_id ? item.role_id.split(/[,\s]+/)[0] : null;
 
-    // Check source: SHOP = paid, SYNC = admin-granted
     const source = item.source || 'SYNC';
     const isAdminGranted = source === 'SYNC';
     const purchasedAt = new Date(item.purchased_at);
 
-    // Check if item is temporary (has duration/expiry) or permanent
     const isTemp = !!(item.expires_at ||
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
+    // Quantity badge: only show for non-admin, non-temp items with qty > 1
+    const displayQty = parseInt(item.quantity) || 1;
+    const qtyBadge = (!isAdminGranted && displayQty > 1) ? ` x${displayQty}` : '';
+
     const RARITY_DISPLAY = {
-      common: '⚪ Common',
-      uncommon: '🟢 Uncommon',
-      rare: '🔵 Rare',
-      epic: '🟣 Epic',
-      legendary: '🟡 Legendary'
+      common: '\u26AA Common',
+      uncommon: '\uD83D\uDFE2 Uncommon',
+      rare: '\uD83D\uDD35 Rare',
+      epic: '\uD83D\uDFE3 Epic',
+      legendary: '\uD83D\uDFE1 Legendary'
     };
-    const rarityText = RARITY_DISPLAY[item.rarity] || '⚪ Common';
-    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    const rarityText = RARITY_DISPLAY[item.rarity] || '\u26AA Common';
+    let desc = `**Item:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}${qtyBadge ? ` \`${qtyBadge.trim()}\`` : ''}`;
     desc += `\n**Rarity:** ${rarityText}`;
 
-    // Show acquisition info (Purchased vs Admin-Granted)
     if (isAdminGranted) {
       const joinDate = interaction.member.joinedAt || new Date();
       desc += `\n**Acquired:** <t:${Math.floor(joinDate.getTime() / 1000)}:D>`;
@@ -1007,34 +1116,35 @@ export async function handleInventoryItemSelect(interaction) {
       desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
     }
 
-    // Show status with dynamic text based on item type and source
     if (isAdminGranted) {
-      desc += `\n**Status:** 🛡️ Admin Granted`;
+      desc += `\n**Status:** \uD83D\uDEE1\uFE0F Admin Granted`;
     } else if (isTemp) {
       if (!item.expires_at) {
-        desc += `\n**Status:** ⌛ Ready to Activate`;
+        desc += `\n**Status:** \u231B Ready to Activate`;
       } else {
-        desc += `\n**Status:** ${item.is_active ? '✅ Active' : '⏸️ Inactive (Counting)'}`;
+        desc += `\n**Status:** ${item.is_active ? '\u2705 Active' : '\u23F8\uFE0F Inactive (Counting)'}`;
       }
     } else {
-      desc += `\n**Status:** ${item.is_active ? '✅ Equipped' : '⬜ Unequipped'}`;
+      desc += `\n**Status:** ${item.is_active ? '\u2705 Equipped' : '\u2B1C Unequipped'}`;
     }
 
-    // STRICT MODIFIABILITY RULES:
-    // 1. Owned Items (non-temp, tradable) = Fully Modifiable
-    // 2. Admin Granted = Not Modifiable
-    // 3. Owned Temporary or Untradable Items = Cannot be dropped
+    // Show quantity on its own line for unlocked stackable items
+    if (!isAdminGranted && !isTemp && displayQty > 1) {
+      desc += `\n**Quantity:** ${displayQty} copies`;
+    }
+
     const isUntradable = item.is_tradable === false;
-    const cannotSell = isAdminGranted || isTemp || isUntradable; // Drop DISABLED for temp/untradable
-    const cannotToggle = isAdminGranted;                        // Toggle ENABLED for temp/untradable
+    const cannotSell = isAdminGranted || isTemp || isUntradable;
+    const cannotToggle = isAdminGranted;
 
     if (item.expires_at) {
-      desc += `\n⏳ **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
+      desc += `\n\u23F3 **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
     }
 
-    // Title with pagination: "Manage: Name (X / Y)"
+    // Title with pagination and quantity badge
+    const titleQty = (!isAdminGranted && displayQty > 1) ? ` (x${displayQty})` : '';
     const embed = new EmbedBuilder()
-      .setTitle(`Manage: ${item.name} (${currentIndex + 1} / ${items.length})`)
+      .setTitle(`Manage: ${item.name}${titleQty} (${currentIndex + 1} / ${items.length})`)
       .setColor(embedColor)
       .setDescription(desc);
 
@@ -1157,54 +1267,58 @@ export async function handleInventoryAction(interaction) {
       }
     }
 
-    // --- 1. DROP (Step 1: Ephemeral Confirmation) ---
+    // --- 1. DROP (Step 1: Show quantity modal) ---
+    // IMPORTANT: showModal() MUST be called on the original non-deferred interaction.
+    // We do NOT defer here — we run our validation synchronously then call showModal.
     if (action === 'drop') {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => { });
-      }
+      // Trade lock check (without deferring)
+      // (Already handled above in the combined action guard)
+
       const [item] = await query(
-        `SELECT si.name, si.duration_seconds, si.duration_hours, si.is_tradable, ui.expires_at 
+        `SELECT si.name, si.duration_seconds, si.duration_hours, si.is_tradable, ui.expires_at, COALESCE(ui.quantity, 1) as quantity
          FROM user_inventory ui 
          JOIN shop_items si ON ui.shop_item_id = si.id 
          WHERE ui.id = $1`,
         [invId]
       ).then(r => r.rows);
 
-      if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+      if (!item) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '\u274C Item not found.', flags: MessageFlags.Ephemeral });
+      }
 
-      // STRICT: Block any non-permanent or untradable item from being dropped
       const isTemp = !!(item.expires_at || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0));
       if (isTemp) {
-        return interaction.followUp({ content: '❌ This item is temporary and cannot be dropped.', flags: MessageFlags.Ephemeral });
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '\u274C This item is temporary and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
       if (item.is_tradable === false) {
-        return interaction.followUp({ content: '❌ This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        return interaction.followUp({ content: '\u274C This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
-      const confirmEmbed = new EmbedBuilder()
-        .setTitle('⚠️ Confirm Drop')
-        .setColor('#E74C3C')
-        .setDescription(`Are you sure you want to drop **${item.name}** in this channel?\n\n` +
-          `• Anyone will be able to claim it.\n` +
-          `• It will be **immediately removed** from your inventory.\n` +
-          `• Dropping is permanent (unless you claim it back before others do).`);
+      const currentQty = parseInt(item.quantity) || 1;
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`bank_inv_dropcancel_${invId}_${catIdStr}_${currentIndex}`)
-          .setLabel('No, Cancel')
-          .setEmoji('❌')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`bank_inv_dropconfirm_${invId}_${catIdStr}_${currentIndex}`)
-          .setLabel('Yes, Drop it')
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Danger)
-      );
+      // Show the quantity modal directly on the original interaction (no defer!)
+      const modal = new ModalBuilder()
+        .setCustomId(`bank_inv_drop_qty_${invId}_${catIdStr}_${currentIndex}`)
+        .setTitle(`Drop: ${item.name}`);
 
-      return interaction.editReply({ embeds: [confirmEmbed], components: [row] });
+      const qtyInput = new TextInputBuilder()
+        .setCustomId('drop_quantity')
+        .setLabel(`How many? You have ${currentQty} cop${currentQty === 1 ? 'y' : 'ies'}`)
+        .setPlaceholder(`Enter 1 to ${currentQty}`)
+        .setValue(String(currentQty))
+        .setMinLength(1)
+        .setMaxLength(3)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+      return await interaction.showModal(modal);
     }
+
 
     // --- 1.5. DROP CANCEL (Go back to management) ---
     if (action === 'dropcancel') {
@@ -1212,10 +1326,11 @@ export async function handleInventoryAction(interaction) {
     }
 
     // --- 2. DROP CONFIRM (Step 2: Execution & Public Post) ---
+    // This is now triggered by modal submission (handleInventoryDropModalSubmit), not a button.
+    // Kept for backwards compatibility with any in-flight dropconfirm button clicks.
     if (action === 'dropconfirm') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-      // NEW: Disable buttons immediately to prevent double-click race conditions
       if (interaction.message && interaction.message.editable) {
         const disabledRows = interaction.message.components.map(row => {
           const newRow = ActionRowBuilder.from(row);
@@ -1225,59 +1340,54 @@ export async function handleInventoryAction(interaction) {
         await interaction.editReply({ components: disabledRows }).catch(() => { });
       }
 
-      // Execute the drop logic (Atomically deletes from DB and removes role)
-      const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member);
+      // Execute with qty=1 (legacy confirm button path)
+      const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member, 1);
 
       if (res.success) {
-        // Post PUBLIC claim message
         const expiresUnix = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
-
-        // Fetch full shop item to get image
         const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
         const dropImg = getItemImage(droppedShopItem);
+        const droppedQty = res.quantity || 1;
+        const droppedLabel = droppedQty > 1 ? `${droppedQty}x ${res.item.name}` : res.item.name;
 
         const publicEmbed = new EmbedBuilder()
-          .setTitle('Item Dropped!')
+          .setTitle('\uD83D\uDCE6 Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`${interaction.user} dropped <@&${res.item.role_id}>!`)
+          .setDescription(`${interaction.user} dropped **${droppedLabel}** <@&${res.item.role_id}>!`)
           .setTimestamp();
 
-        // LARGE image for the publicly posted drop embed
         if (dropImg) publicEmbed.setImage(dropImg);
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`bank_item_claim_${res.dropId}`)
-            .setLabel('Claim Item')
-            .setEmoji('🎁')
+            .setLabel(droppedQty > 1 ? `Claim All ${droppedQty}x` : 'Claim Item')
+            .setEmoji('\uD83C\uDF81')
             .setStyle(ButtonStyle.Success)
         );
 
         const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [row] });
-
-        // Update the drop record with message IDs for 24h expiration/edits
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
           [publicMsg.id, interaction.channelId, res.dropId]);
 
-        sysLog('Item Dropped', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${res.item.name} | DropID: ${res.dropId}` });
+        sysLog('Item Dropped', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${droppedLabel} | DropID: ${res.dropId}` });
 
-        // Cleanup ephemeral confirmation and add Back button
         const backRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('bank_inventory')
             .setLabel('Back to Inventory')
-            .setEmoji('🎒')
+            .setEmoji('\uD83C\uDF92')
             .setStyle(ButtonStyle.Secondary)
         );
 
         await interaction.editReply({
-          content: '✅ Item dropped successfully!',
+          content: `\u2705 **${droppedLabel}** dropped successfully!`,
           embeds: [],
           components: [backRow]
         });
 
-        // Optional: Send inventory audit log
-        sendLog(interaction.guild, 'inventory', 'orange', '🗑️ Item Dropped', `**${getUserLogName(interaction.member)}** dropped **${res.item.name}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
+        sendLog(interaction.guild, 'inventory', 'orange', '\uD83D\uDDD1\uFE0F Item Dropped',
+          `**${getUserLogName(interaction.member)}** dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
       }
       return;
     }
@@ -1370,13 +1480,15 @@ export async function handleItemClaim(interaction) {
     if (res.success) {
       const isSelfClaim = res.item.dropper_id === interaction.user.id;
       const claimerName = getUserDisplayName(interaction.user);
+      const claimedQty = res.quantity || 1;
+      const claimLabel = claimedQty > 1 ? `${claimedQty}x ${res.item.name}` : res.item.name;
 
-        // 1. Success Message to Claimer (PRIVATE)
-        const successMsg = isSelfClaim
-          ? '\u2705 You have reclaimed your own dropped item!'
-          : `\u2705 You have successfully claimed **${res.item.name}**!`;
-        
-        await interaction.editReply({ content: successMsg }).catch(() => { });
+      // 1. Success Message to Claimer (PRIVATE)
+      const successMsg = isSelfClaim
+        ? `\u2705 You have reclaimed your own dropped **${claimLabel}**!`
+        : `\u2705 You have successfully claimed **${claimLabel}**!`;
+      
+      await interaction.editReply({ content: successMsg }).catch(() => { });
 
       // 2. Update Public Message
       // Find the public message (even if we're on a private warning interaction)
@@ -1395,8 +1507,8 @@ export async function handleItemClaim(interaction) {
         const firstLine = originalDesc.split('\n')[0];
 
         const resolutionLine = isSelfClaim
-          ? `\u2705 ${interaction.user} changed their mind and claimed their own drop!`
-          : `\u2705 ${interaction.user} claimed the item!`;
+          ? `\u2705 ${interaction.user} changed their mind and claimed their own drop of **${claimLabel}**!`
+          : `\u2705 ${interaction.user} claimed **${claimLabel}**!`;
 
         const newDesc = `${firstLine}\n\n${resolutionLine}`;
 
@@ -1601,6 +1713,103 @@ export async function cleanupExpiredDrops(client) {
     }
   } catch (error) {
     sysError('Background drop cleanup failure', error);
+  }
+}
+
+/**
+ * Modal submission handler for the inventory drop quantity modal.
+ * customId: bank_inv_drop_qty_[invId]_[catIdStr]_[currentIndex]
+ */
+export async function handleInventoryDropModalSubmit(interaction) {
+  try {
+    const parts = interaction.customId.split('_');
+    // bank(0) inv(1) drop(2) qty(3) [invId](4) [catIdStr](5) [currentIndex](6)
+    const invId = parseInt(parts[4]);
+    const catIdStr = parts[5] || 'null';
+    const currentIndex = parseInt(parts[6]) || 0;
+
+    const rawQty = interaction.fields.getTextInputValue('drop_quantity');
+    const qty = parseInt(rawQty, 10);
+
+    if (isNaN(qty) || qty < 1 || qty > 999) {
+      return interaction.reply({
+        content: '\u274C Please enter a valid quantity (1 or more).',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    // Trade lock check before executing
+    const { query: dbQuery } = await import('../storage/postgres.js');
+    const tradeCheck = await dbQuery(
+      `SELECT id FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
+      [interaction.user.id, interaction.guildId]
+    );
+    if (tradeCheck.rows.length > 0) {
+      return interaction.editReply({ content: '\u274C You cannot drop items while you have a pending trade.' });
+    }
+
+    const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member, qty);
+
+    if (!res.success) {
+      return interaction.editReply({ content: `\u274C ${res.error || 'Drop failed.'}` });
+    }
+
+    const droppedQty = res.quantity || qty;
+    const droppedLabel = droppedQty > 1 ? `${droppedQty}x ${res.item.name}` : res.item.name;
+
+    // Fetch shop item for image
+    const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
+    const dropImg = getItemImage(droppedShopItem);
+
+    const publicEmbed = new EmbedBuilder()
+      .setTitle('\uD83D\uDCE6 Item Dropped!')
+      .setColor('#F1C40F')
+      .setDescription(`${interaction.user} dropped **${droppedLabel}** <@&${res.item.role_id}>!`)
+      .setTimestamp();
+
+    if (dropImg) publicEmbed.setImage(dropImg);
+
+    const claimRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`bank_item_claim_${res.dropId}`)
+        .setLabel(droppedQty > 1 ? `Claim All ${droppedQty}x` : 'Claim Item')
+        .setEmoji('\uD83C\uDF81')
+        .setStyle(ButtonStyle.Success)
+    );
+
+    const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [claimRow] });
+    await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
+      [publicMsg.id, interaction.channelId, res.dropId]);
+
+    sysLog('Item Dropped (Modal)', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${droppedLabel} | DropID: ${res.dropId}` });
+
+    sendLog(interaction.guild, 'inventory', 'orange', '\uD83D\uDDD1\uFE0F Item Dropped',
+      `**${getUserLogName(interaction.member)}** dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
+
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('bank_inventory')
+        .setLabel('Back to Inventory')
+        .setEmoji('\uD83C\uDF92')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return interaction.editReply({
+      content: `\u2705 **${droppedLabel}** dropped successfully!`,
+      components: [backRow]
+    });
+
+  } catch (error) {
+    sysError('Drop Modal Submit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: `\u274C Error: ${error.message}` });
+      } else {
+        await interaction.reply({ content: `\u274C Error: ${error.message}`, flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) { }
   }
 }
 

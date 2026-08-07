@@ -700,6 +700,15 @@ async function createTables() {
     await pool.query('ALTER TABLE dropped_items ADD COLUMN IF NOT EXISTS channel_id TEXT');
     await pool.query('ALTER TABLE dropped_items ADD COLUMN IF NOT EXISTS message_id TEXT');
 
+    // ========== QUANTITY STACKING MIGRATION ==========
+    // O(1) metadata-only operation in PostgreSQL 11+ — does NOT lock or rewrite existing rows.
+    // All pre-existing rows automatically evaluate to 1 via the DEFAULT.
+    await pool.query('ALTER TABLE user_inventory ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1');
+    await pool.query('ALTER TABLE dropped_items ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1');
+    // Backfill any NULLs that may exist from very old rows (safe no-op if already 1)
+    await pool.query('UPDATE user_inventory SET quantity = 1 WHERE quantity IS NULL');
+    await pool.query('UPDATE dropped_items SET quantity = 1 WHERE quantity IS NULL');
+
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_dropped_items_guild_status ON dropped_items(guild_id, status);
     `);

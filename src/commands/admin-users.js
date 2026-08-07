@@ -581,11 +581,19 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
         // 1. Delete from DB
         await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
 
-        // 2. Log in user history
-        const adminName = getUserDisplayName(interaction.member);
+        // 2. Check remaining quantity for this item type across all inventory rows
+        const remainingRes = await client.query(
+            `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total 
+             FROM user_inventory 
+             WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3`,
+            [targetUserId, item.shop_item_id, interaction.guildId]
+        );
+        const remainingQty = parseInt(remainingRes.rows[0]?.total || 0);
+
+        // 3. Strip roles ONLY if total remaining quantity across all rows hits 0
         const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
 
-        if (targetMember && item.role_id) {
+        if (targetMember && item.role_id && remainingQty === 0) {
             const roles = item.role_id.split(/[,\s]+/);
             for (const rid of roles) {
                 try {
@@ -599,10 +607,12 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
         // Discord Log
         const adminLogName = getUserLogName(interaction);
         const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
+        const itemQty = parseInt(item.quantity) || 1;
+        const itemLabel = itemQty > 1 ? `${itemQty}x ${item.name}` : item.name;
 
         sendLog(interaction.guild, 'inventory', 'crimson', '🗑️ Item Revoked',
             `**Target:** \`${targetLogName}\`\n` +
-            `**Item:** \`${item.name}\`\n` +
+            `**Item:** \`${itemLabel}\`\n` +
             `**Admin:** \`${adminLogName}\`\n` +
             `**Action:** Admin Force Revoke`
         );
