@@ -1182,7 +1182,7 @@ export async function handleInventoryItemSelect(interaction) {
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
-    // ROW 1 (Top): Actions [🗑️ Drop] [✅ Equip/Unequip]
+    // ROW 1: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate] [⬅️ Back]
     const row1 = new ActionRowBuilder();
 
     // [🗑️ Drop]
@@ -1221,35 +1221,51 @@ export async function handleInventoryItemSelect(interaction) {
         .setDisabled(cannotToggle)
     );
 
-    // ROW 2 (Bottom): Navigation [Back] [◀️] [▶️]
-    const row2 = new ActionRowBuilder();
-
-    // [Back]
-    row2.addComponents(
+    // [⬅️ Back]
+    row1.addComponents(
       new ButtonBuilder()
-        .setCustomId(`bank_inv_cat_${catIdStr}`)
+        .setCustomId('bank_inv_back')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
 
-    // [◀️]
-    row2.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
-        .setEmoji('◀️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!hasMultipleItems)
-    );
+    // ROW 2: Item Selection Dropdown List
+    const selectOptions = items.slice(0, 25).map(i => {
+      const isItemTemp = !!(i.expires_at ||
+        (i.duration_seconds && i.duration_seconds > 0) ||
+        (i.duration_hours && i.duration_hours > 0));
+      const isAdminIdentified = i.source === 'SYNC';
 
-    // [▶️]
-    row2.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!hasMultipleItems)
-    );
+      let statusEmoji = '⬜';
+      let statusText = 'Unknown';
+
+      if (isAdminIdentified) {
+        statusEmoji = '🛡️';
+        statusText = 'Admin Granted';
+      } else if (isItemTemp) {
+        statusEmoji = i.is_active ? '✅' : '⬜';
+        statusText = i.is_active ? 'Active' : 'Inactive';
+      } else {
+        statusEmoji = i.is_active ? '✅' : '⬜';
+        statusText = i.is_active ? 'Equipped' : 'Unequipped';
+      }
+
+      return {
+        label: i.name,
+        value: String(i.id),
+        description: statusText,
+        emoji: statusEmoji,
+        default: String(i.id) === String(item.id)
+      };
+    });
+
+    const itemSelect = new StringSelectMenuBuilder()
+      .setCustomId(`bank_inv_item_select_${catIdStr}`)
+      .setPlaceholder('Select an Item to Manage')
+      .addOptions(selectOptions);
+
+    const row2 = new ActionRowBuilder().addComponents(itemSelect);
 
     await interaction.editReply({
       content: null,
