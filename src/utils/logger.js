@@ -167,21 +167,35 @@ export function logSystemError(error, action = 'System Error') {
  * Core logging utility for the "God-Mode" Audit System.
  * Enforces NO-PREFIX and ID-ONLY standards for console logs.
  */
-export function sysLog(action, { user, guild, detail } = {}) {
+export function sysLog(action, { user, guild, target, role, item, channel, message, detail } = {}) {
     const userId = user?.id || user || 'System';
     const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
     
-    // Ensure we are NEVER logging names to the console
     const cleanAction = stripLog(action);
-    const cleanDetail = detail ? stripLog(detail) : null;
+    const parts = [`${cleanAction}`, `User: ${userId}`, `Guild: ${guildId}`];
     
-    console.log(`${cleanAction} | User: ${userId} | Guild: ${guildId}${cleanDetail ? ` | Detail: ${cleanDetail}` : ''}`);
+    if (target) parts.push(`Target: ${target?.id || target}`);
+    if (role) parts.push(`Role: ${role?.id || role}`);
+    if (item) parts.push(`Item: ${item?.id || item}`);
+    if (channel) parts.push(`Channel: ${channel?.id || channel}`);
+    if (message) parts.push(`Message: ${message?.id || message}`);
+    if (detail) parts.push(`Detail: ${stripLog(detail)}`);
+    
+    console.log(parts.join(' | '));
 }
 
-export function sysError(action, error, { user, guild } = {}) {
+export function sysError(action, error, { user, guild, target, role, item, channel, message } = {}) {
     const userId = user?.id || user || 'System';
     const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
     const errorMessage = error?.message || error || 'Unknown Error';
     
-    console.error(`${stripLog(action)} | User: ${userId} | Guild: ${guildId} | Error: ${stripLog(errorMessage)}`);
+    const parts = [`${stripLog(action)}`, `User: ${userId}`, `Guild: ${guildId}`];
+    if (target) parts.push(`Target: ${target?.id || target}`);
+    if (role) parts.push(`Role: ${role?.id || role}`);
+    if (item) parts.push(`Item: ${item?.id || item}`);
+    if (channel) parts.push(`Channel: ${channel?.id || channel}`);
+    if (message) parts.push(`Message: ${message?.id || message}`);
+    parts.push(`Error: ${stripLog(errorMessage)}`);
+    
+    console.error(parts.join(' | '));
 }
