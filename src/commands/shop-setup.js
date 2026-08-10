@@ -4577,7 +4577,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
       `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
       `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
-      `🟡 **Legendary**: \`${box.chance_legendary}%\`\n` +
+      `🟡 **Legendary**: \`${box.chance_legendary}%\`\n\n` +
       `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
 
     const embed = new EmbedBuilder()
