@@ -41,13 +41,12 @@ import {
   getLootBox,
   createLootBox,
   updateLootBox,
+  updateLootBoxRarityRates,
+  updateLootBoxCoinsConfig,
+  updateLootBoxPrizeCount,
   deleteLootBox,
-  addLootBoxReward,
-  removeLootBoxReward,
-  updateLootBoxRewardWeight,
   getLootBoxCategoryName,
-  getLootBoxCategoryEmoji,
-  RARITY_BASE_WEIGHTS
+  getLootBoxCategoryEmoji
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
@@ -318,7 +317,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     const lootBoxes = await getLootBoxes(guildId);
 
     const desc = lootBoxes.length > 0
-      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
+      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — Prizes: \`${b.min_prizes || 1}-${b.max_prizes || 1}\` | Coins: \`${(parseInt(b.min_coins) || 100).toLocaleString()}-${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
       : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`;
 
     const embed = new EmbedBuilder()
@@ -4399,14 +4398,6 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setRequired(true)
     .setMaxLength(100);
 
-  const descInput = new TextInputBuilder()
-    .setCustomId('description')
-    .setLabel('Description')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Describe what could be inside...')
-    .setRequired(false)
-    .setMaxLength(1000);
-
   const imgInput = new TextInputBuilder()
     .setCustomId('image_url')
     .setLabel('Banner Image URL')
@@ -4416,7 +4407,6 @@ export async function handleLootBoxCreateModalStart(interaction) {
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(descInput),
     new ActionRowBuilder().addComponents(imgInput)
   );
 
@@ -4430,11 +4420,10 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = interaction.fields.getTextInputValue('name');
-    const description = interaction.fields.getTextInputValue('description') || null;
     const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
 
-    const newBox = await createLootBox(interaction.guildId, { name, description, imageUrl });
-    await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created loot box **${newBox.name}**! Now configure its loot pool below.`);
+    const newBox = await createLootBox(interaction.guildId, { name, imageUrl });
+    await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created loot box **${newBox.name}**! Adjust drop chances below:`);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box create submit');
   }
@@ -4498,7 +4487,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
 }
 
 /**
- * Main Loot Box Editor Panel (View Details, Edit, Manage Pool, Delete)
+ * Unified Loot Box Configuration Panel (Rarity Rates, Coins Config, Prize Count, Rename, Delete)
  */
 export async function showLootBoxEditorPanel(interaction, boxId, statusMessage = null) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
@@ -4508,14 +4497,26 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
       return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle(`🎁 ${box.name}`)
-      .setDescription(box.description || '*No description set.*')
+      .setTitle(`${lootBoxEmoji} ${box.name}`)
       .addFields(
-        { name: '📦 Pool Rewards', value: `${box.rewards.length} rewards`, inline: true },
-        { name: '⚖️ Total Weight', value: `${box.totalWeight}`, inline: true },
-        { name: '🖼️ Image', value: box.image_url ? 'Configured' : 'None', inline: true }
+        { name: '🎁 Prizes Per Open', value: `\`${box.min_prizes}\` to \`${box.max_prizes}\` items/coins`, inline: true },
+        { name: '💰 Coins Reward', value: `\`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\` coins`, inline: true },
+        { name: '🖼️ Image', value: box.image_url ? 'Configured' : 'None', inline: true },
+        {
+          name: '🎲 Drop Rates (% Chance)',
+          value:
+            `⚪ **Common**: \`${box.chance_common}%\` (${box.percentages.common}% drop chance)\n` +
+            `🟢 **Uncommon**: \`${box.chance_uncommon}%\` (${box.percentages.uncommon}% drop chance)\n` +
+            `🔵 **Rare**: \`${box.chance_rare}%\` (${box.percentages.rare}% drop chance)\n` +
+            `🟣 **Epic**: \`${box.chance_epic}%\` (${box.percentages.epic}% drop chance)\n` +
+            `🟡 **Legendary**: \`${box.chance_legendary}%\` (${box.percentages.legendary}% drop chance)\n` +
+            `💰 **Coins**: \`${box.chance_coins}%\` (${box.percentages.coins}% drop chance)`,
+          inline: false
+        }
       );
 
     if (box.image_url && box.image_url.startsWith('http')) {
@@ -4524,20 +4525,20 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
 
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_lb_edit_details_${boxId}`)
-        .setLabel('Edit Details')
-        .setEmoji('✏️')
+        .setCustomId(`shop_lb_rates_btn_${boxId}`)
+        .setLabel('Rarity Rates')
+        .setEmoji('🎲')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
-        .setCustomId(`shop_lb_manage_pool_${boxId}`)
-        .setLabel('Manage Loot Pool')
-        .setEmoji('🎲')
-        .setStyle(ButtonStyle.Success),
+        .setCustomId(`shop_lb_coins_btn_${boxId}`)
+        .setLabel('Coins Config')
+        .setEmoji('💰')
+        .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
-        .setCustomId(`shop_lb_delete_start_${boxId}`)
-        .setLabel('Delete Box')
-        .setEmoji('🗑️')
-        .setStyle(ButtonStyle.Danger)
+        .setCustomId(`shop_lb_prizes_btn_${boxId}`)
+        .setLabel('Prize Count')
+        .setEmoji('🎁')
+        .setStyle(ButtonStyle.Primary)
     );
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -4545,7 +4546,17 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
         .setCustomId('shop_lb_home')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_rename_box_btn_${boxId}`)
+        .setLabel('Rename / Image')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_delete_start_${boxId}`)
+        .setLabel('Delete Box')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
     );
 
     await interaction.editReply({
@@ -4559,15 +4570,231 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
 }
 
 /**
- * Open Modal to Edit Loot Box Details (Name, Desc, Image)
+ * Open Modal to Configure Item Rarity Drop Rates
  */
-export async function handleLootBoxEditDetailsStart(interaction, boxId) {
+export async function handleLootBoxRarityRatesModal(interaction, boxId) {
   const box = await getLootBox(boxId, interaction.guildId);
   if (!box) return;
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_edit_modal_${boxId}`)
-    .setTitle(`Edit: ${box.name.slice(0, 30)}`);
+    .setCustomId(`shop_lb_rates_modal_${boxId}`)
+    .setTitle('Configure Rarity Rates');
+
+  const commonInput = new TextInputBuilder()
+    .setCustomId('common')
+    .setLabel('Common Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_common.toString())
+    .setPlaceholder('e.g. 70')
+    .setRequired(true);
+
+  const uncommonInput = new TextInputBuilder()
+    .setCustomId('uncommon')
+    .setLabel('Uncommon Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_uncommon.toString())
+    .setPlaceholder('e.g. 20')
+    .setRequired(true);
+
+  const rareInput = new TextInputBuilder()
+    .setCustomId('rare')
+    .setLabel('Rare Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_rare.toString())
+    .setPlaceholder('e.g. 5')
+    .setRequired(true);
+
+  const epicInput = new TextInputBuilder()
+    .setCustomId('epic')
+    .setLabel('Epic Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_epic.toString())
+    .setPlaceholder('e.g. 0')
+    .setRequired(true);
+
+  const legendaryInput = new TextInputBuilder()
+    .setCustomId('legendary')
+    .setLabel('Legendary Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_legendary.toString())
+    .setPlaceholder('e.g. 0')
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(commonInput),
+    new ActionRowBuilder().addComponents(uncommonInput),
+    new ActionRowBuilder().addComponents(rareInput),
+    new ActionRowBuilder().addComponents(epicInput),
+    new ActionRowBuilder().addComponents(legendaryInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Rarity Rates Modal Submit
+ */
+export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const commonVal = interaction.fields.getTextInputValue('common');
+    const uncommonVal = interaction.fields.getTextInputValue('uncommon');
+    const rareVal = interaction.fields.getTextInputValue('rare');
+    const epicVal = interaction.fields.getTextInputValue('epic');
+    const legendaryVal = interaction.fields.getTextInputValue('legendary');
+
+    await updateLootBoxRarityRates(boxId, interaction.guildId, {
+      chanceCommon: parseFloat(commonVal) || 0,
+      chanceUncommon: parseFloat(uncommonVal) || 0,
+      chanceRare: parseFloat(rareVal) || 0,
+      chanceEpic: parseFloat(epicVal) || 0,
+      chanceLegendary: parseFloat(legendaryVal) || 0
+    });
+
+    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated rarity drop rates successfully!');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box rarity rates submit');
+  }
+}
+
+/**
+ * Open Modal to Configure Coins Drop Rate & Amount Range
+ */
+export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_coins_modal_${boxId}`)
+    .setTitle('Configure Coins Reward');
+
+  const chanceInput = new TextInputBuilder()
+    .setCustomId('chance_coins')
+    .setLabel('Coins Drop Weight / Chance (%)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.chance_coins.toString())
+    .setPlaceholder('e.g. 25')
+    .setRequired(true);
+
+  const minCoinsInput = new TextInputBuilder()
+    .setCustomId('min_coins')
+    .setLabel('Minimum Coins Won')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.min_coins.toString())
+    .setPlaceholder('e.g. 100')
+    .setRequired(true);
+
+  const maxCoinsInput = new TextInputBuilder()
+    .setCustomId('max_coins')
+    .setLabel('Maximum Coins Won')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.max_coins.toString())
+    .setPlaceholder('e.g. 500')
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(chanceInput),
+    new ActionRowBuilder().addComponents(minCoinsInput),
+    new ActionRowBuilder().addComponents(maxCoinsInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Coins Config Modal Submit
+ */
+export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const chanceVal = interaction.fields.getTextInputValue('chance_coins');
+    const minCoinsVal = interaction.fields.getTextInputValue('min_coins');
+    const maxCoinsVal = interaction.fields.getTextInputValue('max_coins');
+
+    const chanceCoins = Math.max(0, parseFloat(chanceCoinsVal) || 0);
+    const minCoins = Math.max(0, parseInt(minCoinsVal, 10) || 0);
+    const maxCoins = Math.max(minCoins, parseInt(maxCoinsVal, 10) || 0);
+
+    await updateLootBoxCoinsConfig(boxId, interaction.guildId, {
+      chanceCoins: parseFloat(chanceVal) || 0,
+      minCoins,
+      maxCoins
+    });
+
+    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated coins configuration successfully!');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box coins config submit');
+  }
+}
+
+/**
+ * Open Modal to Configure Prize Count (Min/Max prizes per open)
+ */
+export async function handleLootBoxPrizeCountModal(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_prizes_modal_${boxId}`)
+    .setTitle('Configure Prize Count');
+
+  const minPrizesInput = new TextInputBuilder()
+    .setCustomId('min_prizes')
+    .setLabel('Minimum Prizes Per Open')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.min_prizes.toString())
+    .setPlaceholder('e.g. 1')
+    .setRequired(true);
+
+  const maxPrizesInput = new TextInputBuilder()
+    .setCustomId('max_prizes')
+    .setLabel('Maximum Prizes Per Open')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.max_prizes.toString())
+    .setPlaceholder('e.g. 3')
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(minPrizesInput),
+    new ActionRowBuilder().addComponents(maxPrizesInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Prize Count Modal Submit
+ */
+export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const minPrizesVal = interaction.fields.getTextInputValue('min_prizes');
+    const maxPrizesVal = interaction.fields.getTextInputValue('max_prizes');
+
+    const minPrizes = Math.max(1, parseInt(minPrizesVal, 10) || 1);
+    const maxPrizes = Math.max(minPrizes, parseInt(maxPrizesVal, 10) || 1);
+
+    await updateLootBoxPrizeCount(boxId, interaction.guildId, {
+      minPrizes,
+      maxPrizes
+    });
+
+    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated prizes count configuration successfully!');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box prize count submit');
+  }
+}
+
+/**
+ * Open Modal to Rename Loot Box or Update Image URL
+ */
+export async function handleLootBoxRenameModal(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_rename_modal_${boxId}`)
+    .setTitle(`Rename: ${box.name.slice(0, 30)}`);
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
@@ -4577,15 +4804,6 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
     .setPlaceholder('e.g. Golden Mystery Chest')
     .setRequired(true)
     .setMaxLength(100);
-
-  const descInput = new TextInputBuilder()
-    .setCustomId('description')
-    .setLabel('Description')
-    .setStyle(TextInputStyle.Paragraph)
-    .setValue(box.description || '')
-    .setPlaceholder('Describe what could be inside...')
-    .setRequired(false)
-    .setMaxLength(1000);
 
   const imgInput = new TextInputBuilder()
     .setCustomId('image_url')
@@ -4597,7 +4815,6 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(descInput),
     new ActionRowBuilder().addComponents(imgInput)
   );
 
@@ -4605,19 +4822,18 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
 }
 
 /**
- * Handle Edit Loot Box Details Modal Submit
+ * Handle Rename Modal Submit
  */
-export async function handleLootBoxEditDetailsSubmit(interaction, boxId) {
+export async function handleLootBoxRenameSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = interaction.fields.getTextInputValue('name');
-    const description = interaction.fields.getTextInputValue('description') || null;
     const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
 
-    await updateLootBox(boxId, interaction.guildId, { name, description, imageUrl });
-    await showLootBoxEditorPanel(interaction, boxId, '✅ Loot box details updated successfully!');
+    await updateLootBox(boxId, interaction.guildId, { name, imageUrl });
+    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated box name and image successfully!');
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box edit details submit');
+    await handleInteractionError(interaction, error, 'loot box rename submit');
   }
 }
 
@@ -4637,7 +4853,6 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
       .setTitle(`🗑️ Delete Loot Box: ${box.name}`)
       .setDescription(
         `⚠️ **Warning**: Deleting this loot box will:\n` +
-        `• Permanently delete all **${box.rewards.length}** rewards in its loot pool\n` +
         `• Remove this loot box from the shop\n` +
         `• **Instantly purge all unopened copies** from all users' inventories\n\n` +
         `Are you sure you want to proceed?`
@@ -4650,7 +4865,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId(`shop_lb_back_to_box_${boxId}`)
+        .setCustomId(`shop_lb_edit_details_${boxId}`)
         .setLabel('Cancel')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
@@ -4676,395 +4891,6 @@ export async function handleLootBoxDeleteConfirm(interaction, boxId) {
   }
 }
 
-/**
- * Loot Pool Manager Panel (Lists rewards with percentage chance, Add Coin, Add Item, Edit/Remove)
- */
-export async function showLootPoolManager(interaction, boxId, statusMessage = null) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const box = await getLootBox(boxId, interaction.guildId);
-    if (!box) {
-      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
-    }
-
-    const totalWeight = box.totalWeight || 0;
-    let poolList = '';
-
-    if (box.rewards.length === 0) {
-      poolList = '*⚠️ No rewards configured yet. Add coins or items using the buttons below.*';
-    } else {
-      poolList = box.rewards.map(r => {
-        const weight = parseInt(r.weight) || 0;
-        const pct = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
-        if (r.reward_type === 'coins') {
-          return `• 💰 **${parseInt(r.coin_amount).toLocaleString()} Coins** — Weight: \`${weight}\` (${pct}%)`;
-        } else {
-          const rarityEmoji = RARITY_EMOJIS[r.item_rarity] || '⚪';
-          const rarityTag = RARITY_DISPLAY[r.item_rarity] || 'Common';
-          const lockedWarning = r.is_tradable === false ? ' *(Locked — will be skipped during rolls)*' : '';
-          return `• ${rarityEmoji} **${r.item_name}** [${rarityTag}] — Weight: \`${weight}\` (${pct}%)${lockedWarning}`;
-        }
-      }).join('\n');
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor('#2ECC71')
-      .setTitle(`🎲 Loot Pool: ${box.name}`)
-      .setDescription(
-        `Configure the rewards and drop chances when opening this box.\n` +
-        `Total Weight: **${totalWeight}**\n\n` +
-        poolList
-      );
-
-    const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_add_coins_btn_${boxId}`)
-        .setLabel('Add Coins')
-        .setEmoji('💰')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_add_item_btn_${boxId}`)
-        .setLabel('Add Item')
-        .setEmoji('🎭')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_manage_weights_${boxId}`)
-        .setLabel('Edit / Remove')
-        .setEmoji('⚙️')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(box.rewards.length === 0)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_back_to_box_${boxId}`)
-        .setLabel('Back to Box')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.editReply({
-      content: statusMessage || null,
-      embeds: [embed],
-      components: [row1, row2]
-    });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'show loot pool manager');
-  }
-}
-
-/**
- * Open Modal to Add Coins to Pool
- */
-export async function handleLootBoxAddCoinsModal(interaction, boxId) {
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_add_coins_modal_${boxId}`)
-    .setTitle('Add Coin Reward');
-
-  const coinInput = new TextInputBuilder()
-    .setCustomId('coin_amount')
-    .setLabel('Coin Amount')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g. 500')
-    .setRequired(true);
-
-  const weightInput = new TextInputBuilder()
-    .setCustomId('weight')
-    .setLabel('Drop Weight (Chance)')
-    .setStyle(TextInputStyle.Short)
-    .setValue('50')
-    .setPlaceholder('Higher weight = higher chance')
-    .setRequired(true);
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(coinInput),
-    new ActionRowBuilder().addComponents(weightInput)
-  );
-
-  await interaction.showModal(modal);
-}
-
-/**
- * Handle Add Coins Submit
- */
-export async function handleLootBoxAddCoinsSubmit(interaction, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const coinVal = interaction.fields.getTextInputValue('coin_amount');
-    const weightVal = interaction.fields.getTextInputValue('weight');
-
-    if (!/^\d+$/.test(coinVal) || parseInt(coinVal, 10) <= 0) {
-      return interaction.followUp({ content: '❌ Invalid coin amount. Must be a positive integer.', flags: MessageFlags.Ephemeral });
-    }
-    if (!/^\d+$/.test(weightVal) || parseInt(weightVal, 10) <= 0) {
-      return interaction.followUp({ content: '❌ Invalid weight. Must be a positive integer.', flags: MessageFlags.Ephemeral });
-    }
-
-    const coinAmount = parseInt(coinVal, 10);
-    const weight = parseInt(weightVal, 10);
-
-    await addLootBoxReward(boxId, interaction.guildId, {
-      rewardType: 'coins',
-      coinAmount,
-      weight
-    });
-
-    await showLootPoolManager(interaction, boxId, `✅ Added **${coinAmount.toLocaleString()} Coins** (Weight: ${weight}) to loot pool!`);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'add coins submit');
-  }
-}
-
-/**
- * Render Item Selector to Add Item to Loot Pool (Filtered to Tradable Items)
- */
-export async function handleLootBoxAddItemMenu(interaction, boxId, page = 1) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-    // Strict requirement: Only tradable single items can be placed in loot boxes (no locked items, no packs, no boxes)
-    const eligibleItems = allItems.filter(i => i.is_tradable === true && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
-
-    if (eligibleItems.length === 0) {
-      return interaction.followUp({
-        content: '❌ No eligible items found. Only **unlocked (tradable)** items can be placed inside loot boxes.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const options = eligibleItems.map(item => {
-      const rarityEmoji = RARITY_EMOJIS[item.rarity] || '⚪';
-      const rarityTag = RARITY_DISPLAY[item.rarity] || 'Common';
-      const defaultWeight = RARITY_BASE_WEIGHTS[item.rarity] || 10;
-      return {
-        label: `${item.name.slice(0, 60)} [${rarityTag}]`,
-        description: `Base Weight: ${defaultWeight} | Role: ${item.role_id ? 'Yes' : 'No'}`,
-        emoji: rarityEmoji,
-        value: item.id.toString()
-      };
-    });
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_lb_add_item_select_${boxId}`)
-      .setPlaceholder('Select an unlocked item to add to loot pool...')
-      .addOptions(options.slice(0, 25));
-
-    const rowSelect = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_manage_pool_${boxId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    const embed = new EmbedBuilder()
-      .setColor('#2ECC71')
-      .setTitle('➕ Add Item to Loot Pool')
-      .setDescription('Select an item below. The drop weight will automatically populate based on the item\'s rarity tier:');
-
-    await interaction.editReply({
-      content: null,
-      embeds: [embed],
-      components: [rowSelect, rowBack]
-    });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box add item menu');
-  }
-}
-
-/**
- * Handle Item Selection for Loot Pool (Auto-populates weight from item.rarity)
- */
-export async function handleLootBoxAddItemSelect(interaction, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const itemId = parseInt(interaction.values[0], 10);
-    const item = await getShopItem(itemId, interaction.guildId);
-    if (!item) {
-      return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
-    }
-
-    if (item.is_tradable === false) {
-      return interaction.followUp({ content: '⛔ Locked items cannot be added to a loot box pool.', flags: MessageFlags.Ephemeral });
-    }
-
-    const defaultWeight = RARITY_BASE_WEIGHTS[item.rarity] || 10;
-
-    await addLootBoxReward(boxId, interaction.guildId, {
-      rewardType: 'item',
-      shopItemId: item.id,
-      weight: defaultWeight
-    });
-
-    const rarityEmoji = RARITY_EMOJIS[item.rarity] || '⚪';
-    const rarityTag = RARITY_DISPLAY[item.rarity] || 'Common';
-
-    await showLootPoolManager(interaction, boxId, `✅ Added ${rarityEmoji} **${item.name}** [${rarityTag}] with auto-weight \`${defaultWeight}\` to pool!`);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box add item select');
-  }
-}
-
-/**
- * Show Select Menu to Pick a Reward to Edit Weight or Remove
- */
-export async function handleLootBoxManageWeightsMenu(interaction, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const box = await getLootBox(boxId, interaction.guildId);
-    if (!box || box.rewards.length === 0) {
-      return showLootPoolManager(interaction, boxId, '❌ No rewards in pool to edit.');
-    }
-
-    const options = box.rewards.slice(0, 25).map(r => {
-      const isCoins = r.reward_type === 'coins';
-      const label = isCoins ? `${parseInt(r.coin_amount).toLocaleString()} Coins` : (r.item_name || `Item #${r.shop_item_id}`);
-      return {
-        label: label.slice(0, 80),
-        description: `Weight: ${r.weight} | Type: ${r.reward_type.toUpperCase()}`,
-        value: r.id.toString()
-      };
-    });
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_lb_reward_action_select_${boxId}`)
-      .setPlaceholder('Select a reward to edit weight or remove...')
-      .addOptions(options);
-
-    const rowSelect = new ActionRowBuilder().addComponents(select);
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_manage_pool_${boxId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    const embed = new EmbedBuilder()
-      .setColor('#3498DB')
-      .setTitle('⚙️ Edit or Remove Reward')
-      .setDescription('Select a reward from the menu below:');
-
-    await interaction.editReply({
-      content: null,
-      embeds: [embed],
-      components: [rowSelect, rowBack]
-    });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'manage weights menu');
-  }
-}
-
-/**
- * Show Action Panel for a Selected Reward (Edit Weight / Remove)
- */
-export async function handleLootBoxRewardActionSelect(interaction, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const rewardId = parseInt(interaction.values[0], 10);
-    const box = await getLootBox(boxId, interaction.guildId);
-    if (!box) return;
-
-    const reward = box.rewards.find(r => r.id === rewardId);
-    if (!reward) {
-      return showLootPoolManager(interaction, boxId, '❌ Reward not found in pool.');
-    }
-
-    const isCoins = reward.reward_type === 'coins';
-    const rewardTitle = isCoins ? `💰 ${parseInt(reward.coin_amount).toLocaleString()} Coins` : `🎭 ${reward.item_name}`;
-
-    const embed = new EmbedBuilder()
-      .setColor('#3498DB')
-      .setTitle(`Reward: ${rewardTitle}`)
-      .setDescription(
-        `Current Drop Weight: **${reward.weight}**\n` +
-        `Total Box Weight: **${box.totalWeight}**\n` +
-        `Drop Chance: **${box.totalWeight > 0 ? ((reward.weight / box.totalWeight) * 100).toFixed(1) : 0}%**`
-      );
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_edit_weight_btn_${rewardId}_${boxId}`)
-        .setLabel('Edit Weight')
-        .setEmoji('⚖️')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_delete_reward_${rewardId}_${boxId}`)
-        .setLabel('Remove Reward')
-        .setEmoji('🗑️')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_manage_pool_${boxId}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.editReply({
-      content: null,
-      embeds: [embed],
-      components: [row]
-    });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'reward action select');
-  }
-}
-
-/**
- * Open Modal to Edit Reward Weight
- */
-export async function handleLootBoxEditWeightModal(interaction, rewardId, boxId) {
-  const box = await getLootBox(boxId, interaction.guildId);
-  const reward = box?.rewards?.find(r => r.id === parseInt(rewardId, 10));
-
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_edit_weight_modal_${rewardId}_${boxId}`)
-    .setTitle('Edit Reward Weight');
-
-  const weightInput = new TextInputBuilder()
-    .setCustomId('weight')
-    .setLabel('New Drop Weight')
-    .setStyle(TextInputStyle.Short)
-    .setValue(reward ? reward.weight.toString() : '10')
-    .setPlaceholder('e.g. 50')
-    .setRequired(true);
-
-  modal.addComponents(new ActionRowBuilder().addComponents(weightInput));
-  await interaction.showModal(modal);
-}
-
-/**
- * Handle Edit Reward Weight Submit
- */
-export async function handleLootBoxEditWeightSubmit(interaction, rewardId, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const weightVal = interaction.fields.getTextInputValue('weight');
-    if (!/^\d+$/.test(weightVal) || parseInt(weightVal, 10) <= 0) {
-      return interaction.followUp({ content: '❌ Invalid weight. Must be a positive whole number.', flags: MessageFlags.Ephemeral });
-    }
-
-    const weight = parseInt(weightVal, 10);
-    await updateLootBoxRewardWeight(rewardId, boxId, weight);
-    await showLootPoolManager(interaction, boxId, `✅ Updated reward drop weight to \`${weight}\`!`);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'edit weight submit');
-  }
-}
-
-/**
- * Delete Reward from Pool
- */
-export async function handleLootBoxDeleteReward(interaction, rewardId, boxId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    await removeLootBoxReward(rewardId, boxId, interaction.guildId);
-    await showLootPoolManager(interaction, boxId, '✅ Removed reward from loot pool!');
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'delete reward from pool');
-  }
-}
 
 
 
