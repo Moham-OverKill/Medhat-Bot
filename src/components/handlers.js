@@ -84,6 +84,7 @@ import {
   handleNewItemSave,
   handleEditItemRaritySelect,
   handleEditItemTradableSelect,
+  handleLootBoxesPage,
   handleLootBoxCreateModalStart,
   handleLootBoxCreateModalSubmit,
   handleLootBoxRenameCatStart,
@@ -454,6 +455,10 @@ export function setupComponentHandlers(client) {
       // ADMIN SHOP SETUP - ADD FLOW
       else if (customId.startsWith('shop_add_type_')) {
         await handleAddTypeSelect(interaction);
+      } else if (customId === 'shop_lb_home') {
+        await handleLootBoxesPage(interaction);
+      } else if (customId === 'shop_lb_create_start') {
+        await handleLootBoxCreateModalStart(interaction);
       } else if (customId === 'shop_edit_lootbox') {
         await handleEditLootBoxStart(interaction);
       } else if (customId === 'shop_delete_lootbox') {

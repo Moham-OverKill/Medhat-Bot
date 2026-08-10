@@ -162,7 +162,7 @@ export async function handleShopSetup(interaction) {
           .setStyle(ButtonStyle.Danger)
       );
 
-    // Row 2: Back (left) and Post (right)
+    // Row 2: Back (left), Loot Boxes (center), Post (right)
     const row2 = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
@@ -170,6 +170,11 @@ export async function handleShopSetup(interaction) {
           .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('shop_lb_home')
+          .setLabel(lootBoxCatName.slice(0, 50))
+          .setEmoji('🎁')
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('shop_admin_post')
           .setLabel('Post')
@@ -188,7 +193,6 @@ export async function handleShopSetup(interaction) {
 
 export async function handleShopAdminAdd(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
@@ -211,11 +215,6 @@ export async function handleShopAdminAdd(interaction) {
         .setCustomId('shop_add_type_item')
         .setLabel('Item')
         .setEmoji('🎭')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('shop_add_type_lootbox')
-        .setLabel(lootBoxCatName.slice(0, 50))
-        .setEmoji('🎁')
         .setStyle(ButtonStyle.Success)
     );
 
@@ -224,11 +223,6 @@ export async function handleShopAdminAdd(interaction) {
       .setCustomId('shop_admin_home')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('shop_lb_rename_cat')
-      .setLabel('Rename Category')
-      .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -237,7 +231,6 @@ export async function handleShopAdminAdd(interaction) {
 
 export async function handleShopAdminEdit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#3498DB')
@@ -260,11 +253,6 @@ export async function handleShopAdminEdit(interaction) {
         .setCustomId('shop_edit_item')
         .setLabel('Item')
         .setEmoji('🎭')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('shop_edit_lootbox')
-        .setLabel(lootBoxCatName.slice(0, 50))
-        .setEmoji('🎁')
         .setStyle(ButtonStyle.Primary)
     );
 
@@ -281,7 +269,6 @@ export async function handleShopAdminEdit(interaction) {
 
 export async function handleShopAdminDelete(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#E74C3C')
@@ -304,11 +291,6 @@ export async function handleShopAdminDelete(interaction) {
         .setCustomId('shop_delete_item')
         .setLabel('Item')
         .setEmoji('🎭')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('shop_delete_lootbox')
-        .setLabel(lootBoxCatName.slice(0, 50))
-        .setEmoji('🎁')
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -323,16 +305,76 @@ export async function handleShopAdminDelete(interaction) {
   await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
 }
 
+/**
+ * Dedicated Loot Boxes Management Page
+ */
+export async function handleLootBoxesPage(interaction, statusMessage = null) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const guildId = interaction.guildId;
+    const lootBoxCatName = await getLootBoxCategoryName(guildId);
+    const lootBoxes = await getLootBoxes(guildId);
+
+    const embed = new EmbedBuilder()
+      .setColor('#9B59B6')
+      .setTitle(`🎁 ${lootBoxCatName} Management`)
+      .setDescription(
+        `Manage your server's ${lootBoxCatName.toLowerCase()}.\n` +
+        `Users can purchase these from shop channels and open them in their \`/inventory\` for random rewards.\n\n` +
+        `**Configured Boxes (${lootBoxes.length}):**\n` +
+        (lootBoxes.length > 0
+          ? lootBoxes.map((b, idx) => `${idx + 1}. 🎁 **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
+          : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`)
+      );
+
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_lb_create_start')
+        .setLabel('Create')
+        .setEmoji('➕')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('shop_edit_lootbox')
+        .setLabel('Edit')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(lootBoxes.length === 0),
+      new ButtonBuilder()
+        .setCustomId('shop_delete_lootbox')
+        .setLabel('Delete')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(lootBoxes.length === 0)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_admin_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('shop_lb_rename_cat')
+        .setLabel('Rename Category')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: statusMessage || null,
+      embeds: [embed],
+      components: [row1, row2]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot boxes page');
+  }
+}
+
 export async function handleAddTypeSelect(interaction) {
-  const type = interaction.customId.split('_').pop(); // item, pack, cat, lootbox
+  const type = interaction.customId.split('_').pop(); // item, pack, cat
 
   if (type === 'cat') {
     await handleCreateCategory(interaction);
-    return;
-  }
-
-  if (type === 'lootbox') {
-    await handleLootBoxCreateModalStart(interaction);
     return;
   }
 
@@ -2659,7 +2701,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     const isEdit = action.startsWith('edit');
     const isItem = action.endsWith('item');
     const isLootBox = action.endsWith('lootbox');
-    const backRoute = isEdit ? 'shop_admin_edit' : 'shop_admin_delete';
+    const backRoute = isLootBox ? 'shop_lb_home' : (isEdit ? 'shop_admin_edit' : 'shop_admin_delete');
     
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
@@ -2687,11 +2729,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
       const catName = await getLootBoxCategoryName(interaction.guildId);
 
       if (lootBoxes.length === 0) {
-        if (contextMap.action.startsWith('delete')) {
-          await handleShopAdminDelete(interaction);
-        } else {
-          await handleShopAdminEdit(interaction);
-        }
+        await handleLootBoxesPage(interaction);
         return interaction.followUp({ content: `❌ No ${catName.toLowerCase()} found.`, flags: MessageFlags.Ephemeral });
       }
 
@@ -4431,7 +4469,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
   try {
     const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
     await setGuildConfig(interaction.guildId, { loot_box_category_name: newName });
-    await handleShopSetup(interaction);
+    await handleLootBoxesPage(interaction);
     await interaction.followUp({ content: `✅ Loot box category renamed to **${newName}**!`, flags: MessageFlags.Ephemeral }).catch(() => {});
   } catch (error) {
     await handleInteractionError(interaction, error, 'rename lootbox category');
@@ -4483,7 +4521,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
 
     const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('shop_admin_edit')
+        .setCustomId('shop_lb_home')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
@@ -4607,7 +4645,7 @@ export async function handleLootBoxDeleteConfirm(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     await deleteLootBox(boxId, interaction.guildId);
-    await handleShopAdminDelete(interaction);
+    await handleLootBoxesPage(interaction);
     await interaction.followUp({ content: '✅ Loot box and all unopened inventory copies successfully deleted.', flags: MessageFlags.Ephemeral }).catch(() => {});
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box delete execute');
