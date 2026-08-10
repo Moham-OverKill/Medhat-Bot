@@ -340,3 +340,30 @@ export async function executeWithRetry(promiseFactory, { label, timeoutMs = 1500
   }
   throw new Error(`${label} failed after ${maxAttempts} attempts`);
 }
+
+/**
+ * Item Rarity Definitions
+ */
+export const RARITY_EMOJIS = {
+  common: '⚪',
+  uncommon: '🟢',
+  rare: '🔵',
+  epic: '🟣',
+  legendary: '🟡'
+};
+
+export const RARITY_DISPLAY = {
+  common: '⚪ Common',
+  uncommon: '🟢 Uncommon',
+  rare: '🔵 Rare',
+  epic: '🟣 Epic',
+  legendary: '🟡 Legendary'
+};
+
+export const RARITY_COLORS = {
+  common: '#95A5A6',
+  uncommon: '#2ECC71',
+  rare: '#3498DB',
+  epic: '#9B59B6',
+  legendary: '#F1C40F'
+};
