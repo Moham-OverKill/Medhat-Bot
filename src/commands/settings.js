@@ -269,7 +269,7 @@ export async function handleSettingsComponent(interaction) {
             const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
             const currentServerAvatar = config.bot_avatar !== undefined ? (config.bot_avatar || '') : '';
 
-            const modal = new ModalBuilder().setCustomId('settings_customize_modal').setTitle('Customize Bot');
+            const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${Date.now()}`).setTitle('Customize Bot');
             
             const nameInput = new TextInputBuilder()
                 .setCustomId('bot_name')
@@ -312,7 +312,7 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_vote_reward') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
-            const modal = new ModalBuilder().setCustomId('settings_vote_modal').setTitle('Vote Reward');
+            const modal = new ModalBuilder().setCustomId(`settings_vote_modal_${Date.now()}`).setTitle('Vote Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('Reward members for voting Medhat on Top.gg')
@@ -328,7 +328,7 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_tag_reward') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
-            const modal = new ModalBuilder().setCustomId('settings_tag_modal').setTitle('Tag Reward');
+            const modal = new ModalBuilder().setCustomId(`settings_tag_modal_${Date.now()}`).setTitle('Tag Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('Reward members for using your server tag')
@@ -341,7 +341,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_vote_modal') {
+        if (customId.startsWith('settings_vote_modal')) {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
             const amountStr = interaction.fields.getTextInputValue('amount');
             const amount = amountStr ? Math.max(0, parseInt(amountStr, 10)) : 0;
@@ -366,7 +366,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_tag_modal') {
+        if (customId.startsWith('settings_tag_modal')) {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
             const amountStr = interaction.fields.getTextInputValue('amount');
             const amount = amountStr ? Math.max(0, parseInt(amountStr, 10)) : 0;
@@ -391,7 +391,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_customize_modal') {
+        if (customId.startsWith('settings_customize_modal')) {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
             }
