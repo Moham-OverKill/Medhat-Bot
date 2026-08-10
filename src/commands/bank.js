@@ -17,7 +17,7 @@ import { handleInteractionError } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import {
   getShopCategories,
@@ -38,6 +38,11 @@ import {
   purgeUserInventory,
   query
 } from '../economy/shop.js';
+import {
+  getLootBoxCategoryName,
+  getLootBox,
+  openLootBox
+} from '../economy/lootbox.js';
 
 // --- Constants ---
 const DAILY_BASE_REWARD = 25;
@@ -766,13 +771,18 @@ export async function handleInventoryButton(interaction) {
     // ========== FILTER VISIBLE ITEMS ==========
     // Exclude packs (hidden from inventory view)
     const items = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
-    const totalCount = items.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
-    const currentBalance = parseInt(userBal.balance);
+    const lootBoxItems = items.filter(i => i.item_type === 'loot_box');
+    const standardItems = items.filter(i => i.item_type !== 'loot_box');
 
-    // Count items per category (summing quantities)
+    const totalCount = items.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
+    const lootBoxCount = lootBoxItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
+    const currentBalance = parseInt(userBal.balance);
+    const lootBoxCatName = await getLootBoxCategoryName(guildId);
+
+    // Count items per category (summing quantities) - only standard items
     const categoryCounts = {};
     let otherCount = 0;
-    for (const item of items) {
+    for (const item of standardItems) {
       const itemQty = parseInt(item.quantity) || 1;
       if (item.category_id) {
         categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
@@ -805,6 +815,14 @@ export async function handleInventoryButton(interaction) {
       buttonDefs.push({
         id: 'bank_inv_cat_null',
         label: 'Other'
+      });
+    }
+
+    // Loot Boxes category button
+    if (lootBoxCount > 0) {
+      buttonDefs.push({
+        id: 'bank_inv_cat_lootboxes',
+        label: lootBoxCatName
       });
     }
 
@@ -888,8 +906,9 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
     }
 
     const catIdStr = interaction.customId.replace('bank_inv_cat_', '');
+    const isLootBox = catIdStr === 'lootboxes';
     const isOther = catIdStr === 'null';
-    const categoryId = isOther ? null : parseInt(catIdStr);
+    const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr);
 
     // Unified Fetch: Includes DB items + Live synthesis of admin roles
     const [inventory, categories] = await Promise.all([
@@ -897,34 +916,42 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       getShopCategories(interaction.guildId)
     ]);
 
-    // Filter Items (no packs, match category, fail-safe for ghost roles)
-    let items = inventory.filter(i => {
-      if (i.item_type === 'pack' || i.is_pack) return false;
-      // Fail-safe: Skip items with missing roles
-      if (i.role_id) {
-        const firstRoleId = i.role_id.split(/[,\s]+/)[0];
-        if (!interaction.guild.roles.cache.has(firstRoleId)) return false;
-      }
-      return isOther ? i.category_id === null : i.category_id === categoryId;
-    });
+    let items = [];
+    let categoryName = 'Other';
 
-    // Sort by role position
-    items = await sortItemsByRolePosition(items, interaction.guild);
+    if (isLootBox) {
+      categoryName = await getLootBoxCategoryName(interaction.guildId);
+      items = inventory.filter(i => i.item_type === 'loot_box');
+    } else {
+      // Filter Items (no packs, no loot boxes, match category, fail-safe for ghost roles)
+      items = inventory.filter(i => {
+        if (i.item_type === 'pack' || i.is_pack || i.item_type === 'loot_box') return false;
+        // Fail-safe: Skip items with missing roles
+        if (i.role_id) {
+          const firstRoleId = i.role_id.split(/[,\s]+/)[0];
+          if (!interaction.guild.roles.cache.has(firstRoleId)) return false;
+        }
+        return isOther ? i.category_id === null : i.category_id === categoryId;
+      });
+
+      // Sort by role position
+      items = await sortItemsByRolePosition(items, interaction.guild);
+
+      if (!isOther && categoryId) {
+        const cat = categories.find(c => c.id === categoryId);
+        if (cat) categoryName = cat.name;
+      }
+    }
 
     if (items.length === 0) {
       // Category is empty - return to main inventory dashboard
       return handleInventoryButton(interaction);
     }
 
-    // Get Category Name
-    let categoryName = 'Other';
-    if (!isOther) {
-      const cat = categories.find(c => c.id === categoryId);
-      if (cat) categoryName = cat.name;
-    }
-
-    // Build List with role mentions and correct emojis for temp vs perm
-    const listLines = items.map(i => formatInventoryItemLine(i));
+    // Build List with role mentions or loot box tags
+    const listLines = isLootBox
+      ? items.map(i => `• 🎁 **${i.name}** \`(x${parseInt(i.quantity) || 1})\``)
+      : items.map(i => formatInventoryItemLine(i));
 
     const embed = new EmbedBuilder()
       .setTitle(`📂 Category: ${categoryName}`)
@@ -934,12 +961,23 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
     const { selectMenu } = buildPaginatedSelectMenu({
       items,
       page: targetPage,
-      customId: `bank_inv_item_select_${isOther ? 'null' : categoryId}`,
-      placeholder: 'Select an Item to Manage',
+      customId: `bank_inv_item_select_${isLootBox ? 'lootboxes' : (isOther ? 'null' : categoryId)}`,
+      placeholder: isLootBox ? 'Select a Loot Box to Open' : 'Select an Item to Manage',
       backOption: { label: 'Back', value: 'back_to_inventory', emoji: '⬅️' },
       pageNavPrefix: 'inv_page_',
       pageSize: 20,
       mapOption: (i, idx) => {
+        if (isLootBox) {
+          const itemQty = parseInt(i.quantity) || 1;
+          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+          return {
+            label: `${baseName} (x${itemQty})`,
+            value: `${i.id}_${idx}`,
+            description: 'Unopened Loot Box',
+            emoji: '🎁'
+          };
+        }
+
         const isTemp = !!(i.expires_at ||
           (i.duration_seconds && i.duration_seconds > 0) ||
           (i.duration_hours && i.duration_hours > 0));
@@ -1032,13 +1070,13 @@ export async function handleInventoryItemSelect(interaction) {
       }
 
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
-      categoryId = catPart === 'null' ? null : parseInt(catPart);
+      categoryId = (catPart === 'null' || catPart === 'lootboxes') ? catPart : parseInt(catPart);
     } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
       // From drop modal submit: bank_inv_drop_qty_[invId]_[catIdStr]_[currentIndex]
       const parts = interaction.customId.split('_');
       invId = parts[4];
       const catPart = parts[5];
-      categoryId = (catPart === 'null' || !catPart) ? null : parseInt(catPart);
+      categoryId = (catPart === 'null' || catPart === 'lootboxes' || !catPart) ? (catPart || 'null') : parseInt(catPart);
       currentIndex = parseInt(parts[6]) || 0;
     } else if (interaction.customId.startsWith('bank_inv_')) {
       // From action buttons: bank_inv_ACTION_invId_categoryId_currentIndex
@@ -1046,23 +1084,27 @@ export async function handleInventoryItemSelect(interaction) {
       // [0]bank [1]inv [2]action [3]invId [4]categoryId [5]currentIndex
       invId = parts[3];
       const catPart = parts[4];
-      categoryId = (catPart === 'null' || !catPart) ? null : parseInt(catPart);
+      categoryId = (catPart === 'null' || catPart === 'lootboxes' || !catPart) ? (catPart || 'null') : parseInt(catPart);
       currentIndex = parseInt(parts[5]) || 0;
     }
 
-    const isOther = categoryId === null;
+    const isLootBoxCategory = categoryId === 'lootboxes';
+    const isOther = !isLootBoxCategory && (categoryId === null || categoryId === 'null');
 
     // 1. Fetch Unified Inventory: Includes DB items + Live synthesis of admin roles
     const inventory = await getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member);
 
     // 2. Filter Category Items
-    let items = inventory.filter(i => {
-      if (i.item_type === 'pack' || i.is_pack) return false;
-      return isOther ? i.category_id === null : i.category_id === categoryId;
-    });
-
-    // Sort by role position
-    items = await sortItemsByRolePosition(items, interaction.guild);
+    let items = [];
+    if (isLootBoxCategory) {
+      items = inventory.filter(i => i.item_type === 'loot_box');
+    } else {
+      items = inventory.filter(i => {
+        if (i.item_type === 'pack' || i.is_pack || i.item_type === 'loot_box') return false;
+        return isOther ? i.category_id === null : i.category_id === categoryId;
+      });
+      items = await sortItemsByRolePosition(items, interaction.guild);
+    }
 
     // STATE ANCHORING: If we have a specific invId (from an action or select),
     // re-calculate the index to ensure we stay on the same item post-sync/sort.
@@ -1075,48 +1117,7 @@ export async function handleInventoryItemSelect(interaction) {
 
     if (items.length === 0) {
       // All items sold/deleted - build main inventory directly with fresh data
-      const [categories, userBal] = await Promise.all([
-        getShopCategories(interaction.guildId),
-        getUserBalance(interaction.guildId, interaction.user.id)
-      ]);
-
-      const activeItems = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
-      const totalCount = activeItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
-      const currentBalance = parseInt(userBal.balance);
-
-      // Count items per category (summing quantities)
-      const categoryCounts = {};
-      let otherCount = 0;
-      for (const item of activeItems) {
-        const itemQty = parseInt(item.quantity) || 1;
-        if (item.category_id) {
-          categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
-        } else {
-          otherCount += itemQty;
-        }
-      }
-
-      const validCategoryIds = Object.keys(categoryCounts).map(Number);
-      const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
-
-      const embed = new EmbedBuilder()
-        .setTitle('\uD83C\uDF92 Inventory')
-        .setColor('#3498DB')
-        .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   \uD83D\uDCE6 **Total Items:** ${totalCount}`);
-
-      const buttonDefs = validCategories.map(c => ({ id: `bank_inv_cat_${c.id}`, label: c.name }));
-      if (otherCount > 0) buttonDefs.push({ id: 'bank_inv_cat_null', label: 'Other' });
-
-      const rows = [];
-      if (buttonDefs.length > 0) {
-        const row = new ActionRowBuilder();
-        buttonDefs.slice(0, 4).forEach(btn => {
-          row.addComponents(new ButtonBuilder().setCustomId(btn.id).setLabel(btn.label).setStyle(ButtonStyle.Primary));
-        });
-        rows.push(row);
-      }
-
-      return interaction.editReply({ content: null, embeds: [embed], components: rows });
+      return handleInventoryButton(interaction);
     }
 
     // Handle carousel navigation
@@ -1135,6 +1136,73 @@ export async function handleInventoryItemSelect(interaction) {
 
     const item = items[currentIndex];
     if (!item) return interaction.editReply({ content: '\u274C Item not found.' });
+
+    // Quantity count
+    const displayQty = parseInt(item.quantity) || 1;
+
+    // --- LOOT BOX SPECIALIZED VIEW ---
+    if (item.item_type === 'loot_box') {
+      const masterBox = item.loot_box_id ? await getLootBox(item.loot_box_id, interaction.guildId) : null;
+      const boxName = masterBox?.name || item.name;
+      const boxDesc = masterBox?.description || item.description || '*Open this loot box to receive random rewards!*';
+      const boxImg = masterBox?.image_url || item.image_url;
+
+      const embed = new EmbedBuilder()
+        .setTitle(`Manage: ${boxName}`)
+        .setColor('#E67E22')
+        .setDescription(`${boxDesc}\n\n**Quantity:** \`x${displayQty}\`\n**Status:** 📦 Unopened`);
+
+      if (boxImg && typeof boxImg === 'string' && boxImg.startsWith('http')) {
+        embed.setImage(boxImg);
+      }
+
+      const row1 = new ActionRowBuilder();
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
+          .setLabel('Open')
+          .setEmoji('🔓')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
+          .setLabel('Drop')
+          .setEmoji('🗑️')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(item.is_tradable === false)
+      );
+
+      const selectOptions = [
+        {
+          label: 'Back',
+          value: 'back_to_inventory',
+          emoji: '⬅️'
+        },
+        ...items.slice(0, 24).map((i, idx) => {
+          const itemQty = parseInt(i.quantity) || 1;
+          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+          return {
+            label: `${baseName} (x${itemQty})`,
+            value: `${i.id}_${idx}`,
+            description: 'Unopened Loot Box',
+            emoji: '🎁',
+            default: String(i.id) === String(item.id)
+          };
+        })
+      ];
+
+      const itemSelect = new StringSelectMenuBuilder()
+        .setCustomId('bank_inv_item_select_lootboxes')
+        .setPlaceholder('Select a Loot Box to Manage')
+        .addOptions(selectOptions);
+
+      const row2 = new ActionRowBuilder().addComponents(itemSelect);
+
+      return await interaction.editReply({
+        content: null,
+        embeds: [embed],
+        components: [row1, row2]
+      });
+    }
 
     // Get role color for embed
     let embedColor = '#3498DB';
@@ -1157,17 +1225,14 @@ export async function handleInventoryItemSelect(interaction) {
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
-    // Quantity count
-    const displayQty = parseInt(item.quantity) || 1;
-
-    const RARITY_DISPLAY = {
+    const RARITY_DISPLAY_MAP = {
       common: '\u26AA Common',
       uncommon: '\uD83D\uDFE2 Uncommon',
       rare: '\uD83D\uDD35 Rare',
       epic: '\uD83D\uDFE3 Epic',
       legendary: '\uD83D\uDFE1 Legendary'
     };
-    const rarityText = RARITY_DISPLAY[item.rarity] || '\u26AA Common';
+    const rarityText = RARITY_DISPLAY_MAP[item.rarity] || '\u26AA Common';
     let desc = `**Role:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
     desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
@@ -1317,13 +1382,12 @@ export async function handleInventoryItemSelect(interaction) {
   }
 }
 
-// ACTION HANDLER (Drop / Equip / Confirm)
+// ACTION HANDLER (Drop / Equip / Confirm / Open)
 export async function handleInventoryAction(interaction) {
   try {
     const parts = interaction.customId.split('_');
 
-
-    const action = parts[2]; // drop, equip, dropconfirm, dropcancel
+    const action = parts[2]; // drop, equip, dropconfirm, dropcancel, open
     let invId, catIdStr, currentIndex;
     if (parts[3] === 'admin') {
       invId = `admin_${parts[4]}`;
@@ -1333,6 +1397,34 @@ export async function handleInventoryAction(interaction) {
       invId = parts[3];
       catIdStr = parts[4] || 'null';
       currentIndex = parseInt(parts[5]) || 0;
+    }
+
+    // --- 0. OPEN LOOT BOX ACTION ---
+    if (action === 'open') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+
+      const result = await openLootBox(interaction.user.id, interaction.guildId, invId, interaction.member);
+      if (!result.success) {
+        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+      }
+
+      let revealMsg = '';
+      if (result.reward.type === 'coins') {
+        revealMsg = `🎉 You opened **${result.reward.boxName}** and received **${result.reward.amount.toLocaleString()} Coins**!`;
+      } else {
+        const rarityBadge = RARITY_EMOJIS[result.reward.rarity] || '⚪';
+        const rarityTitle = RARITY_DISPLAY[result.reward.rarity] || 'Common';
+        revealMsg = `🎉 You opened **${result.reward.boxName}** and received ${rarityBadge} **${result.reward.itemName}** [${rarityTitle}]!`;
+      }
+
+      await interaction.followUp({ content: revealMsg, flags: MessageFlags.Ephemeral });
+
+      // Refresh inventory view
+      if (result.remainingQty > 0) {
+        return handleInventoryItemSelect(interaction);
+      } else {
+        return handleInventoryButton(interaction);
+      }
     }
 
     // --- SECURITY LOCK: Trade Concurrency ---

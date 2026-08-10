@@ -83,7 +83,28 @@ import {
   handleNewItemAttrSelect,
   handleNewItemSave,
   handleEditItemRaritySelect,
-  handleEditItemTradableSelect
+  handleEditItemTradableSelect,
+  handleLootBoxCreateModalStart,
+  handleLootBoxCreateModalSubmit,
+  handleLootBoxRenameCatStart,
+  handleLootBoxRenameCatSubmit,
+  showLootBoxEditorPanel,
+  handleLootBoxEditDetailsStart,
+  handleLootBoxEditDetailsSubmit,
+  showLootBoxDeleteConfirm,
+  handleLootBoxDeleteConfirm,
+  showLootPoolManager,
+  handleLootBoxAddCoinsModal,
+  handleLootBoxAddCoinsSubmit,
+  handleLootBoxAddItemMenu,
+  handleLootBoxAddItemSelect,
+  handleLootBoxManageWeightsMenu,
+  handleLootBoxRewardActionSelect,
+  handleLootBoxEditWeightModal,
+  handleLootBoxEditWeightSubmit,
+  handleLootBoxDeleteReward,
+  handleEditLootBoxStart,
+  handleDeleteLootBoxStart
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -150,7 +171,7 @@ export function setupComponentHandlers(client) {
           'shop_admin_', 'shop_setup_', 'shop_pack_', 'shop_add_', 'shop_edit_',
           'shop_delete_', 'shop_post_', 'shop_cat_', 'shop_assign_', 'shop_select_cat_delete',
           'shop_select_item_delete', 'mass_', 'quests_', 'admin_user_', 'lb_',
-          'role_rewards_',
+          'role_rewards_', 'shop_lb_',
           // Previously unguarded admin routes — patched in security audit
           'shop_item_edit', 'shop_pack_manage', 'shop_pack_edit', 'shop_cat_manage',
           'shop_item_manage_tiers', 'shop_manage_tiers', 'shop_tier_add', 'shop_cat_settings',
@@ -188,6 +209,21 @@ export function setupComponentHandlers(client) {
           await handleTierModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_cat_modal_edit_')) {
           await handleEditCategoryModalSubmit(interaction);
+        } else if (interaction.customId === 'shop_lb_create_modal') {
+          await handleLootBoxCreateModalSubmit(interaction);
+        } else if (interaction.customId === 'shop_lb_rename_cat_modal') {
+          await handleLootBoxRenameCatSubmit(interaction);
+        } else if (interaction.customId.startsWith('shop_lb_edit_modal_')) {
+          const boxId = parseInt(interaction.customId.replace('shop_lb_edit_modal_', ''), 10);
+          await handleLootBoxEditDetailsSubmit(interaction, boxId);
+        } else if (interaction.customId.startsWith('shop_lb_add_coins_modal_')) {
+          const boxId = parseInt(interaction.customId.replace('shop_lb_add_coins_modal_', ''), 10);
+          await handleLootBoxAddCoinsSubmit(interaction, boxId);
+        } else if (interaction.customId.startsWith('shop_lb_edit_weight_modal_')) {
+          const parts = interaction.customId.replace('shop_lb_edit_weight_modal_', '').split('_');
+          const rewardId = parseInt(parts[0], 10);
+          const boxId = parseInt(parts[1], 10);
+          await handleLootBoxEditWeightSubmit(interaction, rewardId, boxId);
         } else if (
           interaction.customId.startsWith('shop_post_image_modal') ||
           interaction.customId.startsWith('shop_post_desc_modal') ||
@@ -418,6 +454,52 @@ export function setupComponentHandlers(client) {
       // ADMIN SHOP SETUP - ADD FLOW
       else if (customId.startsWith('shop_add_type_')) {
         await handleAddTypeSelect(interaction);
+      } else if (customId === 'shop_edit_lootbox') {
+        await handleEditLootBoxStart(interaction);
+      } else if (customId === 'shop_delete_lootbox') {
+        await handleDeleteLootBoxStart(interaction);
+      } else if (customId === 'shop_lb_rename_cat') {
+        await handleLootBoxRenameCatStart(interaction);
+      } else if (customId.startsWith('shop_lb_edit_details_')) {
+        const boxId = parseInt(customId.replace('shop_lb_edit_details_', ''), 10);
+        await handleLootBoxEditDetailsStart(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_manage_pool_')) {
+        const boxId = parseInt(customId.replace('shop_lb_manage_pool_', ''), 10);
+        await showLootPoolManager(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_back_to_box_')) {
+        const boxId = parseInt(customId.replace('shop_lb_back_to_box_', ''), 10);
+        await showLootBoxEditorPanel(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_delete_start_')) {
+        const boxId = parseInt(customId.replace('shop_lb_delete_start_', ''), 10);
+        await showLootBoxDeleteConfirm(interaction, boxId);
+      } else if (customId.startsWith('shop_delete_lootbox_confirm_')) {
+        const boxId = parseInt(customId.replace('shop_delete_lootbox_confirm_', ''), 10);
+        await handleLootBoxDeleteConfirm(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_add_coins_btn_')) {
+        const boxId = parseInt(customId.replace('shop_lb_add_coins_btn_', ''), 10);
+        await handleLootBoxAddCoinsModal(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_add_item_btn_')) {
+        const boxId = parseInt(customId.replace('shop_lb_add_item_btn_', ''), 10);
+        await handleLootBoxAddItemMenu(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_add_item_select_')) {
+        const boxId = parseInt(customId.replace('shop_lb_add_item_select_', ''), 10);
+        await handleLootBoxAddItemSelect(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_manage_weights_')) {
+        const boxId = parseInt(customId.replace('shop_lb_manage_weights_', ''), 10);
+        await handleLootBoxManageWeightsMenu(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_reward_action_select_')) {
+        const boxId = parseInt(customId.replace('shop_lb_reward_action_select_', ''), 10);
+        await handleLootBoxRewardActionSelect(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_edit_weight_btn_')) {
+        const parts = customId.replace('shop_lb_edit_weight_btn_', '').split('_');
+        const rewardId = parseInt(parts[0], 10);
+        const boxId = parseInt(parts[1], 10);
+        await handleLootBoxEditWeightModal(interaction, rewardId, boxId);
+      } else if (customId.startsWith('shop_lb_delete_reward_')) {
+        const parts = customId.replace('shop_lb_delete_reward_', '').split('_');
+        const rewardId = parseInt(parts[0], 10);
+        const boxId = parseInt(parts[1], 10);
+        await handleLootBoxDeleteReward(interaction, rewardId, boxId);
       } else if (customId.startsWith('shop_cat_add_')) {
         await handleEditCategoryAddItemsStart(interaction);
       } else if (customId.startsWith('shop_cat_remove_')) {
