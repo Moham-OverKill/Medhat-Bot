@@ -4725,12 +4725,12 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
     const minCoinsVal = interaction.fields.getTextInputValue('min_coins');
     const maxCoinsVal = interaction.fields.getTextInputValue('max_coins');
 
-    const chanceCoins = Math.max(0, parseFloat(chanceCoinsVal) || 0);
+    const chanceCoins = Math.max(0, parseFloat(chanceVal) || 0);
     const minCoins = Math.max(0, parseInt(minCoinsVal, 10) || 0);
     const maxCoins = Math.max(minCoins, parseInt(maxCoinsVal, 10) || 0);
 
     await updateLootBoxCoinsConfig(boxId, interaction.guildId, {
-      chanceCoins: parseFloat(chanceVal) || 0,
+      chanceCoins,
       minCoins,
       maxCoins
     });
