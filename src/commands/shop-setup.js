@@ -4574,6 +4574,7 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
     .setLabel('Box Name')
     .setStyle(TextInputStyle.Short)
     .setValue(box.name)
+    .setPlaceholder('e.g. Golden Mystery Chest')
     .setRequired(true)
     .setMaxLength(100);
 
@@ -4582,6 +4583,7 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
     .setLabel('Description')
     .setStyle(TextInputStyle.Paragraph)
     .setValue(box.description || '')
+    .setPlaceholder('Describe what could be inside...')
     .setRequired(false)
     .setMaxLength(1000);
 
@@ -4590,6 +4592,7 @@ export async function handleLootBoxEditDetailsStart(interaction, boxId) {
     .setLabel('Banner Image URL')
     .setStyle(TextInputStyle.Short)
     .setValue(box.image_url || '')
+    .setPlaceholder('https://example.com/chest.png')
     .setRequired(false);
 
   modal.addComponents(
@@ -5024,6 +5027,7 @@ export async function handleLootBoxEditWeightModal(interaction, rewardId, boxId)
     .setLabel('New Drop Weight')
     .setStyle(TextInputStyle.Short)
     .setValue(reward ? reward.weight.toString() : '10')
+    .setPlaceholder('e.g. 50')
     .setRequired(true);
 
   modal.addComponents(new ActionRowBuilder().addComponents(weightInput));
