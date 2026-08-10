@@ -4642,12 +4642,27 @@ export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
     const epicVal = interaction.fields.getTextInputValue('epic');
     const legendaryVal = interaction.fields.getTextInputValue('legendary');
 
+    const chanceCommon = Math.max(0, parseFloat(commonVal) || 0);
+    const chanceUncommon = Math.max(0, parseFloat(uncommonVal) || 0);
+    const chanceRare = Math.max(0, parseFloat(rareVal) || 0);
+    const chanceEpic = Math.max(0, parseFloat(epicVal) || 0);
+    const chanceLegendary = Math.max(0, parseFloat(legendaryVal) || 0);
+
+    const total = parseFloat((chanceCommon + chanceUncommon + chanceRare + chanceEpic + chanceLegendary).toFixed(2));
+
+    if (total !== 100) {
+      return interaction.followUp({
+        content: `❌ **Invalid Rarity Percentages**: Total must add up to exactly **100%**.\nYour current sum is **${total}%** (Common: ${chanceCommon}%, Uncommon: ${chanceUncommon}%, Rare: ${chanceRare}%, Epic: ${chanceEpic}%, Legendary: ${chanceLegendary}%).\nChanges were not saved.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
     await updateLootBoxRarityRates(boxId, interaction.guildId, {
-      chanceCommon: parseFloat(commonVal) || 0,
-      chanceUncommon: parseFloat(uncommonVal) || 0,
-      chanceRare: parseFloat(rareVal) || 0,
-      chanceEpic: parseFloat(epicVal) || 0,
-      chanceLegendary: parseFloat(legendaryVal) || 0
+      chanceCommon,
+      chanceUncommon,
+      chanceRare,
+      chanceEpic,
+      chanceLegendary
     });
 
     await showLootBoxEditorPanel(interaction, boxId, '✅ Updated rarity drop rates successfully!');

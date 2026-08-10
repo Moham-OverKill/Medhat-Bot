@@ -129,7 +129,7 @@ export async function createLootBox(guildId, { name, imageUrl = null }) {
          chance_common, chance_uncommon, chance_rare, chance_epic, chance_legendary,
          chance_coins, min_coins, max_coins, min_prizes, max_prizes
        )
-       VALUES ($1, $2, NULL, $3, 70, 20, 5, 0, 0, 25, 100, 500, 1, 1)
+       VALUES ($1, $2, NULL, $3, 70, 20, 10, 0, 0, 25, 100, 500, 1, 1)
        RETURNING *`,
       [guildId, cleanName, cleanImage]
     );
