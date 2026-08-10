@@ -36,6 +36,21 @@ import {
   getItemUsageCount,
   validateRoleUniqueness
 } from '../economy/shop.js';
+import {
+  getLootBoxes,
+  getLootBox,
+  createLootBox,
+  updateLootBox,
+  deleteLootBox,
+  addLootBoxReward,
+  removeLootBoxReward,
+  updateLootBoxRewardWeight,
+  getLootBoxCategoryName,
+  RARITY_BASE_WEIGHTS
+} from '../economy/lootbox.js';
+import { setGuildConfig, getGuildConfig } from '../storage/config.js';
+import { buildPaginatedSelectMenu } from '../utils/paginator.js';
+import { RARITY_DISPLAY, RARITY_EMOJIS } from '../shared.js';
 
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
 const pendingPosts = new Map();
@@ -100,19 +115,22 @@ export async function handleShopSetup(interaction) {
       [guildId]
     );
 
-    // Get Items and Packs counts
+    // Get Items, Packs, and Loot Boxes counts
     const itemsResult = await query(
       `SELECT 
         COUNT(*) FILTER (WHERE item_type = 'pack') as pack_count,
-        COUNT(*) FILTER (WHERE item_type != 'pack' OR item_type IS NULL) as item_count
+        COUNT(*) FILTER (WHERE item_type = 'loot_box') as lootbox_count,
+        COUNT(*) FILTER (WHERE item_type != 'pack' AND item_type != 'loot_box' OR item_type IS NULL) as item_count
        FROM shop_items 
        WHERE guild_id = $1 AND is_active = true`,
       [guildId]
     );
 
+    const lootBoxCatName = await getLootBoxCategoryName(guildId);
     const categoriesCount = parseInt(categoriesResult.rows[0].count);
     const packCount = parseInt(itemsResult.rows[0].pack_count || 0);
     const itemsCount = parseInt(itemsResult.rows[0].item_count || 0);
+    const lootBoxesCount = parseInt(itemsResult.rows[0].lootbox_count || 0);
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
@@ -121,9 +139,9 @@ export async function handleShopSetup(interaction) {
       .addFields(
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
         { name: '📦 Packs', value: `${packCount}`, inline: true },
-        { name: '🎭 Items', value: `${itemsCount}`, inline: true }
+        { name: '🎭 Items', value: `${itemsCount}`, inline: true },
+        { name: `🎁 ${lootBoxCatName}`, value: `${lootBoxesCount}`, inline: true }
       );
-    // Removed Footer and Timestamp as requested
 
     const row1 = new ActionRowBuilder()
       .addComponents(
@@ -170,6 +188,7 @@ export async function handleShopSetup(interaction) {
 
 export async function handleShopAdminAdd(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
@@ -192,6 +211,11 @@ export async function handleShopAdminAdd(interaction) {
         .setCustomId('shop_add_type_item')
         .setLabel('Item')
         .setEmoji('🎭')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('shop_add_type_lootbox')
+        .setLabel(lootBoxCatName.slice(0, 50))
+        .setEmoji('🎁')
         .setStyle(ButtonStyle.Success)
     );
 
@@ -200,6 +224,11 @@ export async function handleShopAdminAdd(interaction) {
       .setCustomId('shop_admin_home')
       .setLabel('Back')
       .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('shop_lb_rename_cat')
+      .setLabel('Rename Category')
+      .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -208,6 +237,7 @@ export async function handleShopAdminAdd(interaction) {
 
 export async function handleShopAdminEdit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#3498DB')
@@ -230,6 +260,11 @@ export async function handleShopAdminEdit(interaction) {
         .setCustomId('shop_edit_item')
         .setLabel('Item')
         .setEmoji('🎭')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('shop_edit_lootbox')
+        .setLabel(lootBoxCatName.slice(0, 50))
+        .setEmoji('🎁')
         .setStyle(ButtonStyle.Primary)
     );
 
@@ -246,6 +281,7 @@ export async function handleShopAdminEdit(interaction) {
 
 export async function handleShopAdminDelete(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
 
   const embed = new EmbedBuilder()
     .setColor('#E74C3C')
@@ -268,6 +304,11 @@ export async function handleShopAdminDelete(interaction) {
         .setCustomId('shop_delete_item')
         .setLabel('Item')
         .setEmoji('🎭')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('shop_delete_lootbox')
+        .setLabel(lootBoxCatName.slice(0, 50))
+        .setEmoji('🎁')
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -283,10 +324,15 @@ export async function handleShopAdminDelete(interaction) {
 }
 
 export async function handleAddTypeSelect(interaction) {
-  const type = interaction.customId.split('_').pop(); // item, pack, cat
+  const type = interaction.customId.split('_').pop(); // item, pack, cat, lootbox
 
   if (type === 'cat') {
     await handleCreateCategory(interaction);
+    return;
+  }
+
+  if (type === 'lootbox') {
+    await handleLootBoxCreateModalStart(interaction);
     return;
   }
 
@@ -1045,20 +1091,23 @@ export async function handleShopPostStart(interaction) {
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
   const itemsAll = await getShopItems(guildId, null, 'name', false); // Post flow: Active items only
+  const lootBoxCatName = await getLootBoxCategoryName(guildId);
   
   let itemOptions = [];
   let placeholder = '📦 Select Item/Pack (Required)';
 
   if (!state.isEditing) {
     if (state.postStep === 0) {
-      const hasCategorized = itemsAll.some(i => i.category_id && !i.is_pack && i.item_type !== 'pack');
-      const hasUncategorized = itemsAll.some(i => !i.category_id && !i.is_pack && i.item_type !== 'pack');
+      const hasCategorized = itemsAll.some(i => i.category_id && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+      const hasUncategorized = itemsAll.some(i => !i.category_id && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
       const hasPacks = itemsAll.some(i => i.is_pack || i.item_type === 'pack');
+      const hasLootBoxes = itemsAll.some(i => i.item_type === 'loot_box');
 
       if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
       if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
       if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
-      placeholder = '📦 Select Item/Pack (Required)';
+      if (hasLootBoxes) itemOptions.push({ label: `🎁 ${lootBoxCatName.slice(0, 50)}`, value: 'folder_loot_boxes' });
+      placeholder = '📦 Select Item/Pack/Box (Required)';
       
       // If an item is already selected, show it as a quick-pick at the top
       if (selectedItem) {
@@ -1071,7 +1120,7 @@ export async function handleShopPostStart(interaction) {
     } 
     else if (state.postStep === 1) {
       // Category Folder List - Hide Empty Folders
-      const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.category_id).map(i => i.category_id));
+      const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box' && i.category_id).map(i => i.category_id));
       const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
       itemOptions = activeCategories.map(c => ({
@@ -1088,16 +1137,20 @@ export async function handleShopPostStart(interaction) {
       let groupName = 'Items';
 
       if (state.postFilter === 'standalone') {
-        filtered = itemsAll.filter(i => !i.category_id && !i.is_pack);
+        filtered = itemsAll.filter(i => !i.category_id && !i.is_pack && i.item_type !== 'loot_box');
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
       } else if (state.postFilter === 'packs') {
-        filtered = itemsAll.filter(i => i.is_pack);
+        filtered = itemsAll.filter(i => i.is_pack || i.item_type === 'pack');
         groupName = 'Packs';
         groupPrefix = '📦';
+      } else if (state.postFilter === 'loot_boxes') {
+        filtered = itemsAll.filter(i => i.item_type === 'loot_box');
+        groupName = lootBoxCatName;
+        groupPrefix = '🎁';
       } else if (state.postFilter?.startsWith('cat_')) {
         const catId = parseInt(state.postFilter.split('_').pop());
-        filtered = itemsAll.filter(i => i.category_id === catId);
+        filtered = itemsAll.filter(i => i.category_id === catId && !i.is_pack && i.item_type !== 'loot_box');
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
         groupPrefix = '🏷️';
       }
@@ -1136,12 +1189,13 @@ export async function handleShopPostStart(interaction) {
     .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement) : null;
   if (!state.isEditing && state.channelId) channelSelect.setDefaultChannels([state.channelId]);
 
-  // Row 3: User Select (Seller - Optional, disabled for packs)
+  // Row 3: User Select (Seller - Optional, disabled for packs and loot boxes)
+  const isServerManaged = isPack || (selectedItem && selectedItem.item_type === 'loot_box');
   const userSelect = new UserSelectMenuBuilder()
     .setCustomId('shop_post_seller_select')
-    .setPlaceholder(isPack ? '👤 Seller disabled for Packs' : '👤 Select Seller (Optional)')
-    .setDisabled(isPack === true);
-  if (state.sellerId && !isPack) userSelect.setDefaultUsers([state.sellerId]);
+    .setPlaceholder(isServerManaged ? '👤 Seller disabled for this type' : '👤 Select Seller (Optional)')
+    .setDisabled(isServerManaged === true);
+  if (state.sellerId && !isServerManaged) userSelect.setDefaultUsers([state.sellerId]);
 
   const isItemSelected = !!state.itemId;
   const isModified = state.itemId !== null || 
@@ -1172,7 +1226,7 @@ export async function handleShopPostStart(interaction) {
       .setLabel('Set Payout')
       .setEmoji('💰')
       .setStyle(state.payout ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!canSetPayout || !isItemSelected),
+      .setDisabled(!canSetPayout || !isItemSelected || isServerManaged),
     new ButtonBuilder()
       .setCustomId('shop_post_price_btn')
       .setLabel('Set Price')
@@ -1272,6 +1326,9 @@ export async function handleShopPostItemSelect(interaction) {
   } else if (itemId === 'folder_packs') {
     state.postStep = 2;
     state.postFilter = 'packs';
+  } else if (itemId === 'folder_loot_boxes') {
+    state.postStep = 2;
+    state.postFilter = 'loot_boxes';
   } else if (itemId.startsWith('filter_cat_')) {
     state.postStep = 2;
     state.postFilter = itemId.replace('filter_', '');
@@ -1288,8 +1345,8 @@ export async function handleShopPostItemSelect(interaction) {
     state.stock = null;
     state.stockConfigured = false;
 
-    // Check if selected item is a pack - if so, reset seller/payout (packs are server-only)
-    if (selectedItem && selectedItem.item_type === 'pack') {
+    // Check if selected item is a pack or loot box - if so, reset seller/payout (server-only)
+    if (selectedItem && (selectedItem.item_type === 'pack' || selectedItem.item_type === 'loot_box')) {
       state.sellerId = null;
       state.payout = null;
     } else if (selectedItem && state.sellerId) {
@@ -1605,6 +1662,17 @@ export async function handleShopPostPublish(interaction) {
 
     if (!item) {
       return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Loot Box Pool Validation
+    if (item.item_type === 'loot_box' && item.loot_box_id) {
+      const box = await getLootBox(item.loot_box_id, interaction.guildId);
+      if (!box || !box.rewards || box.rewards.length === 0 || box.totalWeight <= 0) {
+        return interaction.followUp({
+          content: '❌ This loot box currently has no active rewards in its loot pool. Please add rewards in the Loot Box Manager before publishing.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
     }
 
     // Price is now always provided via overridePrice (required before publishing)
@@ -1931,6 +1999,17 @@ export async function handleDeletePackStart(interaction) {
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete pack start');
+  }
+}
+
+export async function handleDeleteLootBoxStart(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    const context = { action: 'delete_lootbox', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop delete lootbox start');
   }
 }
 
@@ -2579,6 +2658,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     // Map contexts back to text/routes.
     const isEdit = action.startsWith('edit');
     const isItem = action.endsWith('item');
+    const isLootBox = action.endsWith('lootbox');
     const backRoute = isEdit ? 'shop_admin_edit' : 'shop_admin_delete';
     
     const rowBack = new ActionRowBuilder().addComponents(
@@ -2587,7 +2667,10 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
     // Dynamic Title
     let titleText = '';
-    if (isItem) {
+    if (isLootBox) {
+       const catName = await getLootBoxCategoryName(interaction.guildId);
+       titleText = `Select ${catName.toLowerCase()} to ${isEdit ? 'edit' : 'delete'}`;
+    } else if (isItem) {
        titleText = folder === 'browse_categories' ? 'Select a category to browse' : `Select an item to ${isEdit ? 'edit' : 'delete'}`;
     } else {
        titleText = `Select a pack to ${isEdit ? 'edit' : 'delete'}`;
@@ -2598,10 +2681,42 @@ export async function renderAdminBrowser(interaction, contextMap) {
       .setColor(isEdit ? '#3498DB' : '#E74C3C')
       .setTitle(titleText);
 
+    // LOOT BOXES logic
+    if (isLootBox) {
+      const lootBoxes = await getLootBoxes(interaction.guildId);
+      const catName = await getLootBoxCategoryName(interaction.guildId);
+
+      if (lootBoxes.length === 0) {
+        if (contextMap.action.startsWith('delete')) {
+          await handleShopAdminDelete(interaction);
+        } else {
+          await handleShopAdminEdit(interaction);
+        }
+        return interaction.followUp({ content: `❌ No ${catName.toLowerCase()} found.`, flags: MessageFlags.Ephemeral });
+      }
+
+      const lbOptions = lootBoxes.slice(0, 25).map(b => ({
+        label: `🎁 ${(b.name || `Unnamed Box #${b.id}`).slice(0, 80)}`,
+        description: `${b.item_count} items | Weight: ${b.total_weight}`,
+        value: `lb_${b.id}`
+      }));
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('shop_admin_browser_select')
+        .setPlaceholder(`Select ${catName}`)
+        .addOptions(lbOptions);
+
+      return interaction.editReply({
+        content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        components: [new ActionRowBuilder().addComponents(select), rowBack],
+        embeds: [embed]
+      });
+    }
+
     // Fetch items mapping to current folder (if item mode) or just list packs (if pack mode)
     if (isItem) {
       const items = await getShopItems(interaction.guildId, null, 'name', true);
-      const singleItems = items.filter(i => !i.is_pack && i.item_type !== 'pack');
+      const singleItems = items.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
 
       // 1. ROOT VIEW - Show Categorized vs Uncategorized (Matches Post flow)
       if (folder === 'root') {
@@ -2636,8 +2751,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(options);
 
-
-
         return interaction.editReply({
           content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
@@ -2665,8 +2778,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
             { label: '⬅️ Back', value: 'action_back_root' },
             ...options
           ]);
-
-
 
         return interaction.editReply({
           content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
@@ -2699,8 +2810,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
           ...itemOptions
         ]);
 
-
-
       return interaction.editReply({
          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
          components: [new ActionRowBuilder().addComponents(select), rowBack],
@@ -2709,7 +2818,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     }
 
     // PACKS logic (no categories for packs currently, so they display flat)
-    if (!isItem) {
+    if (!isItem && !isLootBox) {
         const items = await getShopItems(interaction.guildId, null, 'name', true);
         const packs = items.filter(i => i.is_pack || i.item_type === 'pack');
         
@@ -2731,8 +2840,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setCustomId('shop_admin_browser_select')
           .setPlaceholder('Select')
           .addOptions(packOptions);
-
-
 
         return interaction.editReply({
           content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
@@ -2781,6 +2888,17 @@ export async function handleAdminBrowserSelect(interaction) {
       context.message = null;
       pendingAdminBrowser.set(interaction.user.id, context);
       return renderAdminBrowser(interaction, context);
+    }
+
+    // Handle selecting a loot box
+    if (selection.startsWith('lb_')) {
+      const boxId = parseInt(selection.replace('lb_', ''), 10);
+      const action = context.action || 'edit_lootbox';
+      if (action === 'edit_lootbox') {
+        return await showLootBoxEditorPanel(interaction, boxId);
+      } else if (action === 'delete_lootbox') {
+        return await showLootBoxDeleteConfirm(interaction, boxId);
+      }
     }
 
     // Handle selecting the actual item/pack
@@ -3429,6 +3547,17 @@ export async function handleEditPackStart(interaction) {
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit pack start');
+  }
+}
+
+export async function handleEditLootBoxStart(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const context = { action: 'edit_lootbox', folder: 'root', message: null };
+    pendingAdminBrowser.set(interaction.user.id, context);
+    await renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop edit lootbox start');
   }
 }
 
@@ -4210,6 +4339,670 @@ export async function handleShopPostUpdate(interaction) {
     await handleInteractionError(interaction, error, 'shop post update');
   }
 }
+
+// ==========================================
+// --- LOOT BOX MANAGEMENT DASHBOARD ---
+// ==========================================
+
+/**
+ * Open Modal to Create a new Loot Box
+ */
+export async function handleLootBoxCreateModalStart(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('shop_lb_create_modal')
+    .setTitle('Create Loot Box');
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId('name')
+    .setLabel('Box Name')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g. Golden Mystery Chest')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  const descInput = new TextInputBuilder()
+    .setCustomId('description')
+    .setLabel('Description')
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder('Describe what could be inside...')
+    .setRequired(false)
+    .setMaxLength(1000);
+
+  const imgInput = new TextInputBuilder()
+    .setCustomId('image_url')
+    .setLabel('Banner Image URL')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('https://example.com/chest.png')
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(nameInput),
+    new ActionRowBuilder().addComponents(descInput),
+    new ActionRowBuilder().addComponents(imgInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Loot Box Creation Modal Submit
+ */
+export async function handleLootBoxCreateModalSubmit(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const name = interaction.fields.getTextInputValue('name');
+    const description = interaction.fields.getTextInputValue('description') || null;
+    const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
+
+    const newBox = await createLootBox(interaction.guildId, { name, description, imageUrl });
+    await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created loot box **${newBox.name}**! Now configure its loot pool below.`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box create submit');
+  }
+}
+
+/**
+ * Open Modal to Rename the Global Loot Box Category
+ */
+export async function handleLootBoxRenameCatStart(interaction) {
+  const currentCat = await getLootBoxCategoryName(interaction.guildId);
+  const modal = new ModalBuilder()
+    .setCustomId('shop_lb_rename_cat_modal')
+    .setTitle('Rename Loot Box Category');
+
+  const catInput = new TextInputBuilder()
+    .setCustomId('cat_name')
+    .setLabel('Category Display Name')
+    .setStyle(TextInputStyle.Short)
+    .setValue(currentCat)
+    .setPlaceholder('e.g. Chests, Gifts, Loot Boxes')
+    .setRequired(true)
+    .setMaxLength(32);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(catInput));
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Rename Category Modal Submit
+ */
+export async function handleLootBoxRenameCatSubmit(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
+    await setGuildConfig(interaction.guildId, { loot_box_category_name: newName });
+    await handleShopSetup(interaction);
+    await interaction.followUp({ content: `✅ Loot box category renamed to **${newName}**!`, flags: MessageFlags.Ephemeral }).catch(() => {});
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'rename lootbox category');
+  }
+}
+
+/**
+ * Main Loot Box Editor Panel (View Details, Edit, Manage Pool, Delete)
+ */
+export async function showLootBoxEditorPanel(interaction, boxId, statusMessage = null) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) {
+      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#9B59B6')
+      .setTitle(`🎁 ${box.name}`)
+      .setDescription(box.description || '*No description set.*')
+      .addFields(
+        { name: '📦 Pool Rewards', value: `${box.rewards.length} rewards`, inline: true },
+        { name: '⚖️ Total Weight', value: `${box.totalWeight}`, inline: true },
+        { name: '🖼️ Image', value: box.image_url ? 'Configured' : 'None', inline: true }
+      );
+
+    if (box.image_url && box.image_url.startsWith('http')) {
+      embed.setImage(box.image_url);
+    }
+
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_edit_details_${boxId}`)
+        .setLabel('Edit Details')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_manage_pool_${boxId}`)
+        .setLabel('Manage Loot Pool')
+        .setEmoji('🎲')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_delete_start_${boxId}`)
+        .setLabel('Delete Box')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_admin_edit')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: statusMessage || null,
+      embeds: [embed],
+      components: [row1, row2]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box editor panel');
+  }
+}
+
+/**
+ * Open Modal to Edit Loot Box Details (Name, Desc, Image)
+ */
+export async function handleLootBoxEditDetailsStart(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_edit_modal_${boxId}`)
+    .setTitle(`Edit: ${box.name.slice(0, 30)}`);
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId('name')
+    .setLabel('Box Name')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.name)
+    .setRequired(true)
+    .setMaxLength(100);
+
+  const descInput = new TextInputBuilder()
+    .setCustomId('description')
+    .setLabel('Description')
+    .setStyle(TextInputStyle.Paragraph)
+    .setValue(box.description || '')
+    .setRequired(false)
+    .setMaxLength(1000);
+
+  const imgInput = new TextInputBuilder()
+    .setCustomId('image_url')
+    .setLabel('Banner Image URL')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.image_url || '')
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(nameInput),
+    new ActionRowBuilder().addComponents(descInput),
+    new ActionRowBuilder().addComponents(imgInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Edit Loot Box Details Modal Submit
+ */
+export async function handleLootBoxEditDetailsSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const name = interaction.fields.getTextInputValue('name');
+    const description = interaction.fields.getTextInputValue('description') || null;
+    const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
+
+    await updateLootBox(boxId, interaction.guildId, { name, description, imageUrl });
+    await showLootBoxEditorPanel(interaction, boxId, '✅ Loot box details updated successfully!');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box edit details submit');
+  }
+}
+
+/**
+ * Show Confirmation to Delete Loot Box
+ */
+export async function showLootBoxDeleteConfirm(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) {
+      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#E74C3C')
+      .setTitle(`🗑️ Delete Loot Box: ${box.name}`)
+      .setDescription(
+        `⚠️ **Warning**: Deleting this loot box will:\n` +
+        `• Permanently delete all **${box.rewards.length}** rewards in its loot pool\n` +
+        `• Remove this loot box from the shop\n` +
+        `• **Instantly purge all unopened copies** from all users' inventories\n\n` +
+        `Are you sure you want to proceed?`
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_delete_lootbox_confirm_${boxId}`)
+        .setLabel('Confirm Delete')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_back_to_box_${boxId}`)
+        .setLabel('Cancel')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box delete confirm view');
+  }
+}
+
+/**
+ * Execute Loot Box Deletion
+ */
+export async function handleLootBoxDeleteConfirm(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    await deleteLootBox(boxId, interaction.guildId);
+    await handleShopAdminDelete(interaction);
+    await interaction.followUp({ content: '✅ Loot box and all unopened inventory copies successfully deleted.', flags: MessageFlags.Ephemeral }).catch(() => {});
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box delete execute');
+  }
+}
+
+/**
+ * Loot Pool Manager Panel (Lists rewards with percentage chance, Add Coin, Add Item, Edit/Remove)
+ */
+export async function showLootPoolManager(interaction, boxId, statusMessage = null) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) {
+      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
+    }
+
+    const totalWeight = box.totalWeight || 0;
+    let poolList = '';
+
+    if (box.rewards.length === 0) {
+      poolList = '*⚠️ No rewards configured yet. Add coins or items using the buttons below.*';
+    } else {
+      poolList = box.rewards.map(r => {
+        const weight = parseInt(r.weight) || 0;
+        const pct = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
+        if (r.reward_type === 'coins') {
+          return `• 💰 **${parseInt(r.coin_amount).toLocaleString()} Coins** — Weight: \`${weight}\` (${pct}%)`;
+        } else {
+          const rarityEmoji = RARITY_EMOJIS[r.item_rarity] || '⚪';
+          const rarityTag = RARITY_DISPLAY[r.item_rarity] || 'Common';
+          const lockedWarning = r.is_tradable === false ? ' *(Locked — will be skipped during rolls)*' : '';
+          return `• ${rarityEmoji} **${r.item_name}** [${rarityTag}] — Weight: \`${weight}\` (${pct}%)${lockedWarning}`;
+        }
+      }).join('\n');
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#2ECC71')
+      .setTitle(`🎲 Loot Pool: ${box.name}`)
+      .setDescription(
+        `Configure the rewards and drop chances when opening this box.\n` +
+        `Total Weight: **${totalWeight}**\n\n` +
+        poolList
+      );
+
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_add_coins_btn_${boxId}`)
+        .setLabel('Add Coins')
+        .setEmoji('💰')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_add_item_btn_${boxId}`)
+        .setLabel('Add Item')
+        .setEmoji('🎭')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_manage_weights_${boxId}`)
+        .setLabel('Edit / Remove')
+        .setEmoji('⚙️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(box.rewards.length === 0)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_back_to_box_${boxId}`)
+        .setLabel('Back to Box')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: statusMessage || null,
+      embeds: [embed],
+      components: [row1, row2]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'show loot pool manager');
+  }
+}
+
+/**
+ * Open Modal to Add Coins to Pool
+ */
+export async function handleLootBoxAddCoinsModal(interaction, boxId) {
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_add_coins_modal_${boxId}`)
+    .setTitle('Add Coin Reward');
+
+  const coinInput = new TextInputBuilder()
+    .setCustomId('coin_amount')
+    .setLabel('Coin Amount')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g. 500')
+    .setRequired(true);
+
+  const weightInput = new TextInputBuilder()
+    .setCustomId('weight')
+    .setLabel('Drop Weight (Chance)')
+    .setStyle(TextInputStyle.Short)
+    .setValue('50')
+    .setPlaceholder('Higher weight = higher chance')
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(coinInput),
+    new ActionRowBuilder().addComponents(weightInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Add Coins Submit
+ */
+export async function handleLootBoxAddCoinsSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const coinVal = interaction.fields.getTextInputValue('coin_amount');
+    const weightVal = interaction.fields.getTextInputValue('weight');
+
+    if (!/^\d+$/.test(coinVal) || parseInt(coinVal, 10) <= 0) {
+      return interaction.followUp({ content: '❌ Invalid coin amount. Must be a positive integer.', flags: MessageFlags.Ephemeral });
+    }
+    if (!/^\d+$/.test(weightVal) || parseInt(weightVal, 10) <= 0) {
+      return interaction.followUp({ content: '❌ Invalid weight. Must be a positive integer.', flags: MessageFlags.Ephemeral });
+    }
+
+    const coinAmount = parseInt(coinVal, 10);
+    const weight = parseInt(weightVal, 10);
+
+    await addLootBoxReward(boxId, interaction.guildId, {
+      rewardType: 'coins',
+      coinAmount,
+      weight
+    });
+
+    await showLootPoolManager(interaction, boxId, `✅ Added **${coinAmount.toLocaleString()} Coins** (Weight: ${weight}) to loot pool!`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'add coins submit');
+  }
+}
+
+/**
+ * Render Item Selector to Add Item to Loot Pool (Filtered to Tradable Items)
+ */
+export async function handleLootBoxAddItemMenu(interaction, boxId, page = 1) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const allItems = await getShopItems(interaction.guildId, null, 'name', true);
+    // Strict requirement: Only tradable single items can be placed in loot boxes (no locked items, no packs, no boxes)
+    const eligibleItems = allItems.filter(i => i.is_tradable === true && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+
+    if (eligibleItems.length === 0) {
+      return interaction.followUp({
+        content: '❌ No eligible items found. Only **unlocked (tradable)** items can be placed inside loot boxes.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const options = eligibleItems.map(item => {
+      const rarityEmoji = RARITY_EMOJIS[item.rarity] || '⚪';
+      const rarityTag = RARITY_DISPLAY[item.rarity] || 'Common';
+      const defaultWeight = RARITY_BASE_WEIGHTS[item.rarity] || 10;
+      return {
+        label: `${item.name.slice(0, 60)} [${rarityTag}]`,
+        description: `Base Weight: ${defaultWeight} | Role: ${item.role_id ? 'Yes' : 'No'}`,
+        emoji: rarityEmoji,
+        value: item.id.toString()
+      };
+    });
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`shop_lb_add_item_select_${boxId}`)
+      .setPlaceholder('Select an unlocked item to add to loot pool...')
+      .addOptions(options.slice(0, 25));
+
+    const rowSelect = new ActionRowBuilder().addComponents(select);
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_manage_pool_${boxId}`)
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor('#2ECC71')
+      .setTitle('➕ Add Item to Loot Pool')
+      .setDescription('Select an item below. The drop weight will automatically populate based on the item\'s rarity tier:');
+
+    await interaction.editReply({
+      content: null,
+      embeds: [embed],
+      components: [rowSelect, rowBack]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box add item menu');
+  }
+}
+
+/**
+ * Handle Item Selection for Loot Pool (Auto-populates weight from item.rarity)
+ */
+export async function handleLootBoxAddItemSelect(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const itemId = parseInt(interaction.values[0], 10);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) {
+      return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    if (item.is_tradable === false) {
+      return interaction.followUp({ content: '⛔ Locked items cannot be added to a loot box pool.', flags: MessageFlags.Ephemeral });
+    }
+
+    const defaultWeight = RARITY_BASE_WEIGHTS[item.rarity] || 10;
+
+    await addLootBoxReward(boxId, interaction.guildId, {
+      rewardType: 'item',
+      shopItemId: item.id,
+      weight: defaultWeight
+    });
+
+    const rarityEmoji = RARITY_EMOJIS[item.rarity] || '⚪';
+    const rarityTag = RARITY_DISPLAY[item.rarity] || 'Common';
+
+    await showLootPoolManager(interaction, boxId, `✅ Added ${rarityEmoji} **${item.name}** [${rarityTag}] with auto-weight \`${defaultWeight}\` to pool!`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box add item select');
+  }
+}
+
+/**
+ * Show Select Menu to Pick a Reward to Edit Weight or Remove
+ */
+export async function handleLootBoxManageWeightsMenu(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box || box.rewards.length === 0) {
+      return showLootPoolManager(interaction, boxId, '❌ No rewards in pool to edit.');
+    }
+
+    const options = box.rewards.slice(0, 25).map(r => {
+      const isCoins = r.reward_type === 'coins';
+      const label = isCoins ? `${parseInt(r.coin_amount).toLocaleString()} Coins` : (r.item_name || `Item #${r.shop_item_id}`);
+      return {
+        label: label.slice(0, 80),
+        description: `Weight: ${r.weight} | Type: ${r.reward_type.toUpperCase()}`,
+        value: r.id.toString()
+      };
+    });
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`shop_lb_reward_action_select_${boxId}`)
+      .setPlaceholder('Select a reward to edit weight or remove...')
+      .addOptions(options);
+
+    const rowSelect = new ActionRowBuilder().addComponents(select);
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_manage_pool_${boxId}`)
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle('⚙️ Edit or Remove Reward')
+      .setDescription('Select a reward from the menu below:');
+
+    await interaction.editReply({
+      content: null,
+      embeds: [embed],
+      components: [rowSelect, rowBack]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'manage weights menu');
+  }
+}
+
+/**
+ * Show Action Panel for a Selected Reward (Edit Weight / Remove)
+ */
+export async function handleLootBoxRewardActionSelect(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const rewardId = parseInt(interaction.values[0], 10);
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) return;
+
+    const reward = box.rewards.find(r => r.id === rewardId);
+    if (!reward) {
+      return showLootPoolManager(interaction, boxId, '❌ Reward not found in pool.');
+    }
+
+    const isCoins = reward.reward_type === 'coins';
+    const rewardTitle = isCoins ? `💰 ${parseInt(reward.coin_amount).toLocaleString()} Coins` : `🎭 ${reward.item_name}`;
+
+    const embed = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle(`Reward: ${rewardTitle}`)
+      .setDescription(
+        `Current Drop Weight: **${reward.weight}**\n` +
+        `Total Box Weight: **${box.totalWeight}**\n` +
+        `Drop Chance: **${box.totalWeight > 0 ? ((reward.weight / box.totalWeight) * 100).toFixed(1) : 0}%**`
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_edit_weight_btn_${rewardId}_${boxId}`)
+        .setLabel('Edit Weight')
+        .setEmoji('⚖️')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_delete_reward_${rewardId}_${boxId}`)
+        .setLabel('Remove Reward')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_manage_pool_${boxId}`)
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: null,
+      embeds: [embed],
+      components: [row]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'reward action select');
+  }
+}
+
+/**
+ * Open Modal to Edit Reward Weight
+ */
+export async function handleLootBoxEditWeightModal(interaction, rewardId, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  const reward = box?.rewards?.find(r => r.id === parseInt(rewardId, 10));
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_edit_weight_modal_${rewardId}_${boxId}`)
+    .setTitle('Edit Reward Weight');
+
+  const weightInput = new TextInputBuilder()
+    .setCustomId('weight')
+    .setLabel('New Drop Weight')
+    .setStyle(TextInputStyle.Short)
+    .setValue(reward ? reward.weight.toString() : '10')
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(weightInput));
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle Edit Reward Weight Submit
+ */
+export async function handleLootBoxEditWeightSubmit(interaction, rewardId, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const weightVal = interaction.fields.getTextInputValue('weight');
+    if (!/^\d+$/.test(weightVal) || parseInt(weightVal, 10) <= 0) {
+      return interaction.followUp({ content: '❌ Invalid weight. Must be a positive whole number.', flags: MessageFlags.Ephemeral });
+    }
+
+    const weight = parseInt(weightVal, 10);
+    await updateLootBoxRewardWeight(rewardId, boxId, weight);
+    await showLootPoolManager(interaction, boxId, `✅ Updated reward drop weight to \`${weight}\`!`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'edit weight submit');
+  }
+}
+
+/**
+ * Delete Reward from Pool
+ */
+export async function handleLootBoxDeleteReward(interaction, rewardId, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    await removeLootBoxReward(rewardId, boxId, interaction.guildId);
+    await showLootPoolManager(interaction, boxId, '✅ Removed reward from loot pool!');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'delete reward from pool');
+  }
+}
+
 
 
 

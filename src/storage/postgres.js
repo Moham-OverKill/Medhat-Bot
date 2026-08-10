@@ -725,6 +725,33 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_trades_guild_status ON trades(guild_id, status);
     `);
 
+    // --- LOOT BOX MODULE TABLES ---
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS loot_boxes (
+        id SERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        image_url TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS loot_box_items (
+        id SERIAL PRIMARY KEY,
+        loot_box_id INT REFERENCES loot_boxes(id) ON DELETE CASCADE,
+        reward_type VARCHAR(20) NOT NULL,
+        shop_item_id INT REFERENCES shop_items(id) ON DELETE CASCADE,
+        coin_amount INT DEFAULT 0,
+        weight INT NOT NULL DEFAULT 10
+      );
+    `);
+
+    await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS loot_box_id INTEGER REFERENCES loot_boxes(id) ON DELETE CASCADE`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_boxes_guild ON loot_boxes(guild_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_box_items_box ON loot_box_items(loot_box_id)`);
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
