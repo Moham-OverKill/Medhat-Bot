@@ -27,6 +27,20 @@ export async function getLootBoxCategoryName(guildId) {
 }
 
 /**
+ * Get the custom category emoji for loot boxes (default: '🎁')
+ */
+export async function getLootBoxCategoryEmoji(guildId) {
+  if (!guildId) return '🎁';
+  try {
+    const config = await getGuildConfig(guildId);
+    const customEmoji = config?.loot_box_category_emoji?.trim();
+    return customEmoji && customEmoji.length > 0 ? customEmoji.slice(0, 32) : '🎁';
+  } catch {
+    return '🎁';
+  }
+}
+
+/**
  * Fetch all loot boxes for a guild with item count summary
  */
 export async function getLootBoxes(guildId) {
