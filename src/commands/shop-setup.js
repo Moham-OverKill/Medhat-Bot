@@ -4513,7 +4513,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
 /**
  * Unified Loot Box Configuration Panel (Rarity Rates, Coins Config, Prize Count, Rename, Delete)
  */
-export async function showLootBoxEditorPanel(interaction, boxId, statusMessage = null) {
+export async function showLootBoxEditorPanel(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const box = await getLootBox(boxId, interaction.guildId);
@@ -4523,25 +4523,19 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
+    const description =
+      `Prizes ${box.min_prizes} to ${box.max_prizes} - Coins ${box.min_coins.toLocaleString()} to ${box.max_coins.toLocaleString()}\n\n` +
+      `⚪ **Common**: ${box.chance_common}%\n` +
+      `🟢 **Uncommon**: ${box.chance_uncommon}%\n` +
+      `🔵 **Rare**: ${box.chance_rare}%\n` +
+      `🟣 **Epic**: ${box.chance_epic}%\n` +
+      `🟡 **Legendary**: ${box.chance_legendary}%\n` +
+      `💰 **Coins**: ${box.chance_coins}%`;
+
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
       .setTitle(`${lootBoxEmoji} ${box.name}`)
-      .addFields(
-        { name: '🎁 Prizes Per Open', value: `\`${box.min_prizes}\` to \`${box.max_prizes}\` items/coins`, inline: true },
-        { name: '💰 Coins Reward', value: `\`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\` coins`, inline: true },
-        { name: '🖼️ Image', value: box.image_url ? 'Configured' : 'None', inline: true },
-        {
-          name: '🎲 Drop Rates (% Chance)',
-          value:
-            `⚪ **Common**: \`${box.chance_common}%\` (${box.percentages.common}% drop chance)\n` +
-            `🟢 **Uncommon**: \`${box.chance_uncommon}%\` (${box.percentages.uncommon}% drop chance)\n` +
-            `🔵 **Rare**: \`${box.chance_rare}%\` (${box.percentages.rare}% drop chance)\n` +
-            `🟣 **Epic**: \`${box.chance_epic}%\` (${box.percentages.epic}% drop chance)\n` +
-            `🟡 **Legendary**: \`${box.chance_legendary}%\` (${box.percentages.legendary}% drop chance)\n` +
-            `💰 **Coins**: \`${box.chance_coins}%\` (${box.percentages.coins}% drop chance)`,
-          inline: false
-        }
-      );
+      .setDescription(description);
 
     if (box.image_url && box.image_url.startsWith('http')) {
       embed.setImage(box.image_url);
@@ -4584,7 +4578,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, statusMessage =
     );
 
     await interaction.editReply({
-      content: statusMessage || null,
+      content: null,
       embeds: [embed],
       components: [row1, row2]
     });
@@ -4703,7 +4697,7 @@ export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
       chanceLegendary
     });
 
-    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated rarity drop rates successfully!');
+    await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box rarity rates submit');
   }
@@ -4808,7 +4802,7 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
       maxCoins
     });
 
-    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated coins configuration successfully!');
+    await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box coins config submit');
   }
@@ -4894,7 +4888,7 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
       maxPrizes
     });
 
-    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated prizes count configuration successfully!');
+    await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box prize count submit');
   }
@@ -4964,7 +4958,7 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     }
 
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl });
-    await showLootBoxEditorPanel(interaction, boxId, '✅ Updated box name and image successfully!');
+    await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box rename submit');
   }
