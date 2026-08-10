@@ -1413,15 +1413,36 @@ export async function handleInventoryAction(interaction) {
         return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
       }
 
-      let revealMsg = '';
-      if (result.reward.type === 'coins') {
-        revealMsg = `🎉 You opened **${result.reward.boxName}** and received **${result.reward.amount.toLocaleString()} Coins**!`;
-      } else {
-        const rarityBadge = RARITY_EMOJIS[result.reward.rarity] || '⚪';
-        const rarityTitle = RARITY_DISPLAY[result.reward.rarity] || 'Common';
-        revealMsg = `🎉 You opened **${result.reward.boxName}** and received ${rarityBadge} **${result.reward.itemName}** [${rarityTitle}]!`;
+      const boxName = result.box?.name || 'Loot Box';
+      const prizeLines = [];
+      let totalCoins = 0;
+      const itemCounts = new Map();
+
+      for (const p of result.prizes) {
+        if (p.type === 'coins') {
+          totalCoins += p.amount;
+        } else if (p.type === 'item') {
+          const key = `${p.itemId}_${p.rarity}_${p.itemName}`;
+          if (itemCounts.has(key)) {
+            itemCounts.get(key).count++;
+          } else {
+            itemCounts.set(key, { ...p, count: 1 });
+          }
+        }
       }
 
+      if (totalCoins > 0) {
+        prizeLines.push(`• 💰 **${totalCoins.toLocaleString()} Coins**`);
+      }
+
+      for (const itemEntry of itemCounts.values()) {
+        const rarityBadge = RARITY_EMOJIS[itemEntry.rarity] || '⚪';
+        const rarityTitle = RARITY_DISPLAY[itemEntry.rarity] || 'Common';
+        const qtyBadge = itemEntry.count > 1 ? ` x${itemEntry.count}` : '';
+        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${qtyBadge} [${rarityTitle}]`);
+      }
+
+      const revealMsg = `🎉 You opened **${boxName}** and received:\n` + prizeLines.join('\n');
       await interaction.followUp({ content: revealMsg, flags: MessageFlags.Ephemeral });
 
       // Refresh inventory view
