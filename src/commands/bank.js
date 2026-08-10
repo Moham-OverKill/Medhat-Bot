@@ -40,6 +40,7 @@ import {
 } from '../economy/shop.js';
 import {
   getLootBoxCategoryName,
+  getLootBoxCategoryEmoji,
   getLootBox,
   openLootBox
 } from '../economy/lootbox.js';
@@ -820,9 +821,11 @@ export async function handleInventoryButton(interaction) {
 
     // Loot Boxes category button
     if (lootBoxCount > 0) {
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
       buttonDefs.push({
         id: 'bank_inv_cat_lootboxes',
-        label: lootBoxCatName
+        label: lootBoxCatName,
+        emoji: lootBoxEmoji
       });
     }
 
@@ -852,12 +855,12 @@ export async function handleInventoryButton(interaction) {
       const chunk = pageButtons.slice(i, i + CATS_PER_ROW);
       const row = new ActionRowBuilder();
       chunk.forEach(btn => {
-        row.addComponents(
-          new ButtonBuilder()
-            .setCustomId(btn.id)
-            .setLabel(btn.label)
-            .setStyle(ButtonStyle.Secondary)
-        );
+        const b = new ButtonBuilder()
+          .setCustomId(btn.id)
+          .setLabel(btn.label)
+          .setStyle(ButtonStyle.Secondary);
+        if (btn.emoji) b.setEmoji(btn.emoji);
+        row.addComponents(b);
       });
       rows.push(row);
     }
@@ -948,9 +951,11 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       return handleInventoryButton(interaction);
     }
 
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+
     // Build List with role mentions or loot box tags
     const listLines = isLootBox
-      ? items.map(i => `• 🎁 **${i.name}** \`(x${parseInt(i.quantity) || 1})\``)
+      ? items.map(i => `• ${lootBoxEmoji} **${i.name}** \`(x${parseInt(i.quantity) || 1})\``)
       : items.map(i => formatInventoryItemLine(i));
 
     const embed = new EmbedBuilder()
@@ -974,7 +979,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
             label: `${baseName} (x${itemQty})`,
             value: `${i.id}_${idx}`,
             description: 'Unopened Loot Box',
-            emoji: '🎁'
+            emoji: lootBoxEmoji
           };
         }
 
