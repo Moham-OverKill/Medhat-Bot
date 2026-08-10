@@ -317,17 +317,14 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const lootBoxes = await getLootBoxes(guildId);
 
+    const desc = lootBoxes.length > 0
+      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
+      : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`;
+
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
       .setTitle(`${lootBoxEmoji} ${lootBoxCatName} Management`)
-      .setDescription(
-        `Manage your server's ${lootBoxCatName.toLowerCase()}.\n` +
-        `Users can purchase these from shop channels and open them in their \`/inventory\` for random rewards.\n\n` +
-        `**Configured Boxes (${lootBoxes.length}):**\n` +
-        (lootBoxes.length > 0
-          ? lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
-          : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`)
-      );
+      .setDescription(desc);
 
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
