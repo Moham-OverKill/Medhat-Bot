@@ -58,7 +58,9 @@ const CONFIG_SCHEMA = {
   // Streaks Role Reward
   streak_role_id: { type: 'string', validate: isValidSnowflake, required: false },
   streak_role_enabled: { type: 'boolean', required: false },
-  streak_role_winners: { type: 'number', min: 1, max: 5, required: false }
+  streak_role_winners: { type: 'number', min: 1, max: 5, required: false },
+  // Loot Boxes Module
+  loot_box_category_name: { type: 'string', required: false }
 };
 
 export const configCache = new Map();

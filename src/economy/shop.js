@@ -1522,7 +1522,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     await purgeUserInventory(userId, guildId, member);
 
     const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity, si.loot_box_id
        FROM user_inventory ui
        LEFT JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
