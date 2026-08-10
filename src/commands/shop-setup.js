@@ -174,7 +174,7 @@ export async function handleShopSetup(interaction) {
           .setCustomId('shop_lb_home')
           .setLabel(lootBoxCatName.slice(0, 50))
           .setEmoji(lootBoxEmoji)
-          .setStyle(ButtonStyle.Primary),
+          .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('shop_admin_post')
           .setLabel('Post')
