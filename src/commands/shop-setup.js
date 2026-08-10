@@ -4418,8 +4418,26 @@ export async function handleLootBoxCreateModalStart(interaction) {
 export async function handleLootBoxCreateModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const name = interaction.fields.getTextInputValue('name');
-    const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
+    const name = (interaction.fields.getTextInputValue('name') || '').trim();
+    const rawImage = (interaction.fields.getTextInputValue('image_url') || '').trim();
+
+    if (!name || name.length === 0) {
+      return interaction.followUp({
+        content: '❌ **Invalid Box Name**: Box name cannot be empty.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    let imageUrl = null;
+    if (rawImage && rawImage.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawImage)) {
+        return interaction.followUp({
+          content: '❌ **Invalid Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+      imageUrl = rawImage;
+    }
 
     const newBox = await createLootBox(interaction.guildId, { name, imageUrl });
     await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created loot box **${newBox.name}**! Adjust drop chances below:`);
@@ -4473,6 +4491,13 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
     const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
     let newEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
     if (!newEmoji) newEmoji = '🎁';
+
+    if (!newName || newName.length === 0) {
+      return interaction.followUp({
+        content: '❌ **Invalid Category Name**: Category name cannot be empty.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     await setGuildConfig(interaction.guildId, {
       loot_box_category_name: newName,
@@ -4636,17 +4661,30 @@ export async function handleLootBoxRarityRatesModal(interaction, boxId) {
 export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const commonVal = interaction.fields.getTextInputValue('common');
-    const uncommonVal = interaction.fields.getTextInputValue('uncommon');
-    const rareVal = interaction.fields.getTextInputValue('rare');
-    const epicVal = interaction.fields.getTextInputValue('epic');
-    const legendaryVal = interaction.fields.getTextInputValue('legendary');
+    const commonVal = interaction.fields.getTextInputValue('common').trim();
+    const uncommonVal = interaction.fields.getTextInputValue('uncommon').trim();
+    const rareVal = interaction.fields.getTextInputValue('rare').trim();
+    const epicVal = interaction.fields.getTextInputValue('epic').trim();
+    const legendaryVal = interaction.fields.getTextInputValue('legendary').trim();
 
-    const chanceCommon = Math.max(0, parseFloat(commonVal) || 0);
-    const chanceUncommon = Math.max(0, parseFloat(uncommonVal) || 0);
-    const chanceRare = Math.max(0, parseFloat(rareVal) || 0);
-    const chanceEpic = Math.max(0, parseFloat(epicVal) || 0);
-    const chanceLegendary = Math.max(0, parseFloat(legendaryVal) || 0);
+    if (
+      !/^\d+(\.\d+)?$/.test(commonVal) ||
+      !/^\d+(\.\d+)?$/.test(uncommonVal) ||
+      !/^\d+(\.\d+)?$/.test(rareVal) ||
+      !/^\d+(\.\d+)?$/.test(epicVal) ||
+      !/^\d+(\.\d+)?$/.test(legendaryVal)
+    ) {
+      return interaction.followUp({
+        content: '❌ **Invalid Input**: All rarity chance fields must be valid non-negative numbers.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const chanceCommon = parseFloat(commonVal);
+    const chanceUncommon = parseFloat(uncommonVal);
+    const chanceRare = parseFloat(rareVal);
+    const chanceEpic = parseFloat(epicVal);
+    const chanceLegendary = parseFloat(legendaryVal);
 
     const total = parseFloat((chanceCommon + chanceUncommon + chanceRare + chanceEpic + chanceLegendary).toFixed(2));
 
@@ -4721,13 +4759,48 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const chanceVal = interaction.fields.getTextInputValue('chance_coins');
-    const minCoinsVal = interaction.fields.getTextInputValue('min_coins');
-    const maxCoinsVal = interaction.fields.getTextInputValue('max_coins');
+    const chanceVal = interaction.fields.getTextInputValue('chance_coins').trim();
+    const minCoinsVal = interaction.fields.getTextInputValue('min_coins').trim();
+    const maxCoinsVal = interaction.fields.getTextInputValue('max_coins').trim();
 
-    const chanceCoins = Math.max(0, parseFloat(chanceVal) || 0);
-    const minCoins = Math.max(0, parseInt(minCoinsVal, 10) || 0);
-    const maxCoins = Math.max(minCoins, parseInt(maxCoinsVal, 10) || 0);
+    if (!/^\d+(\.\d+)?$/.test(chanceVal) || !/^\d+$/.test(minCoinsVal) || !/^\d+$/.test(maxCoinsVal)) {
+      return interaction.followUp({
+        content: '❌ **Invalid Input**: Coins chance must be a valid number, and coin amounts must be whole numbers.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const chanceCoins = parseFloat(chanceVal);
+    const minCoins = parseInt(minCoinsVal, 10);
+    const maxCoins = parseInt(maxCoinsVal, 10);
+
+    if (chanceCoins < 0) {
+      return interaction.followUp({
+        content: '❌ **Invalid Coins Chance**: Chance percentage cannot be negative.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (minCoins < 0) {
+      return interaction.followUp({
+        content: '❌ **Invalid Coins Amount**: Minimum coins cannot be negative.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (maxCoins < minCoins) {
+      return interaction.followUp({
+        content: `❌ **Invalid Coins Range**: Minimum coins (\`${minCoins.toLocaleString()}\`) cannot be greater than Maximum coins (\`${maxCoins.toLocaleString()}\`).`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (maxCoins > 1000000000) {
+      return interaction.followUp({
+        content: '❌ **Maximum Coins Limit**: Maximum coins cannot exceed 1,000,000,000.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     await updateLootBoxCoinsConfig(boxId, interaction.guildId, {
       chanceCoins,
@@ -4782,11 +4855,39 @@ export async function handleLootBoxPrizeCountModal(interaction, boxId) {
 export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const minPrizesVal = interaction.fields.getTextInputValue('min_prizes');
-    const maxPrizesVal = interaction.fields.getTextInputValue('max_prizes');
+    const minPrizesVal = interaction.fields.getTextInputValue('min_prizes').trim();
+    const maxPrizesVal = interaction.fields.getTextInputValue('max_prizes').trim();
 
-    const minPrizes = Math.max(1, parseInt(minPrizesVal, 10) || 1);
-    const maxPrizes = Math.max(minPrizes, parseInt(maxPrizesVal, 10) || 1);
+    if (!/^\d+$/.test(minPrizesVal) || !/^\d+$/.test(maxPrizesVal)) {
+      return interaction.followUp({
+        content: '❌ **Invalid Input**: Minimum and Maximum prizes must be positive whole numbers.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const minPrizes = parseInt(minPrizesVal, 10);
+    const maxPrizes = parseInt(maxPrizesVal, 10);
+
+    if (minPrizes < 1) {
+      return interaction.followUp({
+        content: '❌ **Invalid Minimum Prizes**: A loot box must award at least 1 prize (Minimum Prizes cannot be 0).',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (maxPrizes < minPrizes) {
+      return interaction.followUp({
+        content: `❌ **Invalid Prize Range**: Minimum prizes (\`${minPrizes}\`) cannot be greater than Maximum prizes (\`${maxPrizes}\`).`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (maxPrizes > 50) {
+      return interaction.followUp({
+        content: '❌ **Maximum Prize Limit**: A loot box cannot award more than 50 prizes per open.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     await updateLootBoxPrizeCount(boxId, interaction.guildId, {
       minPrizes,
@@ -4841,8 +4942,26 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 export async function handleLootBoxRenameSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const name = interaction.fields.getTextInputValue('name');
-    const imageUrl = interaction.fields.getTextInputValue('image_url') || null;
+    const name = (interaction.fields.getTextInputValue('name') || '').trim();
+    const rawImage = (interaction.fields.getTextInputValue('image_url') || '').trim();
+
+    if (!name || name.length === 0) {
+      return interaction.followUp({
+        content: '❌ **Invalid Box Name**: Name cannot be empty.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    let imageUrl = null;
+    if (rawImage && rawImage.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawImage)) {
+        return interaction.followUp({
+          content: '❌ **Invalid Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+      imageUrl = rawImage;
+    }
 
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl });
     await showLootBoxEditorPanel(interaction, boxId, '✅ Updated box name and image successfully!');
