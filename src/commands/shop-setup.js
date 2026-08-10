@@ -353,8 +353,8 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
-        .setLabel('Rename Category')
-        .setEmoji('✏️')
+        .setLabel('Config')
+        .setEmoji('⚙️')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -2735,7 +2735,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
       const lbOptions = lootBoxes.slice(0, 25).map(b => ({
         label: `${catEmoji} ${(b.name || `Unnamed Box #${b.id}`).slice(0, 80)}`,
-        description: `${b.item_count} items | Weight: ${b.total_weight}`,
         value: `lb_${b.id}`
       }));
 
@@ -4438,7 +4437,7 @@ export async function handleLootBoxRenameCatStart(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_lb_rename_cat_modal')
-    .setTitle('Rename Loot Box Category');
+    .setTitle('Configure Category');
 
   const catInput = new TextInputBuilder()
     .setCustomId('cat_name')
