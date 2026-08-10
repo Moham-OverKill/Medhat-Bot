@@ -4489,8 +4489,8 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
-    let newEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
-    if (!newEmoji) newEmoji = '🎁';
+    let rawEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
+    if (!rawEmoji) rawEmoji = '🎁';
 
     if (!newName || newName.length === 0) {
       return interaction.followUp({
@@ -4499,12 +4499,58 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
       });
     }
 
+    let resolvedEmoji = null;
+
+    // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
+    const customMatch = rawEmoji.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+    if (customMatch) {
+      const isAnimated = Boolean(customMatch[1]);
+      const name = customMatch[2];
+      const id = customMatch[3];
+      const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
+      if (found) {
+        resolvedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+      } else {
+        const fetched = await interaction.guild?.emojis.fetch(id).catch(() => null) ||
+                        await interaction.client?.emojis.fetch(id).catch(() => null);
+        if (fetched) {
+          resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+        } else {
+          resolvedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
+        }
+      }
+    } else if (/^\d{17,20}$/.test(rawEmoji)) {
+      // 2. Pure Snowflake Emoji ID: 123456789012345678
+      const found = interaction.guild?.emojis.cache.get(rawEmoji) || interaction.client?.emojis.cache.get(rawEmoji);
+      if (found) {
+        resolvedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+      } else {
+        const fetched = await interaction.guild?.emojis.fetch(rawEmoji).catch(() => null) ||
+                        await interaction.client?.emojis.fetch(rawEmoji).catch(() => null);
+        if (fetched) {
+          resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+        }
+      }
+    } else {
+      // 3. Unicode Emoji
+      const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
+      if (emojiRegex.test(rawEmoji) && rawEmoji.length <= 16) {
+        resolvedEmoji = rawEmoji;
+      }
+    }
+
+    if (!resolvedEmoji) {
+      return interaction.followUp({
+        content: `❌ **Invalid Emoji**: Could not validate \`${rawEmoji}\`. Please enter a standard emoji (e.g. 🎁, 📦, 💎) or a valid custom emoji / emoji ID available to this bot.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
     await setGuildConfig(interaction.guildId, {
       loot_box_category_name: newName,
-      loot_box_category_emoji: newEmoji
+      loot_box_category_emoji: resolvedEmoji
     });
     await handleLootBoxesPage(interaction);
-    await interaction.followUp({ content: `✅ Loot box category updated to **${newEmoji} ${newName}**!`, flags: MessageFlags.Ephemeral }).catch(() => {});
   } catch (error) {
     await handleInteractionError(interaction, error, 'rename lootbox category');
   }
