@@ -46,6 +46,7 @@ import {
   removeLootBoxReward,
   updateLootBoxRewardWeight,
   getLootBoxCategoryName,
+  getLootBoxCategoryEmoji,
   RARITY_BASE_WEIGHTS
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
@@ -127,6 +128,7 @@ export async function handleShopSetup(interaction) {
     );
 
     const lootBoxCatName = await getLootBoxCategoryName(guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const categoriesCount = parseInt(categoriesResult.rows[0].count);
     const packCount = parseInt(itemsResult.rows[0].pack_count || 0);
     const itemsCount = parseInt(itemsResult.rows[0].item_count || 0);
@@ -140,7 +142,7 @@ export async function handleShopSetup(interaction) {
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
         { name: '📦 Packs', value: `${packCount}`, inline: true },
         { name: '🎭 Items', value: `${itemsCount}`, inline: true },
-        { name: `🎁 ${lootBoxCatName}`, value: `${lootBoxesCount}`, inline: true }
+        { name: `${lootBoxEmoji} ${lootBoxCatName}`, value: `${lootBoxesCount}`, inline: true }
       );
 
     const row1 = new ActionRowBuilder()
@@ -173,7 +175,7 @@ export async function handleShopSetup(interaction) {
         new ButtonBuilder()
           .setCustomId('shop_lb_home')
           .setLabel(lootBoxCatName.slice(0, 50))
-          .setEmoji('🎁')
+          .setEmoji(lootBoxEmoji)
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('shop_admin_post')
@@ -313,17 +315,18 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
   try {
     const guildId = interaction.guildId;
     const lootBoxCatName = await getLootBoxCategoryName(guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const lootBoxes = await getLootBoxes(guildId);
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle(`🎁 ${lootBoxCatName} Management`)
+      .setTitle(`${lootBoxEmoji} ${lootBoxCatName} Management`)
       .setDescription(
         `Manage your server's ${lootBoxCatName.toLowerCase()}.\n` +
         `Users can purchase these from shop channels and open them in their \`/inventory\` for random rewards.\n\n` +
         `**Configured Boxes (${lootBoxes.length}):**\n` +
         (lootBoxes.length > 0
-          ? lootBoxes.map((b, idx) => `${idx + 1}. 🎁 **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
+          ? lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — \`${b.item_count}\` rewards (Weight: \`${b.total_weight}\`)`).join('\n')
           : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`)
       );
 
@@ -1134,6 +1137,7 @@ export async function handleShopPostStart(interaction) {
   const categories = await getShopCategories(guildId);
   const itemsAll = await getShopItems(guildId, null, 'name', false); // Post flow: Active items only
   const lootBoxCatName = await getLootBoxCategoryName(guildId);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
   
   let itemOptions = [];
   let placeholder = '📦 Select Item/Pack (Required)';
@@ -1148,7 +1152,7 @@ export async function handleShopPostStart(interaction) {
       if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
       if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
       if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
-      if (hasLootBoxes) itemOptions.push({ label: `🎁 ${lootBoxCatName.slice(0, 50)}`, value: 'folder_loot_boxes' });
+      if (hasLootBoxes) itemOptions.push({ label: `${lootBoxEmoji} ${lootBoxCatName.slice(0, 50)}`, value: 'folder_loot_boxes' });
       placeholder = '📦 Select Item/Pack/Box (Required)';
       
       // If an item is already selected, show it as a quick-pick at the top
@@ -1189,7 +1193,7 @@ export async function handleShopPostStart(interaction) {
       } else if (state.postFilter === 'loot_boxes') {
         filtered = itemsAll.filter(i => i.item_type === 'loot_box');
         groupName = lootBoxCatName;
-        groupPrefix = '🎁';
+        groupPrefix = lootBoxEmoji;
       } else if (state.postFilter?.startsWith('cat_')) {
         const catId = parseInt(state.postFilter.split('_').pop());
         filtered = itemsAll.filter(i => i.category_id === catId && !i.is_pack && i.item_type !== 'loot_box');
@@ -2727,6 +2731,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     if (isLootBox) {
       const lootBoxes = await getLootBoxes(interaction.guildId);
       const catName = await getLootBoxCategoryName(interaction.guildId);
+      const catEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
       if (lootBoxes.length === 0) {
         await handleLootBoxesPage(interaction);
@@ -2734,7 +2739,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
       }
 
       const lbOptions = lootBoxes.slice(0, 25).map(b => ({
-        label: `🎁 ${(b.name || `Unnamed Box #${b.id}`).slice(0, 80)}`,
+        label: `${catEmoji} ${(b.name || `Unnamed Box #${b.id}`).slice(0, 80)}`,
         description: `${b.item_count} items | Weight: ${b.total_weight}`,
         value: `lb_${b.id}`
       }));
@@ -4444,6 +4449,8 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
  */
 export async function handleLootBoxRenameCatStart(interaction) {
   const currentCat = await getLootBoxCategoryName(interaction.guildId);
+  const currentEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+
   const modal = new ModalBuilder()
     .setCustomId('shop_lb_rename_cat_modal')
     .setTitle('Rename Loot Box Category');
@@ -4457,7 +4464,19 @@ export async function handleLootBoxRenameCatStart(interaction) {
     .setRequired(true)
     .setMaxLength(32);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(catInput));
+  const emojiInput = new TextInputBuilder()
+    .setCustomId('cat_emoji')
+    .setLabel('Category Emoji')
+    .setStyle(TextInputStyle.Short)
+    .setValue(currentEmoji || '🎁')
+    .setPlaceholder('e.g. 🎁, 📦, 💎, 🏆')
+    .setRequired(false)
+    .setMaxLength(32);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(catInput),
+    new ActionRowBuilder().addComponents(emojiInput)
+  );
   await interaction.showModal(modal);
 }
 
@@ -4468,9 +4487,15 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
-    await setGuildConfig(interaction.guildId, { loot_box_category_name: newName });
+    let newEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
+    if (!newEmoji) newEmoji = '🎁';
+
+    await setGuildConfig(interaction.guildId, {
+      loot_box_category_name: newName,
+      loot_box_category_emoji: newEmoji
+    });
     await handleLootBoxesPage(interaction);
-    await interaction.followUp({ content: `✅ Loot box category renamed to **${newName}**!`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    await interaction.followUp({ content: `✅ Loot box category updated to **${newEmoji} ${newName}**!`, flags: MessageFlags.Ephemeral }).catch(() => {});
   } catch (error) {
     await handleInteractionError(interaction, error, 'rename lootbox category');
   }
