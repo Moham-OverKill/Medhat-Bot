@@ -262,8 +262,7 @@ export async function handleSettingsComponent(interaction) {
             let initialValue = '';
             if (currentEmoji) {
                 const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
-                const match = currentEmojiStr.match(/:(\d+)>$/);
-                initialValue = match ? match[1] : currentEmojiStr;
+                initialValue = currentEmojiStr;
             }
 
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
@@ -277,24 +276,24 @@ export async function handleSettingsComponent(interaction) {
                 .setLabel('Bot Server Nickname')
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('Enter bot nickname for this server')
-                .setValue(currentNickname)
                 .setRequired(false);
+            if (currentNickname) nameInput.setValue(currentNickname);
 
             const avatarInput = new TextInputBuilder()
                 .setCustomId('bot_avatar')
                 .setLabel('Bot Server Avatar URL')
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('Enter profile image URL for this server')
-                .setValue(currentServerAvatar)
                 .setRequired(false);
+            if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
 
             const emojiInput = new TextInputBuilder()
                 .setCustomId('coin_emoji')
-                .setLabel('Coin Emoji ID')
+                .setLabel('Coin Emoji')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter server emoji ID (e.g. 1343686075385647164)')
-                .setValue(initialValue)
+                .setPlaceholder('e.g. 💎, 🪙, or custom emoji/ID')
                 .setRequired(false);
+            if (initialValue) emojiInput.setValue(initialValue);
 
             modal.addComponents(
                 new ActionRowBuilder().addComponents(nameInput),
@@ -412,37 +411,48 @@ export async function handleSettingsComponent(interaction) {
             if (coinEmoji && coinEmoji.trim()) {
                 const input = coinEmoji.trim();
 
-                // Check for custom emoji format first
-                const customMatch = input.match(/<a?:(\w+):(\d+)>/);
-                let emojiId = null;
+                // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
+                const customMatch = input.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
                 if (customMatch) {
-                    emojiId = customMatch[2];
-                } else {
-                    // Check if it's a numeric ID
-                    const numMatch = input.match(/\b\d+\b/);
-                    if (numMatch) {
-                        emojiId = numMatch[0];
-                    }
-                }
-
-                if (emojiId) {
-                    const emoji = await interaction.guild.emojis.fetch(emojiId).catch(() => null);
-                    if (emoji) {
-                        formattedEmoji = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+                    const isAnimated = Boolean(customMatch[1]);
+                    const name = customMatch[2];
+                    const id = customMatch[3];
+                    const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
                         emojiStatus = 'Updated ✅';
                     } else {
-                        emojiStatus = 'Failed ❌';
+                        const fetched = await interaction.guild?.emojis.fetch(id).catch(() => null) ||
+                                        await interaction.client?.emojis.fetch(id).catch(() => null);
+                        if (fetched) {
+                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+                            emojiStatus = 'Updated ✅';
+                        } else {
+                            formattedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
+                            emojiStatus = 'Updated ✅';
+                        }
+                    }
+                } else if (/^\d{17,20}$/.test(input)) {
+                    // 2. Pure Snowflake ID
+                    const found = interaction.guild?.emojis.cache.get(input) || interaction.client?.emojis.cache.get(input);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        const fetched = await interaction.guild?.emojis.fetch(input).catch(() => null) ||
+                                        await interaction.client?.emojis.fetch(input).catch(() => null);
+                        if (fetched) {
+                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+                            emojiStatus = 'Updated ✅';
+                        } else {
+                            emojiStatus = 'Failed ❌';
+                        }
                     }
                 } else {
-                    // Check for standard Unicode emoji
-                    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
-                    const segments = Array.from(segmenter.segment(input));
-                    const emojiRegex = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
-                    const emojiSegments = segments.filter(s => emojiRegex.test(s.segment));
-
-                    if (emojiSegments.length > 0) {
-                        // Pick the first unicode emoji found
-                        formattedEmoji = emojiSegments[0].segment;
+                    // 3. Unicode Emoji
+                    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
+                    if (emojiRegex.test(input) && input.length <= 16) {
+                        formattedEmoji = input;
                         emojiStatus = 'Updated ✅';
                     } else {
                         emojiStatus = 'Failed ❌';
