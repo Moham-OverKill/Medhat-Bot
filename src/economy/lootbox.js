@@ -315,11 +315,22 @@ export async function deleteLootBox(boxId, guildId) {
         `DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
         [shopItemId, guildId]
       );
+      // Clean up any uncollected dropped items in chat
+      await client.query(
+        `DELETE FROM dropped_items WHERE shop_item_id = $1 AND guild_id = $2`,
+        [shopItemId, guildId]
+      ).catch(() => {});
     }
 
-    // 3. Delete from loot_boxes (cascades to shop_items)
+    // 3. Delete from loot_boxes
     const delRes = await client.query(
       `DELETE FROM loot_boxes WHERE id = $1 AND guild_id = $2 RETURNING *`,
+      [boxId, guildId]
+    );
+
+    // 4. Ensure paired shop_item is purged
+    await client.query(
+      `DELETE FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2`,
       [boxId, guildId]
     );
 
