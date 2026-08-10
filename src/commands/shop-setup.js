@@ -50,7 +50,7 @@ import {
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
-import { RARITY_DISPLAY, RARITY_EMOJIS } from '../shared.js';
+import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI } from '../shared.js';
 
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
 const pendingPosts = new Map();
@@ -4568,15 +4568,17 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+    const config = await getGuildConfig(interaction.guildId);
+    const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
 
     const description =
-      `Prizes ${box.min_prizes} to ${box.max_prizes} - Coins ${box.min_coins.toLocaleString()} to ${box.max_coins.toLocaleString()}\n\n` +
-      `⚪ **Common**: ${box.chance_common}%\n` +
-      `🟢 **Uncommon**: ${box.chance_uncommon}%\n` +
-      `🔵 **Rare**: ${box.chance_rare}%\n` +
-      `🟣 **Epic**: ${box.chance_epic}%\n` +
-      `🟡 **Legendary**: ${box.chance_legendary}%\n` +
-      `💰 **Coins**: ${box.chance_coins}%`;
+      `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\` - Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
+      `⚪ **Common**: \`${box.chance_common}%\`\n` +
+      `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
+      `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
+      `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
+      `🟡 **Legendary**: \`${box.chance_legendary}%\`\n` +
+      `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
@@ -4590,17 +4592,17 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`shop_lb_rates_btn_${boxId}`)
-        .setLabel('Rarity Rates')
+        .setLabel('Rarity')
         .setEmoji('🎲')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_coins_btn_${boxId}`)
-        .setLabel('Coins Config')
-        .setEmoji('💰')
+        .setLabel('Coins')
+        .setEmoji(serverCoinEmoji)
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_prizes_btn_${boxId}`)
-        .setLabel('Prize Count')
+        .setLabel('Prizes')
         .setEmoji('🎁')
         .setStyle(ButtonStyle.Primary)
     );
@@ -4613,12 +4615,12 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_rename_box_btn_${boxId}`)
-        .setLabel('Rename / Image')
+        .setLabel('Customize')
         .setEmoji('✏️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_delete_start_${boxId}`)
-        .setLabel('Delete Box')
+        .setLabel('Delete')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
     );
