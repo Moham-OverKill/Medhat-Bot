@@ -733,6 +733,16 @@ async function createTables() {
         name VARCHAR(100) NOT NULL,
         description TEXT,
         image_url TEXT,
+        chance_common NUMERIC NOT NULL DEFAULT 70,
+        chance_uncommon NUMERIC NOT NULL DEFAULT 20,
+        chance_rare NUMERIC NOT NULL DEFAULT 5,
+        chance_epic NUMERIC NOT NULL DEFAULT 0,
+        chance_legendary NUMERIC NOT NULL DEFAULT 0,
+        chance_coins NUMERIC NOT NULL DEFAULT 25,
+        min_coins INTEGER NOT NULL DEFAULT 100,
+        max_coins INTEGER NOT NULL DEFAULT 500,
+        min_prizes INTEGER NOT NULL DEFAULT 1,
+        max_prizes INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -749,6 +759,16 @@ async function createTables() {
     `);
 
     await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS loot_box_id INTEGER REFERENCES loot_boxes(id) ON DELETE CASCADE`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_common NUMERIC NOT NULL DEFAULT 70`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_uncommon NUMERIC NOT NULL DEFAULT 20`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_rare NUMERIC NOT NULL DEFAULT 5`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_epic NUMERIC NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_legendary NUMERIC NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_coins NUMERIC NOT NULL DEFAULT 25`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS min_coins INTEGER NOT NULL DEFAULT 100`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS max_coins INTEGER NOT NULL DEFAULT 500`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS min_prizes INTEGER NOT NULL DEFAULT 1`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS max_prizes INTEGER NOT NULL DEFAULT 1`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_boxes_guild ON loot_boxes(guild_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_box_items_box ON loot_box_items(loot_box_id)`);
 
