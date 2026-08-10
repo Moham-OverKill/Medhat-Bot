@@ -141,8 +141,7 @@ export async function handleShopSetup(interaction) {
       .addFields(
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
         { name: '📦 Packs', value: `${packCount}`, inline: true },
-        { name: '🎭 Items', value: `${itemsCount}`, inline: true },
-        { name: `${lootBoxEmoji} ${lootBoxCatName}`, value: `${lootBoxesCount}`, inline: true }
+        { name: '🎭 Items', value: `${itemsCount}`, inline: true }
       );
 
     const row1 = new ActionRowBuilder()
