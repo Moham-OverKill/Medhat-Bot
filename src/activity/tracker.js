@@ -426,6 +426,22 @@ export async function voicePointsTick(client) {
   const now = Date.now();
 
   try {
+    // 1. SELF-HEALING SWEEP: Scan voice channels to resume valid users who were paused
+    for (const [guildId, guild] of client.guilds.cache) {
+      const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased?.() || c.type === 2 || c.type === 13);
+      for (const [channelId, channel] of voiceChannels) {
+        const humanMembers = channel.members?.filter(m => !m.user.bot);
+        if (humanMembers && humanMembers.size >= 2) {
+          for (const [memberId, member] of humanMembers) {
+            if (isVoiceStateValid(member.voice)) {
+              await startVoiceTracking(guild, memberId, member.user.username);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Query all actively tracking users and process point accrual
     const result = await pool.query(
       `SELECT guild_id, user_id, username, voice_valid_start, voice_seconds_accumulated
        FROM user_activity 

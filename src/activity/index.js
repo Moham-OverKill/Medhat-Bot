@@ -627,6 +627,6 @@ export async function checkVoiceQuest(guildId, userId, channelId, minutesAdded, 
       }
     }
   } catch (e) {
-    // Silent fail
+    sysError('Voice Quest Check Failed', e, { user: userId, guild: guildId });
   }
 }
