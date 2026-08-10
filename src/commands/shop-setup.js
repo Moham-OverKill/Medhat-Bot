@@ -325,43 +325,59 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
       .setTitle(`${lootBoxEmoji} ${lootBoxCatName} Management`)
       .setDescription(desc);
 
-    const row1 = new ActionRowBuilder().addComponents(
+    const components = [];
+
+    // Helper for select menu option emoji
+    const emojiMatch = lootBoxEmoji ? lootBoxEmoji.match(/:(\d+)>$/) : null;
+    const selectOptEmoji = emojiMatch ? emojiMatch[1] : lootBoxEmoji;
+
+    // 1. Dropdown select menu directly in the main menu
+    if (lootBoxes.length > 0) {
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('shop_lb_select_box')
+        .setPlaceholder(`Select ${lootBoxCatName}`)
+        .addOptions(lootBoxes.slice(0, 25).map(b => ({
+          label: (b.name || `Unnamed Box #${b.id}`).slice(0, 80),
+          value: `lb_${b.id}`,
+          emoji: selectOptEmoji
+        })));
+      components.push(new ActionRowBuilder().addComponents(select));
+    } else {
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('shop_lb_select_box_empty')
+        .setPlaceholder(`No ${lootBoxCatName.toLowerCase()} created yet`)
+        .setDisabled(true)
+        .addOptions([{
+          label: `No ${lootBoxCatName.toLowerCase()} found`,
+          value: 'none'
+        }]);
+      components.push(new ActionRowBuilder().addComponents(select));
+    }
+
+    // 2. Action Buttons: Create, Config, Back
+    const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('shop_lb_create_start')
         .setLabel('Create')
         .setEmoji('➕')
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId('shop_edit_lootbox')
-        .setLabel('Edit')
-        .setEmoji('✏️')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(lootBoxes.length === 0),
-      new ButtonBuilder()
-        .setCustomId('shop_delete_lootbox')
-        .setLabel('Delete')
-        .setEmoji('🗑️')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(lootBoxes.length === 0)
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
+        .setCustomId('shop_lb_rename_cat')
+        .setLabel('Config')
+        .setEmoji('⚙️')
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_admin_home')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('shop_lb_rename_cat')
-        .setLabel('Config')
-        .setEmoji('⚙️')
         .setStyle(ButtonStyle.Secondary)
     );
+    components.push(buttonRow);
 
     await interaction.editReply({
       content: statusMessage || null,
       embeds: [embed],
-      components: [row1, row2]
+      components
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot boxes page');
