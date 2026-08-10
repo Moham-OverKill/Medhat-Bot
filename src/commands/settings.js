@@ -275,7 +275,7 @@ export async function handleSettingsComponent(interaction) {
                 .setCustomId('bot_name')
                 .setLabel('Bot Server Nickname')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter bot nickname for this server')
+                .setPlaceholder('Enter bot nickname')
                 .setRequired(false);
             if (currentNickname) nameInput.setValue(currentNickname);
 
@@ -283,7 +283,7 @@ export async function handleSettingsComponent(interaction) {
                 .setCustomId('bot_avatar')
                 .setLabel('Bot Server Avatar URL')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter profile image URL for this server')
+                .setPlaceholder('Enter profile image URL')
                 .setRequired(false);
             if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
 
@@ -291,7 +291,7 @@ export async function handleSettingsComponent(interaction) {
                 .setCustomId('coin_emoji')
                 .setLabel('Coin Emoji')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('e.g. 💎, 🪙, or custom emoji/ID')
+                .setPlaceholder('Enter an emoji or emoji ID')
                 .setRequired(false);
             if (initialValue) emojiInput.setValue(initialValue);
 
