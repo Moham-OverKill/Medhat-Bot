@@ -354,8 +354,13 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
       components.push(new ActionRowBuilder().addComponents(select));
     }
 
-    // 2. Action Buttons: Create, Config, Back
+    // 2. Action Buttons: Back, Create, Config
     const buttonRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_admin_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_create_start')
         .setLabel('Create')
@@ -365,11 +370,6 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setCustomId('shop_lb_rename_cat')
         .setLabel('Config')
         .setEmoji('⚙️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('shop_admin_home')
-        .setLabel('Back')
-        .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
     components.push(buttonRow);
