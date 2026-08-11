@@ -4402,15 +4402,16 @@ export async function handleShopPostUpdate(interaction) {
  * Open Modal to Create a new Loot Box
  */
 export async function handleLootBoxCreateModalStart(interaction) {
+  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
   const modal = new ModalBuilder()
     .setCustomId('shop_lb_create_modal')
-    .setTitle('Create Loot Box');
+    .setTitle(`Create ${lootBoxCatName.slice(0, 35)}`);
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
-    .setLabel('Box Name')
+    .setLabel('Name')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g. Golden Mystery Chest')
+    .setPlaceholder(`e.g. Golden ${lootBoxCatName}`)
     .setRequired(true)
     .setMaxLength(100);
 
@@ -4585,6 +4586,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const config = await getGuildConfig(interaction.guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
 
@@ -4665,7 +4667,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     if (dropdownOptions.length > 0) {
       const configSelect = new StringSelectMenuBuilder()
         .setCustomId(`shop_lb_config_menu_${boxId}`)
-        .setPlaceholder('Configure Loot Box')
+        .setPlaceholder(`Configure ${lootBoxCatName}`)
         .addOptions(dropdownOptions);
       components.push(new ActionRowBuilder().addComponents(configSelect));
     }
@@ -5156,12 +5158,13 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
       return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
-      .setTitle(`🗑️ Delete Loot Box: ${box.name}`)
+      .setTitle(`🗑️ Delete ${lootBoxCatName}: ${box.name}`)
       .setDescription(
-        `⚠️ **Warning**: Deleting this loot box will:\n` +
-        `• Remove this loot box from the shop\n` +
+        `⚠️ **Warning**: Deleting this ${lootBoxCatName.toLowerCase()} will:\n` +
+        `• Remove this ${lootBoxCatName.toLowerCase()} from the shop\n` +
         `• **Instantly purge all unopened copies** from all users' inventories\n\n` +
         `Are you sure you want to proceed?`
       );
