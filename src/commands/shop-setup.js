@@ -4623,8 +4623,8 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       .setTitle(`${lootBoxEmoji} ${box.name}`)
       .setDescription(description);
 
-    if (box.image_url && box.image_url.startsWith('http')) {
-      embed.setThumbnail(box.image_url);
+    if (box.image_url && box.image_url.trim().startsWith('http')) {
+      embed.setThumbnail(box.image_url.trim());
     }
 
     const components = [];

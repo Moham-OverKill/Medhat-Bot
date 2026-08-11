@@ -90,6 +90,7 @@ export async function getLootBox(boxId, guildId) {
     box.max_prizes = parseInt(box.max_prizes, 10) || 1;
     box.items_enabled = box.items_enabled !== false;
     box.coins_enabled = box.coins_enabled !== false;
+    box.image_url = box.image_url ? box.image_url.trim() : null;
 
     // Calculate item pool weight
     box.totalItemWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
