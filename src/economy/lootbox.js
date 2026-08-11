@@ -597,7 +597,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
             wonItemsCountMap.set(wonItem.id, {
               wonItem,
               count: 1,
-              effectiveTier
+              effectiveTier: (wonItem.rarity || effectiveTier).toLowerCase()
             });
           }
 
@@ -605,7 +605,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
             type: 'item',
             itemId: wonItem.id,
             itemName: wonItem.name,
-            rarity: effectiveTier,
+            rarity: (wonItem.rarity || effectiveTier).toLowerCase(),
             roleId: wonItem.role_id,
             itemImage: wonItem.default_image_url
           });
