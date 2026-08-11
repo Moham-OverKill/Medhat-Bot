@@ -769,6 +769,8 @@ async function createTables() {
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS max_coins INTEGER NOT NULL DEFAULT 500`);
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS min_prizes INTEGER NOT NULL DEFAULT 1`);
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS max_prizes INTEGER NOT NULL DEFAULT 1`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS items_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS coins_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_boxes_guild ON loot_boxes(guild_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_box_items_box ON loot_box_items(loot_box_id)`);
 
