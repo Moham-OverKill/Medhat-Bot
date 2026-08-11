@@ -5179,7 +5179,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_lb_edit_details_${boxId}`)
+        .setCustomId(`shop_lb_view_${boxId}`)
         .setLabel('Cancel')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary),
