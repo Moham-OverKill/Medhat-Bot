@@ -137,15 +137,15 @@ export async function createLootBox(guildId, { name, imageUrl = null }) {
     );
     const newBox = boxRes.rows[0];
 
-    // 2. Insert paired shop_items record (item_type = 'loot_box', role_id = 'LOOT_BOX', is_tradable = true)
+    // 2. Insert paired shop_items record (item_type = 'loot_box', role_id = 'LOOT_BOX_[id]', is_tradable = true)
     const shopItemRes = await client.query(
       `INSERT INTO shop_items (
          guild_id, name, description, default_image_url, 
          item_type, role_id, is_pack, is_tradable, rarity, price, loot_box_id, is_active
        )
-       VALUES ($1, $2, NULL, $3, 'loot_box', 'LOOT_BOX', false, true, 'common', NULL, $4, true)
+       VALUES ($1, $2, NULL, $3, 'loot_box', $4, false, true, 'common', NULL, $5, true)
        RETURNING *`,
-      [guildId, cleanName, cleanImage, newBox.id]
+      [guildId, cleanName, cleanImage, `LOOT_BOX_${newBox.id}`, newBox.id]
     );
 
     await client.query('COMMIT');
