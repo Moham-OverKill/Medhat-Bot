@@ -1197,16 +1197,16 @@ export async function handleInventoryItemSelect(interaction) {
       const row1 = new ActionRowBuilder();
       row1.addComponents(
         new ButtonBuilder()
-          .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
-          .setLabel('Open')
-          .setEmoji('🔓')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
           .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
           .setLabel('Drop')
           .setEmoji('🗑️')
           .setStyle(ButtonStyle.Danger)
-          .setDisabled(item.is_tradable === false)
+          .setDisabled(item.is_tradable === false),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
+          .setLabel('Open')
+          .setEmoji('🔓')
+          .setStyle(ButtonStyle.Success)
       );
 
       const selectOptions = [
