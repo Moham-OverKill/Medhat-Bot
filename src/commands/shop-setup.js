@@ -1871,7 +1871,36 @@ export async function handleShopPostPublish(interaction) {
     await channel.send({ embeds: [embed], components: [row] });
 
     // Standardized Shop Admin Log
-    sendLog(interaction.guild, 'shop', 'blue', '📢 Shop Post Created', `Admin **<@${interaction.user.id}>** posted **${item.name}** to <#${channelId}>`);
+    if (item.item_type === 'loot_box' || item.loot_box_id) {
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+      const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+        ? lootBoxCatName.slice(0, -1) 
+        : lootBoxCatName;
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        `${lootBoxEmoji || '🎁'} ${singularName} Posted`, 
+        `Admin **<@${interaction.user.id}>** posted ${singularName.toLowerCase()} **${item.name}** to <#${channelId}> (Price: **${isFree ? 'FREE' : effectivePrice.toLocaleString()}** ${COIN_EMOJI})`
+      );
+    } else if (item.item_type === 'pack' || item.is_pack) {
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        '📦 Pack Posted', 
+        `Admin **<@${interaction.user.id}>** posted pack **${item.name}** to <#${channelId}> (Price: **${isFree ? 'FREE' : effectivePrice.toLocaleString()}** ${COIN_EMOJI})`
+      );
+    } else {
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        '📢 Shop Post Created', 
+        `Admin **<@${interaction.user.id}>** posted item **${item.name}** to <#${channelId}> (Price: **${isFree ? 'FREE' : effectivePrice.toLocaleString()}** ${COIN_EMOJI})`
+      );
+    }
 
     // Reset session state for this user (Keep channelId/sellerId for convenience)
     pendingPosts.set(userId, { 
@@ -4399,7 +4428,36 @@ export async function handleShopPostUpdate(interaction) {
     await message.edit({ embeds: [embed], components: [row] });
 
     // Log & Cleanup
-    sendLog(interaction.guild, 'shop', 'blue', '📝 Shop Post Updated', `Admin **<@${interaction.user.id}>** updated posted item **${item.name}** in <#${channelId}>`);
+    if (item.item_type === 'loot_box' || item.loot_box_id) {
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+      const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+        ? lootBoxCatName.slice(0, -1) 
+        : lootBoxCatName;
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        `📝 ${singularName} Post Updated`, 
+        `Admin **<@${interaction.user.id}>** updated posted ${singularName.toLowerCase()} **${item.name}** in <#${channelId}>`
+      );
+    } else if (item.item_type === 'pack' || item.is_pack) {
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        '📝 Pack Post Updated', 
+        `Admin **<@${interaction.user.id}>** updated posted pack **${item.name}** in <#${channelId}>`
+      );
+    } else {
+      sendLog(
+        interaction.guild, 
+        'shop', 
+        'blue', 
+        '📝 Shop Post Updated', 
+        `Admin **<@${interaction.user.id}>** updated posted item **${item.name}** in <#${channelId}>`
+      );
+    }
 
     pendingPosts.delete(userId);
 

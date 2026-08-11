@@ -1449,12 +1449,19 @@ export async function handleInventoryAction(interaction) {
       await interaction.followUp({ content: revealMsg, flags: MessageFlags.Ephemeral });
 
       // Send log to Discord Inventory / Audit log channel
+      const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+      const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+        ? lootBoxCatName.slice(0, -1) 
+        : lootBoxCatName;
+
       sendLog(
         interaction.guild,
         'inventory',
         'gold',
-        '🎁 Chest Opened',
-        `Player **<@${interaction.user.id}>** opened **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
+        `${lootBoxEmoji || '🎁'} ${singularName} Opened`,
+        `Player **<@${interaction.user.id}>** opened ${singularName.toLowerCase()} **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
       );
 
       // Refresh inventory view
