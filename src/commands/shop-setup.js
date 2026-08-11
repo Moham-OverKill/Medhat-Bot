@@ -317,6 +317,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const config = await getGuildConfig(guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
+    const lootBoxes = await getLootBoxes(guildId);
 
     const desc = lootBoxes.length > 0
       ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — 🎁 \`${b.min_prizes || 1}-${b.max_prizes || 1}\` | ${serverCoinEmoji} \`${(parseInt(b.min_coins) || 100).toLocaleString()}-${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
