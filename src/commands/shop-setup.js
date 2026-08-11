@@ -1805,6 +1805,8 @@ export async function handleShopPostPublish(interaction) {
     if (item.item_type === 'pack') {
       const count = item.contents ? item.contents.length : 0;
       embed.addFields({ name: '📦 Contents', value: `**${count}** Items`, inline: true });
+    } else if (item.item_type === 'loot_box' || item.loot_box_id) {
+      // Loot Box / Chest: Do NOT add 🏷️ Item or ⏳ Duration fields
     } else {
       // Single Item
       if (item.role_id) {
@@ -4337,6 +4339,8 @@ export async function handleShopPostUpdate(interaction) {
     if (item.item_type === 'pack') {
       const count = item.contents ? item.contents.length : 0;
       embed.addFields({ name: '📦 Contents', value: `**${count}** Items`, inline: true });
+    } else if (item.item_type === 'loot_box' || item.loot_box_id) {
+      // Loot Box / Chest: Do NOT add 🏷️ Item or ⏳ Duration fields
     } else {
       if (item.role_id) {
         embed.addFields({ name: '🏷️ Item', value: `<@&${item.role_id}>`, inline: true });
