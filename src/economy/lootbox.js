@@ -91,18 +91,18 @@ export async function getLootBox(boxId, guildId) {
     box.items_enabled = box.items_enabled !== false;
     box.coins_enabled = box.coins_enabled !== false;
 
-    // Calculate total pool weight
-    box.totalWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
-                      box.chance_epic + box.chance_legendary + box.chance_coins;
+    // Calculate item pool weight
+    box.totalItemWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
+                          box.chance_epic + box.chance_legendary;
 
     // Calculate percentage display
     box.percentages = {
-      common: box.totalWeight > 0 ? ((box.chance_common / box.totalWeight) * 100).toFixed(1) : '0.0',
-      uncommon: box.totalWeight > 0 ? ((box.chance_uncommon / box.totalWeight) * 100).toFixed(1) : '0.0',
-      rare: box.totalWeight > 0 ? ((box.chance_rare / box.totalWeight) * 100).toFixed(1) : '0.0',
-      epic: box.totalWeight > 0 ? ((box.chance_epic / box.totalWeight) * 100).toFixed(1) : '0.0',
-      legendary: box.totalWeight > 0 ? ((box.chance_legendary / box.totalWeight) * 100).toFixed(1) : '0.0',
-      coins: box.totalWeight > 0 ? ((box.chance_coins / box.totalWeight) * 100).toFixed(1) : '0.0'
+      common: box.totalItemWeight > 0 ? ((box.chance_common / box.totalItemWeight) * 100).toFixed(1) : '0.0',
+      uncommon: box.totalItemWeight > 0 ? ((box.chance_uncommon / box.totalItemWeight) * 100).toFixed(1) : '0.0',
+      rare: box.totalItemWeight > 0 ? ((box.chance_rare / box.totalItemWeight) * 100).toFixed(1) : '0.0',
+      epic: box.totalItemWeight > 0 ? ((box.chance_epic / box.totalItemWeight) * 100).toFixed(1) : '0.0',
+      legendary: box.totalItemWeight > 0 ? ((box.chance_legendary / box.totalItemWeight) * 100).toFixed(1) : '0.0',
+      coins: box.chance_coins.toFixed(1)
     };
 
     return box;
@@ -460,30 +460,27 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     const chanceLegendary = itemsEnabled ? (parseFloat(box.chance_legendary) || 0) : 0;
     const chanceCoins = coinsEnabled ? (parseFloat(box.chance_coins) || 0) : 0;
 
-    const tierPool = [];
+    const itemTiers = [];
     if (itemsEnabled) {
-      if (chanceCommon > 0) tierPool.push({ tier: 'common', weight: chanceCommon });
-      if (chanceUncommon > 0) tierPool.push({ tier: 'uncommon', weight: chanceUncommon });
-      if (chanceRare > 0) tierPool.push({ tier: 'rare', weight: chanceRare });
-      if (chanceEpic > 0) tierPool.push({ tier: 'epic', weight: chanceEpic });
-      if (chanceLegendary > 0) tierPool.push({ tier: 'legendary', weight: chanceLegendary });
-    }
-    if (coinsEnabled) {
-      if (chanceCoins > 0 || tierPool.length === 0) {
-        tierPool.push({ tier: 'coins', weight: Math.max(1, chanceCoins) });
-      }
+      if (chanceCommon > 0) itemTiers.push({ tier: 'common', weight: chanceCommon });
+      if (chanceUncommon > 0) itemTiers.push({ tier: 'uncommon', weight: chanceUncommon });
+      if (chanceRare > 0) itemTiers.push({ tier: 'rare', weight: chanceRare });
+      if (chanceEpic > 0) itemTiers.push({ tier: 'epic', weight: chanceEpic });
+      if (chanceLegendary > 0) itemTiers.push({ tier: 'legendary', weight: chanceLegendary });
     }
 
-    const totalWeight = tierPool.reduce((sum, t) => sum + t.weight, 0);
-    if (totalWeight <= 0) {
+    const totalItemWeight = itemTiers.reduce((sum, t) => sum + t.weight, 0);
+
+    // Safeguard: must have either active item pool or coins enabled
+    if (itemsEnabled && totalItemWeight <= 0 && (!coinsEnabled || chanceCoins <= 0)) {
       await client.query('ROLLBACK');
       return { success: false, error: '⚠️ This loot box has all drop chances set to 0%. Please contact an admin.' };
     }
 
     const minCoins = parseInt(box.min_coins, 10) || 100;
     const maxCoins = Math.max(minCoins, parseInt(box.max_coins, 10) || 500);
-    const minPrizes = itemsEnabled ? Math.max(1, parseInt(box.min_prizes, 10) || 1) : 1;
-    const maxPrizes = itemsEnabled ? Math.max(minPrizes, parseInt(box.max_prizes, 10) || 1) : 1;
+    const minPrizes = itemsEnabled ? Math.max(1, parseInt(box.min_prizes, 10) || 1) : 0;
+    const maxPrizes = itemsEnabled ? Math.max(minPrizes, parseInt(box.max_prizes, 10) || 1) : 0;
 
     // 3. Deduct 1 box copy from user inventory
     if (currentQty > 1) {
@@ -520,35 +517,32 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       legendary: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'legendary')
     };
 
-    // 5. Roll prize count
-    const prizeCount = Math.floor(Math.random() * (maxPrizes - minPrizes + 1)) + minPrizes;
     const awardedPrizes = [];
     let totalCoinsAwarded = 0;
 
-    for (let p = 0; p < prizeCount; p++) {
-      // Roll RNG across active tiers
-      const roll = Math.random() * totalWeight;
-      let acc = 0;
-      let selectedTier = tierPool[0]?.tier || 'coins';
+    // 5. Roll Items (Prize Count dictates exact number of items awarded)
+    if (itemsEnabled && totalItemWeight > 0 && maxPrizes > 0) {
+      const prizeCount = Math.floor(Math.random() * (maxPrizes - minPrizes + 1)) + minPrizes;
 
-      for (const entry of tierPool) {
-        acc += entry.weight;
-        if (roll <= acc) {
-          selectedTier = entry.tier;
-          break;
+      for (let p = 0; p < prizeCount; p++) {
+        const roll = Math.random() * totalItemWeight;
+        let acc = 0;
+        let selectedTier = itemTiers[0]?.tier || 'common';
+
+        for (const entry of itemTiers) {
+          acc += entry.weight;
+          if (roll <= acc) {
+            selectedTier = entry.tier;
+            break;
+          }
         }
-      }
 
-      if (selectedTier === 'coins') {
-        const coinAmt = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
-        totalCoinsAwarded += coinAmt;
-        awardedPrizes.push({
-          type: 'coins',
-          amount: coinAmt
-        });
-      } else {
         // Pick random item of selected rarity tier
-        const candidates = itemsByRarity[selectedTier] || [];
+        let candidates = itemsByRarity[selectedTier] || [];
+        if (candidates.length === 0) {
+          candidates = guildItems;
+        }
+
         if (candidates.length > 0) {
           const wonItem = candidates[Math.floor(Math.random() * candidates.length)];
 
@@ -591,16 +585,20 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
             roleId: wonItem.role_id,
             itemImage: wonItem.default_image_url
           });
-        } else {
-          // Fallback if no server items of that rarity exist
-          const fallbackCoins = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
-          totalCoinsAwarded += fallbackCoins;
-          awardedPrizes.push({
-            type: 'coins',
-            amount: fallbackCoins,
-            fallbackRarity: selectedTier
-          });
         }
+      }
+    }
+
+    // 6. Roll Coins (Independent percentage chance and range)
+    if (coinsEnabled && chanceCoins > 0) {
+      const coinRoll = Math.random() * 100;
+      if (coinRoll <= chanceCoins) {
+        const coinAmt = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
+        totalCoinsAwarded += coinAmt;
+        awardedPrizes.push({
+          type: 'coins',
+          amount: coinAmt
+        });
       }
     }
 
