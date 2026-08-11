@@ -4717,7 +4717,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
 
     // 3. Coins (Third)
     if (coinsEnabled) {
-      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}—${box.max_coins.toLocaleString()} (${box.chance_coins}%)\``);
+      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}—${box.max_coins.toLocaleString()}\` \`(${box.chance_coins}%)\``);
     }
 
     const description = sections.length > 0 ? `\u200b\n${sections.join('\n\n')}` : '';
