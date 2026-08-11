@@ -612,12 +612,12 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
         }
       }
 
-      // Batch stack into user_inventory & assign Discord roles
+      // Batch stack into user_inventory (Never auto-equip, same as buying/trading/claiming)
       for (const entry of wonItemsCountMap.values()) {
         const { wonItem, count } = entry;
 
         const existingInv = await client.query(
-          `SELECT id, quantity FROM user_inventory 
+          `SELECT id, quantity, is_active FROM user_inventory 
            WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
           [userId, guildId, wonItem.id]
         );
@@ -626,24 +626,15 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
           const row = existingInv.rows[0];
           const newQty = Math.min(999, (parseInt(row.quantity) || 1) + count);
           await client.query(
-            `UPDATE user_inventory SET quantity = $1, is_active = true WHERE id = $2`,
+            `UPDATE user_inventory SET quantity = $1 WHERE id = $2`,
             [newQty, row.id]
           );
         } else {
           await client.query(
             `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source)
-             VALUES ($1, $2, $3, $4, $5, true, 'LOOT_BOX')`,
+             VALUES ($1, $2, $3, $4, $5, false, 'LOOT_BOX')`,
             [userId, guildId, wonItem.id, wonItem.role_id || 'NONE', Math.min(999, count)]
           );
-        }
-
-        // Assign Discord role if applicable
-        if (member && wonItem.role_id && wonItem.role_id !== 'NONE' && wonItem.role_id !== 'LOOT_BOX' && wonItem.role_id !== 'PACK') {
-          try {
-            if (!member.roles.cache.has(wonItem.role_id)) {
-              await member.roles.add(wonItem.role_id).catch(() => {});
-            }
-          } catch {}
         }
       }
     }
