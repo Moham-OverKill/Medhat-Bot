@@ -1448,6 +1448,15 @@ export async function handleInventoryAction(interaction) {
       const revealMsg = `🎉 You opened **${boxName}** and received:\n` + prizeLines.join('\n');
       await interaction.followUp({ content: revealMsg, flags: MessageFlags.Ephemeral });
 
+      // Send log to Discord Inventory / Audit log channel
+      sendLog(
+        interaction.guild,
+        'inventory',
+        'gold',
+        '🎁 Chest Opened',
+        `Player **<@${interaction.user.id}>** opened **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
+      );
+
       // Refresh inventory view
       if (result.remainingQty > 0) {
         return handleInventoryItemSelect(interaction);
