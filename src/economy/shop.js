@@ -85,8 +85,12 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
     }
 
     if (categoryId !== null) {
-      params.push(categoryId);
-      sql += ` AND si.category_id = $${params.length}`;
+      if (categoryId === 'null' || categoryId === 'none' || categoryId === 'uncategorized') {
+        sql += ' AND si.category_id IS NULL';
+      } else {
+        params.push(categoryId);
+        sql += ` AND si.category_id = $${params.length}`;
+      }
     }
 
     if (sortBy === 'name') {
