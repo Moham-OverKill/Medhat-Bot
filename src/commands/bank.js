@@ -1431,8 +1431,11 @@ export async function handleInventoryAction(interaction) {
         }
       }
 
+      const config = await getGuildConfig(interaction.guildId);
+      const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
+
       if (totalCoins > 0) {
-        prizeLines.push(`• 💰 **${totalCoins.toLocaleString()} Coins**`);
+        prizeLines.push(`• ${serverCoinEmoji} **${totalCoins.toLocaleString()} Coins**`);
       }
 
       for (const itemEntry of itemCounts.values()) {
