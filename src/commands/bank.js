@@ -1474,8 +1474,9 @@ export async function handleInventoryAction(interaction) {
       for (const itemEntry of itemCounts.values()) {
         const rarityBadge = RARITY_EMOJIS[(itemEntry.rarity || 'common').toLowerCase()] || '⚪';
         const qtyBadge = itemEntry.count > 1 ? ` x${itemEntry.count}` : '';
-        const roleMention = (itemEntry.roleId && /^\d{17,20}$/.test(itemEntry.roleId)) ? ` <@&${itemEntry.roleId}>` : '';
-        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${roleMention}${qtyBadge}`);
+        const hasRole = itemEntry.roleId && /^\d{17,20}$/.test(itemEntry.roleId);
+        const itemDisplay = hasRole ? `<@&${itemEntry.roleId}>` : `**${itemEntry.itemName}**`;
+        prizeLines.push(`• ${rarityBadge} ${itemDisplay}${qtyBadge}`);
       }
 
       const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId) || '🎁';
@@ -1496,8 +1497,7 @@ export async function handleInventoryAction(interaction) {
       const resultEmbed = new EmbedBuilder()
         .setTitle(`${lootBoxEmoji} ${boxName} Opened!`)
         .setColor('#F1C40F')
-        .setDescription(`**Rewards Received:**\n${rewardsText}\n\n${remainingText}`)
-        .setTimestamp();
+        .setDescription(`${rewardsText}\n\n${remainingText}`);
 
       if (result.box?.image_url && typeof result.box.image_url === 'string' && result.box.image_url.startsWith('http')) {
         resultEmbed.setThumbnail(result.box.image_url);
@@ -1507,15 +1507,15 @@ export async function handleInventoryAction(interaction) {
       if (result.remainingQty > 0) {
         resultRow.addComponents(
           new ButtonBuilder()
-            .setCustomId(`bank_inv_open_${invId}_lootboxes_${currentIndex}`)
-            .setLabel('Open Another')
-            .setEmoji('🔓')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
             .setCustomId('bank_inventory')
             .setLabel('Back to Inventory')
             .setEmoji('🎒')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`bank_inv_open_${invId}_lootboxes_${currentIndex}`)
+            .setLabel('Open Another')
+            .setEmoji('🔓')
+            .setStyle(ButtonStyle.Success)
         );
       } else {
         resultRow.addComponents(
