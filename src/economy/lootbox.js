@@ -91,6 +91,7 @@ export async function getLootBox(boxId, guildId) {
     box.items_enabled = box.items_enabled !== false;
     box.coins_enabled = box.coins_enabled !== false;
     box.image_url = box.image_url ? box.image_url.trim() : null;
+    box.opened_image_url = box.opened_image_url ? box.opened_image_url.trim() : (box.image_url || null);
 
     // Calculate item pool weight
     box.totalItemWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
@@ -116,25 +117,30 @@ export async function getLootBox(boxId, guildId) {
 /**
  * Create a new loot box with defaults and paired shop_items record
  */
-export async function createLootBox(guildId, { name, imageUrl = null }) {
+export async function createLootBox(guildId, { name, imageUrl = null, openedImageUrl = null }) {
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const cleanName = (name || 'Mystery Chest').trim().slice(0, 100);
-    const cleanImage = imageUrl ? imageUrl.trim() : null;
+    let cleanImage = imageUrl ? imageUrl.trim() : null;
+    let cleanOpened = openedImageUrl ? openedImageUrl.trim() : null;
+
+    // Fallback: If only one is entered, use for both
+    if (cleanImage && !cleanOpened) cleanOpened = cleanImage;
+    if (cleanOpened && !cleanImage) cleanImage = cleanOpened;
 
     // 1. Insert into loot_boxes with defaults
     const boxRes = await client.query(
       `INSERT INTO loot_boxes (
-         guild_id, name, description, image_url,
+         guild_id, name, description, image_url, opened_image_url,
          chance_common, chance_uncommon, chance_rare, chance_epic, chance_legendary,
          chance_coins, min_coins, max_coins, min_prizes, max_prizes
        )
-       VALUES ($1, $2, NULL, $3, 70, 20, 10, 0, 0, 25, 100, 500, 1, 1)
+       VALUES ($1, $2, NULL, $3, $4, 70, 20, 10, 0, 0, 25, 100, 500, 1, 1)
        RETURNING *`,
-      [guildId, cleanName, cleanImage]
+      [guildId, cleanName, cleanImage, cleanOpened]
     );
     const newBox = boxRes.rows[0];
 
@@ -164,14 +170,19 @@ export async function createLootBox(guildId, { name, imageUrl = null }) {
 /**
  * Update general loot box details (Name & Image) and sync paired shop_items
  */
-export async function updateLootBox(boxId, guildId, { name, imageUrl }) {
+export async function updateLootBox(boxId, guildId, { name, imageUrl, openedImageUrl }) {
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const cleanName = name ? name.trim().slice(0, 100) : null;
-    const cleanImage = imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : undefined;
+    let cleanImage = imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : undefined;
+    let cleanOpened = openedImageUrl !== undefined ? (openedImageUrl ? openedImageUrl.trim() : null) : undefined;
+
+    // Fallback: If only one is entered, use for both
+    if (cleanImage && !cleanOpened && cleanOpened !== null) cleanOpened = cleanImage;
+    if (cleanOpened && !cleanImage && cleanImage !== null) cleanImage = cleanOpened;
 
     const updates = [];
     const values = [boxId, guildId];
@@ -179,6 +190,7 @@ export async function updateLootBox(boxId, guildId, { name, imageUrl }) {
 
     if (cleanName) { updates.push(`name = $${idx++}`); values.push(cleanName); }
     if (cleanImage !== undefined) { updates.push(`image_url = $${idx++}`); values.push(cleanImage); }
+    if (cleanOpened !== undefined) { updates.push(`opened_image_url = $${idx++}`); values.push(cleanOpened); }
 
     if (updates.length > 0) {
       await client.query(
@@ -684,7 +696,8 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       box: {
         id: box.id,
         name: box.name,
-        image_url: box.image_url
+        image_url: box.image_url,
+        opened_image_url: box.opened_image_url || box.image_url
       },
       prizes: awardedPrizes,
       totalCoins: totalCoinsAwarded
