@@ -1724,12 +1724,24 @@ export async function handleShopPostPublish(interaction) {
       return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
     }
 
-    // Loot Box Pool Validation
+    // Loot Box Configuration Validation
     if (item.item_type === 'loot_box' && item.loot_box_id) {
       const box = await getLootBox(item.loot_box_id, interaction.guildId);
-      if (!box || !box.rewards || box.rewards.length === 0 || box.totalWeight <= 0) {
+      if (!box) {
         return interaction.followUp({
-          content: '❌ This loot box currently has no active rewards in its loot pool. Please add rewards in the Loot Box Manager before publishing.',
+          content: '❌ Loot box configuration not found.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const itemsEnabled = box.items_enabled !== false;
+      const coinsEnabled = box.coins_enabled !== false;
+      const hasCoins = coinsEnabled && (parseFloat(box.chance_coins) || 0) > 0 && (parseInt(box.max_coins, 10) || 0) > 0;
+      const hasItems = itemsEnabled && (box.totalItemWeight || 0) > 0;
+
+      if (!hasCoins && !hasItems) {
+        return interaction.followUp({
+          content: '❌ This loot box has neither item drop rates nor coin rewards enabled. Please configure rewards in Chests Management before publishing.',
           flags: MessageFlags.Ephemeral
         });
       }
