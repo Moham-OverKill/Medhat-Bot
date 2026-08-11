@@ -483,20 +483,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     const minPrizes = itemsEnabled ? Math.max(1, parseInt(box.min_prizes, 10) || 1) : 0;
     const maxPrizes = itemsEnabled ? Math.max(minPrizes, parseInt(box.max_prizes, 10) || 1) : 0;
 
-    // 3. Deduct 1 box copy from user inventory
-    if (currentQty > 1) {
-      await client.query(
-        `UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`,
-        [inventoryRowId]
-      );
-    } else {
-      await client.query(
-        `DELETE FROM user_inventory WHERE id = $1`,
-        [inventoryRowId]
-      );
-    }
-
-    // 4. Fetch all available server items (active, tradable, non-pack, non-lootbox)
+    // 3. Fetch all available server items (active, tradable, non-pack, non-lootbox)
     const guildItemsRes = await client.query(
       `SELECT id, name, rarity, role_id, default_image_url
        FROM shop_items
@@ -518,11 +505,54 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       legendary: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'legendary')
     };
 
+    const RARITY_HIERARCHY = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+
+    // Check if there is at least one reachable item pool (target tier or downward)
+    let hasAvailableItemsForActiveTiers = false;
+    if (itemsEnabled && totalItemWeight > 0) {
+      for (const entry of itemTiers) {
+        const tierIdx = RARITY_HIERARCHY.indexOf(entry.tier);
+        if (tierIdx !== -1) {
+          for (let i = tierIdx; i < RARITY_HIERARCHY.length; i++) {
+            if (itemsByRarity[RARITY_HIERARCHY[i]]?.length > 0) {
+              hasAvailableItemsForActiveTiers = true;
+              break;
+            }
+          }
+        }
+        if (hasAvailableItemsForActiveTiers) break;
+      }
+    }
+
+    // EMPTY CHEST GUARD: Ensure chest has a guaranteed chance of at least something
+    const hasCoinChance = coinsEnabled && chanceCoins > 0 && maxCoins > 0;
+    if (!hasCoinChance && !hasAvailableItemsForActiveTiers) {
+      await client.query('ROLLBACK');
+      return { 
+        success: false, 
+        error: '⚠️ This chest cannot be opened right now because there are no available rewards configured. Please contact a server administrator.' 
+      };
+    }
+
+    // 4. Deduct 1 box copy from user inventory (Atomic consumption)
+    if (currentQty > 1) {
+      await client.query(
+        `UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`,
+        [inventoryRowId]
+      );
+    } else {
+      await client.query(
+        `DELETE FROM user_inventory WHERE id = $1`,
+        [inventoryRowId]
+      );
+    }
+
     const awardedPrizes = [];
     let totalCoinsAwarded = 0;
+    const wonItemsCountMap = new Map(); // itemId -> { wonItem, count, effectiveTier }
 
     // 5. Roll Items (Prize Count dictates exact number of items awarded)
-    if (itemsEnabled && totalItemWeight > 0 && maxPrizes > 0) {
+    if (itemsEnabled && totalItemWeight > 0 && maxPrizes > 0 && hasAvailableItemsForActiveTiers) {
       const prizeCount = Math.floor(Math.random() * (maxPrizes - minPrizes + 1)) + minPrizes;
 
       for (let p = 0; p < prizeCount; p++) {
@@ -538,54 +568,82 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
           }
         }
 
-        // Pick random item of selected rarity tier
+        // STRICT DOWNWARD-ONLY FALLBACK (No Free Upgrades)
         let candidates = itemsByRarity[selectedTier] || [];
+        let effectiveTier = selectedTier;
+
         if (candidates.length === 0) {
-          candidates = guildItems;
+          const tierIdx = RARITY_HIERARCHY.indexOf(selectedTier);
+          if (tierIdx !== -1) {
+            // Scan downward to Common
+            for (let i = tierIdx + 1; i < RARITY_HIERARCHY.length; i++) {
+              const lowerTier = RARITY_HIERARCHY[i];
+              if (itemsByRarity[lowerTier]?.length > 0) {
+                candidates = itemsByRarity[lowerTier];
+                effectiveTier = lowerTier;
+                break;
+              }
+            }
+          }
         }
 
+        // If valid items exist at or below rolled tier, award one
         if (candidates.length > 0) {
           const wonItem = candidates[Math.floor(Math.random() * candidates.length)];
 
-          // Stack into user_inventory (cap at 999)
-          const existingInv = await client.query(
-            `SELECT id, quantity FROM user_inventory 
-             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
-            [userId, guildId, wonItem.id]
-          );
-
-          if (existingInv.rows.length > 0) {
-            const row = existingInv.rows[0];
-            const newQty = Math.min(999, (parseInt(row.quantity) || 1) + 1);
-            await client.query(
-              `UPDATE user_inventory SET quantity = $1, is_active = true WHERE id = $2`,
-              [newQty, row.id]
-            );
+          if (wonItemsCountMap.has(wonItem.id)) {
+            wonItemsCountMap.get(wonItem.id).count++;
           } else {
-            await client.query(
-              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source)
-               VALUES ($1, $2, $3, $4, 1, true, 'LOOT_BOX')`,
-              [userId, guildId, wonItem.id, wonItem.role_id || 'NONE']
-            );
-          }
-
-          // Assign Discord role if applicable
-          if (member && wonItem.role_id && wonItem.role_id !== 'NONE' && wonItem.role_id !== 'LOOT_BOX' && wonItem.role_id !== 'PACK') {
-            try {
-              if (!member.roles.cache.has(wonItem.role_id)) {
-                await member.roles.add(wonItem.role_id).catch(() => {});
-              }
-            } catch {}
+            wonItemsCountMap.set(wonItem.id, {
+              wonItem,
+              count: 1,
+              effectiveTier
+            });
           }
 
           awardedPrizes.push({
             type: 'item',
             itemId: wonItem.id,
             itemName: wonItem.name,
-            rarity: selectedTier,
+            rarity: effectiveTier,
             roleId: wonItem.role_id,
             itemImage: wonItem.default_image_url
           });
+        }
+      }
+
+      // Batch stack into user_inventory & assign Discord roles
+      for (const entry of wonItemsCountMap.values()) {
+        const { wonItem, count } = entry;
+
+        const existingInv = await client.query(
+          `SELECT id, quantity FROM user_inventory 
+           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+          [userId, guildId, wonItem.id]
+        );
+
+        if (existingInv.rows.length > 0) {
+          const row = existingInv.rows[0];
+          const newQty = Math.min(999, (parseInt(row.quantity) || 1) + count);
+          await client.query(
+            `UPDATE user_inventory SET quantity = $1, is_active = true WHERE id = $2`,
+            [newQty, row.id]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source)
+             VALUES ($1, $2, $3, $4, $5, true, 'LOOT_BOX')`,
+            [userId, guildId, wonItem.id, wonItem.role_id || 'NONE', Math.min(999, count)]
+          );
+        }
+
+        // Assign Discord role if applicable
+        if (member && wonItem.role_id && wonItem.role_id !== 'NONE' && wonItem.role_id !== 'LOOT_BOX' && wonItem.role_id !== 'PACK') {
+          try {
+            if (!member.roles.cache.has(wonItem.role_id)) {
+              await member.roles.add(wonItem.role_id).catch(() => {});
+            }
+          } catch {}
         }
       }
     }
