@@ -487,9 +487,12 @@ export function setupComponentHandlers(client) {
       } else if (customId.startsWith('shop_lb_prizes_btn_')) {
         const boxId = parseInt(customId.replace('shop_lb_prizes_btn_', ''), 10);
         await handleLootBoxPrizeCountModal(interaction, boxId);
-      } else if (customId.startsWith('shop_lb_rename_box_btn_') || customId.startsWith('shop_lb_edit_details_')) {
-        const boxId = parseInt(customId.replace('shop_lb_rename_box_btn_', '').replace('shop_lb_edit_details_', ''), 10);
+      } else if (customId.startsWith('shop_lb_rename_box_btn_')) {
+        const boxId = parseInt(customId.replace('shop_lb_rename_box_btn_', ''), 10);
         await handleLootBoxRenameModal(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_view_') || customId.startsWith('shop_lb_edit_details_') || customId.startsWith('shop_lb_cancel_delete_')) {
+        const boxId = parseInt(customId.replace('shop_lb_view_', '').replace('shop_lb_edit_details_', '').replace('shop_lb_cancel_delete_', ''), 10);
+        await showLootBoxEditorPanel(interaction, boxId);
       } else if (customId.startsWith('shop_lb_delete_start_')) {
         const boxId = parseInt(customId.replace('shop_lb_delete_start_', ''), 10);
         await showLootBoxDeleteConfirm(interaction, boxId);
