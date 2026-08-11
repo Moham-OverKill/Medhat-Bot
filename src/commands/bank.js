@@ -1176,12 +1176,12 @@ export async function handleInventoryItemSelect(interaction) {
 
         // 2. Prizes (Second)
         if (itemsEnabled) {
-          sections.push(`🎁 **Prizes**: \`${masterBox.min_prizes}\` to \`${masterBox.max_prizes}\``);
+          sections.push(`🎁 **Prizes**: \`${masterBox.min_prizes}—${masterBox.max_prizes}\``);
         }
 
         // 3. Coins (Third)
         if (coinsEnabled) {
-          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}\` to \`${masterBox.max_coins.toLocaleString()}\` (\`${masterBox.chance_coins}%\`)`);
+          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}—${masterBox.max_coins.toLocaleString()}\` (\`${masterBox.chance_coins}%\`)`);
         }
       }
 

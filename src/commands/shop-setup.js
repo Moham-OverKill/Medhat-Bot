@@ -4712,12 +4712,12 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
 
     // 2. Prizes (Second)
     if (itemsEnabled) {
-      sections.push(`🎁 **Prizes**: \`${box.min_prizes}\` to \`${box.max_prizes}\``);
+      sections.push(`🎁 **Prizes**: \`${box.min_prizes}—${box.max_prizes}\``);
     }
 
     // 3. Coins (Third)
     if (coinsEnabled) {
-      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\` (\`${box.chance_coins}%\`)`);
+      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}—${box.max_coins.toLocaleString()}\` (\`${box.chance_coins}%\`)`);
     }
 
     const description = sections.length > 0 ? `\u200b\n${sections.join('\n\n')}` : '';
@@ -5140,7 +5140,7 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
       `🪙 ${singularName} Coins Config Updated`,
       `Admin **<@${interaction.user.id}>** updated coin rewards for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
       `• **Drop Chance:** \`${chanceCoins}%\`\n` +
-      `• **Reward Range:** ${coinEmoji} \`${minCoins.toLocaleString()} to ${maxCoins.toLocaleString()}\``
+      `• **Reward Range:** ${coinEmoji} \`${minCoins.toLocaleString()}—${maxCoins.toLocaleString()}\``
     );
 
     await showLootBoxEditorPanel(interaction, boxId);
@@ -5241,7 +5241,7 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
       'blue',
       `🎁 ${singularName} Prize Count Updated`,
       `Admin **<@${interaction.user.id}>** updated item prize count for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
-      `• **Item Prizes:** \`${minPrizes} to ${maxPrizes}\` items per open`
+      `• **Item Prizes:** \`${minPrizes}—${maxPrizes}\` items per open`
     );
 
     await showLootBoxEditorPanel(interaction, boxId);
