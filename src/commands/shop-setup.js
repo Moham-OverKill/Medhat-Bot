@@ -4411,7 +4411,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setCustomId('name')
     .setLabel('Name')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder(`e.g. Golden ${lootBoxCatName}`)
+    .setPlaceholder('Golden Chest')
     .setRequired(true)
     .setMaxLength(100);
 
@@ -5090,10 +5090,10 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
-    .setLabel('Box Name')
+    .setLabel('Name')
     .setStyle(TextInputStyle.Short)
     .setValue(box.name)
-    .setPlaceholder('e.g. Golden Mystery Chest')
+    .setPlaceholder('Golden Chest')
     .setRequired(true)
     .setMaxLength(100);
 
