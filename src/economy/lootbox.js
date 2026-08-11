@@ -88,6 +88,8 @@ export async function getLootBox(boxId, guildId) {
     box.max_coins = parseInt(box.max_coins, 10) || 500;
     box.min_prizes = parseInt(box.min_prizes, 10) || 1;
     box.max_prizes = parseInt(box.max_prizes, 10) || 1;
+    box.items_enabled = box.items_enabled !== false;
+    box.coins_enabled = box.coins_enabled !== false;
 
     // Calculate total pool weight
     box.totalWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
@@ -294,6 +296,51 @@ export async function updateLootBoxPrizeCount(boxId, guildId, { minPrizes, maxPr
 }
 
 /**
+ * Toggle a feature on a loot box (items or coins)
+ * Enforces the "Empty Box" failsafe: at least one feature must remain enabled.
+ * If featureType === 'items' | 'rarity' | 'prizes', toggles items_enabled.
+ * If featureType === 'coins', toggles coins_enabled.
+ */
+export async function toggleLootBoxFeature(boxId, guildId, featureType) {
+  const box = await getLootBox(boxId, guildId);
+  if (!box) throw new Error('Loot box not found.');
+
+  const currentItems = box.items_enabled !== false;
+  const currentCoins = box.coins_enabled !== false;
+
+  let newItems = currentItems;
+  let newCoins = currentCoins;
+
+  if (featureType === 'items' || featureType === 'rarity' || featureType === 'prizes') {
+    newItems = !currentItems;
+    if (!newItems && !newCoins) {
+      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this loot box.' };
+    }
+  } else if (featureType === 'coins') {
+    newCoins = !currentCoins;
+    if (!newItems && !newCoins) {
+      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this loot box.' };
+    }
+  }
+
+  const res = await query(
+    `UPDATE loot_boxes
+     SET items_enabled = $1, coins_enabled = $2
+     WHERE id = $3 AND guild_id = $4
+     RETURNING *`,
+    [newItems, newCoins, boxId, guildId]
+  );
+
+  sysLog('LootBox Feature Toggled', {
+    guild: guildId,
+    item: boxId,
+    detail: `Items:${newItems} Coins:${newCoins} (triggered by ${featureType})`
+  });
+
+  return { success: true, box: res.rows[0] };
+}
+
+/**
  * Delete a loot box, cascading to paired shop_items and all user inventory copies
  */
 export async function deleteLootBox(boxId, guildId) {
@@ -403,14 +450,31 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     }
     const box = boxRes.rows[0];
 
-    const chanceCommon = parseFloat(box.chance_common) || 0;
-    const chanceUncommon = parseFloat(box.chance_uncommon) || 0;
-    const chanceRare = parseFloat(box.chance_rare) || 0;
-    const chanceEpic = parseFloat(box.chance_epic) || 0;
-    const chanceLegendary = parseFloat(box.chance_legendary) || 0;
-    const chanceCoins = parseFloat(box.chance_coins) || 0;
+    const itemsEnabled = box.items_enabled !== false;
+    const coinsEnabled = box.coins_enabled !== false;
 
-    const totalWeight = chanceCommon + chanceUncommon + chanceRare + chanceEpic + chanceLegendary + chanceCoins;
+    const chanceCommon = itemsEnabled ? (parseFloat(box.chance_common) || 0) : 0;
+    const chanceUncommon = itemsEnabled ? (parseFloat(box.chance_uncommon) || 0) : 0;
+    const chanceRare = itemsEnabled ? (parseFloat(box.chance_rare) || 0) : 0;
+    const chanceEpic = itemsEnabled ? (parseFloat(box.chance_epic) || 0) : 0;
+    const chanceLegendary = itemsEnabled ? (parseFloat(box.chance_legendary) || 0) : 0;
+    const chanceCoins = coinsEnabled ? (parseFloat(box.chance_coins) || 0) : 0;
+
+    const tierPool = [];
+    if (itemsEnabled) {
+      if (chanceCommon > 0) tierPool.push({ tier: 'common', weight: chanceCommon });
+      if (chanceUncommon > 0) tierPool.push({ tier: 'uncommon', weight: chanceUncommon });
+      if (chanceRare > 0) tierPool.push({ tier: 'rare', weight: chanceRare });
+      if (chanceEpic > 0) tierPool.push({ tier: 'epic', weight: chanceEpic });
+      if (chanceLegendary > 0) tierPool.push({ tier: 'legendary', weight: chanceLegendary });
+    }
+    if (coinsEnabled) {
+      if (chanceCoins > 0 || tierPool.length === 0) {
+        tierPool.push({ tier: 'coins', weight: Math.max(1, chanceCoins) });
+      }
+    }
+
+    const totalWeight = tierPool.reduce((sum, t) => sum + t.weight, 0);
     if (totalWeight <= 0) {
       await client.query('ROLLBACK');
       return { success: false, error: '⚠️ This loot box has all drop chances set to 0%. Please contact an admin.' };
@@ -418,8 +482,8 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
     const minCoins = parseInt(box.min_coins, 10) || 100;
     const maxCoins = Math.max(minCoins, parseInt(box.max_coins, 10) || 500);
-    const minPrizes = Math.max(1, parseInt(box.min_prizes, 10) || 1);
-    const maxPrizes = Math.max(minPrizes, parseInt(box.max_prizes, 10) || 1);
+    const minPrizes = itemsEnabled ? Math.max(1, parseInt(box.min_prizes, 10) || 1) : 1;
+    const maxPrizes = itemsEnabled ? Math.max(minPrizes, parseInt(box.max_prizes, 10) || 1) : 1;
 
     // 3. Deduct 1 box copy from user inventory
     if (currentQty > 1) {
@@ -459,16 +523,6 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     // 5. Roll prize count
     const prizeCount = Math.floor(Math.random() * (maxPrizes - minPrizes + 1)) + minPrizes;
     const awardedPrizes = [];
-
-    const tierPool = [
-      { tier: 'common', weight: chanceCommon },
-      { tier: 'uncommon', weight: chanceUncommon },
-      { tier: 'rare', weight: chanceRare },
-      { tier: 'epic', weight: chanceEpic },
-      { tier: 'legendary', weight: chanceLegendary },
-      { tier: 'coins', weight: chanceCoins }
-    ].filter(t => t.weight > 0);
-
     let totalCoinsAwarded = 0;
 
     for (let p = 0; p < prizeCount; p++) {
