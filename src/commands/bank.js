@@ -1472,36 +1472,78 @@ export async function handleInventoryAction(interaction) {
       }
 
       for (const itemEntry of itemCounts.values()) {
-        const rarityBadge = RARITY_EMOJIS[itemEntry.rarity] || '⚪';
+        const rarityBadge = RARITY_EMOJIS[(itemEntry.rarity || 'common').toLowerCase()] || '⚪';
         const qtyBadge = itemEntry.count > 1 ? ` x${itemEntry.count}` : '';
-        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${qtyBadge}`);
+        const roleMention = (itemEntry.roleId && /^\d{17,20}$/.test(itemEntry.roleId)) ? ` <@&${itemEntry.roleId}>` : '';
+        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${roleMention}${qtyBadge}`);
       }
 
-      const revealMsg = `🎉 You opened **${boxName}** and received:\n` + prizeLines.join('\n');
-      await interaction.followUp({ content: revealMsg, flags: MessageFlags.Ephemeral });
-
-      // Send log to Discord Inventory / Audit log channel
-      const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
-      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId) || '🎁';
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId) || 'Chests';
       const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
         ? lootBoxCatName.slice(0, -1) 
         : lootBoxCatName;
 
+      // Build Result Embed (Replaces previous message gracefully in-place)
+      const rewardsText = prizeLines.length > 0 
+        ? prizeLines.join('\n') 
+        : '• *No items received from this opening.*';
+
+      const remainingText = result.remainingQty > 0 
+        ? `**Remaining:** \`x${result.remainingQty}\` ${boxName}`
+        : `*You opened your last ${boxName}.*`;
+
+      const resultEmbed = new EmbedBuilder()
+        .setTitle(`${lootBoxEmoji} ${boxName} Opened!`)
+        .setColor('#F1C40F')
+        .setDescription(`**Rewards Received:**\n${rewardsText}\n\n${remainingText}`)
+        .setTimestamp();
+
+      if (result.box?.image_url && typeof result.box.image_url === 'string' && result.box.image_url.startsWith('http')) {
+        resultEmbed.setThumbnail(result.box.image_url);
+      }
+
+      const resultRow = new ActionRowBuilder();
+      if (result.remainingQty > 0) {
+        resultRow.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`bank_inv_open_${invId}_lootboxes_${currentIndex}`)
+            .setLabel('Open Another')
+            .setEmoji('🔓')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('bank_inventory')
+            .setLabel('Back to Inventory')
+            .setEmoji('🎒')
+            .setStyle(ButtonStyle.Secondary)
+        );
+      } else {
+        resultRow.addComponents(
+          new ButtonBuilder()
+            .setCustomId('bank_inventory')
+            .setLabel('Back to Inventory')
+            .setEmoji('🎒')
+            .setStyle(ButtonStyle.Secondary)
+        );
+      }
+
+      // Edit interaction directly in-place so user is NOT kicked out
+      await interaction.editReply({
+        content: null,
+        embeds: [resultEmbed],
+        components: [resultRow]
+      });
+
+      // Send log to Discord Inventory / Audit log channel
       sendLog(
         interaction.guild,
         'inventory',
         'gold',
-        `${lootBoxEmoji || '🎁'} ${singularName} Opened`,
+        `${lootBoxEmoji} ${singularName} Opened`,
         `Player **<@${interaction.user.id}>** opened ${singularName.toLowerCase()} **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
       );
 
-      // Refresh inventory view
-      if (result.remainingQty > 0) {
-        return handleInventoryItemSelect(interaction);
-      } else {
-        return handleInventoryButton(interaction);
-      }
+      return;
     }
 
     // --- SECURITY LOCK: Trade Concurrency ---
