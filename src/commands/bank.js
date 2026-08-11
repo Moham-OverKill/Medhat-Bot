@@ -1181,7 +1181,7 @@ export async function handleInventoryItemSelect(interaction) {
 
         // 3. Coins (Third)
         if (coinsEnabled) {
-          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}—${masterBox.max_coins.toLocaleString()} (${masterBox.chance_coins}%)\``);
+          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}—${masterBox.max_coins.toLocaleString()}\` \`(${masterBox.chance_coins}%)\``);
         }
       }
 
