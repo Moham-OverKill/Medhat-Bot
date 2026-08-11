@@ -315,10 +315,11 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     const guildId = interaction.guildId;
     const lootBoxCatName = await getLootBoxCategoryName(guildId);
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-    const lootBoxes = await getLootBoxes(guildId);
+    const config = await getGuildConfig(guildId);
+    const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
 
     const desc = lootBoxes.length > 0
-      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — Prizes: \`${b.min_prizes || 1}-${b.max_prizes || 1}\` | Coins: \`${(parseInt(b.min_coins) || 100).toLocaleString()}-${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
+      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — 🎁 \`${b.min_prizes || 1}-${b.max_prizes || 1}\` | ${serverCoinEmoji} \`${(parseInt(b.min_coins) || 100).toLocaleString()}-${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
       : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`;
 
     const embed = new EmbedBuilder()
@@ -4597,30 +4598,32 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     const itemsEnabled = box.items_enabled !== false;
     const coinsEnabled = box.coins_enabled !== false;
 
-    // Build concise description reflecting active reward types
-    let description = '';
-    if (itemsEnabled && coinsEnabled) {
-      description =
-        `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\` - Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
-        `⚪ **Common**: \`${box.chance_common}%\`\n` +
-        `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
-        `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
-        `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
-        `🟡 **Legendary**: \`${box.chance_legendary}%\`\n\n` +
-        `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
-    } else if (itemsEnabled) {
-      description =
-        `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\`\n\n` +
-        `⚪ **Common**: \`${box.chance_common}%\`\n` +
-        `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
-        `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
-        `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
-        `🟡 **Legendary**: \`${box.chance_legendary}%\``;
-    } else {
-      description =
-        `Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
-        `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
+    // Build description in strict order: 1. Rarity, 2. Prizes, 3. Coins (each with dedicated emojis)
+    const sections = [];
+
+    // 1. Rarity (First)
+    if (itemsEnabled) {
+      const rarityLines = [
+        `⚪ **Common**: \`${box.chance_common}%\``,
+        `🟢 **Uncommon**: \`${box.chance_uncommon}%\``,
+        `🔵 **Rare**: \`${box.chance_rare}%\``,
+        `🟣 **Epic**: \`${box.chance_epic}%\``,
+        `🟡 **Legendary**: \`${box.chance_legendary}%\``
+      ].join('\n');
+      sections.push(rarityLines);
     }
+
+    // 2. Prizes (Second)
+    if (itemsEnabled) {
+      sections.push(`🎁 **Prizes**: \`${box.min_prizes}\` to \`${box.max_prizes}\``);
+    }
+
+    // 3. Coins (Third)
+    if (coinsEnabled) {
+      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\` (\`${box.chance_coins}%\`)`);
+    }
+
+    const description = sections.join('\n\n');
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
