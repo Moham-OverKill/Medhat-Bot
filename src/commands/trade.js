@@ -600,24 +600,31 @@ export async function handleTradeSetupInteraction(interaction) {
             }
         }
 
-        // 2. Routing & State Management (Handles category picking & navigation)
+        // 2. Routing & State Management (Handles folder navigation & category picking)
         if (customId === 'trade_cat_give_select' || customId === 'trade_cat_req_select' || 
             customId.startsWith('trade_folder_back_') || (interaction.isAnySelectMenu() && interaction.values[0]?.startsWith('trade_folder_back_'))) {
             
-            const isBack = customId.startsWith('trade_folder_back_') || interaction.values[0]?.startsWith('trade_folder_back_');
-            const isGive = customId.includes('give') || interaction.values[0]?.includes('give');
+            const val = interaction.values?.[0] || customId;
+            const isGive = customId.includes('give') || val.includes('give');
             
-            if (isBack) {
-                if (isGive) setup.givingFolder = null;
-                else setup.requestingFolder = null;
-                sysLog('Folder Back Navigation', { aspect: isGive ? 'give' : 'req' });
-                // If it was a select menu choice, we handle it here, but let the UI rebuild
-            } else {
-                const val = interaction.values[0]; 
-                const catId = val.split('_').pop();
-                
-                if (isGive) setup.givingFolder = parseInt(catId);
-                else setup.requestingFolder = parseInt(catId);
+            if (val.startsWith('trade_folder_back_')) {
+                if (val.endsWith('_categories')) {
+                    if (isGive) setup.givingFolder = 'categorized';
+                    else setup.requestingFolder = 'categorized';
+                } else {
+                    if (isGive) setup.givingFolder = null;
+                    else setup.requestingFolder = null;
+                }
+                sysLog('Folder Back Navigation', { aspect: isGive ? 'give' : 'req', target: isGive ? setup.givingFolder : setup.requestingFolder });
+            } else if (val.startsWith('trade_folder_')) {
+                const folderType = val.split('_').slice(3).join('_'); // categorized, standalone, loot_boxes
+                if (isGive) setup.givingFolder = folderType;
+                else setup.requestingFolder = folderType;
+                sysLog('Folder Selected', { folder: folderType, aspect: isGive ? 'give' : 'req' });
+            } else if (val.startsWith('trade_cat_')) {
+                const catId = parseInt(val.split('_').pop(), 10);
+                if (isGive) setup.givingFolder = catId;
+                else setup.requestingFolder = catId;
                 sysLog('Category Routing Applied', { catId: catId, aspect: isGive ? 'give' : 'req' });
             }
         }
@@ -709,7 +716,7 @@ export async function handleTradeSetupInteraction(interaction) {
  */
 async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     const isGive = aspect === 'give';
-    const selectedCatId = isGive ? setup.givingFolder : setup.requestingFolder;
+    const currentFolder = isGive ? setup.givingFolder : setup.requestingFolder;
     
     let tradableItems = [];
     if (isGive) {
@@ -724,8 +731,9 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         }
 
         tradableItems = allItems.filter(i => {
-           const source = (i.purchase_source || '').toLowerCase();
-           if (source !== 'shop' || i.item_type === 'pack') return false; 
+           const source = (i.purchase_source || i.source || '').toUpperCase();
+           if (source !== 'SHOP' && source !== 'LOOT_BOX' && i.item_type !== 'loot_box') return false; 
+           if (i.item_type === 'pack') return false; 
            if (i.is_tradable === false) return false; // Filter out Locked items
            const rawQty = parseInt(i.quantity) || 1;
            const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
@@ -753,8 +761,9 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         }
 
         tradableItems = allItems.filter(i => {
-            const source = (i.purchase_source || '').toLowerCase();
-            if (source !== 'shop' || i.item_type === 'pack') return false;
+            const source = (i.purchase_source || i.source || '').toUpperCase();
+            if (source !== 'SHOP' && source !== 'LOOT_BOX' && i.item_type !== 'loot_box') return false;
+            if (i.item_type === 'pack') return false;
             if (i.is_tradable === false) return false;
             const rawQty = parseInt(i.quantity) || 1;
             const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
@@ -770,30 +779,84 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         }
     }
 
-    if (!selectedCatId && selectedCatId !== 0) {
+    const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+    const lootBoxCatName = await getLootBoxCategoryName(setup.guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(setup.guildId);
+
+    // LEVEL 1: ROOT FOLDERS MENU
+    if (currentFolder === null) {
+        const hasCategorized = tradableItems.some(i => i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const hasUncategorized = tradableItems.some(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const hasLootBoxes = tradableItems.some(i => i.item_type === 'loot_box' || i.loot_box_id || (i.source || '').toUpperCase() === 'LOOT_BOX');
+
+        const folderOptions = [];
+        if (hasCategorized) folderOptions.push({ label: '📂 Categorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_categorized` });
+        if (hasUncategorized) folderOptions.push({ label: '🏷️ Uncategorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_standalone` });
+        if (hasLootBoxes) folderOptions.push({ label: `${lootBoxEmoji} ${lootBoxCatName.slice(0, 50)}`, value: `trade_folder_${isGive ? 'give' : 'req'}_loot_boxes` });
+
+        if (folderOptions.length === 0) {
+            return interaction.followUp({ content: `❌ No tradable items found.`, flags: MessageFlags.Ephemeral });
+        }
+
+        const catSelect = new StringSelectMenuBuilder()
+            .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)
+            .setPlaceholder(`📂 Choose Item Folder to ${isGive ? 'Give' : 'Request'}...`)
+            .addOptions(folderOptions);
+
+        return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+    }
+
+    // LEVEL 2: CATEGORIZED FOLDERS LIST
+    if (currentFolder === 'categorized') {
         const categories = await getShopCategories(setup.guildId);
-        const validCatIds = new Set(tradableItems.map(i => i.category_id));
+        const validCatIds = new Set(tradableItems.filter(i => i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id).map(i => i.category_id));
         const availableCats = categories.filter(c => validCatIds.has(c.id));
 
         if (availableCats.length === 0) {
-            if (isGive) setup.givingFolder = -1;
-            else setup.requestingFolder = -1;
-        } else {
-            const options = availableCats.map(c => ({ label: `📁 ${c.name}`, value: `trade_cat_${isGive ? 'give' : 'req'}_${c.id}` }));
-            if (tradableItems.some(i => !i.category_id)) options.push({ label: '📁 Uncategorized', value: `trade_cat_${isGive ? 'give' : 'req'}_-1` });
-
-            const catSelect = new StringSelectMenuBuilder()
-                .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)
-                .setPlaceholder(`Select item(s) to ${isGive ? 'give' : 'request'}`)
-                .addOptions(options);
-
-            return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
+            if (isGive) setup.givingFolder = null;
+            else setup.requestingFolder = null;
+            return renderTradeItemMenu(interaction, setup, aspect);
         }
+
+        const options = availableCats.map(c => ({
+            label: `📂 ${c.name.slice(0, 50)}`,
+            value: `trade_cat_${isGive ? 'give' : 'req'}_${c.id}`
+        }));
+        options.unshift({ label: '⬅️ Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}_root` });
+
+        const catSelect = new StringSelectMenuBuilder()
+            .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)
+            .setPlaceholder('📂 Choose Category Folder...')
+            .addOptions(options);
+
+        return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
     }
 
-    const currentCatId = isGive ? setup.givingFolder : setup.requestingFolder;
-    const finalCatId = (currentCatId === -1 || currentCatId === null) ? null : currentCatId;
-    const folderItems = tradableItems.filter(i => (finalCatId === null ? !i.category_id : i.category_id === finalCatId));
+    // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
+    let folderItems = [];
+    let groupPrefix = '🏷️';
+    let groupName = 'Items';
+    let backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
+
+    if (currentFolder === 'standalone') {
+        folderItems = tradableItems.filter(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        groupName = 'Uncategorized';
+        groupPrefix = '🏷️';
+        backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
+    } else if (currentFolder === 'loot_boxes') {
+        folderItems = tradableItems.filter(i => i.item_type === 'loot_box' || i.loot_box_id || (i.source || '').toUpperCase() === 'LOOT_BOX');
+        folderItems.sort((a, b) => (parseInt(a.loot_box_id) || a.id) - (parseInt(b.loot_box_id) || b.id));
+        groupName = lootBoxCatName;
+        groupPrefix = lootBoxEmoji;
+        backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
+    } else {
+        const catId = typeof currentFolder === 'number' ? currentFolder : parseInt(currentFolder, 10);
+        folderItems = tradableItems.filter(i => i.category_id === catId && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const categories = await getShopCategories(setup.guildId);
+        groupName = categories.find(c => c.id === catId)?.name || 'Category';
+        groupPrefix = '🏷️';
+        backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_categories`;
+    }
 
     if (folderItems.length === 0) {
         if (isGive) setup.givingFolder = null;
@@ -805,23 +868,20 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         items: folderItems,
         page,
         customId: `trade_select_${isGive ? 'give' : 'req'}_item`,
-        placeholder: `Select an item to ${isGive ? 'give' : 'request'}...`,
-        backOption: { label: 'Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}`, emoji: '⬅️' },
+        placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick an item...`,
+        backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: `trade_page_${isGive ? 'give' : 'req'}_`,
         pageSize: 20,
         mapOption: row => {
             const qty = parseInt(row.quantity) || 1;
             const qtyLabel = ` (x${qty})`;
             return {
-                label: `🏷️ ${row.name}${qtyLabel}`,
+                label: `${groupPrefix} ${row.name}${qtyLabel}`,
                 value: row.id.toString()
             };
         }
     });
 
-    if (isGive) setup.givingFolder = finalCatId ?? -1;
-    else setup.requestingFolder = finalCatId ?? -1;
-    
     return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(selectMenu));
 }
 
@@ -930,16 +990,25 @@ export async function handleTradeModal(interaction) {
  * Handle Select Menu for items
  */
 export async function handleTradeSelect(interaction) {
-    if (interaction.values[0]?.startsWith('trade_folder_back_')) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return handleTradeSetupInteraction(interaction);
-    }
-
+    const isGive = interaction.customId === 'trade_select_give_item';
     const setupId = `${interaction.guildId}_${interaction.user.id}`;
     const setup = ACTIVE_SETUPS.get(setupId);
     if (!setup) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+    }
+
+    if (interaction.values[0]?.startsWith('trade_folder_back_')) {
+        const val = interaction.values[0];
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+        if (val.endsWith('_categories')) {
+            if (isGive) setup.givingFolder = 'categorized';
+            else setup.requestingFolder = 'categorized';
+        } else {
+            if (isGive) setup.givingFolder = null;
+            else setup.requestingFolder = null;
+        }
+        return renderTradeItemMenu(interaction, setup, isGive ? 'give' : 'req');
     }
 
     if (interaction.values[0]?.startsWith('trade_page_')) {
@@ -951,7 +1020,6 @@ export async function handleTradeSelect(interaction) {
     }
 
     const invId = parseInt(interaction.values[0], 10);
-    const isGive = interaction.customId === 'trade_select_give_item';
     const itemOwnerId = isGive ? interaction.user.id : setup.targetId;
 
     const result = await query(
@@ -969,7 +1037,7 @@ export async function handleTradeSelect(interaction) {
 
     const item = result.rows[0];
 
-    if (item.source !== 'SHOP') {
+    if (item.source !== 'SHOP' && item.source !== 'LOOT_BOX') {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.followUp({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
     }
@@ -1043,13 +1111,13 @@ async function finalizeTradePosting(interaction, setup) {
         // Verify no soulbound items snuck into the setup state
         for (const item of setup.senderItems) {
             const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
-            if (item.source !== 'SHOP' || isTemp) {
+            if ((item.source !== 'SHOP' && item.source !== 'LOOT_BOX') || isTemp) {
                 return interaction.followUp({ content: `❌ Restricted item detected in offer: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
         for (const item of setup.targetItems) {
             const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
-            if (item.source !== 'SHOP' || isTemp) {
+            if ((item.source !== 'SHOP' && item.source !== 'LOOT_BOX') || isTemp) {
                 return interaction.followUp({ content: `❌ Restricted item detected in request: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
@@ -1532,7 +1600,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const rowRes = await client.query(
                     `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
-                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND (i.source = 'SHOP' OR i.source = 'LOOT_BOX')
                      FOR UPDATE`,
                     [offer.id, trade.sender_id, trade.guild_id]
                 );
@@ -1572,7 +1640,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const rowRes = await client.query(
                     `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
-                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source = 'SHOP'
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND (i.source = 'SHOP' OR i.source = 'LOOT_BOX')
                      FOR UPDATE`,
                     [offer.id, trade.target_id, trade.guild_id]
                 );
