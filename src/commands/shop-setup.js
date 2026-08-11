@@ -3345,19 +3345,21 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     let prevBtn, nextBtn;
 
     if (view === 'details') {
-      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category.
-      // Standalone items (no category) or categories with only 1 item have disabled arrows.
+      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category or uncategorized folder.
       let prevSibling = null;
       let nextSibling = null;
 
-      if (item.category_id) {
-        const siblingItems = await getShopItems(interaction.guildId, item.category_id, 'name', true);
-        const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack');
-        if (siblingShopItems.length > 1) {
-          const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
-          prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
-          nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
-        }
+      const siblingItems = await getShopItems(
+        interaction.guildId, 
+        item.category_id ? item.category_id : 'null', 
+        'name', 
+        true
+      );
+      const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+      if (siblingShopItems.length > 1) {
+        const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
+        prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
+        nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
       }
 
       prevBtn = new ButtonBuilder()
@@ -3406,7 +3408,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     const rowNav = new ActionRowBuilder().addComponents(prevBtn, usersBtn, revokeBtn, nextBtn);
 
-    const backFolderId = item.category_id || 'root';
+    const backFolderId = item.category_id ? `cat_${item.category_id}` : 'cat_null';
     const backBtn = new ButtonBuilder()
       .setCustomId(`shop_edit_item_back_${backFolderId}`)
       .setLabel('Back')
