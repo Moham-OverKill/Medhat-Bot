@@ -1256,7 +1256,6 @@ export async function handleInventoryItemSelect(interaction) {
 
     const source = item.source || 'SYNC';
     const isAdminGranted = source === 'SYNC';
-    const purchasedAt = new Date(item.purchased_at);
 
     const isTemp = !!(item.expires_at ||
       (item.duration_seconds && item.duration_seconds > 0) ||
@@ -1274,13 +1273,6 @@ export async function handleInventoryItemSelect(interaction) {
     let desc = `**Role:** ${validFirstRole}`;
     desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
-
-    if (isAdminGranted) {
-      const joinDate = interaction.member.joinedAt || new Date();
-      desc += `\n**Acquired:** <t:${Math.floor(joinDate.getTime() / 1000)}:D>`;
-    } else {
-      desc += `\n**Acquired:** <t:${Math.floor(purchasedAt.getTime() / 1000)}:D>`;
-    }
 
     if (isAdminGranted) {
       desc += `\n**Status:** \uD83D\uDEE1\uFE0F Admin Granted`;
