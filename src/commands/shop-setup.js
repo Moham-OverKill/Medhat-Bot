@@ -4415,7 +4415,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
 
   const imgInput = new TextInputBuilder()
     .setCustomId('image_url')
-    .setLabel('Banner Image URL')
+    .setLabel('Image URL')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('https://example.com/chest.png')
     .setRequired(false);
@@ -4602,7 +4602,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       .setDescription(description);
 
     if (box.image_url && box.image_url.startsWith('http')) {
-      embed.setImage(box.image_url);
+      embed.setThumbnail(box.image_url);
     }
 
     const row1 = new ActionRowBuilder().addComponents(
@@ -4967,7 +4967,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_lb_rename_modal_${boxId}`)
-    .setTitle(`Rename: ${box.name.slice(0, 30)}`);
+    .setTitle(`Customize: ${box.name.slice(0, 30)}`);
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
@@ -4980,7 +4980,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const imgInput = new TextInputBuilder()
     .setCustomId('image_url')
-    .setLabel('Banner Image URL')
+    .setLabel('Image URL')
     .setStyle(TextInputStyle.Short)
     .setValue(box.image_url || '')
     .setPlaceholder('https://example.com/chest.png')
