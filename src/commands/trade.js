@@ -790,9 +790,9 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         const hasLootBoxes = tradableItems.some(i => i.item_type === 'loot_box' || i.loot_box_id || (i.source || '').toUpperCase() === 'LOOT_BOX');
 
         const folderOptions = [];
-        if (hasCategorized) folderOptions.push({ label: '📂 Categorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_categorized` });
-        if (hasUncategorized) folderOptions.push({ label: '🏷️ Uncategorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_standalone` });
-        if (hasLootBoxes) folderOptions.push({ label: `${lootBoxEmoji} ${lootBoxCatName.slice(0, 50)}`, value: `trade_folder_${isGive ? 'give' : 'req'}_loot_boxes` });
+        if (hasCategorized) folderOptions.push({ label: 'Categorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_categorized`, emoji: '📂' });
+        if (hasUncategorized) folderOptions.push({ label: 'Uncategorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_standalone`, emoji: '🏷️' });
+        if (hasLootBoxes) folderOptions.push({ label: lootBoxCatName.slice(0, 50), value: `trade_folder_${isGive ? 'give' : 'req'}_loot_boxes`, emoji: lootBoxEmoji || '🎁' });
 
         if (folderOptions.length === 0) {
             return interaction.followUp({ content: `❌ No tradable items found.`, flags: MessageFlags.Ephemeral });
@@ -800,7 +800,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
 
         const catSelect = new StringSelectMenuBuilder()
             .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)
-            .setPlaceholder(`📂 Choose Item Folder to ${isGive ? 'Give' : 'Request'}...`)
+            .setPlaceholder(`Select items to ${isGive ? 'give' : 'request'}`)
             .addOptions(folderOptions);
 
         return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
@@ -819,14 +819,15 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         }
 
         const options = availableCats.map(c => ({
-            label: `📂 ${c.name.slice(0, 50)}`,
-            value: `trade_cat_${isGive ? 'give' : 'req'}_${c.id}`
+            label: c.name.slice(0, 50),
+            value: `trade_cat_${isGive ? 'give' : 'req'}_${c.id}`,
+            emoji: '📂'
         }));
-        options.unshift({ label: '⬅️ Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}_root` });
+        options.unshift({ label: 'Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}_root`, emoji: '⬅️' });
 
         const catSelect = new StringSelectMenuBuilder()
             .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)
-            .setPlaceholder('📂 Choose Category Folder...')
+            .setPlaceholder(`Select items to ${isGive ? 'give' : 'request'}`)
             .addOptions(options);
 
         return showTradeSetup(interaction, setup, new ActionRowBuilder().addComponents(catSelect));
@@ -868,7 +869,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         items: folderItems,
         page,
         customId: `trade_select_${isGive ? 'give' : 'req'}_item`,
-        placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick an item...`,
+        placeholder: `Select items to ${isGive ? 'give' : 'request'}`,
         backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: `trade_page_${isGive ? 'give' : 'req'}_`,
         pageSize: 20,
@@ -876,8 +877,9 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
             const qty = parseInt(row.quantity) || 1;
             const qtyLabel = ` (x${qty})`;
             return {
-                label: `${groupPrefix} ${row.name}${qtyLabel}`,
-                value: row.id.toString()
+                label: `${row.name}${qtyLabel}`,
+                value: row.id.toString(),
+                emoji: groupPrefix || '🏷️'
             };
         }
     });
