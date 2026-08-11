@@ -45,6 +45,7 @@ import {
   updateLootBoxCoinsConfig,
   updateLootBoxPrizeCount,
   deleteLootBox,
+  toggleLootBoxFeature,
   getLootBoxCategoryName,
   getLootBoxCategoryEmoji
 } from '../economy/lootbox.js';
@@ -4573,7 +4574,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
 }
 
 /**
- * Unified Loot Box Configuration Panel (Rarity Rates, Coins Config, Prize Count, Rename, Delete)
+ * Unified Loot Box Configuration Panel (Dropdown Config, Feature Toggles, Customize, Delete)
  */
 export async function showLootBoxEditorPanel(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
@@ -4587,14 +4588,33 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     const config = await getGuildConfig(interaction.guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
 
-    const description =
-      `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\` - Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
-      `⚪ **Common**: \`${box.chance_common}%\`\n` +
-      `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
-      `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
-      `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
-      `🟡 **Legendary**: \`${box.chance_legendary}%\`\n\n` +
-      `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
+    const itemsEnabled = box.items_enabled !== false;
+    const coinsEnabled = box.coins_enabled !== false;
+
+    // Build concise description reflecting active reward types
+    let description = '';
+    if (itemsEnabled && coinsEnabled) {
+      description =
+        `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\` - Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
+        `⚪ **Common**: \`${box.chance_common}%\`\n` +
+        `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
+        `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
+        `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
+        `🟡 **Legendary**: \`${box.chance_legendary}%\`\n\n` +
+        `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
+    } else if (itemsEnabled) {
+      description =
+        `Prizes \`${box.min_prizes}\` to \`${box.max_prizes}\`\n\n` +
+        `⚪ **Common**: \`${box.chance_common}%\`\n` +
+        `🟢 **Uncommon**: \`${box.chance_uncommon}%\`\n` +
+        `🔵 **Rare**: \`${box.chance_rare}%\`\n` +
+        `🟣 **Epic**: \`${box.chance_epic}%\`\n` +
+        `🟡 **Legendary**: \`${box.chance_legendary}%\``;
+    } else {
+      description =
+        `Coins \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\`\n\n` +
+        `${serverCoinEmoji} **Coins**: \`${box.chance_coins}%\``;
+    }
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
@@ -4605,25 +4625,73 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       embed.setThumbnail(box.image_url);
     }
 
-    const row1 = new ActionRowBuilder().addComponents(
+    const components = [];
+
+    // Helper to resolve select emoji
+    const getSelectEmoji = (rawEmoji) => {
+      if (!rawEmoji) return undefined;
+      const customMatch = rawEmoji.match(/^<a?:([a-zA-Z0-9_]+):([0-9]+)>$/);
+      if (customMatch) return { name: customMatch[1], id: customMatch[2] };
+      const rawIdMatch = rawEmoji.match(/^[0-9]{17,20}$/);
+      if (rawIdMatch) return { id: rawIdMatch[0] };
+      return rawEmoji;
+    };
+
+    // --- Row 1: Configuration Dropdown (Filtered by enabled features) ---
+    const dropdownOptions = [];
+    if (itemsEnabled) {
+      dropdownOptions.push({
+        label: 'Rarity',
+        value: 'cfg_rarity',
+        emoji: '🎲',
+        description: 'Configure item rarity drop rates'
+      });
+      dropdownOptions.push({
+        label: 'Prizes',
+        value: 'cfg_prizes',
+        emoji: '🎁',
+        description: 'Configure min & max prizes per open'
+      });
+    }
+    if (coinsEnabled) {
+      dropdownOptions.push({
+        label: 'Coins',
+        value: 'cfg_coins',
+        emoji: getSelectEmoji(serverCoinEmoji),
+        description: 'Configure coins drop chance & range'
+      });
+    }
+
+    if (dropdownOptions.length > 0) {
+      const configSelect = new StringSelectMenuBuilder()
+        .setCustomId(`shop_lb_config_menu_${boxId}`)
+        .setPlaceholder('Configure Loot Box')
+        .addOptions(dropdownOptions);
+      components.push(new ActionRowBuilder().addComponents(configSelect));
+    }
+
+    // --- Row 2: Feature Toggle Buttons (Rarity & Prizes next to each other) ---
+    const toggleRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_lb_rates_btn_${boxId}`)
+        .setCustomId(`shop_lb_toggle_items_${boxId}`)
         .setLabel('Rarity')
         .setEmoji('🎲')
-        .setStyle(ButtonStyle.Primary),
+        .setStyle(itemsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`shop_lb_coins_btn_${boxId}`)
-        .setLabel('Coins')
-        .setEmoji(serverCoinEmoji)
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_prizes_btn_${boxId}`)
+        .setCustomId(`shop_lb_toggle_prizes_${boxId}`)
         .setLabel('Prizes')
         .setEmoji('🎁')
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(itemsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_toggle_coins_${boxId}`)
+        .setLabel('Coins')
+        .setEmoji(serverCoinEmoji)
+        .setStyle(coinsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
     );
+    components.push(toggleRow);
 
-    const row2 = new ActionRowBuilder().addComponents(
+    // --- Row 3: Action Buttons (Back, Customize, Delete) ---
+    const actionRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('shop_lb_home')
         .setLabel('Back')
@@ -4640,14 +4708,63 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
     );
+    components.push(actionRow);
 
     await interaction.editReply({
       content: null,
       embeds: [embed],
-      components: [row1, row2]
+      components
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box editor panel');
+  }
+}
+
+/**
+ * Handle Feature Toggling (Items or Coins) with Empty Box Failsafe
+ */
+export async function handleLootBoxToggleFeature(interaction, boxId, featureType) {
+  try {
+    const result = await toggleLootBoxFeature(boxId, interaction.guildId, featureType);
+    if (!result.success) {
+      if (!interaction.deferred && !interaction.replied) {
+        return interaction.reply({
+          content: `⚠️ ${result.error}`,
+          flags: MessageFlags.Ephemeral
+        });
+      } else {
+        return interaction.followUp({
+          content: `⚠️ ${result.error}`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
+    }
+    await showLootBoxEditorPanel(interaction, boxId);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'toggle loot box feature');
+  }
+}
+
+/**
+ * Handle Option Selected in Loot Box Configuration Dropdown Menu
+ */
+export async function handleLootBoxConfigMenuSelect(interaction) {
+  try {
+    const customId = interaction.customId; // shop_lb_config_menu_${boxId}
+    const boxId = parseInt(customId.replace('shop_lb_config_menu_', ''), 10);
+    const selected = interaction.values[0];
+
+    if (selected === 'cfg_rarity') {
+      return handleLootBoxRarityRatesModal(interaction, boxId);
+    }
+    if (selected === 'cfg_prizes') {
+      return handleLootBoxPrizeCountModal(interaction, boxId);
+    }
+    if (selected === 'cfg_coins') {
+      return handleLootBoxCoinsConfigModal(interaction, boxId);
+    }
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box config menu');
   }
 }
 

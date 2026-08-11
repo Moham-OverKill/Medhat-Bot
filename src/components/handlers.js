@@ -101,7 +101,9 @@ import {
   showLootBoxDeleteConfirm,
   handleLootBoxDeleteConfirm,
   handleEditLootBoxStart,
-  handleDeleteLootBoxStart
+  handleDeleteLootBoxStart,
+  handleLootBoxToggleFeature,
+  handleLootBoxConfigMenuSelect
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -465,6 +467,17 @@ export function setupComponentHandlers(client) {
         await handleDeleteLootBoxStart(interaction);
       } else if (customId === 'shop_lb_rename_cat') {
         await handleLootBoxRenameCatStart(interaction);
+      } else if (customId.startsWith('shop_lb_config_menu_')) {
+        await handleLootBoxConfigMenuSelect(interaction);
+      } else if (customId.startsWith('shop_lb_toggle_items_')) {
+        const boxId = parseInt(customId.replace('shop_lb_toggle_items_', ''), 10);
+        await handleLootBoxToggleFeature(interaction, boxId, 'items');
+      } else if (customId.startsWith('shop_lb_toggle_prizes_')) {
+        const boxId = parseInt(customId.replace('shop_lb_toggle_prizes_', ''), 10);
+        await handleLootBoxToggleFeature(interaction, boxId, 'prizes');
+      } else if (customId.startsWith('shop_lb_toggle_coins_')) {
+        const boxId = parseInt(customId.replace('shop_lb_toggle_coins_', ''), 10);
+        await handleLootBoxToggleFeature(interaction, boxId, 'coins');
       } else if (customId.startsWith('shop_lb_rates_btn_')) {
         const boxId = parseInt(customId.replace('shop_lb_rates_btn_', ''), 10);
         await handleLootBoxRarityRatesModal(interaction, boxId);
