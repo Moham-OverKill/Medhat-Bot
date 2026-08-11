@@ -1269,8 +1269,9 @@ export async function handleInventoryItemSelect(interaction) {
       epic: '\uD83D\uDFE3 Epic',
       legendary: '\uD83D\uDFE1 Legendary'
     };
-    const rarityText = RARITY_DISPLAY_MAP[item.rarity] || '\u26AA Common';
-    let desc = `**Role:** ${firstRoleId ? `<@&${firstRoleId}>` : item.name}`;
+    const rarityText = RARITY_DISPLAY_MAP[item.rarity] || '⚪ Common';
+    const validFirstRole = (firstRoleId && /^\d{17,20}$/.test(firstRoleId)) ? `<@&${firstRoleId}>` : item.name;
+    let desc = `**Role:** ${validFirstRole}`;
     desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
 
@@ -1603,10 +1604,12 @@ export async function handleInventoryAction(interaction) {
         const droppedQty = res.quantity || 1;
         const droppedLabel = droppedQty > 1 ? `${droppedQty}x ${res.item.name}` : res.item.name;
 
+        const roleMention = (res.item.role_id && /^\d{17,20}$/.test(res.item.role_id)) ? ` <@&${res.item.role_id}>` : '';
+
         const publicEmbed = new EmbedBuilder()
           .setTitle('\uD83D\uDCE6 Item Dropped!')
           .setColor('#F1C40F')
-          .setDescription(`${interaction.user} dropped **${droppedLabel}** <@&${res.item.role_id}>!`)
+          .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
           .setTimestamp();
 
         if (dropImg) publicEmbed.setImage(dropImg);
@@ -2032,10 +2035,12 @@ export async function handleInventoryDropModalSubmit(interaction) {
     const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
     const dropImg = getItemImage(droppedShopItem);
 
+    const roleMention = (res.item.role_id && /^\d{17,20}$/.test(res.item.role_id)) ? ` <@&${res.item.role_id}>` : '';
+
     const publicEmbed = new EmbedBuilder()
       .setTitle('📦 Item Dropped!')
       .setColor('#F1C40F')
-      .setDescription(`${interaction.user} dropped **${droppedLabel}** <@&${res.item.role_id}>!`)
+      .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
       .setTimestamp();
 
     if (dropImg) publicEmbed.setImage(dropImg);
