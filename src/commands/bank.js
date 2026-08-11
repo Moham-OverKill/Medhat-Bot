@@ -44,6 +44,7 @@ import {
   getLootBox,
   openLootBox
 } from '../economy/lootbox.js';
+import { getGuildConfig } from '../storage/config.js';
 
 // --- Constants ---
 const DAILY_BASE_REWARD = 25;
@@ -1149,13 +1150,45 @@ export async function handleInventoryItemSelect(interaction) {
     if (item.item_type === 'loot_box') {
       const masterBox = item.loot_box_id ? await getLootBox(item.loot_box_id, interaction.guildId) : null;
       const boxName = masterBox?.name || item.name;
-      const boxDesc = masterBox?.description || item.description || '*Open this loot box to receive random rewards!*';
       const boxImg = masterBox?.image_url || item.image_url;
+
+      const config = await getGuildConfig(interaction.guildId);
+      const serverCoinEmoji = config?.coin_emoji || COIN_EMOJI || '🪙';
+
+      const sections = [];
+      sections.push(`**Quantity:** \`x${displayQty}\``);
+
+      if (masterBox) {
+        const itemsEnabled = masterBox.items_enabled !== false;
+        const coinsEnabled = masterBox.coins_enabled !== false;
+
+        // 1. Rarity (First)
+        if (itemsEnabled) {
+          const rarityLines = [
+            `⚪ **Common**: \`${masterBox.chance_common}%\``,
+            `🟢 **Uncommon**: \`${masterBox.chance_uncommon}%\``,
+            `🔵 **Rare**: \`${masterBox.chance_rare}%\``,
+            `🟣 **Epic**: \`${masterBox.chance_epic}%\``,
+            `🟡 **Legendary**: \`${masterBox.chance_legendary}%\``
+          ].join('\n');
+          sections.push(rarityLines);
+        }
+
+        // 2. Prizes (Second)
+        if (itemsEnabled) {
+          sections.push(`🎁 **Prizes**: \`${masterBox.min_prizes}\` to \`${masterBox.max_prizes}\``);
+        }
+
+        // 3. Coins (Third)
+        if (coinsEnabled) {
+          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}\` to \`${masterBox.max_coins.toLocaleString()}\` (\`${masterBox.chance_coins}%\`)`);
+        }
+      }
 
       const embed = new EmbedBuilder()
         .setTitle(`Manage: ${boxName}`)
         .setColor('#E67E22')
-        .setDescription(`${boxDesc}\n\n**Quantity:** \`x${displayQty}\`\n**Status:** 📦 Unopened`);
+        .setDescription(sections.join('\n\n'));
 
       if (boxImg && typeof boxImg === 'string' && boxImg.startsWith('http')) {
         embed.setImage(boxImg);
@@ -1188,7 +1221,6 @@ export async function handleInventoryItemSelect(interaction) {
           return {
             label: `${baseName} (x${itemQty})`,
             value: `${i.id}_${idx}`,
-            description: 'Unopened Loot Box',
             emoji: '🎁',
             default: String(i.id) === String(item.id)
           };
