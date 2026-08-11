@@ -4479,9 +4479,19 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
 
     const newBox = await createLootBox(interaction.guildId, { name, imageUrl });
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
     const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
       ? lootBoxCatName.slice(0, -1) 
       : lootBoxCatName;
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'green',
+      `${lootBoxEmoji || '🎁'} ${singularName} Created`,
+      `Admin **<@${interaction.user.id}>** created ${singularName.toLowerCase()} **${newBox.name}**`
+    );
+
     await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created ${singularName.toLowerCase()} **${newBox.name}**! Adjust drop chances below:`);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box create submit');
@@ -4592,6 +4602,15 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
       loot_box_category_name: newName,
       loot_box_category_emoji: resolvedEmoji
     });
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'cyan',
+      `⚙️ Category Settings Configured`,
+      `Admin **<@${interaction.user.id}>** updated global ${newName} category settings:\n• **Display Name:** \`${newName}\`\n• **Emoji:** ${resolvedEmoji}`
+    );
+
     await handleLootBoxesPage(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'rename lootbox category');
@@ -4767,6 +4786,23 @@ export async function handleLootBoxToggleFeature(interaction, boxId, featureType
         });
       }
     }
+    const box = await getLootBox(boxId, interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+    const isCoins = featureType === 'coins';
+    const featureLabel = isCoins ? 'Coins Reward' : 'Item Prizes & Rarity';
+    const isEnabled = isCoins ? box?.coins_enabled : box?.items_enabled;
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'blue',
+      `⚙️ ${singularName} Feature Toggled`,
+      `Admin **<@${interaction.user.id}>** toggled **${featureLabel}** for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}** ➡️ **${isEnabled ? 'ENABLED' : 'DISABLED'}**`
+    );
+
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'toggle loot box feature');
@@ -4906,6 +4942,25 @@ export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
       chanceLegendary
     });
 
+    const box = await getLootBox(boxId, interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'blue',
+      `🎲 ${singularName} Rarity Rates Updated`,
+      `Admin **<@${interaction.user.id}>** updated rarity drop rates for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
+      `• ⚪ Common: **${chanceCommon}%**\n` +
+      `• 🟢 Uncommon: **${chanceUncommon}%**\n` +
+      `• 🔵 Rare: **${chanceRare}%**\n` +
+      `• 🟣 Epic: **${chanceEpic}%**\n` +
+      `• 🟡 Legendary: **${chanceLegendary}%**`
+    );
+
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box rarity rates submit');
@@ -5011,6 +5066,24 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
       maxCoins
     });
 
+    const box = await getLootBox(boxId, interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+    const config = await getGuildConfig(interaction.guildId);
+    const coinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'blue',
+      `🪙 ${singularName} Coins Config Updated`,
+      `Admin **<@${interaction.user.id}>** updated coin rewards for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
+      `• **Drop Chance:** \`${chanceCoins}%\`\n` +
+      `• **Reward Range:** ${coinEmoji} \`${minCoins.toLocaleString()} to ${maxCoins.toLocaleString()}\``
+    );
+
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box coins config submit');
@@ -5097,6 +5170,21 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
       maxPrizes
     });
 
+    const box = await getLootBox(boxId, interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'blue',
+      `🎁 ${singularName} Prize Count Updated`,
+      `Admin **<@${interaction.user.id}>** updated item prize count for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
+      `• **Item Prizes:** \`${minPrizes} to ${maxPrizes}\` items per open`
+    );
+
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box prize count submit');
@@ -5166,7 +5254,26 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
       imageUrl = rawImage;
     }
 
+    const oldBox = await getLootBox(boxId, interaction.guildId);
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl });
+
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
+    const diff = [];
+    if (oldBox && oldBox.name !== name) diff.push(`• **Name:** ${oldBox.name} ➡️ ${name}`);
+    if (oldBox && (oldBox.image_url || null) !== imageUrl) diff.push(`• **Image URL:** ${oldBox.image_url || 'None'} ➡️ ${imageUrl || 'None'}`);
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'blue',
+      `✏️ ${singularName} Customized`,
+      `Admin **<@${interaction.user.id}>** customized ${singularName.toLowerCase()} **${name}**:\n${diff.length > 0 ? diff.join('\n') : '• Details saved'}`
+    );
+
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box rename submit');
@@ -5224,12 +5331,23 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
 export async function handleLootBoxDeleteConfirm(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    const boxName = box?.name || `#${boxId}`;
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
       ? lootBoxCatName.slice(0, -1) 
       : lootBoxCatName;
 
     await deleteLootBox(boxId, interaction.guildId);
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'red',
+      `🗑️ ${singularName} Deleted`,
+      `Admin **<@${interaction.user.id}>** deleted ${singularName.toLowerCase()} **${boxName}** and purged all unopened copies from player inventories.`
+    );
+
     await handleLootBoxesPage(interaction);
     await interaction.followUp({ 
       content: `✅ **${singularName}** and all unopened inventory copies successfully deleted.`, 
