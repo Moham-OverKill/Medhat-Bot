@@ -734,6 +734,7 @@ async function createTables() {
         name VARCHAR(100) NOT NULL,
         description TEXT,
         image_url TEXT,
+        opened_image_url TEXT,
         chance_common NUMERIC NOT NULL DEFAULT 70,
         chance_uncommon NUMERIC NOT NULL DEFAULT 20,
         chance_rare NUMERIC NOT NULL DEFAULT 5,
@@ -760,6 +761,7 @@ async function createTables() {
     `);
 
     await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS loot_box_id INTEGER REFERENCES loot_boxes(id) ON DELETE CASCADE`);
+    await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS opened_image_url TEXT`);
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_common NUMERIC NOT NULL DEFAULT 70`);
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_uncommon NUMERIC NOT NULL DEFAULT 20`);
     await pool.query(`ALTER TABLE loot_boxes ADD COLUMN IF NOT EXISTS chance_rare NUMERIC NOT NULL DEFAULT 5`);

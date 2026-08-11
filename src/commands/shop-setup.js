@@ -4494,16 +4494,24 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setRequired(true)
     .setMaxLength(100);
 
-  const imgInput = new TextInputBuilder()
-    .setCustomId('image_url')
-    .setLabel('Image URL')
+  const imgClosedInput = new TextInputBuilder()
+    .setCustomId('image_closed')
+    .setLabel('Image (Closed)')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('https://example.com/chest.png')
+    .setPlaceholder('https://example.com/chest_closed.png')
+    .setRequired(false);
+
+  const imgOpenedInput = new TextInputBuilder()
+    .setCustomId('image_opened')
+    .setLabel('Image (Opened)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('https://example.com/chest_opened.png')
     .setRequired(false);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(imgInput)
+    new ActionRowBuilder().addComponents(imgClosedInput),
+    new ActionRowBuilder().addComponents(imgOpenedInput)
   );
 
   await interaction.showModal(modal);
@@ -4516,7 +4524,8 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = (interaction.fields.getTextInputValue('name') || '').trim();
-    const rawImage = (interaction.fields.getTextInputValue('image_url') || '').trim();
+    const rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim();
+    const rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim();
 
     if (!name || name.length === 0) {
       return interaction.followUp({
@@ -4526,17 +4535,33 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     }
 
     let imageUrl = null;
-    if (rawImage && rawImage.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawImage)) {
+    let openedImageUrl = null;
+
+    if (rawClosed && rawClosed.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawClosed)) {
         return interaction.followUp({
-          content: '❌ **Invalid Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          content: '❌ **Invalid Closed Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
           flags: MessageFlags.Ephemeral
         });
       }
-      imageUrl = rawImage;
+      imageUrl = rawClosed;
     }
 
-    const newBox = await createLootBox(interaction.guildId, { name, imageUrl });
+    if (rawOpened && rawOpened.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawOpened)) {
+        return interaction.followUp({
+          content: '❌ **Invalid Opened Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+      openedImageUrl = rawOpened;
+    }
+
+    // Mutual fallback: If only one is entered, use for both
+    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
+    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
+
+    const newBox = await createLootBox(interaction.guildId, { name, imageUrl, openedImageUrl });
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
     const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
@@ -5270,17 +5295,26 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(true)
     .setMaxLength(100);
 
-  const imgInput = new TextInputBuilder()
-    .setCustomId('image_url')
-    .setLabel('Image URL')
+  const imgClosedInput = new TextInputBuilder()
+    .setCustomId('image_closed')
+    .setLabel('Image (Closed)')
     .setStyle(TextInputStyle.Short)
     .setValue(box.image_url || '')
-    .setPlaceholder('https://example.com/chest.png')
+    .setPlaceholder('https://example.com/chest_closed.png')
+    .setRequired(false);
+
+  const imgOpenedInput = new TextInputBuilder()
+    .setCustomId('image_opened')
+    .setLabel('Image (Opened)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(box.opened_image_url || '')
+    .setPlaceholder('https://example.com/chest_opened.png')
     .setRequired(false);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(imgInput)
+    new ActionRowBuilder().addComponents(imgClosedInput),
+    new ActionRowBuilder().addComponents(imgOpenedInput)
   );
 
   await interaction.showModal(modal);
@@ -5293,7 +5327,8 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = (interaction.fields.getTextInputValue('name') || '').trim();
-    const rawImage = (interaction.fields.getTextInputValue('image_url') || '').trim();
+    const rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim();
+    const rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim();
 
     if (!name || name.length === 0) {
       return interaction.followUp({
@@ -5303,18 +5338,34 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     }
 
     let imageUrl = null;
-    if (rawImage && rawImage.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawImage)) {
+    let openedImageUrl = null;
+
+    if (rawClosed && rawClosed.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawClosed)) {
         return interaction.followUp({
-          content: '❌ **Invalid Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          content: '❌ **Invalid Closed Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
           flags: MessageFlags.Ephemeral
         });
       }
-      imageUrl = rawImage;
+      imageUrl = rawClosed;
     }
 
+    if (rawOpened && rawOpened.toLowerCase() !== 'none') {
+      if (!/^https?:\/\/.+\..+/i.test(rawOpened)) {
+        return interaction.followUp({
+          content: '❌ **Invalid Opened Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+      openedImageUrl = rawOpened;
+    }
+
+    // Mutual fallback: If only one is entered, use for both
+    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
+    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
+
     const oldBox = await getLootBox(boxId, interaction.guildId);
-    await updateLootBox(boxId, interaction.guildId, { name, imageUrl });
+    await updateLootBox(boxId, interaction.guildId, { name, imageUrl, openedImageUrl });
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
@@ -5323,7 +5374,8 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
 
     const diff = [];
     if (oldBox && oldBox.name !== name) diff.push(`• **Name:** ${oldBox.name} ➡️ ${name}`);
-    if (oldBox && (oldBox.image_url || null) !== imageUrl) diff.push(`• **Image URL:** ${oldBox.image_url || 'None'} ➡️ ${imageUrl || 'None'}`);
+    if (oldBox && (oldBox.image_url || null) !== imageUrl) diff.push(`• **Image (Closed):** ${oldBox.image_url || 'None'} ➡️ ${imageUrl || 'None'}`);
+    if (oldBox && (oldBox.opened_image_url || null) !== openedImageUrl) diff.push(`• **Image (Opened):** ${oldBox.opened_image_url || 'None'} ➡️ ${openedImageUrl || 'None'}`);
 
     sendLog(
       interaction.guild,
