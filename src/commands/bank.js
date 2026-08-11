@@ -17,7 +17,7 @@ import { handleInteractionError } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import {
   getShopCategories,
@@ -1473,9 +1473,8 @@ export async function handleInventoryAction(interaction) {
 
       for (const itemEntry of itemCounts.values()) {
         const rarityBadge = RARITY_EMOJIS[itemEntry.rarity] || '⚪';
-        const rarityTitle = RARITY_DISPLAY[itemEntry.rarity] || 'Common';
         const qtyBadge = itemEntry.count > 1 ? ` x${itemEntry.count}` : '';
-        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${qtyBadge} [${rarityTitle}]`);
+        prizeLines.push(`• ${rarityBadge} **${itemEntry.itemName}**${qtyBadge}`);
       }
 
       const revealMsg = `🎉 You opened **${boxName}** and received:\n` + prizeLines.join('\n');
