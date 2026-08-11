@@ -1491,8 +1491,9 @@ export async function handleInventoryAction(interaction) {
         .setColor('#F1C40F')
         .setDescription(`${rewardsText}\n\n${remainingText}`);
 
-      if (result.box?.image_url && typeof result.box.image_url === 'string' && result.box.image_url.startsWith('http')) {
-        resultEmbed.setThumbnail(result.box.image_url);
+      const openedThumbnail = result.box?.opened_image_url || result.box?.image_url;
+      if (openedThumbnail && typeof openedThumbnail === 'string' && openedThumbnail.startsWith('http')) {
+        resultEmbed.setThumbnail(openedThumbnail);
       }
 
       const resultRow = new ActionRowBuilder();
