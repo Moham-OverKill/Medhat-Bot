@@ -4458,7 +4458,11 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     }
 
     const newBox = await createLootBox(interaction.guildId, { name, imageUrl });
-    await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created loot box **${newBox.name}**! Adjust drop chances below:`);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+    await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created ${singularName.toLowerCase()} **${newBox.name}**! Adjust drop chances below:`);
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box create submit');
   }
@@ -5159,27 +5163,31 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
     }
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
-      .setTitle(`🗑️ Delete ${lootBoxCatName}: ${box.name}`)
+      .setTitle(`🗑️ Delete ${singularName}: ${box.name}`)
       .setDescription(
-        `⚠️ **Warning**: Deleting this ${lootBoxCatName.toLowerCase()} will:\n` +
-        `• Remove this ${lootBoxCatName.toLowerCase()} from the shop\n` +
+        `⚠️ **Warning**: Deleting this ${singularName.toLowerCase()} will:\n` +
+        `• Remove this ${singularName.toLowerCase()} from the shop\n` +
         `• **Instantly purge all unopened copies** from all users' inventories\n\n` +
         `Are you sure you want to proceed?`
       );
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_delete_lootbox_confirm_${boxId}`)
-        .setLabel('Confirm Delete')
-        .setEmoji('🗑️')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
         .setCustomId(`shop_lb_edit_details_${boxId}`)
         .setLabel('Cancel')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_delete_lootbox_confirm_${boxId}`)
+        .setLabel('Confirm Delete')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
     );
 
     await interaction.editReply({ content: null, embeds: [embed], components: [row] });
@@ -5194,9 +5202,17 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
 export async function handleLootBoxDeleteConfirm(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
     await deleteLootBox(boxId, interaction.guildId);
     await handleLootBoxesPage(interaction);
-    await interaction.followUp({ content: '✅ Loot box and all unopened inventory copies successfully deleted.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    await interaction.followUp({ 
+      content: `✅ **${singularName}** and all unopened inventory copies successfully deleted.`, 
+      flags: MessageFlags.Ephemeral 
+    }).catch(() => {});
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box delete execute');
   }
