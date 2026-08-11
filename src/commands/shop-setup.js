@@ -1206,6 +1206,7 @@ export async function handleShopPostStart(interaction) {
         groupPrefix = '📦';
       } else if (state.postFilter === 'loot_boxes') {
         filtered = itemsAll.filter(i => i.item_type === 'loot_box');
+        filtered.sort((a, b) => (parseInt(a.loot_box_id) || a.id) - (parseInt(b.loot_box_id) || b.id));
         groupName = lootBoxCatName;
         groupPrefix = lootBoxEmoji;
       } else if (state.postFilter?.startsWith('cat_')) {
