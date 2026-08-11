@@ -4623,11 +4623,11 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}\` to \`${box.max_coins.toLocaleString()}\` (\`${box.chance_coins}%\`)`);
     }
 
-    const description = sections.join('\n\n');
+    const description = sections.length > 0 ? `\u200b\n${sections.join('\n\n')}` : '';
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle(`${lootBoxEmoji} ${box.name}`)
+      .setTitle(box.name)
       .setDescription(description);
 
     if (box.image_url && box.image_url.trim().startsWith('http')) {
