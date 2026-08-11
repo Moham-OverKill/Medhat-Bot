@@ -455,12 +455,13 @@ async function createTables() {
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS required_items JSONB DEFAULT '[]'::jsonb`);
       
       // Data Integrity: Add unique constraint to prevent duplicate roles (Idempotent check)
-      // Updated: Replaced strict constraint with Partial Index to allow Packs to store role lists without colliding.
+      // Updated: Replaced strict constraint with Partial Index to allow Packs and Loot Boxes to store without colliding.
       await pool.query(`ALTER TABLE shop_items DROP CONSTRAINT IF EXISTS unique_shop_item_role`);
+      await pool.query(`DROP INDEX IF EXISTS idx_unique_shop_item_role_standalone`);
       await pool.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_shop_item_role_standalone 
         ON shop_items(guild_id, role_id) 
-        WHERE (item_type != 'pack' AND is_pack = false);
+        WHERE (item_type != 'pack' AND is_pack = false AND item_type != 'loot_box' AND loot_box_id IS NULL);
       `);
 
       // Unified Image System: Store item default image at creation time
