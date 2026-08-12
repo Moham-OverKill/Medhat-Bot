@@ -320,7 +320,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     const lootBoxes = await getLootBoxes(guildId);
 
     const desc = lootBoxes.length > 0
-      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — 🎁 \`${b.min_prizes || 1}-${b.max_prizes || 1}\` | ${serverCoinEmoji} \`${(parseInt(b.min_coins) || 100).toLocaleString()}-${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
+      ? `**Configured Boxes (${lootBoxes.length}):**\n` + lootBoxes.map((b, idx) => `${idx + 1}. ${lootBoxEmoji} **${b.name}** — 💎 \`${b.min_prizes || 1}—${b.max_prizes || 1}\` | ${serverCoinEmoji} \`${(parseInt(b.min_coins) || 100).toLocaleString()}—${(parseInt(b.max_coins) || 500).toLocaleString()}\``).join('\n')
       : `*No ${lootBoxCatName.toLowerCase()} created yet. Click Create below to add one!*`;
 
     const embed = new EmbedBuilder()
@@ -4737,7 +4737,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
 
     // 2. Prizes (Second)
     if (itemsEnabled) {
-      sections.push(`🎁 **Prizes**: \`${box.min_prizes}—${box.max_prizes}\``);
+      sections.push(`💎 **Prizes**: \`${box.min_prizes}—${box.max_prizes}\``);
     }
 
     // 3. Coins (Third)
@@ -4780,7 +4780,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       dropdownOptions.push({
         label: 'Prizes',
         value: 'cfg_prizes',
-        emoji: '🎁',
+        emoji: '💎',
         description: 'Configure min & max prizes per open'
       });
     }
@@ -4811,7 +4811,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       new ButtonBuilder()
         .setCustomId(`shop_lb_toggle_prizes_${boxId}`)
         .setLabel('Prizes')
-        .setEmoji('🎁')
+        .setEmoji('💎')
         .setStyle(itemsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_toggle_coins_${boxId}`)
@@ -5264,7 +5264,7 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
       interaction.guild,
       'shop',
       'blue',
-      `🎁 ${singularName} Prize Count Updated`,
+      `💎 ${singularName} Prize Count Updated`,
       `Admin **<@${interaction.user.id}>** updated item prize count for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
       `• **Item Prizes:** \`${minPrizes}—${maxPrizes}\` items per open`
     );
