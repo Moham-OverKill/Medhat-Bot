@@ -4682,10 +4682,10 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
       });
     }
 
-    await setGuildConfig(interaction.guildId, {
-      loot_box_category_name: newName,
-      loot_box_category_emoji: resolvedEmoji
-    });
+    const config = await getGuildConfig(interaction.guildId) || {};
+    config.loot_box_category_name = newName;
+    config.loot_box_category_emoji = resolvedEmoji;
+    await setGuildConfig(interaction.guildId, config);
 
     sendLog(
       interaction.guild,
