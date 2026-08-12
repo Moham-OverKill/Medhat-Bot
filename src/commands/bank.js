@@ -1176,7 +1176,7 @@ export async function handleInventoryItemSelect(interaction) {
 
         // 2. Prizes (Second)
         if (itemsEnabled) {
-          sections.push(`🎁 **Prizes**: \`${masterBox.min_prizes}—${masterBox.max_prizes}\``);
+          sections.push(`💎 **Prizes**: \`${masterBox.min_prizes}—${masterBox.max_prizes}\``);
         }
 
         // 3. Coins (Third)
