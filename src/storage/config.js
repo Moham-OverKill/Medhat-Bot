@@ -248,13 +248,15 @@ export async function setGuildConfig(guildId, config) {
   }
   
   try {
-    configCache.set(guildId, sanitized);
+    const existing = configCache.get(guildId) || {};
+    const merged = { ...existing, ...sanitized };
+    configCache.set(guildId, merged);
     await query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (guild_id)
        DO UPDATE SET config = $2, updated_at = NOW()`,
-      [guildId, JSON.stringify(sanitized)]
+      [guildId, JSON.stringify(merged)]
     );
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Setting guild config', error: formatError(error) });
