@@ -80,7 +80,7 @@ export async function buildHubEmbed(guild, config = null) {
   }
 
   const isSingular = activeQuests.length === 1;
-  const questFieldName = isSingular ? '🎯 Current Quest' : '🎯 Current Quests';
+  const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
 
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
