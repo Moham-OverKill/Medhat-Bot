@@ -25,26 +25,29 @@ export const notificationsCommand = new SlashCommandBuilder()
  */
 export function buildNotificationsPayload(guild, settings) {
   const guildName = guild?.name || 'Discord Server';
-  const guildIcon = typeof guild?.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null;
 
   const desc = [
-    `Customize which direct message (DM) notifications you receive for **${guildName}**.`,
-    `*All notifications are server-specific and disabled by default.*\n`,
+    `Customize which direct message (DM) notifications you receive for **${guildName}**.\n`,
     `• **Level-Up Rewards:** ${settings.notif_level_up ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
+    `↳ *Receive a DM when you reach a new level and unlock rewards.*`,
+    ``,
     `• **Daily Claim Reminder:** ${settings.notif_daily_claim ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
+    `↳ *Receive a DM reminder when your daily reward is ready to claim.*`,
+    ``,
     `• **Trade Requests:** ${settings.notif_trades ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
+    `↳ *Receive a DM when another member sends you an incoming trade offer.*`,
+    ``,
     `• **Daily MVP Winner:** ${settings.notif_mvp_win ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
-    `• **Quest Rotations:** ${settings.notif_quests_refresh ? '`🟢 Enabled`' : '`🔴 Disabled`'}`
+    `↳ *Receive a DM if you are selected as one of the daily server MVPs.*`,
+    ``,
+    `• **Quest Rotations:** ${settings.notif_quests_refresh ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
+    `↳ *Receive a DM whenever server quests rotate with new tasks.*`
   ].join('\n');
 
   const embed = new EmbedBuilder()
     .setTitle(`🔔 DM Notifications`)
     .setDescription(desc)
-    .setColor(0x5865F2)
-    .setFooter({
-      text: `${guildName} • ${new Date().toLocaleString()}`,
-      iconURL: guildIcon
-    });
+    .setColor(0x5865F2);
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
