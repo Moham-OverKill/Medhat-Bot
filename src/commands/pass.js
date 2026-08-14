@@ -63,10 +63,6 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         value: rewardStr,
         inline: false
       });
-    } else if (data.currentLevel > 0) {
-      embed.addFields({ name: 'All Rewards Claimed', value: '_You have claimed all available level rewards!_', inline: false });
-    } else {
-      embed.addFields({ name: 'No Rewards Configured', value: '_No level rewards have been set up yet._', inline: false });
     }
   } else {
     embed.setTitle('🎁 Claimed Rewards');
