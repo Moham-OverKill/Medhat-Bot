@@ -1423,16 +1423,16 @@ export async function claimItem(claimerId, guildId, dropId, member) {
     // NOTE: We no longer block claiming if the user already owns copies — quantity stacking is allowed.
     // Locked items dropped before being locked are still claimable (legacy grace).
 
-    // 3. Join Date Gate
+    // 3. Join Date Gate (anti-cheat)
     const guildConfigRes = await client.query('SELECT config FROM guild_configs WHERE guild_id = $1', [guildId]);
     const config = guildConfigRes.rows[0]?.config || {};
-    const requiredDays = parseInt(config.drop_join_gate || '7', 10);
+    const joinGateEnabled = config.anti_cheat_join_date_gate ?? false;
     
-    if (member.joinedAt) {
+    if (joinGateEnabled && member?.joinedAt) {
       const daysInServer = (Date.now() - member.joinedAt.getTime()) / (1000 * 60 * 60 * 24);
-      if (daysInServer < requiredDays) {
+      if (daysInServer < 7) {
         await client.query('ROLLBACK');
-        throw new Error(`You must be in the server for at least ${requiredDays} days to claim dropped items.`);
+        throw new Error('You must be a member of the server for at least 7 days to claim dropped items.');
       }
     }
 
