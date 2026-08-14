@@ -9,7 +9,8 @@ import {
   TextInputBuilder,
   TextInputStyle,
   MessageFlags,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  AttachmentBuilder
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { getNextQuestRefresh, getNextCairoMidnight } from '../utils/time.js';
@@ -81,12 +82,11 @@ export async function buildHubEmbed(guild, config = null) {
 
   const isSingular = activeQuests.length === 1;
   const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
-  const embedImage = guildConfig.interface_image_url || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
 
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
     .setColor(embedColor)
-    .setImage(embedImage)
+    .setImage('attachment://interface.png')
     .addFields({
       name: questFieldName,
       value: questContent,
@@ -159,9 +159,16 @@ export async function publishOrUpdateHub(client, guildId) {
       return false;
     }
 
+    const embedImage = (config.interface_image_url || '').trim() || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
+    const attachment = new AttachmentBuilder(embedImage, { name: 'interface.png' });
+
     const embed = await buildHubEmbed(guild, config);
     const buttonRows = buildHubButtons(client);
-    const payload = { embeds: [embed], components: Array.isArray(buttonRows) ? buttonRows : [buttonRows] };
+    const payload = {
+      embeds: [embed],
+      components: Array.isArray(buttonRows) ? buttonRows : [buttonRows],
+      files: [attachment]
+    };
 
     const oldMsgId = config.interface_message_id;
     let messageUpdated = false;
