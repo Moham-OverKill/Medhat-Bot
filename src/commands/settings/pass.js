@@ -12,6 +12,7 @@ import {
 import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
+import { getShopCategories } from '../../economy/shop.js';
 import { COIN_EMOJI } from '../../shared.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
@@ -81,7 +82,7 @@ async function getConfiguredLevel(guildId, level) {
 /**
  * Render the Battlepass Dashboard payload with persistent dropdown, 3 reward selectors, and Start/Pause toggle
  */
-export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null) {
+export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null, itemFolder = 'root') {
   const levels = await getConfiguredLevels(guildId);
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.battlepass_enabled === true;
@@ -204,30 +205,98 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     const row2 = new ActionRowBuilder().addComponents(coinsSelect);
 
-    // Row 3: Select Menu 2 — Items Selector
+    // Row 3: Select Menu 2 — Items Selector (Folder-Aware)
+    const categories = await getShopCategories(guildId);
     const unlockedItems = await getUnlockedShopItems(guildId);
-    const itemOptions = [
-      {
+    const itemOptions = [];
+
+    if (categories && categories.length > 0) {
+      if (itemFolder === 'root') {
+        itemOptions.push({
+          label: 'None (Remove Item)',
+          value: 'none',
+          description: 'No item reward for this level',
+          emoji: '❌'
+        });
+
+        for (const cat of categories) {
+          const count = unlockedItems.filter(i => Number(i.category_id) === Number(cat.id)).length;
+          if (count > 0) {
+            itemOptions.push({
+              label: `📂 ${cat.name.slice(0, 50)}`,
+              value: 'folder_' + cat.id,
+              description: `${count} item(s) in this folder`,
+              emoji: '📂'
+            });
+          }
+        }
+
+        const uncatCount = unlockedItems.filter(i => !i.category_id).length;
+        if (uncatCount > 0) {
+          itemOptions.push({
+            label: '📁 Uncategorized Items',
+            value: 'folder_null',
+            description: `${uncatCount} standalone item(s)`,
+            emoji: '📁'
+          });
+        }
+      } else {
+        // Inside a specific folder
+        const targetCatId = itemFolder === 'null' ? null : parseInt(itemFolder, 10);
+        const currentCat = categories.find(c => Number(c.id) === targetCatId);
+        const folderItems = unlockedItems.filter(i => targetCatId === null ? !i.category_id : Number(i.category_id) === targetCatId);
+
+        itemOptions.push({
+          label: '⬅️ Back to Folders',
+          value: 'folder_root',
+          description: 'Browse all category folders',
+          emoji: '⬅️'
+        });
+
+        itemOptions.push({
+          label: 'None (Remove Item)',
+          value: 'none',
+          description: 'No item reward for this level',
+          emoji: '❌'
+        });
+
+        for (const item of folderItems) {
+          const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
+          itemOptions.push({
+            label: item.name.slice(0, 50),
+            value: String(item.id),
+            description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
+            emoji: '🏷️'
+          });
+        }
+      }
+    } else {
+      // Direct list if server has no categories
+      itemOptions.push({
         label: 'None (Remove Item)',
         value: 'none',
         description: 'No item reward for this level',
         emoji: '❌'
-      }
-    ];
-
-    for (const item of unlockedItems) {
-      const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
-      itemOptions.push({
-        label: item.name.slice(0, 50),
-        value: String(item.id),
-        description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
-        emoji: '🏷️'
       });
+
+      for (const item of unlockedItems) {
+        const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
+        itemOptions.push({
+          label: item.name.slice(0, 50),
+          value: String(item.id),
+          description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
+          emoji: '🏷️'
+        });
+      }
     }
 
+    const itemsPlaceholder = itemFolder !== 'root'
+      ? (itemFolder === 'null' ? '📁 Uncategorized Items' : `📂 ${categories.find(c => Number(c.id) === parseInt(itemFolder, 10))?.name || 'Folder'}`)
+      : 'Set Items';
+
     const itemsSelect = new StringSelectMenuBuilder()
-      .setCustomId('pass_items_select_lvl_' + selectedLevel + '_pg_' + currentPage)
-      .setPlaceholder('Set Items')
+      .setCustomId('pass_items_select_lvl_' + selectedLevel + '_pg_' + currentPage + '_fld_' + itemFolder)
+      .setPlaceholder(itemsPlaceholder.slice(0, 100))
       .addOptions(itemOptions.slice(0, 25));
 
     const row3 = new ActionRowBuilder().addComponents(itemsSelect);
@@ -262,7 +331,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     // Row 5: Action Buttons (Back & Delete Level)
     const row5 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('settings_home')
+        .setCustomId('pass_home_page_' + currentPage)
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary),
@@ -474,7 +543,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 3. Select Menu 2 — Items Selector
+    // 3. Select Menu 2 — Items Selector (Folder-Aware)
     if (customId.startsWith('pass_items_select_lvl_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -483,6 +552,15 @@ export async function handlePassComponent(interaction) {
       const level = match ? parseInt(match[1], 10) : 1;
       const page = match ? parseInt(match[2], 10) : 0;
       const selectedValue = interaction.values[0];
+
+      // Folder navigation check
+      if (selectedValue.startsWith('folder_')) {
+        const folderTarget = selectedValue.replace('folder_', '');
+        const payload = await getPassDashboardPayload(guildId, page, level, folderTarget);
+        await interaction.editReply({ content: '', ...payload });
+        return;
+      }
+
       const itemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
 
       const pool = getPool();
@@ -497,7 +575,9 @@ export async function handlePassComponent(interaction) {
         detail: 'Level ' + level + ' item set to ' + (itemId || 'None')
       });
 
-      const payload = await getPassDashboardPayload(guildId, page, level);
+      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Item Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** item reward to ${itemId ? `Item #${itemId}` : 'None'}.`);
+
+      const payload = await getPassDashboardPayload(guildId, page, level, 'root');
       await interaction.editReply({ content: '', ...payload });
       return;
     }
