@@ -87,17 +87,17 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Users - Pass - Other
+    // Row 2: Pass - Users - Other
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_users')
-            .setLabel('Users')
-            .setEmoji('👥')
-            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_pass')
             .setLabel('Pass')
             .setEmoji('🎟️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_users')
+            .setLabel('Users')
+            .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_other')
