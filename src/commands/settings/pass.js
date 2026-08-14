@@ -14,7 +14,7 @@ import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { sysLog, sendLog } from '../../utils/logger.js';
 import { getShopCategories } from '../../economy/shop.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
-import { COIN_EMOJI } from '../../shared.js';
+import { COIN_EMOJI, parseSelectEmoji } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 
 const ITEMS_PER_PAGE = 5;
@@ -260,14 +260,14 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: 'Uncategorized Items',
           value: 'folder_null',
-          emoji: '📁'
+          emoji: '🏷️'
         });
       }
       if (hasLootBoxes) {
         rewardOptions.push({
           label: lootBoxCatName.slice(0, 50),
           value: 'folder_chests',
-          emoji: selectChestEmoji
+          emoji: parseSelectEmoji(selectChestEmoji)
         });
       }
 
@@ -290,14 +290,14 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         const count = unlockedItems.filter(i => Number(i.category_id) === Number(cat.id)).length;
         if (count > 0) {
           rewardOptions.push({
-            label: `📂 ${cat.name.slice(0, 50)}`,
+            label: cat.name.slice(0, 50),
             value: 'folder_' + cat.id,
             emoji: '📂'
           });
         }
       }
     } else if (rewardFolder === 'null') {
-      rewardsPlaceholder = '📁 Uncategorized Items';
+      rewardsPlaceholder = '🏷️ Uncategorized Items';
       rewardOptions.push({
         label: 'Back',
         value: 'folder_root',
@@ -324,7 +324,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: chest.name.slice(0, 50),
           value: 'add_chest_' + chest.id,
-          emoji: selectChestEmoji
+          emoji: parseSelectEmoji(selectChestEmoji)
         });
       }
     } else {

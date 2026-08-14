@@ -267,6 +267,7 @@ export async function showSetupPanel(interaction, config) {
     return {
       label: count === 1 ? '1 Winner' : `${count} Winners`,
       value: String(count),
+      emoji: '🏆',
       default: config.winnersCount ? config.winnersCount === count : false
     };
   });

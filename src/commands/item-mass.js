@@ -135,8 +135,8 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 1: Category Select
     const catOptions = [
-        { label: 'No Category (Default)', value: 'null', description: 'Create as standalone items' },
-        ...categories.map(c => ({ label: c.name, value: c.id.toString() }))
+        { label: 'No Category (Default)', value: 'null', emoji: '🏷️', description: 'Create as standalone items' },
+        ...categories.map(c => ({ label: c.name, value: c.id.toString(), emoji: '📂' }))
     ];
 
     const catSelect = new StringSelectMenuBuilder()
@@ -155,8 +155,8 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 2: Pack Select
     const packOptions = [
-        { label: 'No Pack (Default)', value: 'null', description: 'Do not add to any pack' },
-        ...packs.map(p => ({ label: p.name, value: p.id.toString(), description: `ID: ${p.id}` }))
+        { label: 'No Pack (Default)', value: 'null', emoji: '🏷️', description: 'Do not add to any pack' },
+        ...packs.map(p => ({ label: p.name, value: p.id.toString(), emoji: '📦', description: `ID: ${p.id}` }))
     ];
 
     const packSelect = new StringSelectMenuBuilder()
@@ -175,11 +175,11 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 3: Rarity Select
     const rarityOptions = [
-        { label: '⚪ Common',    value: 'common',    description: 'Highest drop rate (~60% chance in loot boxes)' },
-        { label: '🟢 Uncommon',  value: 'uncommon',  description: 'Moderate drop rate (~25% chance in loot boxes)' },
-        { label: '🔵 Rare',      value: 'rare',      description: 'Low drop rate (~10% chance in loot boxes)' },
-        { label: '🟣 Epic',      value: 'epic',      description: 'Very low drop rate (~4% chance in loot boxes)' },
-        { label: '🟡 Legendary', value: 'legendary', description: 'Ultra rare drop (~1% chance in loot boxes)' }
+        { label: 'Common',    value: 'common',    emoji: '⚪', description: 'Highest drop rate (~60% chance in loot boxes)' },
+        { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢', description: 'Moderate drop rate (~25% chance in loot boxes)' },
+        { label: 'Rare',      value: 'rare',      emoji: '🔵', description: 'Low drop rate (~10% chance in loot boxes)' },
+        { label: 'Epic',      value: 'epic',      emoji: '🟣', description: 'Very low drop rate (~4% chance in loot boxes)' },
+        { label: 'Legendary', value: 'legendary', emoji: '🟡', description: 'Ultra rare drop (~1% chance in loot boxes)' }
     ];
     const { rarity: currentRarity, is_tradable: currentTradable } = state;
     const raritySelect = new StringSelectMenuBuilder()
@@ -190,8 +190,8 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 4: Status Select
     const tradableOptions = [
-        { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes' },
-        { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes' }
+        { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: 'Can be traded, dropped, or found in loot boxes' },
+        { label: 'Locked',   value: 'untradable', emoji: '🔒', description: 'Cannot be traded, dropped, or found in loot boxes' }
     ];
     const tradableSelect = new StringSelectMenuBuilder()
         .setCustomId('mass_select_tradable')

@@ -432,26 +432,26 @@ export function formatActionType(actionType, channelType = 'text') {
 export function getActionsForChannelType(channelType) {
   if (channelType === 'voice') {
     return [
-      { value: 'voice_minutes', label: '🎙️ Join Call' },
-      { value: 'send_messages', label: '💬 Send Messages' },
-      { value: 'upload_images', label: '🖼️ Upload Files' },
-      { value: 'react_images', label: '👍 React to Messages' }
+      { value: 'voice_minutes', label: 'Join Call', emoji: '🎙️' },
+      { value: 'send_messages', label: 'Send Messages', emoji: '💬' },
+      { value: 'upload_images', label: 'Upload Files', emoji: '🖼️' },
+      { value: 'react_images', label: 'React to Messages', emoji: '👍' }
     ];
   }
 
   if (channelType === 'media' || channelType === 'forum') {
     return [
-      { value: 'send_messages', label: '💬 Send Messages' },
-      { value: 'upload_images', label: '🖼️ Upload Files' },
-      { value: 'react_images', label: '👍 React to Posts' }
+      { value: 'send_messages', label: 'Send Messages', emoji: '💬' },
+      { value: 'upload_images', label: 'Upload Files', emoji: '🖼️' },
+      { value: 'react_images', label: 'React to Posts', emoji: '👍' }
     ];
   }
 
   // text | announcement — standard text engagement set
   return [
-    { value: 'send_messages', label: '💬 Send Messages' },
-    { value: 'upload_images', label: '🖼️ Upload Files' },
-    { value: 'react_images', label: '👍 React to Messages' }
+    { value: 'send_messages', label: 'Send Messages', emoji: '💬' },
+    { value: 'upload_images', label: 'Upload Files', emoji: '🖼️' },
+    { value: 'react_images', label: 'React to Messages', emoji: '👍' }
   ];
 }
 
