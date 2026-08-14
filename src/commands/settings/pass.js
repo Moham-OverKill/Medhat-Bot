@@ -130,7 +130,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
   const select = new StringSelectMenuBuilder()
     .setCustomId('pass_main_select')
-    .setPlaceholder(totalLevels > 0 ? 'Select a level to manage or create new level...' : 'Create a new level...')
+    .setPlaceholder('Select a level')
     .addOptions(options);
 
   const row1 = new ActionRowBuilder().addComponents(select);
@@ -209,7 +209,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     embed.setDescription(
       '• **Status:** ' + statusText + '\n\n' +
-      '**Configured Levels (' + totalLevels + ' total — Page ' + (currentPage + 1) + '/' + totalPages + ')**\n\n' +
       lines.join('\n')
     );
   }
