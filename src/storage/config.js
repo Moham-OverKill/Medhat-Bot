@@ -62,8 +62,10 @@ const CONFIG_SCHEMA = {
   // Loot Boxes Module
   loot_box_category_name: { type: 'string', required: false },
   loot_box_category_emoji: { type: 'string', required: false },
-  // Battlepass Module
+  // Battlepass / Level System Module
   battlepass_enabled: { type: 'boolean', required: false },
+  battlepass_base_xp: { type: 'number', min: 1, max: 999999, required: false },
+  battlepass_xp_increment: { type: 'number', min: 0, max: 999999, required: false },
   battlepass_xp_per_level: { type: 'number', min: 1, max: 999999, required: false },
   battlepass_notif_channel: { type: 'string', validate: isValidSnowflake, required: false }
 };

@@ -348,13 +348,18 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // Default Overview (No level selected)
   embed.setTitle('⭐ Levels Configuration');
 
-  const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+  const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+  const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
   const statusText = isEnabled ? '🟢 **Active**' : '⏸️ **Paused**';
+
+  const scalingDesc = incrementXp > 0
+    ? '• **Base XP:** ' + baseXp.toLocaleString() + ' points (Level 1)\n• **XP Scaling:** +' + incrementXp.toLocaleString() + ' points / level'
+    : '• **XP Per Level:** ' + baseXp.toLocaleString() + ' points (Flat)';
 
   if (totalLevels === 0) {
     embed.setDescription(
       '• **Status:** ' + statusText + '\n' +
-      '• **XP Per Level:** ' + xpPerLevel.toLocaleString() + ' activity points\n\n' +
+      scalingDesc + '\n\n' +
       '_No level rewards configured yet._'
     );
   } else {
@@ -375,7 +380,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     embed.setDescription(
       '• **Status:** ' + statusText + '\n' +
-      '• **XP Per Level:** ' + xpPerLevel.toLocaleString() + ' activity points\n\n' +
+      scalingDesc + '\n\n' +
       lines.join('\n')
     );
   }
@@ -730,23 +735,37 @@ export async function handlePassComponent(interaction) {
     if (customId.startsWith('pass_set_xp_threshold_pg_')) {
       const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
       const config = await getGuildConfig(guildId) || {};
-      const currentXpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+      const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+      const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
 
       const modal = new ModalBuilder()
         .setCustomId('pass_xp_threshold_modal_pg_' + page)
-        .setTitle('Set XP Per Level');
+        .setTitle('Configure Level XP');
 
-      const xpInput = new TextInputBuilder()
-        .setCustomId('pass_xp_threshold_input')
-        .setLabel('Activity points needed per level (e.g. 100)')
+      const baseInput = new TextInputBuilder()
+        .setCustomId('pass_base_xp_input')
+        .setLabel('Base XP for Level 1 (e.g. 10)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter a number (e.g. 100, 200, 500)')
-        .setValue(String(currentXpPerLevel))
+        .setPlaceholder('Enter base XP (e.g. 10, 50, 100)')
+        .setValue(String(baseXp))
         .setMinLength(1)
         .setMaxLength(6)
         .setRequired(true);
 
-      modal.addComponents(new ActionRowBuilder().addComponents(xpInput));
+      const incInput = new TextInputBuilder()
+        .setCustomId('pass_increment_xp_input')
+        .setLabel('XP added per level (0 for flat)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter increment (e.g. 0, 5, 25)')
+        .setValue(String(incrementXp))
+        .setMinLength(1)
+        .setMaxLength(6)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(baseInput),
+        new ActionRowBuilder().addComponents(incInput)
+      );
       await interaction.showModal(modal);
       return;
     }
@@ -829,27 +848,42 @@ export async function handlePassModal(interaction) {
       return;
     }
 
-    // 3. Set XP Threshold Modal
+    // 3. Set XP Threshold Modal (Base XP + Increment)
     if (customId.startsWith('pass_xp_threshold_modal_pg_')) {
       const page = parseInt(customId.replace('pass_xp_threshold_modal_pg_', ''), 10) || 0;
-      const raw = interaction.fields.getTextInputValue('pass_xp_threshold_input').trim();
-      const xpPerLevel = parseInt(raw, 10);
+      const baseRaw = interaction.fields.getTextInputValue('pass_base_xp_input').trim();
+      const incRaw = interaction.fields.getTextInputValue('pass_increment_xp_input').trim();
 
-      if (isNaN(xpPerLevel) || xpPerLevel < 1) {
-        return interaction.reply({ content: '❌ XP per level must be a positive whole number (e.g. 100).', flags: MessageFlags.Ephemeral });
+      const baseXp = parseInt(baseRaw, 10);
+      const incrementXp = parseInt(incRaw, 10);
+
+      if (isNaN(baseXp) || baseXp < 1) {
+        return interaction.reply({ content: '❌ Base XP must be a positive whole number (e.g. 10).', flags: MessageFlags.Ephemeral });
+      }
+
+      if (isNaN(incrementXp) || incrementXp < 0) {
+        return interaction.reply({ content: '❌ XP increment must be 0 or a positive whole number (e.g. 0, 5).', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferUpdate().catch(() => {});
 
-      await setGuildConfig(guildId, { battlepass_xp_per_level: xpPerLevel });
-
-      sysLog('Level XP Threshold Set', {
-        guild: guildId,
-        user: interaction.user.id,
-        detail: 'XP per level set to ' + xpPerLevel
+      await setGuildConfig(guildId, {
+        battlepass_base_xp: baseXp,
+        battlepass_xp_increment: incrementXp,
+        battlepass_xp_per_level: baseXp
       });
 
-      sendLog(interaction.guild, 'audit', 'cyan', '⚡ Level XP Configured', `Admin **<@${interaction.user.id}>** set Level XP threshold to **${xpPerLevel.toLocaleString()}** activity points per level.`);
+      sysLog('Level XP Scaling Set', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `Base: ${baseXp} | Increment: +${incrementXp}/lvl`
+      });
+
+      const logDesc = incrementXp > 0
+        ? `Admin **<@${interaction.user.id}>** configured Level XP scaling:\n• **Base XP:** **${baseXp.toLocaleString()}** (Level 1)\n• **Scaling:** **+${incrementXp.toLocaleString()}** XP per level`
+        : `Admin **<@${interaction.user.id}>** set Level XP to **${baseXp.toLocaleString()}** points per level (Flat).`;
+
+      sendLog(interaction.guild, 'audit', 'cyan', '⚡ Level XP Configured', logDesc);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });

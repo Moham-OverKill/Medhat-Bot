@@ -9,6 +9,76 @@ import { getPool } from '../../storage/postgres.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 
 /**
+ * Total cumulative XP needed to reach Level L.
+ * Level 0: 0 XP
+ * Level 1: Base XP
+ * Level L: L * Base + (L * (L - 1) / 2) * Increment
+ */
+export function getTotalXpForLevel(level, base = 100, increment = 0) {
+  if (level <= 0) return 0;
+  const L = Math.floor(level);
+  const B = Math.max(1, parseInt(base || 100, 10));
+  const I = Math.max(0, parseInt(increment || 0, 10));
+  return L * B + Math.floor((L * (L - 1) * I) / 2);
+}
+
+/**
+ * Given a user's total accumulated XP, calculate:
+ * - currentLevel
+ * - xpIntoCurrentLevel (XP earned inside current level)
+ * - xpForNextLevel (XP needed to complete current level and reach next level)
+ */
+export function calculateLevelFromXp(totalXp, base = 100, increment = 0) {
+  const B = Math.max(1, parseInt(base || 100, 10));
+  const I = Math.max(0, parseInt(increment || 0, 10));
+  const xp = Math.max(0, parseInt(totalXp || 0, 10));
+
+  if (xp === 0) {
+    return {
+      level: 0,
+      xpIntoCurrentLevel: 0,
+      xpForNextLevel: B
+    };
+  }
+
+  if (I === 0) {
+    const level = Math.floor(xp / B);
+    const xpIntoCurrentLevel = xp % B;
+    return {
+      level,
+      xpIntoCurrentLevel,
+      xpForNextLevel: B
+    };
+  }
+
+  // Fast estimate via quadratic formula: (I/2)*L^2 + (B - I/2)*L - xp = 0
+  const a = I;
+  const b = 2 * B - I;
+  const c = -2 * xp;
+  const discriminant = Math.max(0, b * b - 4 * a * c);
+  let level = Math.floor((-b + Math.sqrt(discriminant)) / (2 * a));
+  if (level < 0) level = 0;
+
+  // Exact bounds adjustment
+  while (getTotalXpForLevel(level + 1, B, I) <= xp) {
+    level++;
+  }
+  while (level > 0 && getTotalXpForLevel(level, B, I) > xp) {
+    level--;
+  }
+
+  const xpAtCurrentLevel = getTotalXpForLevel(level, B, I);
+  const xpForNext = B + level * I;
+  const xpIntoCurrentLevel = xp - xpAtCurrentLevel;
+
+  return {
+    level,
+    xpIntoCurrentLevel,
+    xpForNextLevel: xpForNext
+  };
+}
+
+/**
  * Award battlepass XP to a user and dispatch any newly unlocked level rewards.
  * Called after each message point or voice point is awarded.
  *
@@ -48,9 +118,10 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
     const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
     if (totalXp <= 0) return;
 
-    // 2. Get XP-per-level threshold configured by admin (default: 100)
-    const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
-    const currentLevel = Math.floor(totalXp / xpPerLevel);
+    // 2. Calculate current level based on Base XP and Increment
+    const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+    const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
     if (currentLevel <= 0) return;
 
     // 3. Load all configured levels that user could have reached
@@ -247,7 +318,8 @@ export async function getUserPassProgress(guildId, userId) {
 
   const { getGuildConfig } = await import('../../storage/config.js');
   const config = await getGuildConfig(guildId) || {};
-  const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+  const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+  const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
   const isEnabled = config.battlepass_enabled === true;
 
   // Get user XP
@@ -256,9 +328,7 @@ export async function getUserPassProgress(guildId, userId) {
     [guildId, userId]
   );
   const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
-  const currentLevel = Math.floor(totalXp / xpPerLevel);
-  const xpIntoCurrentLevel = totalXp % xpPerLevel;
-  const xpForNextLevel = xpPerLevel;
+  const { level: currentLevel, xpIntoCurrentLevel, xpForNextLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
   // Get claimed rewards
   const claimsResult = await pool.query(
@@ -293,7 +363,8 @@ export async function getUserPassProgress(guildId, userId) {
     currentLevel,
     xpIntoCurrentLevel,
     xpForNextLevel,
-    xpPerLevel,
+    baseXp,
+    incrementXp,
     claims: claimsResult.rows,
     nextReward: nextResult.rows[0] || null,
     config
