@@ -717,11 +717,15 @@ export async function handlePassComponent(interaction) {
         'DELETE FROM battlepass_config WHERE guild_id = $1 AND level = $2',
         [guildId, level]
       );
+      await pool.query(
+        'DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2',
+        [guildId, level]
+      );
 
       sysLog('Level Deleted', {
         guild: guildId,
         user: interaction.user.id,
-        detail: 'Level ' + level + ' deleted'
+        detail: 'Level ' + level + ' deleted and claim history reset'
       });
 
       sendLog(interaction.guild, 'audit', 'red', '🗑️ Level Deleted', `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`);
