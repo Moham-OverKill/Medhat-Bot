@@ -121,7 +121,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   options.push({
     label: 'Create New Level',
     value: 'pass_create_level_page_' + currentPage,
-    emoji: '✚'
+    emoji: '➕'
   });
 
   const select = new StringSelectMenuBuilder()
