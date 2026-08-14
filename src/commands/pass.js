@@ -42,11 +42,8 @@ export async function handlePassCommand(interaction) {
       .setColor(0x5865F2);
 
     embed.addFields({
-      name: 'Current Level',
-      value:
-        '**Level ' + data.currentLevel + '**\n' +
-        '`' + bar + '` ' + data.xpIntoCurrentLevel + ' / ' + data.xpForNextLevel + ' XP\n' +
-        '_Total XP: ' + data.totalXp.toLocaleString() + ' | ' + data.xpPerLevel + ' XP = 1 Level_',
+      name: 'Your Level: ' + data.currentLevel,
+      value: '`' + bar + '` ' + data.xpIntoCurrentLevel + ' / ' + data.xpForNextLevel + ' XP',
       inline: false
     });
 
@@ -57,10 +54,9 @@ export async function handlePassCommand(interaction) {
       if (nr.item_name) parts.push('🏷️ **' + nr.item_name + '**');
       if (nr.chest_name) parts.push(lootBoxEmoji + ' **' + nr.chest_name + '**');
       const rewardStr = parts.length > 0 ? parts.join(' + ') : '_No reward configured_';
-      const xpNeeded = (nr.level * data.xpPerLevel) - data.totalXp;
       embed.addFields({
-        name: 'Next Reward -- Level ' + nr.level,
-        value: rewardStr + '\n_' + Math.max(0, xpNeeded).toLocaleString() + ' XP away_',
+        name: 'Next Reward (Level ' + nr.level + ')',
+        value: rewardStr,
         inline: false
       });
     } else if (data.currentLevel > 0) {
