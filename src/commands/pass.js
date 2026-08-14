@@ -4,6 +4,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { getUserPassProgress } from './settings/pass-engine.js';
+import { getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { COIN_EMOJI } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -27,6 +28,7 @@ export async function handlePassCommand(interaction) {
     }
 
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
 
     const pct = Math.min(data.xpIntoCurrentLevel / data.xpForNextLevel, 1);
     const filled = Math.round(pct * 10);
@@ -52,8 +54,8 @@ export async function handlePassCommand(interaction) {
       const nr = data.nextReward;
       const parts = [];
       if (nr.reward_coins > 0) parts.push(coinEmoji + ' **' + Number(nr.reward_coins).toLocaleString() + ' Coins**');
-      if (nr.item_name) parts.push('**' + nr.item_name + '**');
-      if (nr.chest_name) parts.push('**' + nr.chest_name + '**');
+      if (nr.item_name) parts.push('🏷️ **' + nr.item_name + '**');
+      if (nr.chest_name) parts.push(lootBoxEmoji + ' **' + nr.chest_name + '**');
       const rewardStr = parts.length > 0 ? parts.join(' + ') : '_No reward configured_';
       const xpNeeded = (nr.level * data.xpPerLevel) - data.totalXp;
       embed.addFields({
@@ -71,8 +73,8 @@ export async function handlePassCommand(interaction) {
       const claimLines = data.claims.slice(-10).map(c => {
         const parts = [];
         if (c.reward_coins > 0) parts.push(coinEmoji + ' ' + Number(c.reward_coins).toLocaleString());
-        if (c.item_name) parts.push(c.item_name);
-        if (c.chest_name) parts.push(c.chest_name);
+        if (c.item_name) parts.push('🏷️ ' + c.item_name);
+        if (c.chest_name) parts.push(lootBoxEmoji + ' ' + c.chest_name);
         const rewardStr = parts.length > 0 ? parts.join(' + ') : 'Reward';
         return '- **Lvl ' + c.level_claimed + ':** ' + rewardStr;
       });
