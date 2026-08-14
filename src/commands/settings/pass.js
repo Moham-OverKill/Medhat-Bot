@@ -190,17 +190,12 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       label: preset.label,
       value: preset.value,
       description: preset.description,
-      emoji: preset.emoji || coinEmoji,
-      default: preset.value !== 'custom' && Number(data?.reward_coins || 0) === Number(preset.value)
+      emoji: preset.emoji || coinEmoji
     }));
-
-    const coinsPlaceholder = data && data.reward_coins > 0
-      ? ('Coins: ' + Number(data.reward_coins).toLocaleString())
-      : 'Select Coins Reward...';
 
     const coinsSelect = new StringSelectMenuBuilder()
       .setCustomId('pass_coins_select_lvl_' + selectedLevel + '_pg_' + currentPage)
-      .setPlaceholder(coinsPlaceholder)
+      .setPlaceholder('Set Coins')
       .addOptions(coinOptions);
 
     const row2 = new ActionRowBuilder().addComponents(coinsSelect);
@@ -212,8 +207,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: 'None (Remove Item)',
         value: 'none',
         description: 'No item reward for this level',
-        emoji: '❌',
-        default: !data || !data.reward_item_id
+        emoji: '❌'
       }
     ];
 
@@ -223,18 +217,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: item.name.slice(0, 50),
         value: String(item.id),
         description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
-        emoji: '🎁',
-        default: data && Number(data.reward_item_id) === Number(item.id)
+        emoji: '🎁'
       });
     }
 
-    const itemPlaceholder = data && data.item_name
-      ? ('Item: ' + data.item_name)
-      : 'Select Item Reward...';
-
     const itemsSelect = new StringSelectMenuBuilder()
       .setCustomId('pass_items_select_lvl_' + selectedLevel + '_pg_' + currentPage)
-      .setPlaceholder(itemPlaceholder)
+      .setPlaceholder('Set Items')
       .addOptions(itemOptions.slice(0, 25));
 
     const row3 = new ActionRowBuilder().addComponents(itemsSelect);
@@ -246,8 +235,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: 'None (Remove Chest)',
         value: 'none',
         description: 'No chest reward for this level',
-        emoji: '❌',
-        default: !data || !data.reward_chest_id
+        emoji: '❌'
       }
     ];
 
@@ -256,18 +244,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: chest.name.slice(0, 50),
         value: String(chest.id),
         description: (chest.description || 'Loot Box Chest').slice(0, 50),
-        emoji: '📦',
-        default: data && Number(data.reward_chest_id) === Number(chest.id)
+        emoji: '📦'
       });
     }
 
-    const chestPlaceholder = data && data.chest_name
-      ? ('Chest: ' + data.chest_name)
-      : 'Select Chest Reward...';
-
     const chestsSelect = new StringSelectMenuBuilder()
       .setCustomId('pass_chests_select_lvl_' + selectedLevel + '_pg_' + currentPage)
-      .setPlaceholder(chestPlaceholder)
+      .setPlaceholder('Set Chests')
       .addOptions(chestOptions.slice(0, 25));
 
     const row4 = new ActionRowBuilder().addComponents(chestsSelect);
