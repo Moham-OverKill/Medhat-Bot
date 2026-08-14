@@ -243,6 +243,9 @@ export async function handleSettingsComponent(interaction) {
 
         // Handle back button from any module
         if (customId === 'settings_back' || customId === 'settings_home') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
             await showMainMenu(interaction);
             return;
         }
