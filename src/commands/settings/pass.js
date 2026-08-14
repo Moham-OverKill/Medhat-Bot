@@ -140,8 +140,10 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     const data = await getConfiguredLevel(guildId, selectedLevel);
     embed.setTitle('🎟️ Battlepass — Level ' + selectedLevel);
 
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
+
     const coinsText = data && data.reward_coins > 0
-      ? (COIN_EMOJI + ' **' + Number(data.reward_coins).toLocaleString() + '**')
+      ? (coinEmoji + ' **' + Number(data.reward_coins).toLocaleString() + '**')
       : '_None_';
 
     const itemText = data && data.item_name
@@ -158,7 +160,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       new ButtonBuilder()
         .setCustomId('pass_coins_btn_' + selectedLevel + '_pg_' + currentPage)
         .setLabel('Coins Reward')
-        .setEmoji('🪙')
+        .setEmoji(coinEmoji)
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('pass_item_btn_' + selectedLevel + '_pg_' + currentPage)
@@ -195,10 +197,11 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       '_No level rewards configured yet._'
     );
   } else {
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
     const lines = pageLevels.map(row => {
       const parts = [];
       if (row.reward_coins > 0) {
-        parts.push(COIN_EMOJI + ' **' + Number(row.reward_coins).toLocaleString() + '**');
+        parts.push(coinEmoji + ' **' + Number(row.reward_coins).toLocaleString() + '**');
       }
       if (row.item_name) {
         parts.push('🎁 **' + row.item_name + '**');
