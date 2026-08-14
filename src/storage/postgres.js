@@ -791,6 +791,41 @@ async function createTables() {
 
     await pool.query(`ALTER TABLE battlepass_config ADD COLUMN IF NOT EXISTS reward_chest_id INT REFERENCES loot_boxes(id) ON DELETE SET NULL`);
 
+    // Multi-Reward Table for Levels (supports multiple items & chests with custom quantities)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS battlepass_rewards (
+        id SERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        level INT NOT NULL,
+        reward_type VARCHAR(20) NOT NULL,
+        shop_item_id INT REFERENCES shop_items(id) ON DELETE CASCADE,
+        loot_box_id INT REFERENCES loot_boxes(id) ON DELETE CASCADE,
+        quantity INT NOT NULL DEFAULT 1,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (guild_id, level, reward_type, shop_item_id),
+        UNIQUE (guild_id, level, reward_type, loot_box_id)
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_battlepass_rewards_guild_lvl ON battlepass_rewards(guild_id, level)`);
+
+    // Migrate existing single rewards into battlepass_rewards if not present
+    await pool.query(`
+      INSERT INTO battlepass_rewards (guild_id, level, reward_type, shop_item_id, quantity)
+      SELECT guild_id, level, 'item', reward_item_id, 1
+      FROM battlepass_config
+      WHERE reward_item_id IS NOT NULL
+      ON CONFLICT DO NOTHING;
+    `).catch(() => {});
+
+    await pool.query(`
+      INSERT INTO battlepass_rewards (guild_id, level, reward_type, loot_box_id, quantity)
+      SELECT guild_id, level, 'chest', reward_chest_id, 1
+      FROM battlepass_config
+      WHERE reward_chest_id IS NOT NULL
+      ON CONFLICT DO NOTHING;
+    `).catch(() => {});
+
     // User Claim History (Anti-Exploit)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_pass_claims (

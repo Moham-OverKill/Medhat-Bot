@@ -55,8 +55,11 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       const nr = data.nextReward;
       const parts = [];
       if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
-      if (nr.item_name) parts.push(`🏷️ **${nr.item_name}**`);
-      if (nr.chest_name) parts.push(`${lootBoxEmoji} **${nr.chest_name}**`);
+      for (const r of (nr.rewards || [])) {
+        const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+        if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
+        else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
+      }
       const rewardStr = parts.length > 0 ? parts.join(' + ') : '_No reward configured_';
       embed.addFields({
         name: `Next Reward (Level ${nr.level})`,
@@ -71,8 +74,11 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       const claimLines = data.claims.map(c => {
         const parts = [];
         if (c.reward_coins > 0) parts.push(`${coinEmoji} **${Number(c.reward_coins).toLocaleString()} Coins**`);
-        if (c.item_name) parts.push(`🏷️ **${c.item_name}**`);
-        if (c.chest_name) parts.push(`${lootBoxEmoji} **${c.chest_name}**`);
+        for (const r of (c.rewards || [])) {
+          const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+          if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
+          else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
+        }
         const rewardStr = parts.length > 0 ? parts.join(' + ') : '_Claimed Level Reward_';
         return `• **Level ${c.level_claimed}:** ${rewardStr}`;
       });

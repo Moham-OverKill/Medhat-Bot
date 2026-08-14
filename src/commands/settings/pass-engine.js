@@ -235,55 +235,80 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
       );
     }
 
-    // D. Award item
-    if (levelRow.reward_item_id) {
-      const existingItem = await client2.query(
-        `SELECT id FROM user_inventory
-         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
-         ORDER BY is_active DESC LIMIT 1`,
-        [userId, guildId, levelRow.reward_item_id]
-      );
-      if (existingItem.rows.length > 0) {
-        await client2.query(
-          `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $1`,
-          [existingItem.rows[0].id]
-        );
-      } else {
-        await client2.query(
-          `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-           VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
-          [userId, guildId, levelRow.reward_item_id, levelRow.item_role_id || null]
-        );
-      }
-    }
+    // D. Fetch all configured item & chest rewards for this level
+    const rewardsRes = await client2.query(
+      `SELECT br.id, br.level, br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
+              si.name as item_name, si.role_id as item_role_id,
+              lb.name as chest_name
+       FROM battlepass_rewards br
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+       WHERE br.guild_id = $1 AND br.level = $2
+       ORDER BY br.reward_type ASC, br.id ASC`,
+      [guildId, levelRow.level]
+    );
 
-    // E. Award chest (loot box — link to paired shop_item_id)
-    if (levelRow.reward_chest_id) {
-      const shopItemRes = await client2.query(
-        `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
-        [levelRow.reward_chest_id, guildId]
-      );
-      const chestShopItemId = shopItemRes.rows[0]?.id;
-      const chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${levelRow.reward_chest_id}`;
+    const grantedRewards = [];
 
-      if (chestShopItemId) {
-        const existingChest = await client2.query(
+    for (const reward of rewardsRes.rows) {
+      const qty = parseInt(reward.quantity, 10) || 1;
+
+      if (reward.reward_type === 'item' && reward.shop_item_id) {
+        const existingItem = await client2.query(
           `SELECT id FROM user_inventory
            WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
            ORDER BY is_active DESC LIMIT 1`,
-          [userId, guildId, chestShopItemId]
+          [userId, guildId, reward.shop_item_id]
         );
-        if (existingChest.rows.length > 0) {
+        if (existingItem.rows.length > 0) {
           await client2.query(
-            `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $1`,
-            [existingChest.rows[0].id]
+            `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+            [qty, existingItem.rows[0].id]
           );
         } else {
           await client2.query(
             `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
-            [userId, guildId, chestShopItemId, chestRoleId]
+             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+            [userId, guildId, reward.shop_item_id, reward.item_role_id || null, qty]
           );
+        }
+        grantedRewards.push({
+          type: 'item',
+          name: reward.item_name || 'Item',
+          quantity: qty
+        });
+      } else if (reward.reward_type === 'chest' && reward.loot_box_id) {
+        const shopItemRes = await client2.query(
+          `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+          [reward.loot_box_id, guildId]
+        );
+        const chestShopItemId = shopItemRes.rows[0]?.id;
+        const chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${reward.loot_box_id}`;
+
+        if (chestShopItemId) {
+          const existingChest = await client2.query(
+            `SELECT id FROM user_inventory
+             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
+             ORDER BY is_active DESC LIMIT 1`,
+            [userId, guildId, chestShopItemId]
+          );
+          if (existingChest.rows.length > 0) {
+            await client2.query(
+              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+              [qty, existingChest.rows[0].id]
+            );
+          } else {
+            await client2.query(
+              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+              [userId, guildId, chestShopItemId, chestRoleId, qty]
+            );
+          }
+          grantedRewards.push({
+            type: 'chest',
+            name: reward.chest_name || 'Chest',
+            quantity: qty
+          });
         }
       }
     }
@@ -293,7 +318,7 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
     sysLog('Level Reward Dispatched', {
       user: userId,
       guild: guildId,
-      detail: `Level ${levelRow.level} | Coins: ${coins} | Item: ${levelRow.item_name || 'None'} | Chest: ${levelRow.chest_name || 'None'}`
+      detail: `Level ${levelRow.level} | Coins: ${coins} | Rewards: ${grantedRewards.map(r => `${r.quantity}x ${r.name}`).join(', ') || 'None'}`
     });
 
     // F. Send Discord channel audit logs
@@ -305,13 +330,15 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
           const coinEmoji = COIN_EMOJI.forGuild(guildId);
           sendLog(guild, 'economy', 'green', '⭐ Level Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${coins.toLocaleString()}** ${coinEmoji}!`);
         }
-        if (levelRow.item_name) {
-          sendLog(guild, 'inventory', 'green', '🏷️ Level Item Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${levelRow.item_name}**!`);
-        }
-        if (levelRow.chest_name) {
-          const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
-          const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-          sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Chest Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${levelRow.chest_name}**!`);
+        for (const gr of grantedRewards) {
+          const countStr = gr.quantity > 1 ? `${gr.quantity}x ` : '';
+          if (gr.type === 'item') {
+            sendLog(guild, 'inventory', 'green', '🏷️ Level Item Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
+          } else if (gr.type === 'chest') {
+            const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
+            const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+            sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Chest Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
+          }
         }
       }
     }
@@ -319,8 +346,7 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
     return {
       level: levelRow.level,
       coins,
-      itemName: levelRow.item_name || null,
-      chestName: levelRow.chest_name || null
+      rewards: grantedRewards
     };
   } catch (err) {
     await client2.query('ROLLBACK').catch(() => {});
@@ -353,8 +379,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       const single = claimedLevels[0];
       const rewards = [];
       if (single.coins > 0) rewards.push(`${coinEmoji} **${single.coins.toLocaleString()} Coins**`);
-      if (single.itemName) rewards.push(`🏷️ **${single.itemName}**`);
-      if (single.chestName) rewards.push(`${lootBoxEmoji} **${single.chestName}**`);
+      for (const r of (single.rewards || [])) {
+        const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+        if (r.type === 'item') rewards.push(`🏷️ **${qStr}${r.name}**`);
+        else if (r.type === 'chest') rewards.push(`${lootBoxEmoji} **${qStr}${r.name}**`);
+      }
       const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
 
       title = `⭐ Level Up! (Level ${single.level})`;
@@ -366,8 +395,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       const lines = claimedLevels.map(c => {
         const rewards = [];
         if (c.coins > 0) rewards.push(`${coinEmoji} **${c.coins.toLocaleString()} Coins**`);
-        if (c.itemName) rewards.push(`🏷️ **${c.itemName}**`);
-        if (c.chestName) rewards.push(`${lootBoxEmoji} **${c.chestName}**`);
+        for (const r of (c.rewards || [])) {
+          const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+          if (r.type === 'item') rewards.push(`🏷️ **${qStr}${r.name}**`);
+          else if (r.type === 'chest') rewards.push(`${lootBoxEmoji} **${qStr}${r.name}**`);
+        }
         const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_None_';
         return `• **Level ${c.level}:** ${rewardText}`;
       });
@@ -424,32 +456,59 @@ export async function getUserPassProgress(guildId, userId) {
   const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
   const { level: currentLevel, xpIntoCurrentLevel, xpForNextLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
-  // Get claimed rewards
+  // Get claimed levels
   const claimsResult = await pool.query(
-    `SELECT upc.level_claimed, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
-            si.name as item_name, lb.name as chest_name
+    `SELECT upc.level_claimed, bc.reward_coins
      FROM user_pass_claims upc
      LEFT JOIN battlepass_config bc ON bc.guild_id = upc.guild_id AND bc.level = upc.level_claimed
-     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
-     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
      WHERE upc.guild_id = $1 AND upc.user_id = $2
      ORDER BY upc.level_claimed ASC`,
     [guildId, userId]
   );
 
-  // Get next unclaimed reward
-  const nextResult = await pool.query(
-    `SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
+  // Get all configured rewards across levels
+  const rewardsResult = await pool.query(
+    `SELECT br.level, br.reward_type, br.quantity,
             si.name as item_name, lb.name as chest_name
-     FROM battlepass_config bc
-     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
-     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
-     WHERE bc.guild_id = $1
-       AND bc.level > $2
-     ORDER BY bc.level ASC
+     FROM battlepass_rewards br
+     LEFT JOIN shop_items si ON br.shop_item_id = si.id
+     LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+     WHERE br.guild_id = $1
+     ORDER BY br.level ASC, br.id ASC`,
+    [guildId]
+  );
+
+  const rewardsByLevel = new Map();
+  for (const r of rewardsResult.rows) {
+    if (!rewardsByLevel.has(r.level)) rewardsByLevel.set(r.level, []);
+    rewardsByLevel.get(r.level).push(r);
+  }
+
+  const claims = claimsResult.rows.map(c => ({
+    level_claimed: c.level_claimed,
+    reward_coins: parseInt(c.reward_coins, 10) || 0,
+    rewards: rewardsByLevel.get(c.level_claimed) || []
+  }));
+
+  // Get next unclaimed reward level
+  const nextLevelResult = await pool.query(
+    `SELECT level, reward_coins
+     FROM battlepass_config
+     WHERE guild_id = $1 AND level > $2
+     ORDER BY level ASC
      LIMIT 1`,
     [guildId, currentLevel]
   );
+
+  let nextReward = null;
+  if (nextLevelResult.rows.length > 0) {
+    const nextRow = nextLevelResult.rows[0];
+    nextReward = {
+      level: nextRow.level,
+      reward_coins: parseInt(nextRow.reward_coins, 10) || 0,
+      rewards: rewardsByLevel.get(nextRow.level) || []
+    };
+  }
 
   return {
     isEnabled,
@@ -459,8 +518,8 @@ export async function getUserPassProgress(guildId, userId) {
     xpForNextLevel,
     baseXp,
     incrementXp,
-    claims: claimsResult.rows,
-    nextReward: nextResult.rows[0] || null,
+    claims,
+    nextReward,
     config
   };
 }
