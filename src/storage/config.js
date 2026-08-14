@@ -180,12 +180,15 @@ export async function saveGuildConfigs(configs) {
       await client.query('BEGIN');
       
       for (const [guildId, config] of Object.entries(validConfigs)) {
+        const existing = (await getGuildConfig(guildId)) || {};
+        const merged = { ...existing, ...config };
+        configCache.set(guildId, merged);
         await client.query(
           `INSERT INTO guild_configs (guild_id, config, updated_at)
            VALUES ($1, $2, NOW())
            ON CONFLICT (guild_id)
-           DO UPDATE SET config = $2, updated_at = NOW()`,
-          [guildId, JSON.stringify(config)]
+           DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()`,
+          [guildId, JSON.stringify(merged)]
         );
       }
       
@@ -248,14 +251,14 @@ export async function setGuildConfig(guildId, config) {
   }
   
   try {
-    const existing = configCache.get(guildId) || {};
+    const existing = (await getGuildConfig(guildId)) || {};
     const merged = { ...existing, ...sanitized };
     configCache.set(guildId, merged);
     await query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (guild_id)
-       DO UPDATE SET config = $2, updated_at = NOW()`,
+       DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()`,
       [guildId, JSON.stringify(merged)]
     );
   } catch (error) {
