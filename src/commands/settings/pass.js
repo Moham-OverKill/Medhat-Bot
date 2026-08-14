@@ -285,7 +285,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         emoji: '⬅️'
       });
 
-      for (const cat of categories) {
+      for (const cat of categories.slice(0, 24)) {
         const count = unlockedItems.filter(i => Number(i.category_id) === Number(cat.id)).length;
         if (count > 0) {
           rewardOptions.push({
@@ -302,7 +302,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         emoji: '⬅️'
       });
 
-      const standaloneItems = unlockedItems.filter(i => !i.category_id);
+      const standaloneItems = unlockedItems.filter(i => !i.category_id).slice(0, 24);
       for (const item of standaloneItems) {
         rewardOptions.push({
           label: item.name.slice(0, 50),
@@ -317,7 +317,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         emoji: '⬅️'
       });
 
-      for (const chest of guildLootBoxes) {
+      for (const chest of guildLootBoxes.slice(0, 24)) {
         rewardOptions.push({
           label: chest.name.slice(0, 50),
           value: 'add_chest_' + chest.id,
@@ -335,7 +335,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         emoji: '⬅️'
       });
 
-      const catItems = unlockedItems.filter(i => Number(i.category_id) === catId);
+      const catItems = unlockedItems.filter(i => Number(i.category_id) === catId).slice(0, 24);
       for (const item of catItems) {
         rewardOptions.push({
           label: item.name.slice(0, 50),

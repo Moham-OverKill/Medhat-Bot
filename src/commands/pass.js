@@ -37,8 +37,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
   const embed = new EmbedBuilder().setColor(0x5865F2);
 
   if (activeTab === 'level') {
-    const pct = Math.min(data.xpIntoCurrentLevel / data.xpForNextLevel, 1);
-    const filled = Math.round(pct * 10);
+    const requiredXp = Math.max(1, data.xpForNextLevel || 1);
+    const pct = Math.min(Math.max(0, (data.xpIntoCurrentLevel || 0) / requiredXp), 1);
+    const filled = Math.min(10, Math.max(0, Math.round(pct * 10)));
     const empty = 10 - filled;
     let bar = '';
     for (let i = 0; i < filled; i++) bar += String.fromCodePoint(0x2588);
@@ -83,7 +84,20 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         return `• **Level ${c.level_claimed}:** ${rewardStr}`;
       });
 
-      embed.setDescription(claimLines.join('\n'));
+      let fullText = claimLines.join('\n');
+      if (fullText.length > 3900) {
+        const header = `_Showing latest claimed rewards (${data.claims.length} total):_\n`;
+        let budget = 3800 - header.length;
+        const sliced = [];
+        for (let i = claimLines.length - 1; i >= 0; i--) {
+          if (budget - claimLines[i].length - 1 < 0) break;
+          sliced.unshift(claimLines[i]);
+          budget -= (claimLines[i].length + 1);
+        }
+        fullText = header + sliced.join('\n');
+      }
+
+      embed.setDescription(fullText);
     } else {
       embed.setDescription('_You have not claimed any level rewards yet._');
     }
