@@ -164,7 +164,7 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('settings_back')
+                .setCustomId('settings_users')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary),
