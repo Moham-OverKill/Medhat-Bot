@@ -14,11 +14,11 @@ import { sysLog, sysError, sendLog } from '../../utils/logger.js';
  * Level 1: Base XP
  * Level L: L * Base + (L * (L - 1) / 2) * Increment
  */
-export function getTotalXpForLevel(level, base = 100, increment = 0) {
+export function getTotalXpForLevel(level, base = 20, increment = 10) {
   if (level <= 0) return 0;
   const L = Math.floor(level);
-  const B = Math.max(1, parseInt(base || 100, 10));
-  const I = Math.max(0, parseInt(increment || 0, 10));
+  const B = Math.max(1, parseInt(base ?? 20, 10));
+  const I = Math.max(0, parseInt(increment ?? 10, 10));
   return L * B + Math.floor((L * (L - 1) * I) / 2);
 }
 
@@ -28,9 +28,9 @@ export function getTotalXpForLevel(level, base = 100, increment = 0) {
  * - xpIntoCurrentLevel (XP earned inside current level)
  * - xpForNextLevel (XP needed to complete current level and reach next level)
  */
-export function calculateLevelFromXp(totalXp, base = 100, increment = 0) {
-  const B = Math.max(1, parseInt(base || 100, 10));
-  const I = Math.max(0, parseInt(increment || 0, 10));
+export function calculateLevelFromXp(totalXp, base = 20, increment = 10) {
+  const B = Math.max(1, parseInt(base ?? 20, 10));
+  const I = Math.max(0, parseInt(increment ?? 10, 10));
   const xp = Math.max(0, parseInt(totalXp || 0, 10));
 
   if (xp === 0) {
@@ -141,8 +141,8 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
     const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
     if (totalXp <= 0) return;
 
-    const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
     const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
     if (currentLevel <= 0) return;
 
@@ -446,8 +446,8 @@ export async function getUserPassProgress(guildId, userId) {
 
   const { getGuildConfig } = await import('../../storage/config.js');
   const config = await getGuildConfig(guildId) || {};
-  const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
-  const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+  const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
+  const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
   const isEnabled = config.battlepass_enabled === true;
 
   // Get user XP
