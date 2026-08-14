@@ -35,7 +35,9 @@ async function safeSend(guild, channelId, embed, configKey) {
  */
 export function checkChannelPermissions(channel) {
     if (!channel) return { valid: false, error: 'Channel not found.' };
-    const permissions = channel.permissionsFor(channel.guild.members.me);
+    const me = channel.guild?.members?.me || channel.client?.user;
+    if (!me) return { valid: true };
+    const permissions = channel.permissionsFor(me);
     if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
         return { valid: false, error: 'I need "View Channel", "Send Messages", and "Embed Links" permissions there.' };
     }
