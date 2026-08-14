@@ -70,33 +70,21 @@ export async function buildHubEmbed(guild, config = null) {
       const reward = parseInt(q.reward_coins, 10) || 0;
       return `• ${taskText}: +**${reward.toLocaleString()}** ${coinEmoji}`;
     });
-    questContent = questLines.join('\n') + `\n⏱️ **Next Quests Drop:** <t:${nextQuestTs}:R>`;
+    questContent = questLines.join('\n') + `\n\nNext Quests <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
   } else if (questsEnabled) {
-    questContent = `_No active quests currently._\n⏱️ **Next Quests Drop:** <t:${nextQuestTs}:R>`;
+    questContent = `_No active quests currently._\n\nNext Quests <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
   } else {
-    questContent = '_Daily quests are currently paused._';
+    questContent = `_Daily quests are currently paused._\n\nNext Daily <t:${nextMidnightTs}:R>`;
   }
-
-  // Daily Reset Timer (no mention of Cairo in text)
-  const nextMidnightDate = getNextCairoMidnight();
-  const nextMidnightTs = Math.floor(nextMidnightDate.getTime() / 1000);
-  const dailyResetLine = `• **Daily Streak Reset:** <t:${nextMidnightTs}:R>`;
 
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
     .setColor(embedColor)
-    .addFields(
-      {
-        name: '🎯 Active Quests',
-        value: questContent,
-        inline: false
-      },
-      {
-        name: '⏱️ Schedules & Resets',
-        value: dailyResetLine,
-        inline: false
-      }
-    );
+    .addFields({
+      name: '🎯 Active Quests',
+      value: questContent,
+      inline: false
+    });
 
   return embed;
 }
