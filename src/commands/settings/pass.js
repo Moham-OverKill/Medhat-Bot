@@ -30,12 +30,24 @@ export async function getUnlockedItemCount(guildId) {
 }
 
 /**
- * Get all unlocked shop items for item picker
+ * Get regular unlocked shop items (excluding loot boxes)
  */
 async function getUnlockedShopItems(guildId) {
   const pool = getPool();
   const res = await pool.query(
-    'SELECT id, name, price, rarity, item_type FROM shop_items WHERE guild_id = $1 AND is_active = true AND (is_tradable IS TRUE OR is_tradable IS NULL) ORDER BY price ASC, name ASC LIMIT 24',
+    'SELECT id, name, price, rarity, item_type FROM shop_items WHERE guild_id = $1 AND is_active = true AND (is_tradable IS TRUE OR is_tradable IS NULL) AND (item_type != \'loot_box\' AND loot_box_id IS NULL) ORDER BY price ASC, name ASC LIMIT 24',
+    [guildId]
+  );
+  return res.rows;
+}
+
+/**
+ * Get all available loot boxes (chests) in the guild
+ */
+async function getGuildLootBoxes(guildId) {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT id, name, description FROM loot_boxes WHERE guild_id = $1 ORDER BY id ASC LIMIT 24',
     [guildId]
   );
   return res.rows;
@@ -47,7 +59,7 @@ async function getUnlockedShopItems(guildId) {
 async function getConfiguredLevels(guildId) {
   const pool = getPool();
   const res = await pool.query(
-    'SELECT bc.level, bc.reward_coins, bc.reward_item_id, si.name as item_name, si.rarity FROM battlepass_config bc LEFT JOIN shop_items si ON bc.reward_item_id = si.id WHERE bc.guild_id = $1 ORDER BY bc.level ASC',
+    'SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id, si.name as item_name, si.rarity as item_rarity, lb.name as chest_name FROM battlepass_config bc LEFT JOIN shop_items si ON bc.reward_item_id = si.id LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id WHERE bc.guild_id = $1 ORDER BY bc.level ASC',
     [guildId]
   );
   return res.rows;
@@ -59,19 +71,20 @@ async function getConfiguredLevels(guildId) {
 async function getConfiguredLevel(guildId, level) {
   const pool = getPool();
   const res = await pool.query(
-    'SELECT bc.level, bc.reward_coins, bc.reward_item_id, si.name as item_name, si.rarity FROM battlepass_config bc LEFT JOIN shop_items si ON bc.reward_item_id = si.id WHERE bc.guild_id = $1 AND bc.level = $2',
+    'SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id, si.name as item_name, si.rarity as item_rarity, lb.name as chest_name FROM battlepass_config bc LEFT JOIN shop_items si ON bc.reward_item_id = si.id LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id WHERE bc.guild_id = $1 AND bc.level = $2',
     [guildId, level]
   );
   return res.rows[0] || null;
 }
 
 /**
- * Render the Battlepass Dashboard payload with persistent dropdown and Start/Pause toggle
+ * Render the Battlepass Dashboard payload with persistent dropdown, 3 reward selectors, and Start/Pause toggle
  */
 export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null) {
   const levels = await getConfiguredLevels(guildId);
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.battlepass_enabled === true;
+  const coinEmoji = COIN_EMOJI.forGuild(guildId);
 
   const totalLevels = levels.length;
   const totalPages = Math.max(1, Math.ceil(totalLevels / ITEMS_PER_PAGE));
@@ -84,7 +97,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   const embed = new EmbedBuilder()
     .setColor(0x5865F2);
 
-  // Build Dropdown Options
+  // Build Level Switcher Dropdown Options
   const options = [];
 
   // 1. Level items on this page
@@ -92,6 +105,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     const rewardParts = [];
     if (l.reward_coins > 0) rewardParts.push(l.reward_coins + ' Coins');
     if (l.item_name) rewardParts.push(l.item_name);
+    if (l.chest_name) rewardParts.push(l.chest_name);
     const desc = rewardParts.length > 0 ? rewardParts.join(' + ') : 'No reward set';
 
     options.push({
@@ -128,49 +142,138 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     emoji: '➕'
   });
 
-  const select = new StringSelectMenuBuilder()
+  const levelSelect = new StringSelectMenuBuilder()
     .setCustomId('pass_main_select')
     .setPlaceholder('Select a level')
     .addOptions(options);
 
-  const row1 = new ActionRowBuilder().addComponents(select);
+  const row1 = new ActionRowBuilder().addComponents(levelSelect);
 
-  // If a specific level is selected for management
+  // If a specific level is selected for management -> Show 3 Select Menus + Actions
   if (selectedLevel !== null) {
     const data = await getConfiguredLevel(guildId, selectedLevel);
     embed.setTitle('🎟️ Battlepass — Level ' + selectedLevel);
-
-    const coinEmoji = COIN_EMOJI.forGuild(guildId);
 
     const coinsText = data && data.reward_coins > 0
       ? (coinEmoji + ' **' + Number(data.reward_coins).toLocaleString() + '**')
       : '_None_';
 
     const itemText = data && data.item_name
-      ? ('🎁 **' + data.item_name + '** (' + (data.rarity || 'Common') + ')')
+      ? ('🎁 **' + data.item_name + '** (' + (data.item_rarity || 'Common') + ')')
+      : '_None_';
+
+    const chestText = data && data.chest_name
+      ? ('📦 **' + data.chest_name + '**')
       : '_None_';
 
     embed.setDescription(
       '• **Coins Reward:** ' + coinsText + '\n' +
-      '• **Item Reward:** ' + itemText
+      '• **Item Reward:** ' + itemText + '\n' +
+      '• **Chest Reward:** ' + chestText
     );
 
-    // Row 2: Coins Reward & Item Reward
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('pass_coins_btn_' + selectedLevel + '_pg_' + currentPage)
-        .setLabel('Coins Reward')
-        .setEmoji(coinEmoji)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('pass_item_btn_' + selectedLevel + '_pg_' + currentPage)
-        .setLabel('Item Reward')
-        .setEmoji('🎁')
-        .setStyle(ButtonStyle.Secondary)
-    );
+    // Row 2: Select Menu 1 — Coins Selector
+    const coinPresets = [
+      { label: 'None (0 Coins)', value: '0', description: 'Remove coin reward', emoji: '❌' },
+      { label: '50 Coins', value: '50' },
+      { label: '100 Coins', value: '100' },
+      { label: '250 Coins', value: '250' },
+      { label: '500 Coins', value: '500' },
+      { label: '1,000 Coins', value: '1000' },
+      { label: '2,500 Coins', value: '2500' },
+      { label: '5,000 Coins', value: '5000' },
+      { label: '10,000 Coins', value: '10000' },
+      { label: 'Custom Amount...', value: 'custom', description: 'Enter specific coin amount', emoji: '✏️' }
+    ];
 
-    // Row 3: Back & Delete Level
-    const row3 = new ActionRowBuilder().addComponents(
+    const coinOptions = coinPresets.map(preset => ({
+      label: preset.label,
+      value: preset.value,
+      description: preset.description,
+      emoji: preset.emoji || coinEmoji,
+      default: preset.value !== 'custom' && Number(data?.reward_coins || 0) === Number(preset.value)
+    }));
+
+    const coinsPlaceholder = data && data.reward_coins > 0
+      ? ('Coins: ' + Number(data.reward_coins).toLocaleString())
+      : 'Select Coins Reward...';
+
+    const coinsSelect = new StringSelectMenuBuilder()
+      .setCustomId('pass_coins_select_lvl_' + selectedLevel + '_pg_' + currentPage)
+      .setPlaceholder(coinsPlaceholder)
+      .addOptions(coinOptions);
+
+    const row2 = new ActionRowBuilder().addComponents(coinsSelect);
+
+    // Row 3: Select Menu 2 — Items Selector
+    const unlockedItems = await getUnlockedShopItems(guildId);
+    const itemOptions = [
+      {
+        label: 'None (Remove Item)',
+        value: 'none',
+        description: 'No item reward for this level',
+        emoji: '❌',
+        default: !data || !data.reward_item_id
+      }
+    ];
+
+    for (const item of unlockedItems) {
+      const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
+      itemOptions.push({
+        label: item.name.slice(0, 50),
+        value: String(item.id),
+        description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
+        emoji: '🎁',
+        default: data && Number(data.reward_item_id) === Number(item.id)
+      });
+    }
+
+    const itemPlaceholder = data && data.item_name
+      ? ('Item: ' + data.item_name)
+      : 'Select Item Reward...';
+
+    const itemsSelect = new StringSelectMenuBuilder()
+      .setCustomId('pass_items_select_lvl_' + selectedLevel + '_pg_' + currentPage)
+      .setPlaceholder(itemPlaceholder)
+      .addOptions(itemOptions.slice(0, 25));
+
+    const row3 = new ActionRowBuilder().addComponents(itemsSelect);
+
+    // Row 4: Select Menu 3 — Chests (Loot Boxes) Selector
+    const guildLootBoxes = await getGuildLootBoxes(guildId);
+    const chestOptions = [
+      {
+        label: 'None (Remove Chest)',
+        value: 'none',
+        description: 'No chest reward for this level',
+        emoji: '❌',
+        default: !data || !data.reward_chest_id
+      }
+    ];
+
+    for (const chest of guildLootBoxes) {
+      chestOptions.push({
+        label: chest.name.slice(0, 50),
+        value: String(chest.id),
+        description: (chest.description || 'Loot Box Chest').slice(0, 50),
+        emoji: '📦',
+        default: data && Number(data.reward_chest_id) === Number(chest.id)
+      });
+    }
+
+    const chestPlaceholder = data && data.chest_name
+      ? ('Chest: ' + data.chest_name)
+      : 'Select Chest Reward...';
+
+    const chestsSelect = new StringSelectMenuBuilder()
+      .setCustomId('pass_chests_select_lvl_' + selectedLevel + '_pg_' + currentPage)
+      .setPlaceholder(chestPlaceholder)
+      .addOptions(chestOptions.slice(0, 25));
+
+    const row4 = new ActionRowBuilder().addComponents(chestsSelect);
+
+    // Row 5: Action Buttons (Back & Delete Level)
+    const row5 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('settings_home')
         .setLabel('Back')
@@ -183,7 +286,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         .setStyle(ButtonStyle.Danger)
     );
 
-    return { embeds: [embed], components: [row1, row2, row3] };
+    return { embeds: [embed], components: [row1, row2, row3, row4, row5] };
   }
 
   // Default Overview (No level selected)
@@ -197,7 +300,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       '_No level rewards configured yet._'
     );
   } else {
-    const coinEmoji = COIN_EMOJI.forGuild(guildId);
     const lines = pageLevels.map(row => {
       const parts = [];
       if (row.reward_coins > 0) {
@@ -205,6 +307,9 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       }
       if (row.item_name) {
         parts.push('🎁 **' + row.item_name + '**');
+      }
+      if (row.chest_name) {
+        parts.push('📦 **' + row.chest_name + '**');
       }
       const rewardText = parts.length > 0 ? parts.join(' + ') : '_No Reward Set_';
       return '• **Level ' + row.level + ':** ' + rewardText;
@@ -275,7 +380,7 @@ export async function handlePassComponent(interaction) {
   const guildId = interaction.guildId;
 
   try {
-    // 1. Main Dropdown Selection
+    // 1. Main Level Selector Dropdown
     if (customId === 'pass_main_select') {
       const selectedValue = interaction.values[0];
 
@@ -326,7 +431,111 @@ export async function handlePassComponent(interaction) {
       }
     }
 
-    // 2. Start Battlepass -> Confirmation Dialogue
+    // 2. Select Menu 1 — Coins Selector
+    if (customId.startsWith('pass_coins_select_lvl_')) {
+      const match = customId.match(/pass_coins_select_lvl_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+      const selectedValue = interaction.values[0];
+
+      if (selectedValue === 'custom') {
+        const data = await getConfiguredLevel(guildId, level);
+        const modal = new ModalBuilder()
+          .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
+          .setTitle('Set Level ' + level + ' Coins');
+
+        const coinsInput = new TextInputBuilder()
+          .setCustomId('pass_coins_input')
+          .setLabel('Coin Reward (0 to remove)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Enter coin amount (e.g. 500)')
+          .setValue(String(data?.reward_coins || 0))
+          .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(coinsInput));
+        await interaction.showModal(modal);
+        return;
+      }
+
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+
+      const coins = parseInt(selectedValue, 10) || 0;
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins) VALUES ($1, $2, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3',
+        [guildId, level, coins]
+      );
+
+      sysLog('Battlepass Coins Updated', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' coins set to ' + coins
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 3. Select Menu 2 — Items Selector
+    if (customId.startsWith('pass_items_select_lvl_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const match = customId.match(/pass_items_select_lvl_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+      const selectedValue = interaction.values[0];
+      const itemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
+
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, 0, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_item_id = $3',
+        [guildId, level, itemId]
+      );
+
+      sysLog('Battlepass Item Updated', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' item set to ' + (itemId || 'None')
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 4. Select Menu 3 — Chests (Loot Boxes) Selector
+    if (customId.startsWith('pass_chests_select_lvl_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const match = customId.match(/pass_chests_select_lvl_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+      const selectedValue = interaction.values[0];
+      const chestId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
+
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_chest_id) VALUES ($1, $2, 0, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_chest_id = $3',
+        [guildId, level, chestId]
+      );
+
+      sysLog('Battlepass Chest Updated', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' chest set to ' + (chestId || 'None')
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 5. Start Battlepass -> Confirmation Dialogue
     if (customId.startsWith('pass_toggle_start_pg_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -361,7 +570,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 3. Confirm Start
+    // 6. Confirm Start
     if (customId.startsWith('pass_confirm_start_pg_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -380,7 +589,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 4. Pause Battlepass
+    // 7. Pause Battlepass
     if (customId.startsWith('pass_toggle_pause_pg_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -399,7 +608,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 5. Back to Levels List
+    // 8. Back to Levels List
     if (customId.startsWith('pass_home_page_') || customId === 'pass_home') {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -410,131 +619,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 6. Set Coins Button for Selected Level -> Show Coins Modal
-    if (customId.startsWith('pass_coins_btn_')) {
-      const match = customId.match(/pass_coins_btn_(\d+)_pg_(\d+)/);
-      const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
-
-      const data = await getConfiguredLevel(guildId, level);
-
-      const modal = new ModalBuilder()
-        .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
-        .setTitle('Set Level ' + level + ' Coins');
-
-      const coinsInput = new TextInputBuilder()
-        .setCustomId('pass_coins_input')
-        .setLabel('Coin Reward (0 to remove)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter coin amount (e.g. 500)')
-        .setValue(String(data?.reward_coins || 0))
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(coinsInput));
-      await interaction.showModal(modal);
-      return;
-    }
-
-    // 7. Set Item Button for Selected Level -> Show Shop Item Selector
-    if (customId.startsWith('pass_item_btn_')) {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
-
-      const match = customId.match(/pass_item_btn_(\d+)_pg_(\d+)/);
-      const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
-
-      const unlockedItems = await getUnlockedShopItems(guildId);
-
-      const options = [
-        {
-          label: 'None (Remove Item)',
-          value: 'none',
-          description: 'No item reward for this level',
-          emoji: '❌'
-        }
-      ];
-
-      for (const item of unlockedItems) {
-        const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Free / Special';
-        options.push({
-          label: item.name.slice(0, 50),
-          value: String(item.id),
-          description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
-          emoji: '🎁'
-        });
-      }
-
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('pass_bind_item_' + level + '_pg_' + page)
-        .setPlaceholder('Choose an unlocked shop item for Level ' + level + '...')
-        .addOptions(options.slice(0, 25));
-
-      const row1 = new ActionRowBuilder().addComponents(select);
-      const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('pass_cancel_item_' + level + '_pg_' + page)
-          .setLabel('Cancel')
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-      const embed = new EmbedBuilder()
-        .setTitle('🎁 Level ' + level + ' — Select Item Reward')
-        .setDescription('Choose an unlocked shop item from the list below to bind to **Level ' + level + '**.')
-        .setColor(0x5865F2);
-
-      await interaction.editReply({
-        embeds: [embed],
-        components: [row1, row2]
-      });
-      return;
-    }
-
-    // 8. Cancel Item Selection
-    if (customId.startsWith('pass_cancel_item_')) {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
-      const match = customId.match(/pass_cancel_item_(\d+)_pg_(\d+)/);
-      const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
-
-      const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
-      return;
-    }
-
-    // 9. Bind Item Selected
-    if (customId.startsWith('pass_bind_item_')) {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
-      const match = customId.match(/pass_bind_item_(\d+)_pg_(\d+)/);
-      const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
-
-      const selectedValue = interaction.values[0];
-      const rewardItemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
-
-      const pool = getPool();
-      await pool.query(
-        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, 0, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_item_id = $3',
-        [guildId, level, rewardItemId]
-      );
-
-      sysLog('Battlepass Item Bound', {
-        guild: guildId,
-        user: interaction.user.id,
-        detail: 'Level ' + level + ' item set to ' + (rewardItemId || 'None')
-      });
-
-      const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
-      return;
-    }
-
-    // 10. Delete Level Button
+    // 9. Delete Level Button
     if (customId.startsWith('pass_del_btn_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -605,7 +690,7 @@ export async function handlePassModal(interaction) {
       return;
     }
 
-    // 2. Set Coins Modal
+    // 2. Set Coins Modal (Custom Amount)
     if (customId.startsWith('pass_set_coins_modal_')) {
       const match = customId.match(/pass_set_coins_modal_(\d+)_pg_(\d+)/);
       const level = match ? parseInt(match[1], 10) : 1;

@@ -784,9 +784,12 @@ async function createTables() {
         level INT NOT NULL,
         reward_coins INT DEFAULT 0,
         reward_item_id INT REFERENCES shop_items(id) ON DELETE SET NULL,
+        reward_chest_id INT REFERENCES loot_boxes(id) ON DELETE SET NULL,
         PRIMARY KEY (guild_id, level)
       );
     `);
+
+    await pool.query(`ALTER TABLE battlepass_config ADD COLUMN IF NOT EXISTS reward_chest_id INT REFERENCES loot_boxes(id) ON DELETE SET NULL`);
 
     // User Claim History (Anti-Exploit)
     await pool.query(`
