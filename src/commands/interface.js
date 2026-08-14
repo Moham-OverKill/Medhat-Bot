@@ -339,15 +339,17 @@ export async function handleInterfaceComponent(interaction) {
         .setCustomId('interface_title_input')
         .setLabel('Embed Title')
         .setStyle(TextInputStyle.Short)
-        .setValue(currentTitle)
+        .setPlaceholder('Server Hub')
+        .setValue(config.interface_title ? currentTitle : '')
         .setMaxLength(64)
-        .setRequired(true);
+        .setRequired(false);
 
       const emojiInput = new TextInputBuilder()
         .setCustomId('interface_emoji_input')
         .setLabel('Title Emoji (Unicode or Custom <:name:id>)')
         .setStyle(TextInputStyle.Short)
-        .setValue(currentEmoji)
+        .setPlaceholder('🖥️')
+        .setValue(config.interface_emoji ? currentEmoji : '')
         .setMaxLength(64)
         .setRequired(false);
 
@@ -355,7 +357,8 @@ export async function handleInterfaceComponent(interaction) {
         .setCustomId('interface_color_input')
         .setLabel('Embed Color Code (e.g. #5865F2, #2F3136)')
         .setStyle(TextInputStyle.Short)
-        .setValue(currentColor)
+        .setPlaceholder('#5865F2')
+        .setValue(config.interface_color ? currentColor : '')
         .setMaxLength(10)
         .setRequired(false);
 
@@ -440,9 +443,9 @@ export async function handleInterfaceModal(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
-    const title = interaction.fields.getTextInputValue('interface_title_input').trim() || 'Server Hub';
-    const emoji = interaction.fields.getTextInputValue('interface_emoji_input').trim() || '🖥️';
-    const color = interaction.fields.getTextInputValue('interface_color_input').trim() || '#5865F2';
+    const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
+    const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
+    const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
 
     const config = await getGuildConfig(guildId) || {};
     config.interface_title = title;
