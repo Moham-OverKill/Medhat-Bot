@@ -292,11 +292,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // Default Overview (No level selected)
   embed.setTitle('🎟️ Battlepass Configuration');
 
+  const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
   const statusText = isEnabled ? '🟢 **Active**' : '⏸️ **Paused**';
 
   if (totalLevels === 0) {
     embed.setDescription(
-      '• **Status:** ' + statusText + '\n\n' +
+      '• **Status:** ' + statusText + '\n' +
+      '• **XP Per Level:** ' + xpPerLevel.toLocaleString() + ' activity points\n\n' +
       '_No level rewards configured yet._'
     );
   } else {
@@ -316,7 +318,8 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     });
 
     embed.setDescription(
-      '• **Status:** ' + statusText + '\n\n' +
+      '• **Status:** ' + statusText + '\n' +
+      '• **XP Per Level:** ' + xpPerLevel.toLocaleString() + ' activity points\n\n' +
       lines.join('\n')
     );
   }
@@ -339,6 +342,11 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('pass_set_xp_threshold_pg_' + currentPage)
+      .setLabel('Set XP Per Level')
+      .setEmoji('⚙️')
+      .setStyle(ButtonStyle.Primary),
     startPauseButton
   );
 
@@ -553,14 +561,14 @@ export async function handlePassComponent(interaction) {
 
       const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
+          .setCustomId('pass_home_page_' + page)
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
           .setCustomId('pass_confirm_start_pg_' + page)
           .setLabel('Confirm & Start')
           .setEmoji('✅')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('pass_home_page_' + page)
-          .setLabel('Cancel')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Success)
       );
 
       await interaction.editReply({
@@ -645,6 +653,31 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
+    // 10. Set XP Threshold Button
+    if (customId.startsWith('pass_set_xp_threshold_pg_')) {
+      const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
+      const config = await getGuildConfig(guildId) || {};
+      const currentXpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+
+      const modal = new ModalBuilder()
+        .setCustomId('pass_xp_threshold_modal_pg_' + page)
+        .setTitle('Set XP Per Level');
+
+      const xpInput = new TextInputBuilder()
+        .setCustomId('pass_xp_threshold_input')
+        .setLabel('Activity points needed per level (e.g. 100)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter a number (e.g. 100, 200, 500)')
+        .setValue(String(currentXpPerLevel))
+        .setMinLength(1)
+        .setMaxLength(6)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(xpInput));
+      await interaction.showModal(modal);
+      return;
+    }
+
   } catch (error) {
     await handleInteractionError(interaction, error, 'pass component');
   }
@@ -715,6 +748,33 @@ export async function handlePassModal(interaction) {
       });
 
       const payload = await getPassDashboardPayload(guildId, page, level);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '', ...payload });
+      } else {
+        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // 3. Set XP Threshold Modal
+    if (customId.startsWith('pass_xp_threshold_modal_pg_')) {
+      const page = parseInt(customId.replace('pass_xp_threshold_modal_pg_', ''), 10) || 0;
+      const raw = interaction.fields.getTextInputValue('pass_xp_threshold_input').trim();
+      const xpPerLevel = parseInt(raw, 10);
+
+      if (isNaN(xpPerLevel) || xpPerLevel < 1) {
+        return interaction.reply({ content: '❌ XP per level must be a positive whole number (e.g. 100).', flags: MessageFlags.Ephemeral });
+      }
+
+      await setGuildConfig(guildId, { battlepass_xp_per_level: xpPerLevel });
+
+      sysLog('Battlepass XP Threshold Set', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'XP per level set to ' + xpPerLevel
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, null);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: '', ...payload });
       } else {
