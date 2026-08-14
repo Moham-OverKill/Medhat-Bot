@@ -1454,6 +1454,12 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             for (const row of senderItemsRes.rows) {
                 const offerObj = itemObjects.find(o => o.id === row.id);
                 const offerQty = offerObj ? (offerObj.qty || 1) : 1;
+                const rowQty = parseInt(row.quantity, 10) || 1;
+
+                if (rowQty < offerQty) {
+                    throw new Error(`Insufficient quantity for **${row.name}** (Offered ${offerQty}, but only ${rowQty} available).`);
+                }
+
                 const isLocked = row.is_tradable === false;
 
                 if (isLocked) {
