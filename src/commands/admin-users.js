@@ -41,7 +41,7 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users_roles')
-            .setLabel('Roles')
+            .setLabel('Top Roles')
             .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
