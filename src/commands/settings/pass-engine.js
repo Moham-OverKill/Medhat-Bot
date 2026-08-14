@@ -420,14 +420,18 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       const channel = guild?.channels?.cache?.get(notifChannelId) || await client.channels?.fetch(notifChannelId).catch(() => null);
       if (channel?.isTextBased?.()) {
         await channel.send({ embeds: [embed] }).catch(() => {});
-        return;
       }
     }
 
-    // Fallback: DM the user
-    const user = await client.users.fetch(userId).catch(() => null);
-    if (user) {
-      await user.send({ embeds: [embed] }).catch(() => {});
+    // Direct Message Notification (Opt-in only)
+    const { getUserNotificationSettings } = await import('../../storage/notifications.js');
+    const userSettings = await getUserNotificationSettings(guildId, userId);
+
+    if (userSettings.notif_level_up) {
+      const user = await client.users.fetch(userId).catch(() => null);
+      if (user) {
+        await user.send({ embeds: [embed] }).catch(() => {});
+      }
     }
   } catch (err) {
     sysError('Level Notification Failed', err, { user: userId, guild: guildId });

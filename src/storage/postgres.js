@@ -858,6 +858,22 @@ async function createTables() {
 
     await pool.query(`DELETE FROM user_inventory WHERE shop_item_id IS NULL AND source = 'BATTLEPASS'`).catch(() => {});
 
+    // User DM Notification Settings (Server-Specific, Opt-in)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_notification_settings (
+        guild_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        notif_level_up BOOLEAN DEFAULT FALSE,
+        notif_daily_claim BOOLEAN DEFAULT FALSE,
+        notif_trades BOOLEAN DEFAULT FALSE,
+        notif_mvp_win BOOLEAN DEFAULT FALSE,
+        notif_quests_refresh BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
+    `);
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)

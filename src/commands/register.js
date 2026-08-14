@@ -14,6 +14,7 @@ import { tradeCommand } from './trade.js';
 import { helpCommand } from './help.js';
 import { voteCommand } from './vote.js';
 import { levelCommand } from './pass.js';
+import { notificationsCommand } from './notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data');
@@ -50,7 +51,8 @@ export async function registerSlashCommands(client) {
     tradeCommand.toJSON(),
     voteCommand.toJSON(),
     helpCommand.toJSON(),
-    levelCommand.toJSON()
+    levelCommand.toJSON(),
+    notificationsCommand.toJSON()
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);

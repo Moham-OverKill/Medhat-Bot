@@ -1188,6 +1188,30 @@ async function finalizeTradePosting(interaction, setup) {
             [publicMsg.id, interaction.channelId, publicMsg.url, tradeId, setup.guildId]
         );
 
+        // Opt-in Direct Message Notification for Target User
+        try {
+            const { getUserNotificationSettings } = await import('../storage/notifications.js');
+            const targetSettings = await getUserNotificationSettings(setup.guildId, setup.targetId);
+            if (targetSettings.notif_trades) {
+                const targetUser = await interaction.client.users.fetch(setup.targetId).catch(() => null);
+                if (targetUser) {
+                    const senderMember = await interaction.guild.members.fetch(setup.senderId).catch(() => null);
+                    const senderName = senderMember ? getUserDisplayName(senderMember) : 'A user';
+                    const dmEmbed = new EmbedBuilder()
+                        .setTitle('🤝 New Trade Offer')
+                        .setDescription(`**${senderName}** has sent you a trade offer in **${interaction.guild.name}**!\n\n[Click here to view the trade](${publicMsg.url})`)
+                        .setColor(0xF1C40F)
+                        .setFooter({
+                            text: `${interaction.guild.name} • ${new Date().toLocaleString()}`,
+                            iconURL: typeof interaction.guild.iconURL === 'function' ? (interaction.guild.iconURL({ dynamic: true }) || interaction.guild.iconURL()) : null
+                        });
+                    await targetUser.send({ embeds: [dmEmbed] }).catch(() => {});
+                }
+            }
+        } catch (dmErr) {
+            sysError('Trade DM Notification Failed', dmErr, { guild: setup.guildId, target: setup.targetId });
+        }
+
         // 5. Set Expiration Timeout (Garbage Collector)
         const channelId = interaction.channelId;
         const msgId = publicMsg.id;
