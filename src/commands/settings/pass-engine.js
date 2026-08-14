@@ -4,6 +4,7 @@
  * All progress is stored in user_activity.battlepass_xp — never reset by MVP cycles.
  * Rewards are locked in user_pass_claims (permanent anti-exploit ledger).
  */
+import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 
@@ -193,21 +194,37 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
 async function sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config) {
   try {
     const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
+    const { COIN_EMOJI } = await import('../../shared.js');
+
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const notifChannelId = config.battlepass_notif_channel;
+
+    const guild = client.guilds?.cache?.get(guildId) || await client.guilds?.fetch(guildId).catch(() => null);
+    const guildName = guild?.name || 'Discord Server';
+    const guildIcon = guild?.iconURL?.({ dynamic: true }) || null;
+
     const rewards = [];
-    if (coins > 0) rewards.push(`🪙 **${coins.toLocaleString()} Coins**`);
+    if (coins > 0) rewards.push(`${coinEmoji} **${coins.toLocaleString()} Coins**`);
     if (levelRow.item_name) rewards.push(`🏷️ **${levelRow.item_name}**`);
     if (levelRow.chest_name) rewards.push(`${lootBoxEmoji} **${levelRow.chest_name}**`);
 
-    const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_No reward for this level_';
-    const msg = `🎟️ <@${userId}> reached **Battlepass Level ${levelRow.level}**! Reward: ${rewardText}`;
+    const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle(`🎟️ Battlepass Level Up!`)
+      .setDescription(
+        `Congratulations <@${userId}>! You reached **Battlepass Level ${levelRow.level}** in **${guildName}**.\n\n` +
+        `**Rewards Unlocked:**\n• ${rewardText}`
+      )
+      .setFooter({ text: guildName, iconURL: guildIcon || undefined })
+      .setTimestamp();
 
     if (notifChannelId) {
-      const guild = client.guilds.cache.get(guildId);
-      const channel = guild?.channels.cache.get(notifChannelId);
+      const channel = guild?.channels?.cache?.get(notifChannelId) || await client.channels?.fetch(notifChannelId).catch(() => null);
       if (channel?.isTextBased?.()) {
-        await channel.send(msg).catch(() => {});
+        await channel.send({ embeds: [embed] }).catch(() => {});
         return;
       }
     }
@@ -215,10 +232,10 @@ async function sendLevelUpNotification(client, guildId, userId, username, levelR
     // Fallback: DM the user
     const user = await client.users.fetch(userId).catch(() => null);
     if (user) {
-      await user.send(msg).catch(() => {});
+      await user.send({ embeds: [embed] }).catch(() => {});
     }
   } catch (err) {
-    sysError('Battlepass Notification Failed', err, { user: userId, guild: guildId });
+    sysError('Battlepass Notification Failed', err, { user: userId, guild: guildId, level: levelRow?.level });
   }
 }
 
