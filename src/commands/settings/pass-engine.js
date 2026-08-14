@@ -163,11 +163,13 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
 
 async function sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config) {
   try {
+    const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const notifChannelId = config.battlepass_notif_channel;
     const rewards = [];
     if (coins > 0) rewards.push(`🪙 **${coins.toLocaleString()} Coins**`);
-    if (levelRow.item_name) rewards.push(`🎁 **${levelRow.item_name}**`);
-    if (levelRow.chest_name) rewards.push(`📦 **${levelRow.chest_name}**`);
+    if (levelRow.item_name) rewards.push(`🏷️ **${levelRow.item_name}**`);
+    if (levelRow.chest_name) rewards.push(`${lootBoxEmoji} **${levelRow.chest_name}**`);
 
     const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_No reward for this level_';
     const msg = `🎟️ <@${userId}> reached **Battlepass Level ${levelRow.level}**! Reward: ${rewardText}`;
