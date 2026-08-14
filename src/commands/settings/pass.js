@@ -397,23 +397,10 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     return { embeds: [embed], components };
   }
 
-  // Default Overview (No level selected)
   embed.setTitle('⭐ Levels Configuration');
 
-  const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
-  const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
-  const statusText = isEnabled ? '🟢 **Active**' : '⏸️ **Paused**';
-
-  const scalingDesc = incrementXp > 0
-    ? '• **Base XP:** ' + baseXp.toLocaleString() + ' points (Level 1)\n• **XP Scaling:** +' + incrementXp.toLocaleString() + ' points / level'
-    : '• **XP Per Level:** ' + baseXp.toLocaleString() + ' points (Flat)';
-
   if (totalLevels === 0) {
-    embed.setDescription(
-      '**Status:** ' + statusText + '\n' +
-      scalingDesc + '\n\n' +
-      '_No levels configured yet. Pause to configure levels._'
-    );
+    embed.setDescription('No levels configured yet.');
   } else {
     const listLines = pageLevels.map(l => {
       const parts = [];
@@ -427,12 +414,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       return '• **Level ' + l.level + ':** ' + rewardStr;
     });
 
-    embed.setDescription(
-      '**Status:** ' + statusText + '\n' +
-      scalingDesc + '\n\n' +
-      '**Configured Levels (' + totalLevels + ' total):**\n' +
-      listLines.join('\n')
-    );
+    embed.setDescription(listLines.join('\n'));
   }
 
   // Row 2: Management Controls ([Back], [XP], [Pause]/[Start])
