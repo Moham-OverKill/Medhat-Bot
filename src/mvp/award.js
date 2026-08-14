@@ -1138,32 +1138,24 @@ export async function scheduleCairoMidnightReset(client) {
     // 1. Reset streaks globally
     await resetCairoStaleStreaks();
     
-    // 2. Dispatch Opt-in Daily Claim Reminders
+    // 2. Dispatch Opt-in Daily Claim Reminders (Universal single DM per user)
     try {
-      const { getUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+      const { getAllUniqueUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
       const { EmbedBuilder } = await import('discord.js');
-      const configs = await loadGuildConfigs();
 
-      for (const gId in configs) {
-        const userIds = await getUsersForNotification(gId, NOTIFICATION_KEYS.DAILY_CLAIM);
-        if (userIds.length === 0) continue;
-
-        const guild = client.guilds?.cache?.get(gId) || await client.guilds?.fetch(gId).catch(() => null);
-        if (!guild) continue;
-
+      const userIds = await getAllUniqueUsersForNotification(NOTIFICATION_KEYS.DAILY_CLAIM);
+      if (userIds.length > 0) {
         const dmEmbed = new EmbedBuilder()
           .setTitle('💰 Daily Reward Available!')
-          .setDescription(`Your daily claim is now ready in **${guild.name}**!\nClaim it in the server to keep your streak alive.`)
-          .setColor(0xF1C40F)
-          .setFooter({
-            text: `${guild.name} • ${new Date().toLocaleString()}`,
-            iconURL: typeof guild.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null
-          });
+          .setDescription('Your daily claim is now ready!\nClaim it in your server to keep your streak alive.')
+          .setColor(0xF1C40F);
 
-        for (const uid of userIds) {
-          const user = await client.users.fetch(uid).catch(() => null);
-          if (user) await user.send({ embeds: [dmEmbed] }).catch(() => {});
-        }
+        await Promise.allSettled(
+          userIds.map(async (uid) => {
+            const user = client.users?.cache?.get(uid) || await client.users?.fetch(uid).catch(() => null);
+            if (user) await user.send({ embeds: [dmEmbed] }).catch(() => {});
+          })
+        );
       }
     } catch (dmErr) {
       sysError('Daily Claim Reminder Dispatch Failed', dmErr);
