@@ -536,6 +536,7 @@ export async function handleHubShortcut(interaction) {
 
     // 3. Inventory Shortcut
     if (customId === 'hub_btn_inventory') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       return handleInventoryButton(interaction);
     }
 
