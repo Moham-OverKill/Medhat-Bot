@@ -1,5 +1,8 @@
 import {
   EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   SlashCommandBuilder,
   MessageFlags
 } from 'discord.js';
@@ -14,24 +17,26 @@ export const levelCommand = new SlashCommandBuilder()
 
 export const passCommand = levelCommand;
 
-export async function handleLevelCommand(interaction) {
-  try {
-    const guildId = interaction.guildId;
-    const userId = interaction.user.id;
+/**
+ * Generate tabbed payload for /level command
+ */
+export async function getLevelViewPayload(guildId, userId, activeTab = 'level') {
+  const data = await getUserPassProgress(guildId, userId);
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!data.isEnabled) {
+    return {
+      content: 'The Level system is not active in this server yet. An admin needs to configure and start it first.',
+      embeds: [],
+      components: []
+    };
+  }
 
-    const data = await getUserPassProgress(guildId, userId);
+  const coinEmoji = COIN_EMOJI.forGuild(guildId);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
 
-    if (!data.isEnabled) {
-      return interaction.editReply({
-        content: 'The Level system is not active in this server yet. An admin needs to configure and start it first.'
-      });
-    }
+  const embed = new EmbedBuilder().setColor(0x5865F2);
 
-    const coinEmoji = COIN_EMOJI.forGuild(guildId);
-    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-
+  if (activeTab === 'level') {
     const pct = Math.min(data.xpIntoCurrentLevel / data.xpForNextLevel, 1);
     const filled = Math.round(pct * 10);
     const empty = 10 - filled;
@@ -39,25 +44,22 @@ export async function handleLevelCommand(interaction) {
     for (let i = 0; i < filled; i++) bar += String.fromCodePoint(0x2588);
     for (let i = 0; i < empty; i++) bar += String.fromCodePoint(0x2591);
 
-    const embed = new EmbedBuilder()
-      .setTitle('Your Level Progress')
-      .setColor(0x5865F2);
-
+    embed.setTitle('Your Level Progress');
     embed.addFields({
-      name: 'Your Level: ' + data.currentLevel,
-      value: '`' + bar + '` ' + data.xpIntoCurrentLevel + ' / ' + data.xpForNextLevel + ' XP',
+      name: `You Are Level ${data.currentLevel}`,
+      value: `\`${bar}\` ${data.xpIntoCurrentLevel} / ${data.xpForNextLevel} XP`,
       inline: false
     });
 
     if (data.nextReward) {
       const nr = data.nextReward;
       const parts = [];
-      if (nr.reward_coins > 0) parts.push(coinEmoji + ' **' + Number(nr.reward_coins).toLocaleString() + ' Coins**');
-      if (nr.item_name) parts.push('🏷️ **' + nr.item_name + '**');
-      if (nr.chest_name) parts.push(lootBoxEmoji + ' **' + nr.chest_name + '**');
+      if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
+      if (nr.item_name) parts.push(`🏷️ **${nr.item_name}**`);
+      if (nr.chest_name) parts.push(`${lootBoxEmoji} **${nr.chest_name}**`);
       const rewardStr = parts.length > 0 ? parts.join(' + ') : '_No reward configured_';
       embed.addFields({
-        name: 'Next Reward (Level ' + nr.level + ')',
+        name: `Next Reward (Level ${nr.level})`,
         value: rewardStr,
         inline: false
       });
@@ -66,26 +68,71 @@ export async function handleLevelCommand(interaction) {
     } else {
       embed.addFields({ name: 'No Rewards Configured', value: '_No level rewards have been set up yet._', inline: false });
     }
+  } else {
+    embed.setTitle('🎁 Claimed Rewards');
 
     if (data.claims.length > 0) {
-      const claimLines = data.claims.slice(-10).map(c => {
+      const claimLines = data.claims.map(c => {
         const parts = [];
-        if (c.reward_coins > 0) parts.push(coinEmoji + ' ' + Number(c.reward_coins).toLocaleString());
-        if (c.item_name) parts.push('🏷️ ' + c.item_name);
-        if (c.chest_name) parts.push(lootBoxEmoji + ' ' + c.chest_name);
-        const rewardStr = parts.length > 0 ? parts.join(' + ') : 'Reward';
-        return '- **Lvl ' + c.level_claimed + ':** ' + rewardStr;
+        if (c.reward_coins > 0) parts.push(`${coinEmoji} **${Number(c.reward_coins).toLocaleString()} Coins**`);
+        if (c.item_name) parts.push(`🏷️ **${c.item_name}**`);
+        if (c.chest_name) parts.push(`${lootBoxEmoji} **${c.chest_name}**`);
+        const rewardStr = parts.length > 0 ? parts.join(' + ') : '_Claimed Level Reward_';
+        return `• **Level ${c.level_claimed}:** ${rewardStr}`;
       });
-      embed.addFields({
-        name: 'Claimed Rewards (' + data.claims.length + ' total)',
-        value: claimLines.join('\n'),
-        inline: false
-      });
-    }
 
-    await interaction.editReply({ embeds: [embed] });
+      embed.setDescription(
+        `**Total Claimed:** ${data.claims.length} levels\n\n` + claimLines.join('\n')
+      );
+    } else {
+      embed.setDescription('_You have not claimed any level rewards yet._');
+    }
+  }
+
+  const buttonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`level_tab_level_${userId}`)
+      .setLabel('Level')
+      .setEmoji('⭐')
+      .setStyle(activeTab === 'level' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`level_tab_rewards_${userId}`)
+      .setLabel('Rewards')
+      .setEmoji('🎁')
+      .setStyle(activeTab === 'rewards' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+
+  return {
+    content: null,
+    embeds: [embed],
+    components: [buttonsRow]
+  };
+}
+
+export async function handleLevelCommand(interaction) {
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const payload = await getLevelViewPayload(interaction.guildId, interaction.user.id, 'level');
+    await interaction.editReply(payload);
   } catch (error) {
     await handleInteractionError(interaction, error, 'level user');
+  }
+}
+
+export async function handleLevelTabButton(interaction) {
+  try {
+    const parts = interaction.customId.split('_'); // ['level', 'tab', 'level'|'rewards', userId]
+    const tab = parts[2];
+    const targetUserId = parts[3];
+
+    if (interaction.user.id !== targetUserId) {
+      return interaction.reply({ content: '❌ This level progress view belongs to someone else.', flags: MessageFlags.Ephemeral });
+    }
+
+    const payload = await getLevelViewPayload(interaction.guildId, interaction.user.id, tab);
+    await interaction.update(payload);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'level tab button');
   }
 }
 
