@@ -127,13 +127,13 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
       await client2.query(
         `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
          VALUES ($1, $2, $3, $4, 'battlepass', $5)`,
-        [userId, guildId, coins, newBal, `Battlepass Level ${levelRow.level} reward`]
+        [userId, guildId, coins, newBal, `Level ${levelRow.level} reward`]
       );
 
       await client2.query(
         `INSERT INTO transaction_history (user_id, guild_id, amount, type, description)
          VALUES ($1, $2, $3, 'battlepass_reward', $4)`,
-        [userId, guildId, coins, `Battlepass Level ${levelRow.level} reward`]
+        [userId, guildId, coins, `Level ${levelRow.level} reward`]
       );
     }
 
@@ -170,22 +170,22 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
         if (coins > 0) {
           const { COIN_EMOJI } = await import('../../shared.js');
           const coinEmoji = COIN_EMOJI.forGuild(guildId);
-          sendLog(guild, 'economy', 'green', '🎟️ Battlepass Reward', `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${coins.toLocaleString()}** ${coinEmoji}!`);
+          sendLog(guild, 'economy', 'green', '⭐ Level Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${coins.toLocaleString()}** ${coinEmoji}!`);
         }
         if (levelRow.item_name) {
-          sendLog(guild, 'inventory', 'green', '🏷️ Battlepass Item Reward', `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${levelRow.item_name}**!`);
+          sendLog(guild, 'inventory', 'green', '🏷️ Level Item Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${levelRow.item_name}**!`);
         }
         if (levelRow.chest_name) {
           const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
           const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-          sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Battlepass Chest Reward`, `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${levelRow.chest_name}**!`);
+          sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Chest Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${levelRow.chest_name}**!`);
         }
       }
       await sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config);
     }
   } catch (err) {
     await client2.query('ROLLBACK').catch(() => {});
-    sysError('Battlepass Reward Dispatch Failed', err, { user: userId, guild: guildId, level: levelRow.level });
+    sysError('Level Reward Dispatch Failed', err, { user: userId, guild: guildId, level: levelRow.level });
   } finally {
     client2.release();
   }
@@ -213,9 +213,9 @@ async function sendLevelUpNotification(client, guildId, userId, username, levelR
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle(`🎟️ Battlepass Level Up!`)
+      .setTitle(`⭐ Level Up!`)
       .setDescription(
-        `Congratulations <@${userId}>! You reached **Battlepass Level ${levelRow.level}** in **${guildName}**.\n\n` +
+        `Congratulations <@${userId}>! You reached **Level ${levelRow.level}** in **${guildName}**.\n\n` +
         `**Rewards Unlocked:**\n• ${rewardText}`
       )
       .setFooter({ text: guildName, iconURL: guildIcon || undefined })
