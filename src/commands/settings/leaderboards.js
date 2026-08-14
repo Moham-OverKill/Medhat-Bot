@@ -22,7 +22,8 @@ import { getUserLogName } from '../../shared.js';
 const CATEGORIES = {
     activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
     coins: { id: 'coins', name: 'Total Coins', emoji: '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
-    streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' }
+    streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
+    level: { id: 'level', name: 'Highest Level', emoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
 };
 
 /**

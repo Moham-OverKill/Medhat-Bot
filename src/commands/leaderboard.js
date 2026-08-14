@@ -39,6 +39,13 @@ export const data = new SlashCommandBuilder()
                     .setRequired(true)
                     .addChannelTypes(ChannelType.GuildText)
             )
+            .addChannelOption(option =>
+                option
+                    .setName('highest_level_channel')
+                    .setDescription('Channel for highest level and XP leaderboard')
+                    .setRequired(false)
+                    .addChannelTypes(ChannelType.GuildText)
+            )
     )
     .addSubcommand(subcommand =>
         subcommand
@@ -69,8 +76,9 @@ export async function setLeaderboardConfig(guildId, config) {
       daily_channel_id, daily_message_id,
       coins_channel_id, coins_message_id,
       streak_channel_id, streak_message_id,
+      level_channel_id, level_message_id,
       updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
     ON CONFLICT (guild_id) DO UPDATE SET
       daily_channel_id = EXCLUDED.daily_channel_id,
       daily_message_id = EXCLUDED.daily_message_id,
@@ -78,12 +86,15 @@ export async function setLeaderboardConfig(guildId, config) {
       coins_message_id = EXCLUDED.coins_message_id,
       streak_channel_id = EXCLUDED.streak_channel_id,
       streak_message_id = EXCLUDED.streak_message_id,
+      level_channel_id = EXCLUDED.level_channel_id,
+      level_message_id = EXCLUDED.level_message_id,
       updated_at = CURRENT_TIMESTAMP
   `, [
         guildId,
         config.daily_channel_id, config.daily_message_id,
         config.coins_channel_id, config.coins_message_id,
-        config.streak_channel_id, config.streak_message_id
+        config.streak_channel_id, config.streak_message_id,
+        config.level_channel_id, config.level_message_id
     ]);
 }
 
@@ -321,6 +332,59 @@ export async function getTopStreakUsers(guildId, limit = 50) {
 }
 
 /**
+ * Build the Highest Level leaderboard embed
+ */
+export function buildLevelEmbed(levelData, nextRefreshTimestamp = null) {
+    const embed = new EmbedBuilder()
+        .setTitle('⭐ Highest Levels')
+        .setColor(0x5865F2); // Blurple / Indigo
+
+    let description;
+    if (!levelData || levelData.length === 0) {
+        description = '*⭐ No levels earned yet...*\n*Chat and join voice channels to level up and claim the top spot!*';
+    } else {
+        description = buildLeaderboardTable(levelData, 'level', ' Lv', [], false);
+    }
+
+    if (nextRefreshTimestamp) {
+        description += `\n⏱️ Next Refresh **<t:${nextRefreshTimestamp}:R>**`;
+    }
+
+    embed.setDescription(description);
+    return embed;
+}
+
+/**
+ * Get top users by level & all-time XP (Strict Limit 50)
+ */
+export async function getTopLevelUsers(guildId, limit = 50) {
+    const pool = getPool();
+    const { getGuildConfig } = await import('../storage/config.js');
+    const config = await getGuildConfig(guildId) || {};
+    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+    const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
+
+    const result = await pool.query(`
+        SELECT user_id, battlepass_xp
+        FROM user_activity
+        WHERE guild_id = $1 AND battlepass_xp > 0
+        ORDER BY battlepass_xp DESC, user_id ASC
+        LIMIT $2
+    `, [guildId, limit]);
+
+    return result.rows.map(row => {
+        const totalXp = parseInt(row.battlepass_xp || 0, 10);
+        const { level } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
+        return {
+            user_id: row.user_id,
+            level,
+            battlepass_xp: totalXp
+        };
+    });
+}
+
+/**
  * Send a single leaderboard type immediately (for admin channel selection)
  * This bypasses the DB configuration entirely, just sends a preview to a target channel.
  */
@@ -346,6 +410,10 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
         embed = buildStreakEmbed(enrichedData);
+    } else if (type === 'level') {
+        const rawData = await getTopLevelUsers(guildId);
+        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+        embed = buildLevelEmbed(enrichedData);
     } else {
         return null;
     }
@@ -375,7 +443,8 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     const channelKeys = [
         { type: 'daily_coins', configChannel: 'daily_channel_id', configMsg: 'daily_message_id', name: 'MVP Champions' },
         { type: 'coins', configChannel: 'coins_channel_id', configMsg: 'coins_message_id', name: 'Richest Members' },
-        { type: 'streak', configChannel: 'streak_channel_id', configMsg: 'streak_message_id', name: 'Longest Streaks' }
+        { type: 'streak', configChannel: 'streak_channel_id', configMsg: 'streak_message_id', name: 'Longest Streaks' },
+        { type: 'level', configChannel: 'level_channel_id', configMsg: 'level_message_id', name: 'Highest Levels' }
     ];
 
     // Filter to only configured types
@@ -410,7 +479,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         }
     }
 
-    // Strict Sequence Check: Ensure Daily -> Richest -> Streak
+    // Strict Sequence Check: Ensure Daily -> Richest -> Streak -> Level
     if (messagesIntact) {
         const msgsByChannel = {};
         for (const t of configuredTypes) {
@@ -422,9 +491,9 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         for (const cid in msgsByChannel) {
             const channelMsgs = msgsByChannel[cid]; 
             if (channelMsgs.length > 1) {
-                // Expected order: daily_coins < coins < streak (snowflake comparison)
+                // Expected order: daily_coins < coins < streak < level (snowflake comparison)
                 const sortedBySnowflake = [...channelMsgs].sort((a, b) => (BigInt(a.msgId) < BigInt(b.msgId) ? -1 : 1));
-                const expectedOrder = ['daily_coins', 'coins', 'streak'].filter(type => channelMsgs.some(cm => cm.type === type));
+                const expectedOrder = ['daily_coins', 'coins', 'streak', 'level'].filter(type => channelMsgs.some(cm => cm.type === type));
                 
                 for (let i = 0; i < sortedBySnowflake.length; i++) {
                     if (sortedBySnowflake[i].type !== expectedOrder[i]) {
@@ -471,6 +540,10 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
                 embed = buildStreakEmbed(enrichedData, nextRefreshTimestamp);
+            } else if (t.type === 'level') {
+                const rawData = await getTopLevelUsers(guildId);
+                const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+                embed = buildLevelEmbed(enrichedData, nextRefreshTimestamp);
             }
 
             if (messagesIntact && msgMap.get(t.type)) {
@@ -528,6 +601,10 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
         embed = buildStreakEmbed(enrichedData);
+    } else if (type === 'level') {
+        const rawData = await getTopLevelUsers(guildId);
+        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+        embed = buildLevelEmbed(enrichedData);
     } else {
         return null;
     }
@@ -545,6 +622,7 @@ async function handleSetup(interaction) {
     const dailyChannel = interaction.options.getChannel('daily_activity_channel');
     const coinsChannel = interaction.options.getChannel('total_coins_channel');
     const streakChannel = interaction.options.getChannel('highest_streak_channel');
+    const levelChannel = interaction.options.getChannel('highest_level_channel');
     const guildId = interaction.guildId;
 
     try {
@@ -554,7 +632,9 @@ async function handleSetup(interaction) {
             coins_channel_id: coinsChannel.id,
             coins_message_id: null,
             streak_channel_id: streakChannel.id,
-            streak_message_id: null
+            streak_message_id: null,
+            level_channel_id: levelChannel ? levelChannel.id : null,
+            level_message_id: null
         };
 
         // Post initial embeds with historical data
@@ -580,6 +660,15 @@ async function handleSetup(interaction) {
         const streakMsg = await streakChannel.send({ embeds: [streakEmbed] });
         config.streak_message_id = streakMsg.id;
 
+        // Level (if configured)
+        if (levelChannel) {
+            const levelData = await getTopLevelUsers(guildId);
+            const enrichedLevel = await enrichUserData(interaction.client, guildId, levelData, 'user_id');
+            const levelEmbed = buildLevelEmbed(enrichedLevel);
+            const levelMsg = await levelChannel.send({ embeds: [levelEmbed] });
+            config.level_message_id = levelMsg.id;
+        }
+
         await setLeaderboardConfig(guildId, config);
 
         const logName = getUserLogName(interaction);
@@ -588,16 +677,18 @@ async function handleSetup(interaction) {
             `**Action:** Initial setup of all leaderboard channels.`
         );
 
+        const descLines = [
+            `**Daily Activity:** ${dailyChannel}`,
+            `**Total Coins:** ${coinsChannel}`,
+            `**Highest Streak:** ${streakChannel}`
+        ];
+        if (levelChannel) descLines.push(`**Highest Level:** ${levelChannel}`);
+        descLines.push('', '📅 Leaderboards refresh daily at **00:00 Cairo time** and hourly.');
+
         const successEmbed = new EmbedBuilder()
             .setTitle('✅ Leaderboards Configured')
             .setColor(0x00FF00)
-            .setDescription([
-                `**Daily Activity:** ${dailyChannel}`,
-                `**Total Coins:** ${coinsChannel}`,
-                `**Highest Streak:** ${streakChannel}`,
-                '',
-                '📅 Leaderboards refresh daily at **00:00 Cairo time**.'
-            ].join('\n'));
+            .setDescription(descLines.join('\n'));
 
         await interaction.editReply({ embeds: [successEmbed] });
 
@@ -627,9 +718,10 @@ async function handleStatus(interaction) {
             .setTitle('📊 Leaderboard Configuration')
             .setColor(0x0099FF)
             .addFields(
-                { name: 'Daily Activity', value: `<#${config.daily_channel_id}>`, inline: true },
-                { name: 'Total Coins', value: `<#${config.coins_channel_id}>`, inline: true },
-                { name: 'Highest Streak', value: `<#${config.streak_channel_id}>`, inline: true }
+                { name: 'Daily Activity', value: config.daily_channel_id ? `<#${config.daily_channel_id}>` : '*Not Set*', inline: true },
+                { name: 'Total Coins', value: config.coins_channel_id ? `<#${config.coins_channel_id}>` : '*Not Set*', inline: true },
+                { name: 'Highest Streak', value: config.streak_channel_id ? `<#${config.streak_channel_id}>` : '*Not Set*', inline: true },
+                { name: 'Highest Level', value: config.level_channel_id ? `<#${config.level_channel_id}>` : '*Not Set*', inline: true }
             )
             .setFooter({ text: 'Refreshes daily at 00:00 Cairo time' });
 

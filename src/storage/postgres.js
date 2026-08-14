@@ -645,6 +645,8 @@ async function createTables() {
         coins_message_id TEXT,
         streak_channel_id TEXT,
         streak_message_id TEXT,
+        level_channel_id TEXT,
+        level_message_id TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
@@ -873,6 +875,10 @@ async function createTables() {
       );
       CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
     `);
+
+    // Level Leaderboard migration
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_message_id TEXT`).catch(() => {});
 
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
