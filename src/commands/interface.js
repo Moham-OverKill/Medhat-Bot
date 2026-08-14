@@ -204,7 +204,7 @@ export async function showInterfaceSettings(interaction, configOverride = null) 
   const isPublished = Boolean(config.interface_channel_id && config.interface_message_id);
 
   const desc = [
-    'Configure the public Community Interface (Server Hub) message with live active quests, countdown timers, and shortcut buttons.\n',
+    'Configure the public Interface message with live active quests, countdown timers, and shortcuts.\n',
     `• **Target Channel:** ${currentChannel}`,
     `• **Title:** \`${currentEmoji} ${currentTitle}\``,
     `• **Embed Color:** \`${currentColor}\``,
