@@ -13,7 +13,7 @@ import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
 import { COIN_EMOJI } from '../../shared.js';
-import { sysLog, sysError } from '../../utils/logger.js';
+import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
 
 const ITEMS_PER_PAGE = 22; // Leaves 3 slots for [Previous, Next, Create New Level] (Max 25 options)
@@ -579,6 +579,8 @@ export async function handlePassComponent(interaction) {
         user: interaction.user.id
       });
 
+      sendLog(interaction.guild, 'audit', 'green', '🎟️ Battlepass Started', `Admin **<@${interaction.user.id}>** started Battlepass progression.`);
+
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
       return;
@@ -597,6 +599,8 @@ export async function handlePassComponent(interaction) {
         guild: guildId,
         user: interaction.user.id
       });
+
+      sendLog(interaction.guild, 'audit', 'orange', '⏸️ Battlepass Paused', `Admin **<@${interaction.user.id}>** paused Battlepass progression.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
@@ -634,6 +638,8 @@ export async function handlePassComponent(interaction) {
         user: interaction.user.id,
         detail: 'Level ' + level + ' deleted'
       });
+
+      sendLog(interaction.guild, 'audit', 'red', '🗑️ Battlepass Level Deleted', `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
@@ -688,6 +694,8 @@ export async function handlePassModal(interaction) {
         return interaction.reply({ content: '❌ Level must be a positive whole number.', flags: MessageFlags.Ephemeral });
       }
 
+      await interaction.deferUpdate().catch(() => {});
+
       const pool = getPool();
       await pool.query(
         'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, 0, NULL) ON CONFLICT (guild_id, level) DO NOTHING',
@@ -700,13 +708,11 @@ export async function handlePassModal(interaction) {
         detail: 'Level ' + level + ' created'
       });
 
+      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}** in Battlepass.`);
+
       // Render Level Management View directly for this newly created level
       const payload = await getPassDashboardPayload(guildId, page, level);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '', ...payload });
-      } else {
-        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
-      }
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
@@ -722,6 +728,8 @@ export async function handlePassModal(interaction) {
         return interaction.reply({ content: '❌ Coin amount must be 0 or a positive whole number.', flags: MessageFlags.Ephemeral });
       }
 
+      await interaction.deferUpdate().catch(() => {});
+
       const pool = getPool();
       await pool.query(
         'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, $3, NULL) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3',
@@ -734,12 +742,10 @@ export async function handlePassModal(interaction) {
         detail: 'Level ' + level + ' coins set to ' + coins
       });
 
+      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
+
       const payload = await getPassDashboardPayload(guildId, page, level);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '', ...payload });
-      } else {
-        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
-      }
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
@@ -753,6 +759,8 @@ export async function handlePassModal(interaction) {
         return interaction.reply({ content: '❌ XP per level must be a positive whole number (e.g. 100).', flags: MessageFlags.Ephemeral });
       }
 
+      await interaction.deferUpdate().catch(() => {});
+
       await setGuildConfig(guildId, { battlepass_xp_per_level: xpPerLevel });
 
       sysLog('Battlepass XP Threshold Set', {
@@ -761,12 +769,10 @@ export async function handlePassModal(interaction) {
         detail: 'XP per level set to ' + xpPerLevel
       });
 
+      sendLog(interaction.guild, 'audit', 'cyan', '⚡ Battlepass XP Configured', `Admin **<@${interaction.user.id}>** set Battlepass XP threshold to **${xpPerLevel.toLocaleString()}** activity points per level.`);
+
       const payload = await getPassDashboardPayload(guildId, page, null);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '', ...payload });
-      } else {
-        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
-      }
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
   } catch (error) {
