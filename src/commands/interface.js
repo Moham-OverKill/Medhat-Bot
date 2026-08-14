@@ -62,6 +62,8 @@ export async function buildHubEmbed(guild, config = null) {
   const refreshesPerDay = guildConfig.quests_refreshes_per_day || 1;
   const nextQuestDate = getNextQuestRefresh(refreshesPerDay);
   const nextQuestTs = Math.floor(nextQuestDate.getTime() / 1000);
+  const nextMidnightDate = getNextCairoMidnight();
+  const nextMidnightTs = Math.floor(nextMidnightDate.getTime() / 1000);
 
   let questContent = '';
   if (questsEnabled && activeQuests.length > 0) {
