@@ -740,8 +740,8 @@ export async function handlePassComponent(interaction) {
     // 9. Set XP Threshold Button
     if (customId.startsWith('pass_set_xp_threshold_pg_')) {
       const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
-      const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
-      const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+      const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
+      const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
 
       const modal = new ModalBuilder()
         .setCustomId('pass_xp_threshold_modal_pg_' + page)
@@ -749,9 +749,9 @@ export async function handlePassComponent(interaction) {
 
       const baseInput = new TextInputBuilder()
         .setCustomId('pass_base_xp_input')
-        .setLabel('Base XP for Level 1 (e.g. 10)')
+        .setLabel('Base XP for Level 1 (e.g. 20)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter base XP (e.g. 10, 50, 100)')
+        .setPlaceholder('Enter base XP (e.g. 20)')
         .setValue(String(baseXp))
         .setMinLength(1)
         .setMaxLength(6)
@@ -761,7 +761,7 @@ export async function handlePassComponent(interaction) {
         .setCustomId('pass_increment_xp_input')
         .setLabel('XP added per level (0 for flat)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter increment (e.g. 0, 5, 25)')
+        .setPlaceholder('Enter increment (e.g. 10)')
         .setValue(String(incrementXp))
         .setMinLength(1)
         .setMaxLength(6)
