@@ -98,6 +98,8 @@ export async function showUserDashboard(interaction, targetUserId) {
         // Fetch user level from user_activity
         let userLevel = 0;
         try {
+            const { flushMessageBatch } = await import('../activity/tracker.js');
+            await flushMessageBatch().catch(() => {});
             const actRes = await pool.query(
                 'SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2',
                 [guildId, targetUserId]

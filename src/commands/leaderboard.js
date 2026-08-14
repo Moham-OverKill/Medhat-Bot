@@ -358,6 +358,11 @@ export function buildLevelEmbed(levelData, nextRefreshTimestamp = null) {
  * Get top users by level & all-time XP (Strict Limit 50)
  */
 export async function getTopLevelUsers(guildId, limit = 50) {
+    try {
+        const { flushMessageBatch } = await import('../activity/tracker.js');
+        await flushMessageBatch().catch(() => {});
+    } catch {}
+
     const pool = getPool();
     const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(guildId) || {};
