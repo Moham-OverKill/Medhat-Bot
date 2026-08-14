@@ -1,6 +1,7 @@
 // Activity Tracking System - Anti-Spam & Balanced Scoring
 import {
   addMessagePoint,
+  flushMessageBatch,
   getCachedGuildConfig,
   invalidateConfigCache as invalidateTrackerCache,
   handleVoiceStateChange,
@@ -131,7 +132,7 @@ export async function initializeActivityTracking(discordClient) {
   handlersInitialized = true;
 }
 
-export function cleanup() {
+export async function cleanup() {
   if (tickInterval) {
     clearInterval(tickInterval);
     tickInterval = null;
@@ -143,6 +144,10 @@ export function cleanup() {
     client.removeListener('messageDelete', handleMessageDelete);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
   }
+
+  try {
+    await flushMessageBatch();
+  } catch {}
 
   invalidateTrackerCache();
   handlersInitialized = false;
@@ -170,7 +175,8 @@ async function handleMessage(message) {
       sysError('Content Filter Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
     }
 
-    addMessagePoint(message.guild, message.author.id, message.author.username, message.content);
+    const hasAttachments = Boolean(message.attachments && message.attachments.size > 0);
+    addMessagePoint(message.guild, message.author.id, message.author.username, message.content, hasAttachments, message.channel?.id);
 
     // === QUEST PROGRESS TRACKING ===
     try {
