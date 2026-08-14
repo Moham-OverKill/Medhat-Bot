@@ -115,7 +115,7 @@ export function buildHubButtons(client) {
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('hub_btn_daily')
-      .setLabel('Daily')
+      .setLabel('Claim Daily')
       .setEmoji('💰')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -133,7 +133,7 @@ export function buildHubButtons(client) {
       .setURL(`https://top.gg/bot/${botId}/vote`),
     new ButtonBuilder()
       .setCustomId('hub_btn_notifications')
-      .setLabel('Notifications')
+      .setLabel('DMs')
       .setEmoji('🔔')
       .setStyle(ButtonStyle.Secondary)
   );
