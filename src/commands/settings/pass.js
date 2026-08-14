@@ -242,7 +242,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     const guildLootBoxes = await getGuildLootBoxes(guildId);
 
     const rewardOptions = [];
-    let rewardsPlaceholder = 'Add Items or Chests...';
+    const rewardsPlaceholder = `Set Items/${lootBoxCatName}`;
 
     if (rewardFolder === 'root') {
       const hasCategorized = unlockedItems.some(i => i.category_id);
@@ -279,7 +279,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         });
       }
     } else if (rewardFolder === 'categorized') {
-      rewardsPlaceholder = '📂 Browse Categories';
       rewardOptions.push({
         label: 'Back',
         value: 'folder_root',
@@ -297,7 +296,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         }
       }
     } else if (rewardFolder === 'null') {
-      rewardsPlaceholder = '🏷️ Uncategorized Items';
       rewardOptions.push({
         label: 'Back',
         value: 'folder_root',
@@ -313,7 +311,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         });
       }
     } else if (rewardFolder === 'chests') {
-      rewardsPlaceholder = `${lootBoxEmoji} ${lootBoxCatName}`.slice(0, 50);
       rewardOptions.push({
         label: 'Back',
         value: 'folder_root',
@@ -331,7 +328,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       // Specific Category Folder
       const catId = parseInt(rewardFolder, 10);
       const currentCat = categories.find(c => Number(c.id) === catId);
-      rewardsPlaceholder = `📂 ${currentCat?.name || 'Category'}`.slice(0, 50);
 
       rewardOptions.push({
         label: 'Back',
@@ -357,26 +353,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     const row3 = new ActionRowBuilder().addComponents(rewardsSelect);
 
     const components = [row1, row2, row3];
-
-    // Row 4 (Optional): Manage existing configured rewards on this level (No descriptions)
-    if (levelData && levelData.rewards && levelData.rewards.length > 0) {
-      const manageOptions = levelData.rewards.map(r => {
-        const name = r.reward_type === 'chest' ? (r.chest_name || 'Chest') : (r.item_name || 'Item');
-        const emoji = r.reward_type === 'chest' ? selectChestEmoji : '🏷️';
-        return {
-          label: `${name} (x${r.quantity})`.slice(0, 50),
-          value: 'manage_' + r.id,
-          emoji
-        };
-      });
-
-      const manageSelect = new StringSelectMenuBuilder()
-        .setCustomId('pass_manage_rewards_lvl_' + selectedLevel + '_pg_' + currentPage)
-        .setPlaceholder(`Manage Assigned Rewards (${levelData.rewards.length})`)
-        .addOptions(manageOptions.slice(0, 25));
-
-      components.push(new ActionRowBuilder().addComponents(manageSelect));
-    }
 
     // Action Buttons
     const actionRow = new ActionRowBuilder().addComponents(
@@ -736,57 +712,7 @@ export async function handlePassComponent(interaction) {
       }
     }
 
-    // 8. Manage Assigned Rewards Dropdown (Edit Quantity or Remove)
-    if (customId.startsWith('pass_manage_rewards_lvl_')) {
-      const match = customId.match(/pass_manage_rewards_lvl_(\d+)_pg_(\d+)/);
-      const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
-      const selectedValue = interaction.values[0];
-
-      if (selectedValue.startsWith('manage_')) {
-        const rewardId = parseInt(selectedValue.replace('manage_', ''), 10);
-        const pool = getPool();
-        const rewardRes = await pool.query(
-          `SELECT br.*, si.name as item_name, lb.name as chest_name
-           FROM battlepass_rewards br
-           LEFT JOIN shop_items si ON br.shop_item_id = si.id
-           LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
-           WHERE br.id = $1 AND br.guild_id = $2`,
-          [rewardId, guildId]
-        );
-
-        if (rewardRes.rows.length === 0) {
-          if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-          const payload = await getPassDashboardPayload(guildId, page, level);
-          await interaction.editReply({ content: '', ...payload });
-          return;
-        }
-
-        const r = rewardRes.rows[0];
-        const name = r.reward_type === 'chest' ? (r.chest_name || 'Chest') : (r.item_name || 'Item');
-        const targetId = r.reward_type === 'chest' ? r.loot_box_id : r.shop_item_id;
-
-        const modal = new ModalBuilder()
-          .setCustomId(`pass_reward_qty_${level}_${r.reward_type}_${targetId}_pg_${page}_fld_root`)
-          .setTitle(`Set Quantity: ${name}`.slice(0, 45));
-
-        const qtyInput = new TextInputBuilder()
-          .setCustomId('reward_quantity')
-          .setLabel('Quantity')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('0 = Remove')
-          .setValue(String(r.quantity || 1))
-          .setMinLength(1)
-          .setMaxLength(3)
-          .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
-        await interaction.showModal(modal);
-        return;
-      }
-    }
-
-    // 9. Delete Level Button
+    // 8. Delete Level Button
     if (customId.startsWith('pass_del_btn_')) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const match = customId.match(/pass_del_btn_(\d+)_pg_(\d+)/);
@@ -811,7 +737,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 10. Set XP Threshold Button
+    // 9. Set XP Threshold Button
     if (customId.startsWith('pass_set_xp_threshold_pg_')) {
       const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
       const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
@@ -855,19 +781,19 @@ export async function handlePassComponent(interaction) {
 }
 
 /**
- * Handle Modal Submissions for Levels
+ * Handle Level Modal Submissions
  */
 export async function handlePassModal(interaction) {
-  const customId = interaction.customId;
-  const guildId = interaction.guildId;
-
   try {
+    const guildId = interaction.guildId;
+    const customId = interaction.customId;
+
     const config = await getGuildConfig(guildId) || {};
     if (config.battlepass_enabled === true) {
       return interaction.reply({ content: '⚠️ You must pause levels before making changes.', flags: MessageFlags.Ephemeral });
     }
 
-    // 1. Reward Quantity Modal (Add or Edit quantity of an item/chest)
+    // 1. Reward Quantity Modal (Set qty or 0 to remove)
     if (customId.startsWith('pass_reward_qty_')) {
       const match = customId.match(/pass_reward_qty_(\d+)_(item|chest)_(\d+)_pg_(\d+)_fld_(.+)/);
       if (!match) return;
@@ -875,24 +801,18 @@ export async function handlePassModal(interaction) {
       const level = parseInt(match[1], 10);
       const type = match[2];
       const targetId = parseInt(match[3], 10);
-      const page = parseInt(match[4], 10) || 0;
-      const folder = match[5];
+      const page = parseInt(match[4], 10);
 
       const qtyRaw = interaction.fields.getTextInputValue('reward_quantity').trim();
       const quantity = parseInt(qtyRaw, 10);
 
-      if (isNaN(quantity) || quantity < 0) {
-        return interaction.reply({ content: '❌ Quantity must be 0 or a positive whole number.', flags: MessageFlags.Ephemeral });
+      if (isNaN(quantity) || quantity < 0 || quantity > 999) {
+        return interaction.reply({ content: '❌ Quantity must be between 0 and 999 (enter 0 to remove).', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferUpdate().catch(() => {});
 
       const pool = getPool();
-      await pool.query(
-        'INSERT INTO battlepass_config (guild_id, level, reward_coins) VALUES ($1, $2, 0) ON CONFLICT (guild_id, level) DO NOTHING',
-        [guildId, level]
-      );
-
       if (quantity === 0) {
         if (type === 'item') {
           await pool.query(
@@ -927,7 +847,7 @@ export async function handlePassModal(interaction) {
         sysLog('Level Reward Updated', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} qty: ${quantity}` });
       }
 
-      const payload = await getPassDashboardPayload(guildId, page, level, folder);
+      const payload = await getPassDashboardPayload(guildId, page, level, 'root');
       await interaction.editReply({ content: '', ...payload });
       return;
     }
