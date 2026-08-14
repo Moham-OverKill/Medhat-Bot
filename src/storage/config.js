@@ -67,7 +67,13 @@ const CONFIG_SCHEMA = {
   battlepass_base_xp: { type: 'number', min: 1, max: 999999, required: false },
   battlepass_xp_increment: { type: 'number', min: 0, max: 999999, required: false },
   battlepass_xp_per_level: { type: 'number', min: 1, max: 999999, required: false },
-  battlepass_notif_channel: { type: 'string', validate: isValidSnowflake, required: false }
+  battlepass_notif_channel: { type: 'string', validate: isValidSnowflake, required: false },
+  // Community Interface / Server Hub Module
+  interface_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
+  interface_message_id: { type: 'string', validate: isValidSnowflake, required: false },
+  interface_title: { type: 'string', required: false },
+  interface_emoji: { type: 'string', required: false },
+  interface_color: { type: 'string', required: false }
 };
 
 export const configCache = new Map();
