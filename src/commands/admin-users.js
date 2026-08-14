@@ -32,13 +32,8 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Row 2: Back, Roles, Anti-Cheat, Interface
-    const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_back')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary),
+    // Button Row 1: Top Roles, Anti-Cheat
+    const row1Buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users_roles')
             .setLabel('Top Roles')
@@ -48,7 +43,16 @@ export async function showUserSelector(interaction) {
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
             .setEmoji('🛡️')
-            .setStyle(ButtonStyle.Primary),
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Button Row 2: Back, Interface
+    const row2Buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_back')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users_interface')
             .setLabel('Interface')
@@ -59,7 +63,11 @@ export async function showUserSelector(interaction) {
     const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(select), actionRow]
+        components: [
+            new ActionRowBuilder().addComponents(select),
+            row1Buttons,
+            row2Buttons
+        ]
     });
 }
 
