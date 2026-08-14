@@ -15,6 +15,9 @@ import { sysLog, sysError } from '../utils/logger.js';
 
 // Re-export for use in index.js
 export { clearStaleVoiceTracking };
+export function getDiscordClient() {
+  return client;
+}
 
 // Cache for quest data
 // guildId -> Array of active quest objects
