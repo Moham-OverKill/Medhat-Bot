@@ -254,6 +254,9 @@ export function setupComponentHandlers(client) {
           await handleTradeFinalConfirmation(interaction);
         } else if (interaction.customId.startsWith('settings_')) {
           await handleSettingsComponent(interaction);
+        } else if (interaction.customId.startsWith('interface_')) {
+          const { handleInterfaceModal } = await import('../commands/interface.js');
+          await handleInterfaceModal(interaction);
         } else if (interaction.customId.startsWith('shop_buy_qty_modal_')) {
           const { handleShopBuyModalSubmit } = await import('../commands/bank.js');
           await handleShopBuyModalSubmit(interaction);
@@ -273,6 +276,13 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
+      // COMMUNITY INTERFACE / SERVER HUB SHORTCUTS
+      if (customId.startsWith('hub_btn_')) {
+        const { handleHubShortcut } = await import('../commands/interface.js');
+        await handleHubShortcut(interaction);
+        return;
+      }
+
       // LEVEL PROGRESS USER TABS
       if (customId.startsWith('level_tab_')) {
         const { handleLevelTabButton } = await import('../commands/pass.js');
@@ -280,7 +290,7 @@ export function setupComponentHandlers(client) {
         return;
       }
 
-      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards, pass)
+      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards, pass, interface)
       if (
         customId.startsWith('settings_') ||
         customId.startsWith('organize_') ||
@@ -288,7 +298,8 @@ export function setupComponentHandlers(client) {
         customId.startsWith('admin_user_') ||
         customId.startsWith('lb_') ||
         customId.startsWith('role_rewards_') ||
-        customId.startsWith('pass_')
+        customId.startsWith('pass_') ||
+        customId.startsWith('interface_')
       ) {
         await handleSettingsComponent(interaction);
         return;
