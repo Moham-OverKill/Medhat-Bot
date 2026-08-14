@@ -777,6 +777,31 @@ async function createTables() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_boxes_guild ON loot_boxes(guild_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_loot_box_items_box ON loot_box_items(loot_box_id)`);
 
+    // Master Battlepass Configuration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS battlepass_config (
+        guild_id VARCHAR(32) NOT NULL,
+        level INT NOT NULL,
+        reward_coins INT DEFAULT 0,
+        reward_item_id INT REFERENCES shop_items(id) ON DELETE SET NULL,
+        PRIMARY KEY (guild_id, level)
+      );
+    `);
+
+    // User Claim History (Anti-Exploit)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_pass_claims (
+        user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NOT NULL,
+        level_claimed INT NOT NULL,
+        claimed_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (user_id, guild_id, level_claimed)
+      );
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_battlepass_config_guild ON battlepass_config(guild_id, level)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_pass_claims_user ON user_pass_claims(guild_id, user_id)`);
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
