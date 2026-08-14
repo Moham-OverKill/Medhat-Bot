@@ -87,7 +87,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Users - Leaderboard - Other
+    // Row 2: Users - Pass - Other
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
@@ -95,9 +95,9 @@ export async function showMainMenu(interaction) {
             .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_leaderboards')
-            .setLabel('Leaderboard')
-            .setEmoji('📊')
+            .setCustomId('settings_pass')
+            .setLabel('Pass')
+            .setEmoji('🎟️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_other')
@@ -173,7 +173,7 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
- * Show the Other Sub-Menu (Logs, Economy, Organize, Customize)
+ * Show the Other Sub-Menu (Customize, Organize, Logs, Leaderboards, Economy)
  */
 export async function showOtherSubMenu(interaction) {
     const embed = new EmbedBuilder()
@@ -181,7 +181,7 @@ export async function showOtherSubMenu(interaction) {
         .setDescription('Configure additional server utilities.')
         .setColor(0x2F3136);
 
-    // Row 1: Customize - Organize
+    // Row 1: Customize | Organize | Logs
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_customize')
@@ -192,10 +192,15 @@ export async function showOtherSubMenu(interaction) {
             .setCustomId('settings_organize')
             .setLabel('Organize')
             .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_logs')
+            .setLabel('Logs')
+            .setEmoji('📜')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Back - Economy - Logs
+    // Row 2: Back | Leaderboards | Economy
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
@@ -203,14 +208,14 @@ export async function showOtherSubMenu(interaction) {
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
+            .setCustomId('settings_leaderboards')
+            .setLabel('Leaderboards')
+            .setEmoji('📊')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
             .setCustomId('settings_economy')
             .setLabel('Economy')
             .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -251,6 +256,16 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_other') {
             await showOtherSubMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_pass' || customId.startsWith('pass_')) {
+            const { handlePassSetup, handlePassComponent } = await import('./settings/pass.js');
+            if (customId === 'settings_pass') {
+                await handlePassSetup(interaction);
+            } else {
+                await handlePassComponent(interaction);
+            }
             return;
         }
 
