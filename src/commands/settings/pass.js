@@ -127,9 +127,8 @@ export async function getPassDashboardPayload(guildId, page = 0) {
   // 2. Previous Page (if not on first page)
   if (currentPage > 0) {
     options.push({
-      label: '⬅️ Previous Page',
+      label: 'Previous Page',
       value: 'pass_page_' + (currentPage - 1),
-      description: 'Go to Page ' + currentPage + ' of ' + totalPages,
       emoji: '⬅️'
     });
   }
@@ -137,18 +136,16 @@ export async function getPassDashboardPayload(guildId, page = 0) {
   // 3. Next Page (if more pages exist)
   if (currentPage < totalPages - 1) {
     options.push({
-      label: '➡️ Next Page',
+      label: 'Next Page',
       value: 'pass_page_' + (currentPage + 1),
-      description: 'Go to Page ' + (currentPage + 2) + ' of ' + totalPages,
       emoji: '➡️'
     });
   }
 
   // 4. Create New Level (Always at the very bottom)
   options.push({
-    label: '➕ Create New Level',
+    label: 'Create New Level',
     value: 'pass_create_level_page_' + currentPage,
-    description: 'Configure a reward for a new level',
     emoji: '➕'
   });
 
