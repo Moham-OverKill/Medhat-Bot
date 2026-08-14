@@ -142,23 +142,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
   const embed = new EmbedBuilder().setColor(0x5865F2);
 
-  // Build Level Switcher Dropdown Options
+  // Build Level Switcher Dropdown Options (No descriptions)
   const options = [];
 
   for (const l of pageLevels) {
-    const rewardParts = [];
-    if (l.reward_coins > 0) rewardParts.push(l.reward_coins + ' Coins');
-    for (const r of l.rewards) {
-      const q = r.quantity > 1 ? `${r.quantity}x ` : '';
-      if (r.reward_type === 'item' && r.item_name) rewardParts.push(`${q}${r.item_name}`);
-      else if (r.reward_type === 'chest' && r.chest_name) rewardParts.push(`${q}${r.chest_name}`);
-    }
-    const desc = rewardParts.length > 0 ? rewardParts.join(' + ') : 'No reward set';
-
     options.push({
       label: 'Level ' + l.level,
       value: 'pass_view_level_' + l.level + '_page_' + currentPage,
-      description: desc.slice(0, 100),
       emoji: '⭐',
       default: selectedLevel !== null && Number(selectedLevel) === Number(l.level)
     });
@@ -218,9 +208,9 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       '• **Chest Rewards:** ' + chestText
     );
 
-    // Row 2: Coins Selector
+    // Row 2: Coins Selector (No descriptions)
     const coinPresets = [
-      { label: 'None (0 Coins)', value: '0', description: 'Remove coin reward', emoji: '❌' },
+      { label: 'None (0 Coins)', value: '0', emoji: '❌' },
       { label: '50 Coins', value: '50' },
       { label: '100 Coins', value: '100' },
       { label: '250 Coins', value: '250' },
@@ -229,13 +219,12 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       { label: '2,500 Coins', value: '2500' },
       { label: '5,000 Coins', value: '5000' },
       { label: '10,000 Coins', value: '10000' },
-      { label: 'Custom Amount...', value: 'custom', description: 'Enter specific coin amount', emoji: '✏️' }
+      { label: 'Custom Amount...', value: 'custom', emoji: '✏️' }
     ];
 
     const coinOptions = coinPresets.map(preset => ({
       label: preset.label,
       value: preset.value,
-      description: preset.description,
       emoji: preset.emoji || coinEmoji
     }));
 
@@ -246,7 +235,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     const row2 = new ActionRowBuilder().addComponents(coinsSelect);
 
-    // Row 3: Merged Rewards Browser Menu (Folder-Aware)
+    // Row 3: Merged Rewards Browser Menu (Folder-Aware, No descriptions)
     const categories = await getShopCategories(guildId);
     const unlockedItems = await getUnlockedShopItems(guildId);
     const guildLootBoxes = await getGuildLootBoxes(guildId);
@@ -263,7 +252,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: 'Categorized Items',
           value: 'folder_categorized',
-          description: 'Browse items sorted into shop categories',
           emoji: '📂'
         });
       }
@@ -271,7 +259,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: 'Uncategorized Items',
           value: 'folder_null',
-          description: 'Browse standalone shop items',
           emoji: '📁'
         });
       }
@@ -279,7 +266,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: lootBoxCatName.slice(0, 50),
           value: 'folder_chests',
-          description: `Browse available ${lootBoxCatName}`,
           emoji: selectChestEmoji
         });
       }
@@ -288,7 +274,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: 'No Items or Chests Available',
           value: 'folder_root',
-          description: 'Create items or chests in the shop first',
           emoji: '❌'
         });
       }
@@ -306,7 +291,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
           rewardOptions.push({
             label: `📂 ${cat.name.slice(0, 50)}`,
             value: 'folder_' + cat.id,
-            description: `${count} item(s) in this category`,
             emoji: '📂'
           });
         }
@@ -321,11 +305,9 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
       const standaloneItems = unlockedItems.filter(i => !i.category_id);
       for (const item of standaloneItems) {
-        const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
         rewardOptions.push({
           label: item.name.slice(0, 50),
           value: 'add_item_' + item.id,
-          description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
           emoji: '🏷️'
         });
       }
@@ -341,7 +323,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({
           label: chest.name.slice(0, 50),
           value: 'add_chest_' + chest.id,
-          description: (chest.description || 'Loot Box Chest').slice(0, 50),
           emoji: selectChestEmoji
         });
       }
@@ -359,11 +340,9 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
       const catItems = unlockedItems.filter(i => Number(i.category_id) === catId);
       for (const item of catItems) {
-        const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Special Item';
         rewardOptions.push({
           label: item.name.slice(0, 50),
           value: 'add_item_' + item.id,
-          description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
           emoji: '🏷️'
         });
       }
@@ -378,7 +357,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     const components = [row1, row2, row3];
 
-    // Row 4 (Optional): Manage existing configured rewards on this level
+    // Row 4 (Optional): Manage existing configured rewards on this level (No descriptions)
     if (levelData && levelData.rewards && levelData.rewards.length > 0) {
       const manageOptions = levelData.rewards.map(r => {
         const name = r.reward_type === 'chest' ? (r.chest_name || 'Chest') : (r.item_name || 'Item');
@@ -386,7 +365,6 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         return {
           label: `${name} (x${r.quantity})`.slice(0, 50),
           value: 'manage_' + r.id,
-          description: 'Edit quantity or remove (enter 0)',
           emoji
         };
       });
@@ -456,38 +434,32 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     );
   }
 
-  // Row 2: Management Controls
-  const toggleBtn = isEnabled
-    ? new ButtonBuilder()
-        .setCustomId('pass_toggle_pause_pg_' + currentPage)
-        .setLabel('Pause Levels')
-        .setEmoji('⏸️')
-        .setStyle(ButtonStyle.Secondary)
-    : new ButtonBuilder()
-        .setCustomId('pass_toggle_start_pg_' + currentPage)
-        .setLabel('Start Levels')
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Success);
-
-  const xpBtn = new ButtonBuilder()
-    .setCustomId('pass_set_xp_threshold_pg_' + currentPage)
-    .setLabel('Configure XP')
-    .setEmoji('⚡')
-    .setStyle(ButtonStyle.Secondary);
-
-  const notifBtn = new ButtonBuilder()
-    .setCustomId('pass_set_notif_channel_pg_' + currentPage)
-    .setLabel('Notification Channel')
-    .setEmoji('📢')
-    .setStyle(ButtonStyle.Secondary);
-
+  // Row 2: Management Controls ([Back], [XP], [Pause]/[Start])
   const backBtn = new ButtonBuilder()
     .setCustomId('settings_home')
     .setLabel('Back')
     .setEmoji('⬅️')
     .setStyle(ButtonStyle.Secondary);
 
-  const row2 = new ActionRowBuilder().addComponents(backBtn, toggleBtn, xpBtn, notifBtn);
+  const xpBtn = new ButtonBuilder()
+    .setCustomId('pass_set_xp_threshold_pg_' + currentPage)
+    .setLabel('XP')
+    .setEmoji('⚡')
+    .setStyle(ButtonStyle.Primary);
+
+  const startPauseBtn = isEnabled
+    ? new ButtonBuilder()
+        .setCustomId('pass_toggle_pause_pg_' + currentPage)
+        .setLabel('Pause')
+        .setEmoji('⏸️')
+        .setStyle(ButtonStyle.Danger)
+    : new ButtonBuilder()
+        .setCustomId('pass_toggle_start_pg_' + currentPage)
+        .setLabel('Start')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Success);
+
+  const row2 = new ActionRowBuilder().addComponents(backBtn, xpBtn, startPauseBtn);
 
   return { embeds: [embed], components: [row1, row2] };
 }
@@ -881,69 +853,6 @@ export async function handlePassComponent(interaction) {
         new ActionRowBuilder().addComponents(incInput)
       );
       await interaction.showModal(modal);
-      return;
-    }
-
-    // 11. Notification Channel Selection Menu
-    if (customId.startsWith('pass_set_notif_channel_pg_')) {
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-      const page = parseInt(customId.replace('pass_set_notif_channel_pg_', ''), 10) || 0;
-
-      const channels = interaction.guild.channels.cache
-        .filter(c => c.isTextBased() && !c.isThread() && !c.isVoiceBased())
-        .map(c => ({
-          label: `#${c.name}`.slice(0, 100),
-          value: c.id,
-          description: `Send level up alerts here`
-        }));
-
-      channels.unshift({
-        label: 'None (Direct Messages Only)',
-        value: 'none',
-        description: 'Send level-up alerts via direct messages',
-        emoji: '📩'
-      });
-
-      const channelSelect = new StringSelectMenuBuilder()
-        .setCustomId('pass_channel_select_pg_' + page)
-        .setPlaceholder('Select Notification Channel')
-        .addOptions(channels.slice(0, 25));
-
-      const row1 = new ActionRowBuilder().addComponents(channelSelect);
-      const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('pass_home_page_' + page)
-          .setLabel('Back')
-          .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-      const embed = new EmbedBuilder()
-        .setTitle('📢 Level-Up Notification Channel')
-        .setColor(0x5865F2)
-        .setDescription('Select where the bot will post public level-up celebration messages when members unlock new levels.');
-
-      await interaction.editReply({ embeds: [embed], components: [row1, row2] });
-      return;
-    }
-
-    // 12. Save Notification Channel
-    if (customId.startsWith('pass_channel_select_pg_')) {
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-      const page = parseInt(customId.replace('pass_channel_select_pg_', ''), 10) || 0;
-      const selectedChannel = interaction.values[0];
-      const channelId = selectedChannel === 'none' ? null : selectedChannel;
-
-      await setGuildConfig(guildId, { battlepass_notif_channel: channelId });
-
-      sysLog('Level Notification Channel Configured', {
-        guild: guildId,
-        user: interaction.user.id,
-        channel: channelId || 'None (DM)'
-      });
-
-      const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
