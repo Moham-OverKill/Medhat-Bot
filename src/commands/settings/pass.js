@@ -10,6 +10,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
+import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { COIN_EMOJI } from '../../shared.js';
 import { sysLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
@@ -65,10 +66,13 @@ async function getConfiguredLevel(guildId, level) {
 }
 
 /**
- * Render the Battlepass Dashboard payload with persistent dropdown
+ * Render the Battlepass Dashboard payload with persistent dropdown and Start/Pause toggle
  */
 export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null) {
   const levels = await getConfiguredLevels(guildId);
+  const config = await getGuildConfig(guildId) || {};
+  const isEnabled = config.battlepass_enabled === true;
+
   const totalLevels = levels.length;
   const totalPages = Math.max(1, Math.ceil(totalLevels / ITEMS_PER_PAGE));
   const currentPage = Math.min(Math.max(0, page), totalPages - 1);
@@ -183,8 +187,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // Default Overview (No level selected)
   embed.setTitle('🎟️ Battlepass Configuration');
 
+  const statusText = isEnabled ? '🟢 **Active**' : '⏸️ **Paused**';
+
   if (totalLevels === 0) {
-    embed.setDescription('_No level rewards configured yet._');
+    embed.setDescription(
+      '• **Status:** ' + statusText + '\n\n' +
+      '_No level rewards configured yet._'
+    );
   } else {
     const lines = pageLevels.map(row => {
       const parts = [];
@@ -199,18 +208,31 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     });
 
     embed.setDescription(
+      '• **Status:** ' + statusText + '\n\n' +
       '**Configured Levels (' + totalLevels + ' total — Page ' + (currentPage + 1) + '/' + totalPages + ')**\n\n' +
-      lines.join('\n') +
-      '\n\n_Select a level from the dropdown to manage its rewards, or choose **Create New Level**._'
+      lines.join('\n')
     );
   }
+
+  const startPauseButton = isEnabled
+    ? new ButtonBuilder()
+        .setCustomId('pass_toggle_pause_pg_' + currentPage)
+        .setLabel('Pause')
+        .setEmoji('⏸️')
+        .setStyle(ButtonStyle.Danger)
+    : new ButtonBuilder()
+        .setCustomId('pass_toggle_start_pg_' + currentPage)
+        .setLabel('Start')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Success);
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_home')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Secondary),
+    startPauseButton
   );
 
   return { embeds: [embed], components: [row1, row2] };
@@ -302,7 +324,91 @@ export async function handlePassComponent(interaction) {
       }
     }
 
-    // 2. Set Coins Button for Selected Level -> Show Coins Modal
+    // 2. Start Battlepass -> Confirmation Dialogue
+    if (customId.startsWith('pass_toggle_start_pg_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const page = parseInt(customId.replace('pass_toggle_start_pg_', ''), 10) || 0;
+
+      const embed = new EmbedBuilder()
+        .setTitle('⚠️ Start Battlepass Progression?')
+        .setColor(0xFEE75C)
+        .setDescription(
+          'Please make sure your levels and rewards are fully configured before starting.\n\n' +
+          'Once started, members will begin earning XP and unlocking rewards.\n\n' +
+          '_You can pause the Battlepass at any time to freeze progression._'
+        );
+
+      const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('pass_confirm_start_pg_' + page)
+          .setLabel('Confirm & Start')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('pass_home_page_' + page)
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      await interaction.editReply({
+        embeds: [embed],
+        components: [row1]
+      });
+      return;
+    }
+
+    // 3. Confirm Start
+    if (customId.startsWith('pass_confirm_start_pg_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const page = parseInt(customId.replace('pass_confirm_start_pg_', ''), 10) || 0;
+
+      await setGuildConfig(guildId, { battlepass_enabled: true });
+
+      sysLog('Battlepass Started', {
+        guild: guildId,
+        user: interaction.user.id
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, null);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 4. Pause Battlepass
+    if (customId.startsWith('pass_toggle_pause_pg_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const page = parseInt(customId.replace('pass_toggle_pause_pg_', ''), 10) || 0;
+
+      await setGuildConfig(guildId, { battlepass_enabled: false });
+
+      sysLog('Battlepass Paused', {
+        guild: guildId,
+        user: interaction.user.id
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, null);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 5. Back to Levels List
+    if (customId.startsWith('pass_home_page_') || customId === 'pass_home') {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const page = customId.startsWith('pass_home_page_') ? (parseInt(customId.replace('pass_home_page_', ''), 10) || 0) : 0;
+      const payload = await getPassDashboardPayload(guildId, page, null);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 6. Set Coins Button for Selected Level -> Show Coins Modal
     if (customId.startsWith('pass_coins_btn_')) {
       const match = customId.match(/pass_coins_btn_(\d+)_pg_(\d+)/);
       const level = match ? parseInt(match[1], 10) : 1;
@@ -327,7 +433,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 3. Set Item Button for Selected Level -> Show Shop Item Selector
+    // 7. Set Item Button for Selected Level -> Show Shop Item Selector
     if (customId.startsWith('pass_item_btn_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -383,7 +489,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 4. Cancel Item Selection
+    // 8. Cancel Item Selection
     if (customId.startsWith('pass_cancel_item_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -397,7 +503,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 5. Bind Item Selected
+    // 9. Bind Item Selected
     if (customId.startsWith('pass_bind_item_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -426,7 +532,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 6. Delete Level Button
+    // 10. Delete Level Button
     if (customId.startsWith('pass_del_btn_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
