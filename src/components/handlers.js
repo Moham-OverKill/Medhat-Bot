@@ -273,6 +273,13 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
+      // LEVEL PROGRESS USER TABS
+      if (customId.startsWith('level_tab_')) {
+        const { handleLevelTabButton } = await import('../commands/pass.js');
+        await handleLevelTabButton(interaction);
+        return;
+      }
+
       // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards, pass)
       if (
         customId.startsWith('settings_') ||
