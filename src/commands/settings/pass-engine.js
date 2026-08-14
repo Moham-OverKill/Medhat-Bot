@@ -96,6 +96,37 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
     const config = await getGuildConfig(guildId);
     if (!config || config.battlepass_enabled !== true) return;
 
+    const pool = getPool();
+
+    // 1. Atomically increment battlepass_xp
+    await pool.query(
+      `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (guild_id, user_id)
+       DO UPDATE SET
+         battlepass_xp = user_activity.battlepass_xp + $4,
+         username = $3`,
+      [guildId, userId, username, xpToAdd]
+    );
+
+    // 2. Dispatch any newly qualified level rewards
+    await syncUserLevelRewards(guildId, userId, username, client);
+  } catch (err) {
+    sysError('Level XP Engine Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Check a user's current XP and dispatch rewards for any newly qualified unclaimed levels.
+ */
+export async function syncUserLevelRewards(guildId, userId, username, client = null) {
+  if (!guildId || !userId) return;
+
+  try {
+    const { getGuildConfig } = await import('../../storage/config.js');
+    const config = await getGuildConfig(guildId);
+    if (!config || config.battlepass_enabled !== true) return;
+
     if (!client) {
       const { getDiscordClient } = await import('../../activity/index.js');
       client = getDiscordClient();
@@ -103,28 +134,18 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     const pool = getPool();
 
-    // 1. Atomically increment battlepass_xp and return new total
     const xpResult = await pool.query(
-      `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         battlepass_xp = user_activity.battlepass_xp + $4,
-         username = $3
-       RETURNING battlepass_xp`,
-      [guildId, userId, username, xpToAdd]
+      `SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
+      [guildId, userId]
     );
-
     const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
     if (totalXp <= 0) return;
 
-    // 2. Calculate current level based on Base XP and Increment
     const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
     const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
     const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
     if (currentLevel <= 0) return;
 
-    // 3. Load all configured levels that user could have reached
     const levelsResult = await pool.query(
       `SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
               si.name as item_name, si.role_id as item_role_id,
@@ -139,14 +160,12 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     if (levelsResult.rows.length === 0) return;
 
-    // 4. Check which levels are already claimed
     const claimsResult = await pool.query(
       `SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
     const alreadyClaimed = new Set(claimsResult.rows.map(r => r.level_claimed));
 
-    // 5. Dispatch rewards for each newly reached unclaimed level
     const claimedLevels = [];
     for (const levelRow of levelsResult.rows) {
       if (alreadyClaimed.has(levelRow.level)) continue;
@@ -157,12 +176,11 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
       }
     }
 
-    // 6. Send single consolidated notification for all newly claimed levels
     if (claimedLevels.length > 0 && client) {
       await sendLevelUpNotification(client, guildId, userId, username, claimedLevels, config);
     }
   } catch (err) {
-    sysError('Level XP Engine Failed', err, { guild: guildId, user: userId });
+    sysError('Level Sync Failed', err, { guild: guildId, user: userId });
   }
 }
 
