@@ -410,13 +410,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle(title)
-      .setDescription(description);
-
-    if (guildIcon) {
-      embed.setAuthor({ name: guildName, iconURL: guildIcon });
-    } else {
-      embed.setAuthor({ name: guildName });
-    }
+      .setDescription(description)
+      .setFooter({
+        text: `${guildName} • ${new Date().toLocaleString()}`,
+        iconURL: typeof guild?.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null
+      });
 
     if (notifChannelId) {
       const channel = guild?.channels?.cache?.get(notifChannelId) || await client.channels?.fetch(notifChannelId).catch(() => null);
