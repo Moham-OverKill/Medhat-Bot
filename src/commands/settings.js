@@ -622,6 +622,23 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
+        if (customId === 'settings_users_interface') {
+            const { showInterfaceSettings } = await import('./interface.js');
+            await showInterfaceSettings(interaction);
+            return;
+        }
+
+        if (customId.startsWith('interface_')) {
+            if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+                const { handleInterfaceModal } = await import('./interface.js');
+                await handleInterfaceModal(interaction);
+            } else {
+                const { handleInterfaceComponent } = await import('./interface.js');
+                await handleInterfaceComponent(interaction);
+            }
+            return;
+        }
+
         if (customId === 'settings_logs') {
             await handleLogsSettings(interaction);
             return;
