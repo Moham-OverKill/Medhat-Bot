@@ -1147,7 +1147,7 @@ export async function scheduleCairoMidnightReset(client) {
       if (userIds.length > 0) {
         const dmEmbed = new EmbedBuilder()
           .setTitle('💰 Daily Reward Available!')
-          .setDescription('Your daily claim is now ready!\nClaim it in your server to keep your streak alive.')
+          .setDescription('Your daily claim is now ready!\nClaim it in servers to keep your streak.')
           .setColor(0xF1C40F);
 
         await Promise.allSettled(
