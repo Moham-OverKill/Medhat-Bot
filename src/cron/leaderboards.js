@@ -66,13 +66,15 @@ async function runHourlyRefresh(client, isStartup = false) {
         sysLog('Midnight Pre-Processing', { detail: `Voice time flushed for ${guildIds.length} guild(s)` });
     }
 
-    // ── STEP 2: Refresh leaderboard UI messages ──
+    // ── STEP 2: Refresh leaderboard UI messages & Community Interface Hubs ──
     for (const guildId of guildIds) {
         await runInGuildContext(guildId, async () => {
             try {
                 await updateLeaderboards(client, guildId, null, []);
+                const { publishOrUpdateHub } = await import('../commands/interface.js');
+                await publishOrUpdateHub(client, guildId);
             } catch (err) {
-                sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
+                sysError('Guild Leaderboard/Hub Sync Failed', err, { guild: guildId });
             }
         });
     }

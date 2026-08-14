@@ -224,5 +224,15 @@ export async function rotateGuildQuests(guildId, config, pool, client = null) {
       }
     }
 
+    // Auto-sync public community interface / server hub
+    if (client) {
+      try {
+        const { publishOrUpdateHub } = await import('../commands/interface.js');
+        await publishOrUpdateHub(client, guildId);
+      } catch (hubErr) {
+        sysError('Hub Auto-Update Failed on Quest Rotation', hubErr, { guild: guildId });
+      }
+    }
+
     sysLog('Quest Smart Rotation Complete', { guild: guildId, detail: `Cycle: ${currentCycle} | Quests: ${selectedIds.length} | Snapshot Saved` });
 }
