@@ -95,6 +95,23 @@ export async function showUserDashboard(interaction, targetUserId) {
         const balance = parseInt(userResult.rows[0].balance);
         const streak = parseInt(userResult.rows[0].daily_streak) || 0;
 
+        // Fetch user level from user_activity
+        let userLevel = 0;
+        try {
+            const actRes = await pool.query(
+                'SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2',
+                [guildId, targetUserId]
+            );
+            const totalXp = parseInt(actRes.rows[0]?.battlepass_xp || 0, 10);
+            const { getGuildConfig } = await import('../storage/config.js');
+            const config = await getGuildConfig(guildId) || {};
+            const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+            const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+            const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
+            const calc = calculateLevelFromXp(totalXp, baseXp, incrementXp);
+            userLevel = calc.level;
+        } catch {}
+
         // Fetch synthesized inventory to get accurate item count (summing quantities)
         const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
         const activeItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
@@ -104,7 +121,7 @@ export async function showUserDashboard(interaction, targetUserId) {
 
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
-            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Streak: **${streak}** 🔥 ｜ Items: **${itemCount}**`)
+            .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Streak: **${streak}** 🔥 ｜ Level: **${userLevel}** ⭐ ｜ Items: **${itemCount}** 📦`)
             .setColor(0x5865F2);
 
         const actionRow = new ActionRowBuilder().addComponents(
@@ -117,6 +134,11 @@ export async function showUserDashboard(interaction, targetUserId) {
                 .setCustomId(`admin_user_streak_${targetUserId}`)
                 .setLabel('Streak')
                 .setEmoji('🔥')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`admin_user_level_${targetUserId}`)
+                .setLabel('Level')
+                .setEmoji('⭐')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`admin_user_items_${targetUserId}`)
@@ -341,13 +363,106 @@ export async function handleStreakModal(interaction) {
 }
 
 /**
- * Show user inventory (items)
+ * Handle level adjustment button click
+ */
+export async function handleLevelAction(interaction, targetUserId) {
+    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+    const safeTitle = `Set Level: ${targetMember?.user.username || targetUserId}`;
+
+    const pool = getPool();
+    const actRes = await pool.query(
+        'SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2',
+        [interaction.guildId, targetUserId]
+    );
+    const totalXp = parseInt(actRes.rows[0]?.battlepass_xp || 0, 10);
+    const { getGuildConfig } = await import('../storage/config.js');
+    const config = await getGuildConfig(interaction.guildId) || {};
+    const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+    const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
+    const { level: userLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
+
+    const modal = new ModalBuilder()
+        .setCustomId(`admin_user_lvlmod_${targetUserId}`)
+        .setTitle(safeTruncate(safeTitle, 45));
+
+    const input = new TextInputBuilder()
+        .setCustomId('new_level')
+        .setLabel('New Level (e.g. 0, 1, 5, 10)')
+        .setValue(String(userLevel))
+        .setPlaceholder('Enter target level...')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+}
+
+/**
+ * Process level modal submission
+ */
+export async function handleLevelModal(interaction) {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const targetUserId = interaction.customId.split('_').pop();
+    const newLevel = parseInt(interaction.fields.getTextInputValue('new_level'), 10);
+
+    if (isNaN(newLevel) || newLevel < 0) {
+        return interaction.followUp({ content: '❌ Invalid level. Please enter a valid non-negative number.', flags: MessageFlags.Ephemeral });
+    }
+
+    const guildId = interaction.guildId;
+    const pool = getPool();
+
+    try {
+        const { getGuildConfig } = await import('../storage/config.js');
+        const config = await getGuildConfig(guildId) || {};
+        const baseXp = parseInt(config.battlepass_base_xp || config.battlepass_xp_per_level || 100, 10);
+        const incrementXp = parseInt(config.battlepass_xp_increment || 0, 10);
+        const { getTotalXpForLevel } = await import('./settings/pass-engine.js');
+        const targetXp = getTotalXpForLevel(newLevel, baseXp, incrementXp);
+
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+
+        await pool.query(
+            `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (guild_id, user_id)
+             DO UPDATE SET battlepass_xp = $4`,
+            [guildId, targetUserId, targetMember?.user?.username || 'User', targetXp]
+        );
+
+        sysLog('Admin Action', {
+            admin: interaction.user.id,
+            guild: guildId,
+            target: targetUserId,
+            detail: `Set level to ${newLevel} (${targetXp} XP)`
+        });
+
+        const adminLogName = getUserLogName(interaction);
+        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
+
+        sendLog(interaction.guild, 'audit', 'blue', '⭐ Level Adjusted',
+            `**Target:** \`${targetLogName}\`\n` +
+            `**Level Changed To:** **Level ${newLevel}** (${targetXp.toLocaleString()} XP)\n` +
+            `**Admin:** \`${adminLogName}\` (via User Settings)`
+        );
+
+        await showUserDashboard(interaction, targetUserId);
+    } catch (err) {
+        sysError('Level Adjustment Failed', err, { user: interaction.user.id, guild: guildId });
+        await interaction.followUp({ content: '❌ An error occurred while adjusting user level.', flags: MessageFlags.Ephemeral });
+    }
+}
+
+/**
+ * Show user inventory (items & chests)
  */
 export async function showUserItems(interaction, targetUserId, categoryId = null, page = 1) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const guildId = interaction.guildId;
+    const isLootBox = categoryId === 'lootboxes';
     const isOther = categoryId === 'null';
-    const catId = isOther ? null : (categoryId ? parseInt(categoryId) : null);
+    const catId = (isOther || isLootBox) ? null : (categoryId ? parseInt(categoryId) : null);
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     if (!targetMember) return interaction.followUp({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
@@ -358,6 +473,9 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
     // List of visible items (no packs)
     const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
+    const lootBoxItems = visibleItems.filter(i => i.item_type === 'loot_box');
+    const standardItems = visibleItems.filter(i => i.item_type !== 'loot_box');
+    const lootBoxCount = lootBoxItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
     if (categoryId === null) {
         const pool = getPool();
@@ -375,7 +493,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
         const categoryCounts = {};
         let otherCount = 0;
-        for (const item of visibleItems) {
+        for (const item of standardItems) {
             const itemQty = parseInt(item.quantity) || 1;
             if (item.category_id) {
                 categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
@@ -385,11 +503,11 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         }
 
         const validCategories = categories.filter(c => categoryCounts[c.id] > 0);
-        const buttons = validCategories.slice(0, 4).map(c => 
+        const buttons = validCategories.map(c => 
             new ButtonBuilder()
                 .setCustomId(`admin_user_icat_${targetUserId}_${c.id}`)
                 .setLabel(c.name)
-                .setStyle(ButtonStyle.Primary)
+                .setStyle(ButtonStyle.Secondary)
         );
 
         if (otherCount > 0) {
@@ -397,7 +515,20 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 new ButtonBuilder()
                     .setCustomId(`admin_user_icat_${targetUserId}_null`)
                     .setLabel('Other')
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        }
+
+        if (lootBoxCount > 0) {
+            const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+            const lootBoxCatName = await getLootBoxCategoryName(guildId);
+            const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+            buttons.push(
+                new ButtonBuilder()
+                    .setCustomId(`admin_user_icat_${targetUserId}_lootboxes`)
+                    .setLabel(lootBoxCatName)
+                    .setEmoji(lootBoxEmoji)
+                    .setStyle(ButtonStyle.Secondary)
             );
         }
 
@@ -410,20 +541,38 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         );
 
         const rows = [];
-        if (buttons.length > 0) rows.push(new ActionRowBuilder().addComponents(buttons));
+        if (buttons.length > 0) {
+            for (let i = 0; i < buttons.length; i += 4) {
+                rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
+            }
+        }
         rows.push(backRow);
 
         const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
         await interaction[responseMethod]({ embeds: [embed], components: rows });
     } else {
-        // Show items in specific category
-        let items = visibleItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
-        
-        // Standardize: Sort by role position (match user view)
-        items = await sortItemsByRolePosition(items, interaction.guild);
+        // Show items in specific category or loot boxes
+        let items;
+        let catName;
 
-        let catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
-        const listLines = items.map(i => formatInventoryItemLine(i));
+        if (isLootBox) {
+            items = lootBoxItems;
+            const { getLootBoxCategoryName } = await import('../economy/lootbox.js');
+            catName = await getLootBoxCategoryName(guildId);
+            items.sort((a, b) => (parseInt(a.loot_box_id) || a.id) - (parseInt(b.loot_box_id) || b.id));
+        } else {
+            items = standardItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
+            catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
+            items = await sortItemsByRolePosition(items, interaction.guild);
+        }
+
+        const listLines = isLootBox
+            ? items.map(i => {
+                const qty = parseInt(i.quantity) || 1;
+                const baseName = (i.name && i.name.trim().length > 0) ? i.name : `Loot Box #${i.id}`;
+                return `• 🎁 **${baseName}** (x${qty})`;
+              })
+            : items.map(i => formatInventoryItemLine(i));
 
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`📂 ${catName}: ${targetMember.displayName}`, 256))
@@ -436,7 +585,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 items,
                 page,
                 customId: `admin_user_isel_${targetUserId}_${categoryId}`,
-                placeholder: 'Select an Item to Manage',
+                placeholder: isLootBox ? 'Select a Loot Box to Manage' : 'Select an Item to Manage',
                 backOption: { label: 'Back', value: 'back_to_categories', emoji: '⬅️' },
                 pageNavPrefix: 'admin_page_',
                 pageSize: 20,
@@ -445,11 +594,11 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
-                    let statusEmoji = isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '✅' : '⬜') : (i.is_active ? '✅' : '⬜'));
-                    let statusText = isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped'));
+                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '✅' : '⬜') : (i.is_active ? '✅' : '⬜')));
+                    let statusText = isLootBox ? 'Unopened Loot Box' : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
                     const itemQty = parseInt(i.quantity) || 1;
                     const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
-                    const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+                    const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : (isLootBox ? `Loot Box #${i.id}` : `Item #${i.id}`);
                     return {
                         label: `${baseName}${qtyBadge}`,
                         value: `${i.id}_${idx}`,
@@ -801,6 +950,9 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             case 'streak':
                 await handleStreakAction(interaction, targetUserId);
+                break;
+            case 'level':
+                await handleLevelAction(interaction, targetUserId);
                 break;
             case 'items':
                 await showUserItems(interaction, targetUserId);
