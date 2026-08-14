@@ -8,11 +8,13 @@ import { getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { COIN_EMOJI } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-export const passCommand = new SlashCommandBuilder()
-  .setName('pass')
-  .setDescription('Check your Battlepass progress and rewards.');
+export const levelCommand = new SlashCommandBuilder()
+  .setName('level')
+  .setDescription('Check your Level progress and rewards.');
 
-export async function handlePassCommand(interaction) {
+export const passCommand = levelCommand;
+
+export async function handleLevelCommand(interaction) {
   try {
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
@@ -23,7 +25,7 @@ export async function handlePassCommand(interaction) {
 
     if (!data.isEnabled) {
       return interaction.editReply({
-        content: 'The Battlepass is not active in this server yet. An admin needs to configure and start it first.'
+        content: 'The Level system is not active in this server yet. An admin needs to configure and start it first.'
       });
     }
 
@@ -38,7 +40,7 @@ export async function handlePassCommand(interaction) {
     for (let i = 0; i < empty; i++) bar += String.fromCodePoint(0x2591);
 
     const embed = new EmbedBuilder()
-      .setTitle('Your Battlepass Progress')
+      .setTitle('Your Level Progress')
       .setColor(0x5865F2);
 
     embed.addFields({
@@ -83,6 +85,8 @@ export async function handlePassCommand(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    await handleInteractionError(interaction, error, 'pass user');
+    await handleInteractionError(interaction, error, 'level user');
   }
 }
+
+export const handlePassCommand = handleLevelCommand;

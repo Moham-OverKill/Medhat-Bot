@@ -91,8 +91,8 @@ export async function showMainMenu(interaction) {
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_pass')
-            .setLabel('Pass')
-            .setEmoji('🎟️')
+            .setLabel('Levels')
+            .setEmoji('⭐')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_users')
