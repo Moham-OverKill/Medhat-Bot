@@ -257,6 +257,9 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
           const { handleInventoryDropModalSubmit } = await import('../commands/bank.js');
           await handleInventoryDropModalSubmit(interaction);
+        } else if (interaction.customId.startsWith('pass_')) {
+          const { handlePassModal } = await import('../commands/settings/pass.js');
+          await handlePassModal(interaction);
         }
         return;
       }
@@ -267,14 +270,15 @@ export function setupComponentHandlers(client) {
 
       const customId = interaction.customId;
 
-      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards)
+      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards, pass)
       if (
         customId.startsWith('settings_') ||
         customId.startsWith('organize_') ||
         customId.startsWith('leaderboard_channel_') ||
         customId.startsWith('admin_user_') ||
         customId.startsWith('lb_') ||
-        customId.startsWith('role_rewards_')
+        customId.startsWith('role_rewards_') ||
+        customId.startsWith('pass_')
       ) {
         await handleSettingsComponent(interaction);
         return;
