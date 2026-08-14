@@ -5,7 +5,7 @@
  * Rewards are locked in user_pass_claims (permanent anti-exploit ledger).
  */
 import { getPool } from '../../storage/postgres.js';
-import { sysLog, sysError } from '../../utils/logger.js';
+import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 
 /**
  * Award battlepass XP to a user and dispatch any newly unlocked level rewards.
@@ -17,13 +17,18 @@ import { sysLog, sysError } from '../../utils/logger.js';
  * @param {number} xpToAdd — how many XP points to add (1 per message point or voice minute)
  * @param {object} client — Discord client, used to DM or post level-up notification
  */
-export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client) {
+export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client = null) {
   if (!guildId || !userId || xpToAdd <= 0) return;
 
   try {
     const { getGuildConfig } = await import('../../storage/config.js');
     const config = await getGuildConfig(guildId);
     if (!config || config.battlepass_enabled !== true) return;
+
+    if (!client) {
+      const { getDiscordClient } = await import('../../activity/index.js');
+      client = getDiscordClient();
+    }
 
     const pool = getPool();
 
@@ -105,15 +110,23 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
     // C. Award coins
     const coins = parseInt(levelRow.reward_coins || 0, 10);
     if (coins > 0) {
-      await client2.query(
+      const balRes = await client2.query(
         `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
          VALUES ($1, $2, $3, $3)
          ON CONFLICT (user_id, guild_id)
          DO UPDATE SET
            balance = user_balances.balance + $3,
            total_earned = user_balances.total_earned + $3,
-           updated_at = NOW()`,
+           updated_at = NOW()
+         RETURNING balance`,
         [userId, guildId, coins]
+      );
+      const newBal = parseInt(balRes.rows[0]?.balance || coins, 10);
+
+      await client2.query(
+        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
+         VALUES ($1, $2, $3, $4, 'battlepass', $5)`,
+        [userId, guildId, coins, newBal, `Battlepass Level ${levelRow.level} reward`]
       );
 
       await client2.query(
@@ -149,8 +162,24 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
       detail: `Level ${levelRow.level} | Coins: ${coins} | Item: ${levelRow.item_name || 'None'} | Chest: ${levelRow.chest_name || 'None'}`
     });
 
-    // F. Send level-up notification
+    // F. Send Discord channel event logs
     if (client) {
+      const guild = client.guilds?.cache?.get(guildId);
+      if (guild) {
+        if (coins > 0) {
+          const { COIN_EMOJI } = await import('../../shared.js');
+          const coinEmoji = COIN_EMOJI.forGuild(guildId);
+          sendLog(guild, 'economy', 'green', '🎟️ Battlepass Reward', `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${coins.toLocaleString()}** ${coinEmoji}!`);
+        }
+        if (levelRow.item_name) {
+          sendLog(guild, 'inventory', 'green', '🏷️ Battlepass Item Reward', `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${levelRow.item_name}**!`);
+        }
+        if (levelRow.chest_name) {
+          const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
+          const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+          sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Battlepass Chest Reward`, `<@${userId}> reached **Battlepass Level ${levelRow.level}** and received **${levelRow.chest_name}**!`);
+        }
+      }
       await sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config);
     }
   } catch (err) {
