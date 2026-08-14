@@ -15,6 +15,7 @@ import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { getNextQuestRefresh, getNextCairoMidnight } from '../utils/time.js';
 import { formatQuestTask } from '../quests/quests.js';
 import { claimDaily } from '../economy/service.js';
+import { getLevelViewPayload } from './pass.js';
 import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
 import { handleInventoryButton } from './bank.js';
