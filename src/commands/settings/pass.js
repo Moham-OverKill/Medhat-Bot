@@ -11,6 +11,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
+import { getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
 import { COIN_EMOJI } from '../../shared.js';
 import { sysLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
@@ -85,6 +86,9 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.battlepass_enabled === true;
   const coinEmoji = COIN_EMOJI.forGuild(guildId);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+  const emojiMatch = lootBoxEmoji ? lootBoxEmoji.match(/:(\d+)>$/) : null;
+  const selectChestEmoji = emojiMatch ? emojiMatch[1] : (lootBoxEmoji || '🎁');
 
   const totalLevels = levels.length;
   const totalPages = Math.max(1, Math.ceil(totalLevels / ITEMS_PER_PAGE));
@@ -159,11 +163,11 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       : '_None_';
 
     const itemText = data && data.item_name
-      ? ('🎁 **' + data.item_name + '** (' + (data.item_rarity || 'Common') + ')')
+      ? ('🏷️ **' + data.item_name + '** (' + (data.item_rarity || 'Common') + ')')
       : '_None_';
 
     const chestText = data && data.chest_name
-      ? ('📦 **' + data.chest_name + '**')
+      ? (lootBoxEmoji + ' **' + data.chest_name + '**')
       : '_None_';
 
     embed.setDescription(
@@ -217,7 +221,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: item.name.slice(0, 50),
         value: String(item.id),
         description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
-        emoji: '🎁'
+        emoji: '🏷️'
       });
     }
 
@@ -244,7 +248,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         label: chest.name.slice(0, 50),
         value: String(chest.id),
         description: (chest.description || 'Loot Box Chest').slice(0, 50),
-        emoji: '📦'
+        emoji: selectChestEmoji
       });
     }
 
@@ -291,10 +295,10 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         parts.push(coinEmoji + ' **' + Number(row.reward_coins).toLocaleString() + '**');
       }
       if (row.item_name) {
-        parts.push('🎁 **' + row.item_name + '**');
+        parts.push('🏷️ **' + row.item_name + '**');
       }
       if (row.chest_name) {
-        parts.push('📦 **' + row.chest_name + '**');
+        parts.push(lootBoxEmoji + ' **' + row.chest_name + '**');
       }
       const rewardText = parts.length > 0 ? parts.join(' + ') : '_No Reward Set_';
       return '• **Level ' + row.level + ':** ' + rewardText;
