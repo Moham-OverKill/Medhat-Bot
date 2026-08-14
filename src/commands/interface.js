@@ -183,36 +183,48 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       files: [attachment]
     };
 
+    // 1. Delete known old message if it exists
     const oldMsgId = config.interface_message_id;
-    let messageUpdated = false;
-
     if (oldMsgId) {
       const oldMessage = await channel.messages.fetch(oldMsgId).catch(() => null);
       if (oldMessage) {
-        await oldMessage.edit(payload).catch(() => null);
-        messageUpdated = true;
+        await oldMessage.delete().catch(() => {});
       }
     }
 
-    // Only send a brand-new message if explicitly requested (e.g. Publish / Force Update button)
-    if (!messageUpdated) {
-      if (!allowCreate) {
-        return false;
+    // 2. Scan recent messages in the channel to remove any duplicate or orphaned hub messages
+    try {
+      const recentMessages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
+      if (recentMessages) {
+        for (const msg of recentMessages.values()) {
+          if (msg.author.id === client.user.id && msg.id !== oldMsgId) {
+            const hasHubButtons = msg.components?.some(row =>
+              row.components?.some(btn => btn.customId?.startsWith('hub_btn_'))
+            );
+            if (hasHubButtons) {
+              await msg.delete().catch(() => {});
+            }
+          }
+        }
       }
-
-      const newMessage = await channel.send(payload).catch((err) => {
-        sysError('Hub Message Send Failed', err, { guild: guildId, channel: channelId });
-        return null;
-      });
-
-      if (newMessage) {
-        config.interface_message_id = newMessage.id;
-        await setGuildConfig(guildId, config);
-        sysLog('Hub Message Published', { guild: guildId, channel: channelId, messageId: newMessage.id });
-      }
+    } catch (scanErr) {
+      // Non-blocking cleanup
     }
 
-    return true;
+    // 3. Send fresh new message (guarantees zero "(edited)" tag)
+    const newMessage = await channel.send(payload).catch((err) => {
+      sysError('Hub Message Send Failed', err, { guild: guildId, channel: channelId });
+      return null;
+    });
+
+    if (newMessage) {
+      config.interface_message_id = newMessage.id;
+      await setGuildConfig(guildId, config);
+      sysLog('Hub Message Freshly Published', { guild: guildId, channel: channelId, messageId: newMessage.id });
+      return true;
+    }
+
+    return false;
   } catch (error) {
     sysError('Hub Publish/Update Error', error, { guild: guildId });
     return false;
