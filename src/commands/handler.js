@@ -7,7 +7,7 @@ import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
 import { handleHelpCommand } from './help.js';
 import { handleVoteCommand } from './vote.js';
-import { handlePassCommand } from './pass.js';
+import { handleLevelCommand } from './pass.js';
 import { sysLog } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
@@ -44,8 +44,9 @@ export async function handleSlashCommand(interaction) {
     case 'vote':
       await handleVoteCommand(interaction);
       break;
+    case 'level':
     case 'pass':
-      await handlePassCommand(interaction);
+      await handleLevelCommand(interaction);
       break;
     default:
       await interaction.reply({

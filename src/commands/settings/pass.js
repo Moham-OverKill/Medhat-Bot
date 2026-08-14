@@ -157,7 +157,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // If a specific level is selected for management -> Show 3 Select Menus + Actions
   if (selectedLevel !== null) {
     const data = await getConfiguredLevel(guildId, selectedLevel);
-    embed.setTitle('🎟️ Battlepass — Level ' + selectedLevel);
+    embed.setTitle('⭐ Level ' + selectedLevel);
 
     const coinsText = data && data.reward_coins > 0
       ? (coinEmoji + ' **' + Number(data.reward_coins).toLocaleString() + '**')
@@ -346,7 +346,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   }
 
   // Default Overview (No level selected)
-  embed.setTitle('🎟️ Battlepass Configuration');
+  embed.setTitle('⭐ Levels Configuration');
 
   const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
   const statusText = isEnabled ? '🟢 **Active**' : '⏸️ **Paused**';
@@ -410,7 +410,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 }
 
 /**
- * Entry point when [ 🎟️ Pass ] is clicked in /settings
+ * Entry point when [ ⭐ Levels ] is clicked in /settings
  */
 export async function handlePassSetup(interaction) {
   try {
@@ -423,7 +423,7 @@ export async function handlePassSetup(interaction) {
     // 1. Prerequisite Check: 5-Item Gate
     const count = await getUnlockedItemCount(guildId);
     if (count < 5) {
-      const warning = '⚠️ Please add at least 5 unlocked items to the shop before configuring the Battlepass.';
+      const warning = '⚠️ Please add at least 5 unlocked items to the shop before configuring Levels.';
       await interaction.editReply({ content: warning, embeds: [], components: [] });
       return;
     }
@@ -437,7 +437,7 @@ export async function handlePassSetup(interaction) {
 }
 
 /**
- * Handle Battlepass Button & Select Interactions
+ * Handle Levels Button & Select Interactions
  */
 export async function handlePassComponent(interaction) {
   const customId = interaction.customId;
@@ -448,20 +448,20 @@ export async function handlePassComponent(interaction) {
     if (customId === 'pass_main_select') {
       const selectedValue = interaction.values[0];
 
-      // A. Create New Level -> Show Modal asking ONLY for level number
+      // A. Create New Level Action
       if (selectedValue.startsWith('pass_create_level_page_')) {
         const page = parseInt(selectedValue.replace('pass_create_level_page_', ''), 10) || 0;
         const modal = new ModalBuilder()
           .setCustomId('pass_create_lvl_modal_pg_' + page)
-          .setTitle('Create New Level');
+          .setTitle('Create Level');
 
         const levelInput = new TextInputBuilder()
           .setCustomId('pass_level_input')
-          .setLabel('Target Level Number (e.g. 5, 10, 25)')
+          .setLabel('Level Number (e.g. 1, 2, 3)')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter level number')
           .setMinLength(1)
-          .setMaxLength(6)
+          .setMaxLength(4)
           .setRequired(true);
 
         modal.addComponents(new ActionRowBuilder().addComponents(levelInput));
@@ -469,18 +469,18 @@ export async function handlePassComponent(interaction) {
         return;
       }
 
-      // B. Pagination
+      // B. Pagination Action
       if (selectedValue.startsWith('pass_page_')) {
         if (!interaction.deferred && !interaction.replied) {
           await interaction.deferUpdate().catch(() => {});
         }
-        const targetPage = parseInt(selectedValue.replace('pass_page_', ''), 10) || 0;
+        const targetPage = parseInt(selectedValue.replace('pass_page_', ''), 10);
         const payload = await getPassDashboardPayload(guildId, targetPage, null);
         await interaction.editReply({ content: '', ...payload });
         return;
       }
 
-      // C. Switch to specific Level view
+      // C. Level Selected for Detailed Configuration
       if (selectedValue.startsWith('pass_view_level_')) {
         if (!interaction.deferred && !interaction.replied) {
           await interaction.deferUpdate().catch(() => {});
@@ -488,7 +488,6 @@ export async function handlePassComponent(interaction) {
         const match = selectedValue.match(/pass_view_level_(\d+)_page_(\d+)/);
         const level = match ? parseInt(match[1], 10) : 1;
         const page = match ? parseInt(match[2], 10) : 0;
-
         const payload = await getPassDashboardPayload(guildId, page, level);
         await interaction.editReply({ content: '', ...payload });
         return;
@@ -502,18 +501,19 @@ export async function handlePassComponent(interaction) {
       const page = match ? parseInt(match[2], 10) : 0;
       const selectedValue = interaction.values[0];
 
+      // Custom coins option -> open modal
       if (selectedValue === 'custom') {
-        const data = await getConfiguredLevel(guildId, level);
         const modal = new ModalBuilder()
           .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
-          .setTitle('Set Level ' + level + ' Coins');
+          .setTitle('Set Custom Coins — Level ' + level);
 
         const coinsInput = new TextInputBuilder()
           .setCustomId('pass_coins_input')
-          .setLabel('Coin Reward (0 to remove)')
+          .setLabel('Coins reward amount')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter coin amount (e.g. 500)')
-          .setValue(String(data?.reward_coins || 0))
+          .setMinLength(1)
+          .setMaxLength(8)
           .setRequired(true);
 
         modal.addComponents(new ActionRowBuilder().addComponents(coinsInput));
@@ -532,7 +532,7 @@ export async function handlePassComponent(interaction) {
         [guildId, level, coins]
       );
 
-      sysLog('Battlepass Coins Updated', {
+      sysLog('Level Coins Updated', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' coins set to ' + coins
@@ -569,13 +569,13 @@ export async function handlePassComponent(interaction) {
         [guildId, level, itemId]
       );
 
-      sysLog('Battlepass Item Updated', {
+      sysLog('Level Item Updated', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' item set to ' + (itemId || 'None')
       });
 
-      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Item Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** item reward to ${itemId ? `Item #${itemId}` : 'None'}.`);
+      sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Item Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** item reward to ${itemId ? `Item #${itemId}` : 'None'}.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level, 'root');
       await interaction.editReply({ content: '', ...payload });
@@ -599,7 +599,7 @@ export async function handlePassComponent(interaction) {
         [guildId, level, chestId]
       );
 
-      sysLog('Battlepass Chest Updated', {
+      sysLog('Level Chest Updated', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' chest set to ' + (chestId || 'None')
@@ -610,7 +610,7 @@ export async function handlePassComponent(interaction) {
       return;
     }
 
-    // 5. Start Battlepass -> Confirmation Dialogue
+    // 5. Start Levels -> Confirmation Dialogue
     if (customId.startsWith('pass_toggle_start_pg_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -618,12 +618,12 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_toggle_start_pg_', ''), 10) || 0;
 
       const embed = new EmbedBuilder()
-        .setTitle('⚠️ Start Battlepass Progression?')
+        .setTitle('⚠️ Start Level Progression?')
         .setColor(0xFEE75C)
         .setDescription(
           'Please make sure your levels and rewards are fully configured before starting.\n\n' +
           'Once started, members will begin earning XP and unlocking rewards.\n\n' +
-          '_You can pause the Battlepass at any time to freeze progression._'
+          '_You can pause level progression at any time to freeze progress._'
         );
 
       const row1 = new ActionRowBuilder().addComponents(
@@ -654,19 +654,19 @@ export async function handlePassComponent(interaction) {
 
       await setGuildConfig(guildId, { battlepass_enabled: true });
 
-      sysLog('Battlepass Started', {
+      sysLog('Levels Started', {
         guild: guildId,
         user: interaction.user.id
       });
 
-      sendLog(interaction.guild, 'audit', 'green', '🎟️ Battlepass Started', `Admin **<@${interaction.user.id}>** started Battlepass progression.`);
+      sendLog(interaction.guild, 'audit', 'green', '⭐ Levels Started', `Admin **<@${interaction.user.id}>** started Level progression.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
       return;
     }
 
-    // 7. Pause Battlepass
+    // 7. Pause Levels
     if (customId.startsWith('pass_toggle_pause_pg_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
@@ -675,12 +675,12 @@ export async function handlePassComponent(interaction) {
 
       await setGuildConfig(guildId, { battlepass_enabled: false });
 
-      sysLog('Battlepass Paused', {
+      sysLog('Levels Paused', {
         guild: guildId,
         user: interaction.user.id
       });
 
-      sendLog(interaction.guild, 'audit', 'orange', '⏸️ Battlepass Paused', `Admin **<@${interaction.user.id}>** paused Battlepass progression.`);
+      sendLog(interaction.guild, 'audit', 'orange', '⏸️ Levels Paused', `Admin **<@${interaction.user.id}>** paused Level progression.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
@@ -713,13 +713,13 @@ export async function handlePassComponent(interaction) {
         [guildId, level]
       );
 
-      sysLog('Battlepass Level Deleted', {
+      sysLog('Level Deleted', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' deleted'
       });
 
-      sendLog(interaction.guild, 'audit', 'red', '🗑️ Battlepass Level Deleted', `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`);
+      sendLog(interaction.guild, 'audit', 'red', '🗑️ Level Deleted', `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
@@ -757,7 +757,7 @@ export async function handlePassComponent(interaction) {
 }
 
 /**
- * Handle Modal Submissions for Battlepass
+ * Handle Modal Submissions for Levels
  */
 export async function handlePassModal(interaction) {
   const customId = interaction.customId;
@@ -782,13 +782,13 @@ export async function handlePassModal(interaction) {
         [guildId, level]
       );
 
-      sysLog('Battlepass Level Created', {
+      sysLog('Level Created', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' created'
       });
 
-      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}** in Battlepass.`);
+      sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}**.`);
 
       // Render Level Management View directly for this newly created level
       const payload = await getPassDashboardPayload(guildId, page, level);
@@ -816,13 +816,13 @@ export async function handlePassModal(interaction) {
         [guildId, level, coins]
       );
 
-      sysLog('Battlepass Coins Configured', {
+      sysLog('Level Coins Configured', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'Level ' + level + ' coins set to ' + coins
       });
 
-      sendLog(interaction.guild, 'audit', 'cyan', '🎟️ Battlepass Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
+      sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level);
       await interaction.editReply({ content: '', ...payload });
@@ -843,13 +843,13 @@ export async function handlePassModal(interaction) {
 
       await setGuildConfig(guildId, { battlepass_xp_per_level: xpPerLevel });
 
-      sysLog('Battlepass XP Threshold Set', {
+      sysLog('Level XP Threshold Set', {
         guild: guildId,
         user: interaction.user.id,
         detail: 'XP per level set to ' + xpPerLevel
       });
 
-      sendLog(interaction.guild, 'audit', 'cyan', '⚡ Battlepass XP Configured', `Admin **<@${interaction.user.id}>** set Battlepass XP threshold to **${xpPerLevel.toLocaleString()}** activity points per level.`);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚡ Level XP Configured', `Admin **<@${interaction.user.id}>** set Level XP threshold to **${xpPerLevel.toLocaleString()}** activity points per level.`);
 
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
