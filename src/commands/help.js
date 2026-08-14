@@ -16,99 +16,11 @@ export const helpCommand = new SlashCommandBuilder()
 
 export async function handleHelpCommand(interaction) {
   try {
-    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) || 
-                    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
-
-    const options = [];
-
-    // Admin-only help options
-    if (isAdmin) {
-      options.push(
-        {
-          label: 'Making a colors reaction list',
-          value: 'help_admin_colors',
-          description: 'Learn how to set up booster color lists',
-          emoji: '🎨'
-        },
-        {
-          label: 'Adding Items to the Shop',
-          value: 'help_admin_shop',
-          description: 'Learn how to create & manage shop items',
-          emoji: '🛒'
-        },
-        {
-          label: 'Managing Coins and Income',
-          value: 'help_admin_coins',
-          description: 'Learn how to manage user balances & economy',
-          emoji: '🪙'
-        },
-        {
-          label: 'Managing users',
-          value: 'help_admin_users',
-          description: 'Learn how to inspect and update user data',
-          emoji: '👥'
-        },
-        {
-          label: 'Customizing the bot',
-          value: 'help_admin_customizing',
-          description: 'Learn how to customize bot settings & channels',
-          emoji: '⚙️'
-        },
-        {
-          label: 'Setting Top Roles and Leaderboards',
-          value: 'help_admin_leaderboards',
-          description: 'Learn how to configure MVP & leaderboards',
-          emoji: '🏆'
-        },
-        {
-          label: 'Setting Quest',
-          value: 'help_admin_quests',
-          description: 'Learn how to create and manage quests',
-          emoji: '📜'
-        }
-      );
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.reply({ content: 'Working on it . . .', flags: MessageFlags.Ephemeral });
+    } else {
+      await interaction.editReply({ content: 'Working on it . . .', embeds: [], components: [] });
     }
-
-    // General user help options (Visible to all users)
-    options.push(
-      {
-        label: 'Getting Coins',
-        value: 'help_user_coins',
-        description: 'Learn how to earn & claim coins',
-        emoji: '💰'
-      },
-      {
-        label: 'Using Inventory',
-        value: 'help_user_inventory',
-        description: 'Learn how to manage & equip items',
-        emoji: '🎒'
-      },
-      {
-        label: 'Trading with others',
-        value: 'help_user_trading',
-        description: 'Learn how to trade items & coins',
-        emoji: '🔄'
-      }
-    );
-
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId('help_select_topic')
-      .setPlaceholder('Choose what you need help with...')
-      .addOptions(options);
-
-    const row = new ActionRowBuilder().addComponents(selectMenu);
-
-    const embed = new EmbedBuilder()
-      .setTitle('❓ Help & Guides Center')
-      .setDescription('Welcome! Choose what you need help with from the drop-down menu below to view step-by-step instructions.')
-      .setColor('#3498DB')
-      .setFooter({ text: 'Select an option to view the guide' });
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [row],
-      flags: MessageFlags.Ephemeral
-    });
   } catch (error) {
     await handleInteractionError(interaction, error, 'help command');
   }
