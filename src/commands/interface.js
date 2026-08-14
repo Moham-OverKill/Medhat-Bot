@@ -247,6 +247,10 @@ export async function showInterfaceSettings(interaction, configOverride = null) 
     .setPlaceholder('Select target channel for the Interface...')
     .setChannelTypes(ChannelType.GuildText);
 
+  if (config.interface_channel_id) {
+    channelSelect.setDefaultChannels([config.interface_channel_id]);
+  }
+
   // Row 2: Action Buttons
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
