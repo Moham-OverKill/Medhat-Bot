@@ -68,7 +68,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       });
     }
   } else {
-    embed.setTitle('🎁 Claimed Rewards');
+    embed.setTitle('🎉 Claimed Rewards');
 
     if (data.claims.length > 0) {
       const claimLines = data.claims.map(c => {
@@ -98,7 +98,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     new ButtonBuilder()
       .setCustomId(`level_tab_rewards_${userId}`)
       .setLabel('Rewards')
-      .setEmoji('🎁')
+      .setEmoji('🎉')
       .setStyle(activeTab === 'rewards' ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
 
