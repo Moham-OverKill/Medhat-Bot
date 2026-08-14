@@ -115,27 +115,21 @@ export async function handlePassSetup(interaction) {
   try {
     const guildId = interaction.guildId;
 
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+
     // 1. Prerequisite Check: 5-Item Gate
     const count = await getUnlockedItemCount(guildId);
     if (count < 5) {
       const warning = '⚠️ Please add at least 5 unlocked items to the shop before configuring the Battlepass.';
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: warning, embeds: [], components: [] });
-      } else {
-        await interaction.reply({ content: warning, flags: MessageFlags.Ephemeral });
-      }
+      await interaction.editReply({ content: warning, embeds: [], components: [] });
       return;
     }
 
     // 2. Render Dashboard
     const payload = await getPassDashboardPayload(guildId);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: '', ...payload });
-    } else if (interaction.isButton() || interaction.isAnySelectMenu()) {
-      await interaction.update({ content: '', ...payload });
-    } else {
-      await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
-    }
+    await interaction.editReply({ content: '', ...payload });
   } catch (error) {
     await handleInteractionError(interaction, error, 'pass setup');
   }
@@ -151,12 +145,15 @@ export async function handlePassComponent(interaction) {
   try {
     // 1. Dashboard Home Refresh
     if (customId === 'pass_home') {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
       const payload = await getPassDashboardPayload(guildId);
-      await interaction.update({ content: '', ...payload });
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
-    // 2. Add / Edit Level Button -> Show Modal Step 1
+    // 2. Add / Edit Level Button -> Show Modal Step 1 (Cannot defer before showModal)
     if (customId === 'pass_add_level_btn') {
       const modal = new ModalBuilder()
         .setCustomId('pass_add_level_modal')
@@ -190,9 +187,13 @@ export async function handlePassComponent(interaction) {
 
     // 3. Remove Level Button -> Show Level Select Dropdown
     if (customId === 'pass_remove_level_btn') {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+
       const levels = await getConfiguredLevels(guildId);
       if (levels.length === 0) {
-        return interaction.reply({ content: '⚠️ No levels are currently configured.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: '⚠️ No levels are currently configured.', flags: MessageFlags.Ephemeral });
       }
 
       const options = levels.map(l => ({
@@ -219,7 +220,7 @@ export async function handlePassComponent(interaction) {
         .setDescription('Select a configured level from the dropdown below to delete its reward.')
         .setColor(0xED4245);
 
-      await interaction.update({
+      await interaction.editReply({
         embeds: [embed],
         components: [row1, row2]
       });
@@ -228,6 +229,10 @@ export async function handlePassComponent(interaction) {
 
     // 4. Handle Remove Level Selection
     if (customId === 'pass_remove_level_select') {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+
       const selectedLevel = parseInt(interaction.values[0], 10);
       const pool = getPool();
       await pool.query(
@@ -236,12 +241,16 @@ export async function handlePassComponent(interaction) {
       );
 
       const payload = await getPassDashboardPayload(guildId);
-      await interaction.update({ content: '', ...payload });
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
     // 5. Handle Item Picker Selection (Step 2 of Add Level)
     if (customId.startsWith('pass_select_item_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+
       const parts = customId.split('_');
       const targetLevel = parseInt(parts[3], 10);
       const coinsAmount = parseInt(parts[4], 10) || 0;
@@ -250,7 +259,7 @@ export async function handlePassComponent(interaction) {
       const rewardItemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
 
       if (coinsAmount <= 0 && !rewardItemId) {
-        return interaction.reply({
+        return interaction.followUp({
           content: '⚠️ You must provide either Coins, an Item, or both for this level.',
           flags: MessageFlags.Ephemeral
         });
@@ -269,7 +278,7 @@ export async function handlePassComponent(interaction) {
       });
 
       const payload = await getPassDashboardPayload(guildId);
-      await interaction.update({ content: '', ...payload });
+      await interaction.editReply({ content: '', ...payload });
       return;
     }
 
