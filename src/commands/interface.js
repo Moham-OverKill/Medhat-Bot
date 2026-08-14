@@ -139,16 +139,24 @@ export function buildHubButtons(client) {
 
 /**
  * Publish or update the public Hub message in the designated channel
- * Self-healing: if the previous message was deleted, it sends a new one and updates DB.
+ * Self-healing: if the previous message was deleted, it only sends a new one if allowCreate is true.
  * @param {import('discord.js').Client} client 
  * @param {string} guildId 
+ * @param {{ allowCreate?: boolean }} [options]
  * @returns {Promise<boolean>}
  */
-export async function publishOrUpdateHub(client, guildId) {
+export async function publishOrUpdateHub(client, guildId, options = {}) {
+  const { allowCreate = false } = options;
+
   try {
     const config = await getGuildConfig(guildId) || {};
     const channelId = config.interface_channel_id;
     if (!channelId) return false;
+
+    // If interface is not published yet and creation is not explicitly requested, do not auto-publish
+    if (!config.interface_message_id && !allowCreate) {
+      return false;
+    }
 
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return false;
@@ -186,8 +194,12 @@ export async function publishOrUpdateHub(client, guildId) {
       }
     }
 
-    // If message was deleted or not found, send a fresh one and save the new ID
+    // Only send a brand-new message if explicitly requested (e.g. Publish / Force Update button)
     if (!messageUpdated) {
+      if (!allowCreate) {
+        return false;
+      }
+
       const newMessage = await channel.send(payload).catch((err) => {
         sysError('Hub Message Send Failed', err, { guild: guildId, channel: channelId });
         return null;
@@ -389,7 +401,7 @@ export async function handleInterfaceComponent(interaction) {
     if (customId === 'interface_publish_btn') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
-      const success = await publishOrUpdateHub(interaction.client, guildId);
+      const success = await publishOrUpdateHub(interaction.client, guildId, { allowCreate: true });
       const config = await getGuildConfig(guildId) || {};
 
       if (success) {
