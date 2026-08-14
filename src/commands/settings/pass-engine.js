@@ -1,0 +1,253 @@
+/**
+ * Battlepass XP Engine — Phase 2
+ * Awards XP to users on activity, detects level-ups, and dispatches rewards.
+ * All progress is stored in user_activity.battlepass_xp — never reset by MVP cycles.
+ * Rewards are locked in user_pass_claims (permanent anti-exploit ledger).
+ */
+import { getPool } from '../../storage/postgres.js';
+import { sysLog, sysError } from '../../utils/logger.js';
+
+/**
+ * Award battlepass XP to a user and dispatch any newly unlocked level rewards.
+ * Called after each message point or voice point is awarded.
+ *
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string} username
+ * @param {number} xpToAdd — how many XP points to add (1 per message point or voice minute)
+ * @param {object} client — Discord client, used to DM or post level-up notification
+ */
+export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client) {
+  if (!guildId || !userId || xpToAdd <= 0) return;
+
+  try {
+    const { getGuildConfig } = await import('../../storage/config.js');
+    const config = await getGuildConfig(guildId);
+    if (!config || config.battlepass_enabled !== true) return;
+
+    const pool = getPool();
+
+    // 1. Atomically increment battlepass_xp and return new total
+    const xpResult = await pool.query(
+      `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (guild_id, user_id)
+       DO UPDATE SET
+         battlepass_xp = user_activity.battlepass_xp + $4,
+         username = $3
+       RETURNING battlepass_xp`,
+      [guildId, userId, username, xpToAdd]
+    );
+
+    const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
+    if (totalXp <= 0) return;
+
+    // 2. Get XP-per-level threshold configured by admin (default: 100)
+    const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+    const currentLevel = Math.floor(totalXp / xpPerLevel);
+    if (currentLevel <= 0) return;
+
+    // 3. Load all configured levels that user could have reached
+    const levelsResult = await pool.query(
+      `SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
+              si.name as item_name, si.role_id as item_role_id,
+              lb.name as chest_name
+       FROM battlepass_config bc
+       LEFT JOIN shop_items si ON bc.reward_item_id = si.id
+       LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
+       WHERE bc.guild_id = $1 AND bc.level <= $2
+       ORDER BY bc.level ASC`,
+      [guildId, currentLevel]
+    );
+
+    if (levelsResult.rows.length === 0) return;
+
+    // 4. Check which levels are already claimed
+    const claimsResult = await pool.query(
+      `SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
+      [guildId, userId]
+    );
+    const alreadyClaimed = new Set(claimsResult.rows.map(r => r.level_claimed));
+
+    // 5. Dispatch rewards for each newly reached unclaimed level
+    for (const levelRow of levelsResult.rows) {
+      if (alreadyClaimed.has(levelRow.level)) continue;
+
+      await dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config);
+    }
+  } catch (err) {
+    sysError('Battlepass XP Engine Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+async function dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config) {
+  const client2 = await pool.connect();
+  try {
+    await client2.query('BEGIN');
+
+    // A. Lock the claim row first (anti-double-claim)
+    const lockCheck = await client2.query(
+      `SELECT 1 FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed = $3`,
+      [guildId, userId, levelRow.level]
+    );
+    if (lockCheck.rows.length > 0) {
+      // Already claimed by a concurrent process
+      await client2.query('ROLLBACK');
+      return;
+    }
+
+    // B. Insert claim record (prevents double-claiming)
+    await client2.query(
+      `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed) VALUES ($1, $2, $3)`,
+      [userId, guildId, levelRow.level]
+    );
+
+    // C. Award coins
+    const coins = parseInt(levelRow.reward_coins || 0, 10);
+    if (coins > 0) {
+      await client2.query(
+        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+         VALUES ($1, $2, $3, $3)
+         ON CONFLICT (user_id, guild_id)
+         DO UPDATE SET
+           balance = user_balances.balance + $3,
+           total_earned = user_balances.total_earned + $3,
+           updated_at = NOW()`,
+        [userId, guildId, coins]
+      );
+
+      await client2.query(
+        `INSERT INTO transaction_history (user_id, guild_id, amount, type, description)
+         VALUES ($1, $2, $3, 'battlepass_reward', $4)`,
+        [userId, guildId, coins, `Battlepass Level ${levelRow.level} reward`]
+      );
+    }
+
+    // D. Award item
+    if (levelRow.reward_item_id && levelRow.item_role_id) {
+      await client2.query(
+        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, source, purchase_source)
+         VALUES ($1, $2, $3, $4, 'BATTLEPASS', 'battlepass')`,
+        [userId, guildId, levelRow.reward_item_id, levelRow.item_role_id]
+      );
+    }
+
+    // E. Award chest (loot box — add to inventory as a claimable item)
+    if (levelRow.reward_chest_id) {
+      await client2.query(
+        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, source, purchase_source)
+         VALUES ($1, $2, NULL, 'CHEST_' || $3, 'BATTLEPASS', 'battlepass')`,
+        [userId, guildId, levelRow.reward_chest_id]
+      );
+    }
+
+    await client2.query('COMMIT');
+
+    sysLog('Battlepass Reward Dispatched', {
+      user: userId,
+      guild: guildId,
+      detail: `Level ${levelRow.level} | Coins: ${coins} | Item: ${levelRow.item_name || 'None'} | Chest: ${levelRow.chest_name || 'None'}`
+    });
+
+    // F. Send level-up notification
+    if (client) {
+      await sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config);
+    }
+  } catch (err) {
+    await client2.query('ROLLBACK').catch(() => {});
+    sysError('Battlepass Reward Dispatch Failed', err, { user: userId, guild: guildId, level: levelRow.level });
+  } finally {
+    client2.release();
+  }
+}
+
+async function sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config) {
+  try {
+    const notifChannelId = config.battlepass_notif_channel;
+    const rewards = [];
+    if (coins > 0) rewards.push(`🪙 **${coins.toLocaleString()} Coins**`);
+    if (levelRow.item_name) rewards.push(`🎁 **${levelRow.item_name}**`);
+    if (levelRow.chest_name) rewards.push(`📦 **${levelRow.chest_name}**`);
+
+    const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_No reward for this level_';
+    const msg = `🎟️ <@${userId}> reached **Battlepass Level ${levelRow.level}**! Reward: ${rewardText}`;
+
+    if (notifChannelId) {
+      const guild = client.guilds.cache.get(guildId);
+      const channel = guild?.channels.cache.get(notifChannelId);
+      if (channel?.isTextBased?.()) {
+        await channel.send(msg).catch(() => {});
+        return;
+      }
+    }
+
+    // Fallback: DM the user
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (user) {
+      await user.send(msg).catch(() => {});
+    }
+  } catch (err) {
+    sysError('Battlepass Notification Failed', err, { user: userId, guild: guildId });
+  }
+}
+
+/**
+ * Get a user's Battlepass progress summary for /pass command
+ */
+export async function getUserPassProgress(guildId, userId) {
+  const pool = getPool();
+
+  const { getGuildConfig } = await import('../../storage/config.js');
+  const config = await getGuildConfig(guildId) || {};
+  const xpPerLevel = parseInt(config.battlepass_xp_per_level || 100, 10);
+  const isEnabled = config.battlepass_enabled === true;
+
+  // Get user XP
+  const xpResult = await pool.query(
+    `SELECT battlepass_xp, username FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
+    [guildId, userId]
+  );
+  const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
+  const currentLevel = Math.floor(totalXp / xpPerLevel);
+  const xpIntoCurrentLevel = totalXp % xpPerLevel;
+  const xpForNextLevel = xpPerLevel;
+
+  // Get claimed rewards
+  const claimsResult = await pool.query(
+    `SELECT upc.level_claimed, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
+            si.name as item_name, lb.name as chest_name
+     FROM user_pass_claims upc
+     LEFT JOIN battlepass_config bc ON bc.guild_id = upc.guild_id AND bc.level = upc.level_claimed
+     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
+     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
+     WHERE upc.guild_id = $1 AND upc.user_id = $2
+     ORDER BY upc.level_claimed ASC`,
+    [guildId, userId]
+  );
+
+  // Get next unclaimed reward
+  const nextResult = await pool.query(
+    `SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
+            si.name as item_name, lb.name as chest_name
+     FROM battlepass_config bc
+     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
+     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
+     WHERE bc.guild_id = $1
+       AND bc.level > $2
+     ORDER BY bc.level ASC
+     LIMIT 1`,
+    [guildId, currentLevel]
+  );
+
+  return {
+    isEnabled,
+    totalXp,
+    currentLevel,
+    xpIntoCurrentLevel,
+    xpForNextLevel,
+    xpPerLevel,
+    claims: claimsResult.rows,
+    nextReward: nextResult.rows[0] || null,
+    config
+  };
+}

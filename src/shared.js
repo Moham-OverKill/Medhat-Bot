@@ -247,9 +247,23 @@ export function registerEmojiResolver(resolver) {
 export const DEFAULT_COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
 
 class DynamicCoinEmoji {
+  /**
+   * Resolve for the current async guild context (used via template literal / string coercion)
+   */
   toString() {
     const store = guildContext.getStore();
     const guildId = store?.guildId;
+    if (guildId && emojiResolver) {
+      const customEmoji = emojiResolver(guildId);
+      if (customEmoji) return customEmoji;
+    }
+    return DEFAULT_COIN_EMOJI;
+  }
+
+  /**
+   * Resolve for an explicit guildId (used outside of async context, e.g. in settings/pass.js)
+   */
+  forGuild(guildId) {
     if (guildId && emojiResolver) {
       const customEmoji = emojiResolver(guildId);
       if (customEmoji) return customEmoji;

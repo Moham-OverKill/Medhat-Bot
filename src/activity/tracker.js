@@ -265,6 +265,11 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     flushMessageBatch().catch(() => {});
   }
 
+  // 7. Battlepass XP hook (1 XP per valid message, fire-and-forget)
+  import('../commands/settings/pass-engine.js')
+    .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, 1, null))
+    .catch(() => {}); // Silent fail — never block message tracking
+
   return true;
 }
 
@@ -490,6 +495,13 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
       [guildId, userId, remainingBuffer, pointsToAward, new Date(now)]
     );
 
+    // Battlepass XP hook for voice points
+    if (pointsToAward > 0) {
+      import('../commands/settings/pass-engine.js')
+        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, pointsToAward, null))
+        .catch(() => {});
+    }
+
     // NEW: Sync with Quest Engine
     if (pointsToAward > 0) {
       try {
@@ -614,6 +626,11 @@ export async function voicePointsTick(client) {
             sysLog('Activity Sync Notice', { user: row.user_id, guild: row.guild_id, detail: 'Atomic update skipped: state changed' });
             return;
           }
+
+          // Battlepass XP hook for voice tick
+          import('../commands/settings/pass-engine.js')
+            .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, pointsToAward, null))
+            .catch(() => {});
 
           try {
             const { checkVoiceQuest } = await import('./index.js');
