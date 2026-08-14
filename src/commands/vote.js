@@ -37,7 +37,8 @@ export async function handleVoteCommand(interaction) {
       .setStyle(ButtonStyle.Link)
   );
 
-  await interaction.reply({ embeds: [embed], components: [row] });
+  const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+  await interaction[responseMethod]({ embeds: [embed], components: [row] });
 }
 
 export async function handleVoteWebhook(client, userId, weight = 1) {
