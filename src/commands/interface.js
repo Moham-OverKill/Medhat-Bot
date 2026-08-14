@@ -13,7 +13,7 @@ import {
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { getNextQuestRefresh, getNextCairoMidnight } from '../utils/time.js';
-import { formatQuestTask } from '../quests/quests.js';
+import { formatCompactQuest } from '../quests/quests.js';
 import { claimDaily } from '../economy/service.js';
 import { getLevelViewPayload } from './pass.js';
 import { buildNotificationsPayload } from './notifications.js';
@@ -66,9 +66,9 @@ export async function buildHubEmbed(guild, config = null) {
   let questContent = '';
   if (questsEnabled && activeQuests.length > 0) {
     const questLines = activeQuests.map(q => {
-      const taskText = formatQuestTask(q);
+      const taskText = formatCompactQuest(q);
       const reward = parseInt(q.reward_coins, 10) || 0;
-      return `• **${taskText}:** +**${reward.toLocaleString()}** ${coinEmoji}`;
+      return `• ${taskText}: +**${reward.toLocaleString()}** ${coinEmoji}`;
     });
     questContent = questLines.join('\n') + `\n⏱️ **Next Quests Drop:** <t:${nextQuestTs}:R>`;
   } else if (questsEnabled) {
@@ -81,10 +81,6 @@ export async function buildHubEmbed(guild, config = null) {
   const nextMidnightDate = getNextCairoMidnight();
   const nextMidnightTs = Math.floor(nextMidnightDate.getTime() / 1000);
   const dailyResetLine = `• **Daily Streak Reset:** <t:${nextMidnightTs}:R>`;
-
-  const guildIcon = typeof guild.iconURL === 'function'
-    ? (guild.iconURL({ dynamic: true }) || guild.iconURL())
-    : null;
 
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
@@ -99,19 +95,8 @@ export async function buildHubEmbed(guild, config = null) {
         name: '⏱️ Schedules & Resets',
         value: dailyResetLine,
         inline: false
-      },
-      {
-        name: '⚡ Quick Shortcuts',
-        value: 'Click any button below to instantly view your level, claim daily coins, manage your inventory, vote for the server, or customize DM notifications.',
-        inline: false
       }
     );
-
-  if (guildIcon) {
-    embed.setFooter({ text: guild.name, iconURL: guildIcon });
-  } else {
-    embed.setFooter({ text: guild.name });
-  }
 
   return embed;
 }
