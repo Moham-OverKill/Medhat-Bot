@@ -38,6 +38,7 @@ async function loadGuildFilters(guildId) {
         media_only: new Set(),
         cmd_only: new Set(),
         auto_react: new Set(),
+        ignored_activity: new Set(),
         hasAnyRule: false,
         cachedAt: Date.now()
       });
@@ -50,16 +51,31 @@ async function loadGuildFilters(guildId) {
       media_only: new Set(Array.isArray(filters.media_only) ? filters.media_only : []),
       cmd_only: new Set(Array.isArray(filters.cmd_only) ? filters.cmd_only : []),
       auto_react: new Set(Array.isArray(filters.auto_react) ? filters.auto_react : []),
+      ignored_activity: new Set(Array.isArray(filters.ignored_activity) ? filters.ignored_activity : []),
       fix_embeds: !!filters.fix_embeds,
       cachedAt: Date.now()
     };
     entry.hasAnyRule = entry.links_only.size > 0 || entry.images_only.size > 0 ||
                        entry.media_only.size > 0 || entry.cmd_only.size > 0 ||
-                       entry.auto_react.size > 0;
+                       entry.auto_react.size > 0 || entry.ignored_activity.size > 0;
     filterCache.set(guildId, entry);
   } catch (error) {
     sysError('Filter Cache Load Failed', error, { guild: guildId });
   }
+}
+
+/**
+ * Fast-check if activity (messages/voice) should be ignored for a channel
+ */
+export async function isActivityIgnored(guildId, channelId) {
+  if (!guildId || !channelId) return false;
+  let entry = filterCache.get(guildId);
+  if (!entry || Date.now() - entry.cachedAt > CACHE_TTL_MS) {
+    await loadGuildFilters(guildId);
+    entry = filterCache.get(guildId);
+  }
+  if (!entry) return false;
+  return entry.ignored_activity?.has(channelId) || entry.cmd_only?.has(channelId);
 }
 
 /**

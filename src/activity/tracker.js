@@ -24,6 +24,67 @@ setInterval(() => {
   }
 }, CACHE_CLEANUP_INTERVAL);
 
+// In-memory queue for batching message points to PostgreSQL
+// Key: `${guildId}:${userId}`, Value: { guildId, userId, username, count, lastTime }
+const pendingMessageBatch = new Map();
+let isFlushingBatch = false;
+const BATCH_FLUSH_INTERVAL = 15 * 1000; // 15 seconds
+
+export async function flushMessageBatch() {
+  if (pendingMessageBatch.size === 0 || isFlushingBatch) return;
+  isFlushingBatch = true;
+
+  const entriesToFlush = Array.from(pendingMessageBatch.values());
+  pendingMessageBatch.clear();
+
+  try {
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const entry of entriesToFlush) {
+        await client.query(
+          `INSERT INTO user_activity (guild_id, user_id, username, message_count, last_message_time, last_active)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (guild_id, user_id)
+           DO UPDATE SET 
+             message_count = user_activity.message_count + $4,
+             last_message_time = GREATEST(user_activity.last_message_time, $5),
+             last_active = GREATEST(user_activity.last_active, $6),
+             username = $3`,
+          [entry.guildId, entry.userId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      // Re-queue entries on failure so no data is lost
+      for (const entry of entriesToFlush) {
+        const key = `${entry.guildId}:${entry.userId}`;
+        const existing = pendingMessageBatch.get(key);
+        if (existing) {
+          existing.count += entry.count;
+          existing.lastTime = Math.max(existing.lastTime, entry.lastTime);
+        } else {
+          pendingMessageBatch.set(key, entry);
+        }
+      }
+      sysError('Batch Message Activity Flush Failed', err);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    sysError('Batch Connection Pool Error', error);
+  } finally {
+    isFlushingBatch = false;
+  }
+}
+
+// Auto flush every 15 seconds
+setInterval(() => {
+  flushMessageBatch().catch(err => sysError('Periodic Batch Flush Error', err));
+}, BATCH_FLUSH_INTERVAL);
+
 // ============================================
 // VOICE CHAT: STOPWATCH CONFIGURATION
 // ============================================
@@ -91,6 +152,7 @@ export async function clearStaleVoiceTracking() {
  * Returns a structure compatible with legacy code: { users: Map(...) }
  */
 export async function getGuildActivity(guildId) {
+  await flushMessageBatch().catch(() => {});
   const pool = getPool();
   const users = new Map();
 
@@ -122,6 +184,7 @@ export async function getGuildActivity(guildId) {
  * Reset guild activity in database (scores only)
  */
 export async function resetGuildActivity(guildId) {
+  await flushMessageBatch().catch(() => {});
   const pool = getPool();
   const now = Date.now();
   try {
@@ -144,51 +207,72 @@ export async function resetGuildActivity(guildId) {
 }
 
 /**
- * Add message point with strict anti-spam checks
+ * Add message point with strict anti-spam checks and batch buffering
  */
-export async function addMessagePoint(guild, userId, username, messageContent = '') {
+export async function addMessagePoint(guild, userId, username, messageContent = '', hasAttachments = false, channelId = null) {
   if (!guild || !userId) return false;
   const guildId = guild.id;
   const now = Date.now();
   const key = `${guildId}:${userId}`;
   const content = (messageContent || '').trim();
 
-  if (content.length < MIN_MESSAGE_LENGTH) return false;
-  const firstChar = content.charAt(0);
-  if (COMMAND_PREFIXES.includes(firstChar)) return false;
+  // 1. Check if channel is ignored for activity
+  if (channelId) {
+    try {
+      const { isActivityIgnored } = await import('../middleware/organize.js');
+      if (await isActivityIgnored(guildId, channelId)) return false;
+    } catch {}
+  }
 
+  // 2. Minimum length OR valid attachment
+  const hasContent = content.length >= MIN_MESSAGE_LENGTH || hasAttachments;
+  if (!hasContent) return false;
+
+  // 3. Command prefix check (only if text content exists)
+  if (content.length > 0) {
+    const firstChar = content.charAt(0);
+    if (COMMAND_PREFIXES.includes(firstChar)) return false;
+  }
+
+  // 4. Cooldown check (10s)
   const cached = userMessageCache.get(key);
   if (cached && (now - cached.timestamp) < MESSAGE_COOLDOWN_MS) return false;
 
+  // 5. Consecutive duplicate content check (only if text exists and no attachments)
   const contentLower = content.toLowerCase();
-  if (cached && cached.lastContent === contentLower) return false;
+  if (contentLower.length > 0 && !hasAttachments && cached && cached.lastContent === contentLower) return false;
 
   userMessageCache.set(key, { timestamp: now, lastContent: contentLower });
 
-  try {
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_activity (guild_id, user_id, username, message_count, last_message_time, last_active)
-       VALUES ($1, $2, $3, 1, $4, $5)
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET 
-         message_count = user_activity.message_count + 1,
-         last_message_time = $4,
-         last_active = $5,
-         username = $3`,
-      [guildId, userId, username, now, new Date(now)]
-    );
-    return true;
-  } catch (error) {
-    sysError('Activity Persistence Failed', error, { user: userId, guild: guildId, detail: 'Message point' });
-    return false;
+  // 6. Buffer into pending batch
+  const existingBatch = pendingMessageBatch.get(key);
+  if (existingBatch) {
+    existingBatch.count += 1;
+    existingBatch.lastTime = now;
+    existingBatch.username = username;
+  } else {
+    pendingMessageBatch.set(key, {
+      guildId,
+      userId,
+      username,
+      count: 1,
+      lastTime: now
+    });
   }
+
+  // If batch reaches 50 items, flush proactively
+  if (pendingMessageBatch.size >= 50) {
+    flushMessageBatch().catch(() => {});
+  }
+
+  return true;
 }
 
 /**
  * Get top active users for MVP selection
  */
 export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
+  await flushMessageBatch().catch(() => {});
   const pool = getPool();
   const users = [];
 
@@ -267,9 +351,13 @@ export function isVoiceStateValid(voiceState) {
   if (!voiceState || !voiceState.channel) return false;
   if (voiceState.selfMute || voiceState.serverMute) return false;
   if (voiceState.selfDeaf || voiceState.serverDeaf) return false;
-  if (voiceState.guild.afkChannelId && voiceState.channel.id === voiceState.guild.afkChannelId) return false;
-  const humanMembers = voiceState.channel.members.filter(m => !m.user.bot);
-  if (humanMembers.size < 2) return false;
+  if (voiceState.guild?.afkChannelId && voiceState.channel.id === voiceState.guild.afkChannelId) return false;
+  const members = voiceState.channel.members;
+  if (!members) return false;
+  const humanCount = typeof members.filter === 'function'
+    ? members.filter(m => !m.user?.bot).size
+    : Array.from(members.values ? members.values() : []).filter(m => !m.user?.bot).length;
+  if (humanCount < 2) return false;
   return true;
 }
 
@@ -422,14 +510,20 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
 export async function voicePointsTick(client) {
   if (!client) return;
 
+  // Flush pending message batch to keep activity in sync
+  await flushMessageBatch().catch(() => {});
+
   const pool = getPool();
   const now = Date.now();
 
   try {
+    const { isActivityIgnored } = await import('../middleware/organize.js');
+
     // 1. SELF-HEALING SWEEP: Scan voice channels to resume valid users who were paused
     for (const [guildId, guild] of client.guilds.cache) {
       const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased?.() || c.type === 2 || c.type === 13);
       for (const [channelId, channel] of voiceChannels) {
+        if (await isActivityIgnored(guildId, channelId)) continue;
         const humanMembers = channel.members?.filter(m => !m.user.bot);
         if (humanMembers && humanMembers.size >= 2) {
           for (const [memberId, member] of humanMembers) {
@@ -469,6 +563,11 @@ export async function voicePointsTick(client) {
 
         const voiceState = member.voice;
         if (!voiceState || !voiceState.channel) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
+          return;
+        }
+
+        if (await isActivityIgnored(row.guild_id, voiceState.channel.id)) {
           await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
           return;
         }
