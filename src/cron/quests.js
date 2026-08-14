@@ -108,15 +108,13 @@ async function checkQuests(client, forceCheck = false) {
       await Promise.allSettled(
         Array.from(userGuildsMap.entries()).map(async ([uid, guildNameSet]) => {
           const guildNames = Array.from(guildNameSet);
-          const guildList = guildNames.map(name => `**${name}**`).join(', ');
+          const rotationTargetText = guildNames.length > 3
+            ? `**${guildNames.length} servers**`
+            : guildNames.map(name => `**${name}**`).join(', ');
 
           const embed = new EmbedBuilder()
             .setTitle('🎯 New Quests Available!')
-            .setDescription(
-              guildNames.length === 1
-                ? `Server quests have rotated in ${guildList}!\nType \`/quest\` in the server to view and complete your new tasks.`
-                : `Server quests have rotated in ${guildList}!\nType \`/quest\` in your server to view and complete your new tasks.`
-            )
+            .setDescription(`Server quests have rotated in ${rotationTargetText}!\nType \`/quest\` in servers to view and complete new tasks.`)
             .setColor(0x2ECC71);
 
           const user = client.users?.cache?.get(uid) || await client.users?.fetch(uid).catch(() => null);
@@ -254,7 +252,7 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
           const { EmbedBuilder } = await import('discord.js');
           const embed = new EmbedBuilder()
             .setTitle('🎯 New Quests Available!')
-            .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in the server to view and complete your new tasks.`)
+            .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in servers to view and complete new tasks.`)
             .setColor(0x2ECC71);
 
           await Promise.allSettled(
