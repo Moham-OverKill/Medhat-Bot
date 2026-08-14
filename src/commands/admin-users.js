@@ -388,9 +388,8 @@ export async function handleLevelAction(interaction, targetUserId) {
 
     const input = new TextInputBuilder()
         .setCustomId('new_level')
-        .setLabel('New Level (e.g. 0, 1, 5, 10)')
-        .setValue(String(userLevel))
-        .setPlaceholder('Enter target level...')
+        .setLabel('New Level')
+        .setPlaceholder(String(userLevel))
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
