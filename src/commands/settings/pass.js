@@ -145,13 +145,11 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       : '_None_';
 
     embed.setDescription(
-      '**Level ' + selectedLevel + ' Rewards**\n\n' +
       '• **Coins Reward:** ' + coinsText + '\n' +
-      '• **Item Reward:** ' + itemText + '\n\n' +
-      '_Use the buttons below to configure rewards for Level ' + selectedLevel + ', or switch levels using the menu above._'
+      '• **Item Reward:** ' + itemText
     );
 
-    // Row 2: Action buttons for the selected level
+    // Row 2: Coins Reward & Item Reward
     const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('pass_coins_btn_' + selectedLevel + '_pg_' + currentPage)
@@ -162,21 +160,21 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         .setCustomId('pass_item_btn_' + selectedLevel + '_pg_' + currentPage)
         .setLabel('Item Reward')
         .setEmoji('🎁')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Back & Delete Level
+    const row3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('settings_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('pass_del_btn_' + selectedLevel + '_pg_' + currentPage)
         .setLabel('Delete Level')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
-    );
-
-    // Row 3: Back to main settings
-    const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('settings_home')
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
     );
 
     return { embeds: [embed], components: [row1, row2, row3] };
@@ -351,10 +349,11 @@ export async function handlePassComponent(interaction) {
       ];
 
       for (const item of unlockedItems) {
+        const priceLabel = item.price != null ? (Number(item.price).toLocaleString() + ' Coins') : 'Free / Special';
         options.push({
           label: item.name.slice(0, 50),
           value: String(item.id),
-          description: (item.price.toLocaleString() + ' Coins | ' + (item.rarity || 'Common')).slice(0, 50),
+          description: (priceLabel + ' | ' + (item.rarity || 'Common')).slice(0, 50),
           emoji: '🎁'
         });
       }
