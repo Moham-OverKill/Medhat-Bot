@@ -25,6 +25,26 @@ import { COIN_EMOJI, getUserDisplayName, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
+export const DEFAULT_INTERFACE_IMAGE = 'https://i.ibb.co/WWmfY73Z/INTERFACE-v3.png';
+
+/**
+ * Check if an image URL is unset or is one of the default/legacy stock banners
+ * @param {string} url 
+ * @returns {boolean}
+ */
+export function isDefaultOrLegacyImage(url) {
+  if (!url || typeof url !== 'string') return true;
+  const trimmed = url.trim();
+  if (!trimmed) return true;
+  return (
+    trimmed.includes('INTERFACE.png') ||
+    trimmed.includes('INTERFACE-v2.png') ||
+    trimmed.includes('gZPyVCvX') ||
+    trimmed.includes('ymZp0sRd') ||
+    trimmed.includes('CpY6B0tm')
+  );
+}
+
 /**
  * Validate and parse a hex color string into an integer
  * @param {string} colorStr 
@@ -168,8 +188,8 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
     }
 
     let embedImage = (config.interface_image_url || '').trim();
-    if (!embedImage || embedImage.includes('INTERFACE.png') || embedImage.includes('gZPyVCvX')) {
-      embedImage = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+    if (isDefaultOrLegacyImage(embedImage)) {
+      embedImage = DEFAULT_INTERFACE_IMAGE;
       config.interface_image_url = embedImage;
       await setGuildConfig(guildId, config).catch(() => {});
     }
@@ -386,15 +406,15 @@ export async function handleInterfaceComponent(interaction) {
         .setRequired(false);
 
       let currentImage = (config.interface_image_url || '').trim();
-      if (!currentImage || currentImage.includes('INTERFACE.png') || currentImage.includes('gZPyVCvX')) {
-        currentImage = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+      if (isDefaultOrLegacyImage(currentImage)) {
+        currentImage = DEFAULT_INTERFACE_IMAGE;
       }
 
       const imageInput = new TextInputBuilder()
         .setCustomId('interface_image_input')
         .setLabel('Embed Image URL')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png')
+        .setPlaceholder(DEFAULT_INTERFACE_IMAGE)
         .setValue(config.interface_image_url ? currentImage : '')
         .setMaxLength(256)
         .setRequired(false);
@@ -485,8 +505,8 @@ export async function handleInterfaceModal(interaction) {
     const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
     const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
     let image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim();
-    if (!image || image.includes('INTERFACE.png') || image.includes('gZPyVCvX')) {
-      image = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+    if (isDefaultOrLegacyImage(image)) {
+      image = DEFAULT_INTERFACE_IMAGE;
     }
 
     const config = await getGuildConfig(guildId) || {};
