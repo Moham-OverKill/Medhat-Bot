@@ -14,7 +14,7 @@ import {
     InteractionType
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -792,7 +792,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         const folderOptions = [];
         if (hasCategorized) folderOptions.push({ label: 'Categorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_categorized`, emoji: '📂' });
         if (hasUncategorized) folderOptions.push({ label: 'Uncategorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_standalone`, emoji: '🏷️' });
-        if (hasLootBoxes) folderOptions.push({ label: lootBoxCatName.slice(0, 50), value: `trade_folder_${isGive ? 'give' : 'req'}_loot_boxes`, emoji: lootBoxEmoji || '🎁' });
+        if (hasLootBoxes) folderOptions.push({ label: lootBoxCatName.slice(0, 50), value: `trade_folder_${isGive ? 'give' : 'req'}_loot_boxes`, emoji: parseSelectEmoji(lootBoxEmoji) || '🎁' });
 
         if (folderOptions.length === 0) {
             return interaction.followUp({ content: `❌ No tradable items found.`, flags: MessageFlags.Ephemeral });
@@ -879,7 +879,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
             return {
                 label: `${row.name}${qtyLabel}`,
                 value: row.id.toString(),
-                emoji: groupPrefix || '🏷️'
+                emoji: parseSelectEmoji(groupPrefix) || '🏷️'
             };
         }
     });

@@ -122,6 +122,7 @@ function buildRoleRewardPanel(type, config) {
         return {
             label: count === 1 ? '1 Winner' : `${count} Winners`,
             value: String(count),
+            emoji: '🏆',
             default: winners === count
         };
     });
