@@ -186,10 +186,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   embed.setTitle('🎟️ Battlepass Configuration');
 
   if (totalLevels === 0) {
-    embed.setDescription(
-      '_No level rewards configured yet._\n\n' +
-      'Use the dropdown menu below and select **➕ Create New Level** to add your first level.'
-    );
+    embed.setDescription('_No level rewards configured yet._');
   } else {
     const lines = pageLevels.map(row => {
       const parts = [];
