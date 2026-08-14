@@ -19,8 +19,7 @@ const FILTER_TYPES = {
     images_only: { label: 'Media Only', emoji: '🎬' },
     media_only: { label: 'Socials Only', emoji: '🌐' },
     cmd_only: { label: 'CMD Only', emoji: '🤖' },
-    auto_react: { label: 'Auto React', emoji: '🎭' },
-    ignored_activity: { label: 'Ignored Channels', emoji: '🚫' }
+    auto_react: { label: 'Auto React', emoji: '🎭' }
 };
 
 /**
@@ -59,9 +58,9 @@ async function renderPanel(interaction, activeFilter = null) {
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 
-    // Row 1: Links Only, Media Only, Socials Only, CMD Only
+    // Row 1: Links Only, Media Only, Socials Only
     const row1 = new ActionRowBuilder().addComponents(
-        ['links_only', 'images_only', 'media_only', 'cmd_only'].map(key => {
+        ['links_only', 'images_only', 'media_only'].map(key => {
             const meta = FILTER_TYPES[key];
             return new ButtonBuilder()
                 .setCustomId(`organize_${key}`)
@@ -71,7 +70,7 @@ async function renderPanel(interaction, activeFilter = null) {
         })
     );
 
-    // Row 2: Back button, Auto React, Ignored Channels
+    // Row 2: Back button, CMD Only, Auto React
     const row2Buttons = [
         new ButtonBuilder()
             .setCustomId('settings_other')
@@ -79,15 +78,15 @@ async function renderPanel(interaction, activeFilter = null) {
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
+            .setCustomId('organize_cmd_only')
+            .setLabel(FILTER_TYPES.cmd_only.label)
+            .setEmoji(FILTER_TYPES.cmd_only.emoji)
+            .setStyle(activeFilter === 'cmd_only' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
             .setCustomId('organize_auto_react')
             .setLabel(FILTER_TYPES.auto_react.label)
             .setEmoji(FILTER_TYPES.auto_react.emoji)
-            .setStyle(activeFilter === 'auto_react' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('organize_ignored_activity')
-            .setLabel(FILTER_TYPES.ignored_activity.label)
-            .setEmoji(FILTER_TYPES.ignored_activity.emoji)
-            .setStyle(activeFilter === 'ignored_activity' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            .setStyle(activeFilter === 'auto_react' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ];
 
     const row2 = new ActionRowBuilder().addComponents(row2Buttons);
