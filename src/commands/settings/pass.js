@@ -344,7 +344,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('pass_set_xp_threshold_pg_' + currentPage)
-      .setLabel('Set XP Per Level')
+      .setLabel('XP')
       .setEmoji('⚙️')
       .setStyle(ButtonStyle.Primary),
     startPauseButton
