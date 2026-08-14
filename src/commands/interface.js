@@ -159,7 +159,12 @@ export async function publishOrUpdateHub(client, guildId) {
       return false;
     }
 
-    const embedImage = (config.interface_image_url || '').trim() || 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+    let embedImage = (config.interface_image_url || '').trim();
+    if (!embedImage || embedImage.includes('INTERFACE.png') || embedImage.includes('gZPyVCvX')) {
+      embedImage = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+      config.interface_image_url = embedImage;
+      await setGuildConfig(guildId, config).catch(() => {});
+    }
     const attachment = new AttachmentBuilder(embedImage, { name: 'interface.png' });
 
     const embed = await buildHubEmbed(guild, config);
@@ -356,12 +361,17 @@ export async function handleInterfaceComponent(interaction) {
         .setMaxLength(10)
         .setRequired(false);
 
+      let currentImage = (config.interface_image_url || '').trim();
+      if (!currentImage || currentImage.includes('INTERFACE.png') || currentImage.includes('gZPyVCvX')) {
+        currentImage = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+      }
+
       const imageInput = new TextInputBuilder()
         .setCustomId('interface_image_input')
         .setLabel('Embed Image URL')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png')
-        .setValue(config.interface_image_url || '')
+        .setValue(config.interface_image_url ? currentImage : '')
         .setMaxLength(256)
         .setRequired(false);
 
@@ -450,7 +460,10 @@ export async function handleInterfaceModal(interaction) {
     const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
     const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
     const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
-    const image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim() || 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+    let image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim();
+    if (!image || image.includes('INTERFACE.png') || image.includes('gZPyVCvX')) {
+      image = 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
+    }
 
     const config = await getGuildConfig(guildId) || {};
     config.interface_title = title;
