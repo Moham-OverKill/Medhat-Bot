@@ -20,9 +20,9 @@ import { getUserLogName } from '../../shared.js';
  * Smart Leaderboard Categories
  */
 const CATEGORIES = {
-    activity: { id: 'activity', name: '🥈 Daily Activity', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
-    coins: { id: 'coins', name: '💰 Total Coins', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
-    streak: { id: 'streak', name: '🔥 Highest Streak', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' }
+    activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
+    coins: { id: 'coins', name: 'Total Coins', emoji: '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
+    streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' }
 };
 
 /**
@@ -39,7 +39,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         for (const cat of Object.values(CATEGORIES)) {
             const chanId = config[cat.dbId];
             const statusLabel = chanId ? `<#${chanId}>` : '*Not Set*';
-            desc += `**${cat.name}**\n↳ ${statusLabel}\n\n`;
+            desc += `**${cat.emoji} ${cat.name}**\n↳ ${statusLabel}\n\n`;
         }
 
         const embed = new EmbedBuilder()
@@ -57,6 +57,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                 label: cat.name,
                 description: cat.desc,
                 value: cat.id,
+                emoji: cat.emoji,
                 default: selectedId === cat.id
             })));
         components.push(new ActionRowBuilder().addComponents(selectMenu));

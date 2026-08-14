@@ -286,8 +286,9 @@ export async function handleShopButton(interaction) {
       .setCustomId('bank_shop_category')
       .setPlaceholder('Select a Category')
       .addOptions(categories.map(c => ({
-        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`,
+        label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 100) : `Unnamed Category #${c.id}`,
         value: c.id.toString(),
+        emoji: '📂',
         description: (c.type && c.type.trim().length > 0) ? c.type.slice(0, 100) : undefined
       })));
 
@@ -329,8 +330,9 @@ export async function handleShopCategorySelect(interaction) {
       .setCustomId('bank_shop_item')
       .setPlaceholder('Select an Item to View')
       .addOptions(items.slice(0, 25).map(i => ({
-        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`,
+        label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 100) : `Unnamed Item #${i.id}`,
         value: i.id.toString(),
+        emoji: '🏷️',
         description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} coins`
       })));
 

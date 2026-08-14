@@ -48,8 +48,9 @@ export function buildPaginatedSelectMenu({
   // 2. Previous Page Option
   if (currentPage > 1) {
     options.push({
-      label: `◀️ Previous Page (Page ${currentPage - 1}/${totalPages})`,
+      label: `Previous Page (${currentPage - 1}/${totalPages})`,
       value: `${pageNavPrefix}${currentPage - 1}`,
+      emoji: '◀️',
       description: `Show items from page ${currentPage - 1}`
     });
   }
@@ -63,8 +64,9 @@ export function buildPaginatedSelectMenu({
   // 4. Next Page Option
   if (currentPage < totalPages) {
     options.push({
-      label: `▶️ Next Page (Page ${currentPage + 1}/${totalPages})`,
+      label: `Next Page (${currentPage + 1}/${totalPages})`,
       value: `${pageNavPrefix}${currentPage + 1}`,
+      emoji: '▶️',
       description: `Show items from page ${currentPage + 1}`
     });
   }

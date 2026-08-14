@@ -381,3 +381,30 @@ export const RARITY_COLORS = {
   epic: '#9B59B6',
   legendary: '#F1C40F'
 };
+
+/**
+ * Safely format an emoji for Discord Select Menu options
+ * @param {string|Object} emojiInput
+ * @returns {string|Object|undefined}
+ */
+export function parseSelectEmoji(emojiInput) {
+  if (!emojiInput) return undefined;
+  if (typeof emojiInput === 'object') return emojiInput;
+  const str = String(emojiInput).trim();
+  if (!str) return undefined;
+
+  const customMatch = str.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+  if (customMatch) {
+    return {
+      animated: customMatch[1] === 'a',
+      name: customMatch[2],
+      id: customMatch[3]
+    };
+  }
+
+  if (/^\d{17,20}$/.test(str)) {
+    return str;
+  }
+
+  return str;
+}

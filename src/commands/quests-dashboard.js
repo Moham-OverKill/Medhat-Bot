@@ -180,6 +180,7 @@ export async function showQuestsSchedule(interaction) {
         Array.from({ length: maxOptions }, (_, i) => ({
           label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
           value: `${i + 1}`,
+          emoji: '🎯',
           default: perRefresh === (i + 1)
         }))
       );
@@ -189,9 +190,9 @@ export async function showQuestsSchedule(interaction) {
       .setCustomId('quests_setting_refreshes')
       .setPlaceholder('Refreshes per Day...')
       .addOptions([
-        { label: '1x Daily (12 AM)', value: '1', default: refreshes === 1 },
-        { label: '2x Daily (12 AM, 12 PM)', value: '2', default: refreshes === 2 },
-        { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', default: refreshes === 4 }
+        { label: '1x Daily (12 AM)', value: '1', emoji: '⏰', default: refreshes === 1 },
+        { label: '2x Daily (12 AM, 12 PM)', value: '2', emoji: '⏰', default: refreshes === 2 },
+        { label: '4x Daily (12 AM, 6 AM, 12 PM, 6 PM)', value: '4', emoji: '⏰', default: refreshes === 4 }
       ]);
 
     const backRow = new ActionRowBuilder().addComponents(

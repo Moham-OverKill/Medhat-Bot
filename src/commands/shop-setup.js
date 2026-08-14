@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -693,10 +693,11 @@ export async function handleItemModalSubmit(interaction) {
 
         const categories = await getShopCategories(interaction.guildId);
         const catOptions = [
-          { label: '🏷️ No Category', value: 'null', default: true },
+          { label: 'No Category', value: 'null', emoji: '🏷️', default: true },
           ...categories.slice(0, 24).map(c => ({
-            label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
-            value: c.id.toString()
+            label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
+            value: c.id.toString(),
+            emoji: '📂'
           }))
         ];
 
@@ -927,16 +928,16 @@ export async function handleAssignCategorySelect(interaction) {
 // ============================================================
 
 const RARITY_OPTIONS = [
-  { label: '⚪ Common',    value: 'common',    description: 'Highest drop rate (~60% chance in loot boxes)' },
-  { label: '🟢 Uncommon',  value: 'uncommon',  description: 'Moderate drop rate (~25% chance in loot boxes)' },
-  { label: '🔵 Rare',      value: 'rare',      description: 'Low drop rate (~10% chance in loot boxes)' },
-  { label: '🟣 Epic',      value: 'epic',      description: 'Very low drop rate (~4% chance in loot boxes)' },
-  { label: '🟡 Legendary', value: 'legendary', description: 'Ultra rare drop (~1% chance in loot boxes)' }
+  { label: 'Common',    value: 'common',    emoji: '⚪', description: 'Highest drop rate (~60% chance in loot boxes)' },
+  { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢', description: 'Moderate drop rate (~25% chance in loot boxes)' },
+  { label: 'Rare',      value: 'rare',      emoji: '🔵', description: 'Low drop rate (~10% chance in loot boxes)' },
+  { label: 'Epic',      value: 'epic',      emoji: '🟣', description: 'Very low drop rate (~4% chance in loot boxes)' },
+  { label: 'Legendary', value: 'legendary', emoji: '🟡', description: 'Ultra rare drop (~1% chance in loot boxes)' }
 ];
 
 const TRADABLE_OPTIONS = [
-  { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes' },
-  { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes' }
+  { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: 'Can be traded, dropped, or found in loot boxes' },
+  { label: 'Locked',   value: 'untradable', emoji: '🔒', description: 'Cannot be traded, dropped, or found in loot boxes' }
 ];
 
 /**
@@ -968,10 +969,11 @@ export async function handleNewItemAttrSelect(interaction) {
   // Re-render the panel with updated default selections
   const categories = await getShopCategories(interaction.guildId);
   const catOptions = [
-    { label: '🏷️ No Category', value: 'null', default: state.categoryId === null },
+    { label: 'No Category', value: 'null', emoji: '🏷️', default: state.categoryId === null },
     ...categories.slice(0, 24).map(c => ({
-      label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
+      label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
       value: c.id.toString(),
+      emoji: '📂',
       default: String(c.id) === String(state.categoryId)
     }))
   ];
@@ -1163,17 +1165,18 @@ export async function handleShopPostStart(interaction) {
       const hasPacks = itemsAll.some(i => i.is_pack || i.item_type === 'pack');
       const hasLootBoxes = itemsAll.some(i => i.item_type === 'loot_box');
 
-      if (hasCategorized) itemOptions.push({ label: '📂 Categorized Items', value: 'folder_categorized' });
-      if (hasUncategorized) itemOptions.push({ label: '📂 Uncategorized Items', value: 'folder_standalone' });
-      if (hasPacks) itemOptions.push({ label: '📦 Item Packs', value: 'folder_packs' });
-      if (hasLootBoxes) itemOptions.push({ label: `${lootBoxEmoji} ${lootBoxCatName.slice(0, 50)}`, value: 'folder_loot_boxes' });
+      if (hasCategorized) itemOptions.push({ label: 'Categorized Items', value: 'folder_categorized', emoji: '📂' });
+      if (hasUncategorized) itemOptions.push({ label: 'Uncategorized Items', value: 'folder_standalone', emoji: '🏷️' });
+      if (hasPacks) itemOptions.push({ label: 'Item Packs', value: 'folder_packs', emoji: '📦' });
+      if (hasLootBoxes) itemOptions.push({ label: lootBoxCatName.slice(0, 50), value: 'folder_loot_boxes', emoji: parseSelectEmoji(lootBoxEmoji) });
       placeholder = '📦 Select Item/Pack/Box (Required)';
       
       // If an item is already selected, show it as a quick-pick at the top
       if (selectedItem) {
         itemOptions.unshift({
-          label: `✅ Staged: ${selectedItem.name.slice(0, 50)}`,
+          label: `Staged: ${selectedItem.name.slice(0, 50)}`,
           value: selectedItem.id.toString(),
+          emoji: '✅',
           default: true
         });
       }
@@ -1184,10 +1187,11 @@ export async function handleShopPostStart(interaction) {
       const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
       itemOptions = activeCategories.map(c => ({
-        label: `📂 ${c.name.slice(0, 50)}`,
-        value: `filter_cat_${c.id}`
+        label: c.name.slice(0, 100),
+        value: `filter_cat_${c.id}`,
+        emoji: '📂'
       }));
-      itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
+      itemOptions.unshift({ label: 'Back', value: 'folder_reset', emoji: '⬅️' });
       placeholder = '📂 Choose Category Folder...';
     } 
     else if (state.postStep === 2) {
@@ -1218,13 +1222,14 @@ export async function handleShopPostStart(interaction) {
 
       itemOptions = filtered.slice(0, 24).map(i => {
         return {
-          label: `${groupPrefix} ${i.name.slice(0, 75)}`,
+          label: i.name.slice(0, 100),
           value: i.id.toString(),
+          emoji: parseSelectEmoji(groupPrefix),
           default: state.itemId === i.id.toString()
         };
       });
 
-      itemOptions.unshift({ label: '⬅️ Back', value: 'folder_reset' });
+      itemOptions.unshift({ label: 'Back', value: 'folder_reset', emoji: '⬅️' });
       placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
     }
 
@@ -2246,8 +2251,9 @@ export async function handleEditCategoryStart(interaction) {
       .setCustomId('shop_select_cat_edit_rename')
       .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
-        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
-        value: c.id.toString() 
+        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+        value: c.id.toString(),
+        emoji: '📂'
       })));
 
     const embed = new EmbedBuilder()
@@ -2399,8 +2405,9 @@ export async function handleEditCategoryAddItemsStart(interaction) {
       .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
       .setPlaceholder('Select')
       .addOptions(standalone.slice(0, 25).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: i.id.toString() 
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+        value: i.id.toString(),
+        emoji: '🏷️'
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -2484,8 +2491,9 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
         .setPlaceholder('Select')
         .addOptions(standalone.slice(0, 25).map(i => ({ 
-          label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-          value: i.id.toString()
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+          value: i.id.toString(),
+          emoji: '🏷️'
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2528,8 +2536,9 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
       .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
       .setPlaceholder('Select')
       .addOptions(items.slice(0, 25).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: i.id.toString() 
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+        value: i.id.toString(),
+        emoji: '🏷️'
       })));
 
     const row = new ActionRowBuilder().addComponents(select);
@@ -2594,8 +2603,9 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
         .setPlaceholder('Select')
         .addOptions(items.slice(0, 25).map(i => ({ 
-          label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 80) : `Unnamed Item #${i.id}`, 
-          value: i.id.toString()
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+          value: i.id.toString(),
+          emoji: '🏷️'
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2673,8 +2683,9 @@ export async function handleDeleteCategoryStart(interaction) {
       .setCustomId('shop_select_cat_delete_confirm')
       .setPlaceholder('Select')
       .addOptions(categories.map(c => ({ 
-        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`, 
-        value: c.id.toString() 
+        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+        value: c.id.toString(),
+        emoji: '📂'
       })));
 
     const embed = new EmbedBuilder()
@@ -2738,8 +2749,9 @@ export async function handleDeleteCategoryConfirm(interaction) {
         .setCustomId('shop_select_cat_delete_confirm')
         .setPlaceholder('Select Category to Delete')
         .addOptions(categories.map(c => ({ 
-          label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 80) : `Unnamed Category #${c.id}`, 
-          value: c.id.toString() 
+          label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+          value: c.id.toString(),
+          emoji: '📂'
         })));
 
       const row = new ActionRowBuilder().addComponents(select);
@@ -2797,8 +2809,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
       }
 
       const lbOptions = lootBoxes.slice(0, 25).map(b => ({
-        label: `${catEmoji} ${(b.name || `Unnamed Box #${b.id}`).slice(0, 80)}`,
-        value: `lb_${b.id}`
+        label: (b.name || `Unnamed Box #${b.id}`).slice(0, 100),
+        value: `lb_${b.id}`,
+        emoji: parseSelectEmoji(catEmoji)
       }));
 
       const select = new StringSelectMenuBuilder()
@@ -2835,14 +2848,16 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const options = [];
         if (hasCategorized) {
           options.push({ 
-            label: '📂 Categorized Items', 
-            value: 'action_browse_categorized'
+            label: 'Categorized Items', 
+            value: 'action_browse_categorized',
+            emoji: '📂'
           });
         }
         if (hasUncategorized) {
           options.push({ 
-            label: '🏷️ Uncategorized Items', 
-            value: 'cat_null'
+            label: 'Uncategorized Items', 
+            value: 'cat_null',
+            emoji: '🏷️'
           });
         }
 
@@ -2866,8 +2881,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
         const options = activeCategories.slice(0, 24).map(cat => {
           return { 
-            label: `📂 ${cat.name || `Category #${cat.id}`}`.slice(0, 100), 
-            value: `cat_${cat.id}`
+            label: (cat.name || `Category #${cat.id}`).slice(0, 100), 
+            value: `cat_${cat.id}`,
+            emoji: '📂'
           };
         });
 
@@ -2875,7 +2891,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setCustomId('shop_admin_browser_select')
           .setPlaceholder('Select')
           .addOptions([
-            { label: '⬅️ Back', value: 'action_back_root' },
+            { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
             ...options
           ]);
 
@@ -2896,8 +2912,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
       }
 
       const itemOptions = folderItems.slice(0, 24).map(i => ({
-        label: `🏷️ ${(i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 80)}`,
-        value: `item_${i.id}`
+        label: (i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
+        value: `item_${i.id}`,
+        emoji: '🏷️'
       }));
 
       const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
@@ -2906,7 +2923,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         .setCustomId('shop_admin_browser_select')
         .setPlaceholder('Select')
         .addOptions([
-          { label: '⬅️ Back', value: backValue },
+          { label: 'Back', value: backValue, emoji: '⬅️' },
           ...itemOptions
         ]);
 
@@ -2932,8 +2949,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
         }
 
         const packOptions = packs.slice(0, 25).map(p => ({
-           label: `📦 ${(p.name && p.name.trim().length > 0 ? p.name : `Unnamed Pack #${p.id}`).slice(0, 80)}`,
-           value: `item_${p.id}`
+           label: (p.name && p.name.trim().length > 0 ? p.name : `Unnamed Pack #${p.id}`).slice(0, 100),
+           value: `item_${p.id}`,
+           emoji: '📦'
         }));
 
         const select = new StringSelectMenuBuilder()
@@ -3340,10 +3358,11 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
-      { label: '🏷️ No Category', value: 'null', default: !item.category_id },
+      { label: 'No Category', value: 'null', emoji: '🏷️', default: !item.category_id },
       ...categories.map(c => ({
-        label: `📂 ${(c.name && c.name.trim().length > 0) ? c.name.slice(0, 70) : `Unnamed Category #${c.id}`}`,
+        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
         value: c.id.toString(),
+        emoji: '📂',
         default: c.id == item.category_id
       }))
     ];
@@ -3770,24 +3789,26 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       const hasCategorized = availableItems.some(i => i.category_id);
       const hasUncategorized = availableItems.some(i => !i.category_id);
       
-      if (hasCategorized) options.push({ label: '📂 Categorized Items', value: 'layer_browse_categorized' });
-      if (hasUncategorized) options.push({ label: '📂 Uncategorized Items', value: 'layer_browse_uncategorized' });
+      if (hasCategorized) options.push({ label: 'Categorized Items', value: 'layer_browse_categorized', emoji: '📂' });
+      if (hasUncategorized) options.push({ label: 'Uncategorized Items', value: 'layer_browse_uncategorized', emoji: '🏷️' });
     } 
     else if (layer === 'browse_categorized') {
       // --- LAYER 1: CATEGORY LIST ---
       const categories = await getShopCategories(interaction.guildId);
       
       options.push({
-        label: '⬅️ Back',
-        value: 'action_back_root'
+        label: 'Back',
+        value: 'action_back_root',
+        emoji: '⬅️'
       });
 
       for (const cat of categories) {
         const itemsInCat = availableItems.filter(i => i.category_id === cat.id);
         if (itemsInCat.length > 0) {
           options.push({
-            label: `📂 ${cat.name.slice(0, 70)}`,
-            value: `cat_${cat.id}`
+            label: cat.name.slice(0, 100),
+            value: `cat_${cat.id}`,
+            emoji: '📂'
           });
         }
       }
@@ -3797,13 +3818,15 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       const standaloneItems = availableItems.filter(i => !i.category_id);
       
       options.push({
-        label: '⬅️ Back',
-        value: 'action_back_root'
+        label: 'Back',
+        value: 'action_back_root',
+        emoji: '⬅️'
       });
 
       options.push(...standaloneItems.slice(0, 24).map(i => ({
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}`
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+        value: `item_${i.id}`,
+        emoji: '🏷️'
       })));
     }
     else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
@@ -3812,13 +3835,15 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       const itemsInCat = availableItems.filter(i => i.category_id === categoryId);
       
       options.push({
-        label: '⬅️ Back',
-        value: 'layer_browse_categorized'
+        label: 'Back',
+        value: 'layer_browse_categorized',
+        emoji: '⬅️'
       });
 
       options.push(...itemsInCat.slice(0, 24).map(i => ({ 
-        label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-        value: `item_${i.id}`
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+        value: `item_${i.id}`,
+        emoji: '🏷️'
       })));
     }
 
@@ -3970,16 +3995,18 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
     const packItems = allItems.filter(i => contentIds.includes(i.id));
 
     let options = packItems.slice(0, 25).map(i => ({
-      label: `🏷️ ${(i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Unnamed Item #${i.id}`}`, 
-      value: `item_${i.id}` 
+      label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+      value: `item_${i.id}`,
+      emoji: '🏷️'
     }));
 
     // Add fallback for deleted/missing items
     if (options.length < 25 && packItems.length < contentIds.length) {
       const missingIds = contentIds.filter(id => !packItems.some(i => i.id === id));
       options.push(...missingIds.slice(0, 25 - options.length).map(id => ({ 
-        label: `🏷️ Unknown Item ${id} (Deleted?)`, 
-        value: `item_${id}` 
+        label: `Unknown Item ${id} (Deleted?)`, 
+        value: `item_${id}`,
+        emoji: '🏷️'
       })));
     }
 
