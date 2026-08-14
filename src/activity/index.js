@@ -179,7 +179,10 @@ async function handleMessage(message) {
     }
 
     const hasAttachments = Boolean(message.attachments && message.attachments.size > 0);
-    addMessagePoint(message.guild, message.author.id, message.author.username, message.content, hasAttachments, message.channel?.id);
+    const pointAwarded = await addMessagePoint(message.guild, message.author.id, message.author.username, message.content, hasAttachments, message.channel?.id);
+
+    // If message was rejected by anti-spam (duplicate message in channel, cooldown, prefix, etc.), do not award quest progress
+    if (!pointAwarded) return;
 
     // === QUEST PROGRESS TRACKING ===
     try {
