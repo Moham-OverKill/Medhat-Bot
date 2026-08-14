@@ -79,11 +79,14 @@ export async function buildHubEmbed(guild, config = null) {
     questContent = `_Daily quests are currently paused._\n\nNext Daily <t:${nextMidnightTs}:R>`;
   }
 
+  const isSingular = activeQuests.length === 1;
+  const questFieldName = isSingular ? '🎯 Current Quest' : '🎯 Current Quests';
+
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
     .setColor(embedColor)
     .addFields({
-      name: '🎯 Active Quests',
+      name: questFieldName,
       value: questContent,
       inline: false
     });
@@ -92,24 +95,32 @@ export async function buildHubEmbed(guild, config = null) {
 }
 
 /**
- * Build the 5 shortcut buttons for the Hub message
+ * Build the 6 shortcut buttons for the Hub message across 2 action rows
  * @param {import('discord.js').Client} client 
- * @returns {ActionRowBuilder}
+ * @returns {ActionRowBuilder[]}
  */
 export function buildHubButtons(client) {
   const botId = client?.user?.id || 'bot';
 
-  const row = new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('hub_btn_level')
       .setLabel('Level')
       .setEmoji('⭐')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId('hub_btn_quests')
+      .setLabel('Quests')
+      .setEmoji('🎯')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
       .setCustomId('hub_btn_daily')
       .setLabel('Daily')
       .setEmoji('💰')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('hub_btn_inventory')
       .setLabel('Inventory')
@@ -127,7 +138,7 @@ export function buildHubButtons(client) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  return row;
+  return [row1, row2];
 }
 
 /**
@@ -153,8 +164,8 @@ export async function publishOrUpdateHub(client, guildId) {
     }
 
     const embed = await buildHubEmbed(guild, config);
-    const buttonsRow = buildHubButtons(client);
-    const payload = { embeds: [embed], components: [buttonsRow] };
+    const buttonRows = buildHubButtons(client);
+    const payload = { embeds: [embed], components: Array.isArray(buttonRows) ? buttonRows : [buttonRows] };
 
     const oldMsgId = config.interface_message_id;
     let messageUpdated = false;
@@ -468,7 +479,14 @@ export async function handleHubShortcut(interaction) {
       return interaction.editReply(payload);
     }
 
-    // 2. Daily Shortcut
+    // 2. Quests Shortcut
+    if (customId === 'hub_btn_quests') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const { renderQuests } = await import('./quest.js');
+      return renderQuests(interaction, 0);
+    }
+
+    // 3. Daily Shortcut
     if (customId === 'hub_btn_daily') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
