@@ -81,9 +81,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         return `• **Level ${c.level_claimed}:** ${rewardStr}`;
       });
 
-      embed.setDescription(
-        `**Total Claimed:** ${data.claims.length} levels\n\n` + claimLines.join('\n')
-      );
+      embed.setDescription(claimLines.join('\n'));
     } else {
       embed.setDescription('_You have not claimed any level rewards yet._');
     }
