@@ -81,10 +81,12 @@ export async function buildHubEmbed(guild, config = null) {
 
   const isSingular = activeQuests.length === 1;
   const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
+  const embedImage = guildConfig.interface_image_url || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
 
   const embed = new EmbedBuilder()
     .setTitle(titleWithEmoji)
     .setColor(embedColor)
+    .setImage(embedImage)
     .addFields({
       name: questFieldName,
       value: questContent,
@@ -95,7 +97,7 @@ export async function buildHubEmbed(guild, config = null) {
 }
 
 /**
- * Build the 6 shortcut buttons for the Hub message across 2 action rows
+ * Build the 6 shortcut buttons for the Hub message across 2 action rows (emoji-only)
  * @param {import('discord.js').Client} client 
  * @returns {ActionRowBuilder[]}
  */
@@ -105,17 +107,14 @@ export function buildHubButtons(client) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('hub_btn_level')
-      .setLabel('Level')
       .setEmoji('⭐')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('hub_btn_quests')
-      .setLabel('Quests')
       .setEmoji('🎯')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('hub_btn_daily')
-      .setLabel('Claim Daily')
       .setEmoji('💰')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -123,17 +122,14 @@ export function buildHubButtons(client) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('hub_btn_inventory')
-      .setLabel('Inventory')
       .setEmoji('🎒')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setLabel('Vote')
       .setEmoji('🗳️')
       .setStyle(ButtonStyle.Link)
       .setURL(`https://top.gg/bot/${botId}/vote`),
     new ButtonBuilder()
       .setCustomId('hub_btn_notifications')
-      .setLabel('DMs')
       .setEmoji('🔔')
       .setStyle(ButtonStyle.Secondary)
   );
