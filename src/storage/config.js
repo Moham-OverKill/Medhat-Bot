@@ -61,7 +61,9 @@ const CONFIG_SCHEMA = {
   streak_role_winners: { type: 'number', min: 1, max: 5, required: false },
   // Loot Boxes Module
   loot_box_category_name: { type: 'string', required: false },
-  loot_box_category_emoji: { type: 'string', required: false }
+  loot_box_category_emoji: { type: 'string', required: false },
+  // Battlepass Module
+  battlepass_enabled: { type: 'boolean', required: false }
 };
 
 export const configCache = new Map();
