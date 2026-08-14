@@ -155,8 +155,9 @@ function formatCompactNumber(num) {
  */
 function truncateName(name, maxLen = 20) {
     if (!name) return 'Unknown';
-    if (name.length <= maxLen) return name;
-    return name.substring(0, maxLen - 3) + '...';
+    const limit = Math.max(4, maxLen);
+    if (name.length <= limit) return name;
+    return name.substring(0, limit - 3) + '...';
 }
 
 // ============================================
