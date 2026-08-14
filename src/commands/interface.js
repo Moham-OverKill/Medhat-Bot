@@ -503,7 +503,7 @@ export async function handleHubShortcut(interaction) {
           const alreadyClaimedEmbed = new EmbedBuilder()
             .setTitle('⏳ Daily Already Claimed')
             .setColor(0xE74C3C)
-            .setDescription(`You have already claimed your daily reward today.\nYour next claim will be available **<t:${nextMidnightTs}:R>**.`);
+            .setDescription(`You have already claimed your daily reward! Try again **<t:${nextMidnightTs}:R>**.`);
 
           return interaction.editReply({ embeds: [alreadyClaimedEmbed] });
         }
