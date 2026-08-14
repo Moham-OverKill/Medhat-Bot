@@ -349,10 +349,20 @@ export async function handleInterfaceComponent(interaction) {
         .setMaxLength(10)
         .setRequired(false);
 
+      const imageInput = new TextInputBuilder()
+        .setCustomId('interface_image_input')
+        .setLabel('Embed Image URL')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('https://i.ibb.co/gZPyVCvX/INTERFACE.png')
+        .setValue(config.interface_image_url || '')
+        .setMaxLength(256)
+        .setRequired(false);
+
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
         new ActionRowBuilder().addComponents(emojiInput),
-        new ActionRowBuilder().addComponents(colorInput)
+        new ActionRowBuilder().addComponents(colorInput),
+        new ActionRowBuilder().addComponents(imageInput)
       );
 
       return interaction.showModal(modal);
@@ -433,11 +443,13 @@ export async function handleInterfaceModal(interaction) {
     const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
     const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
     const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
+    const image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim() || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
 
     const config = await getGuildConfig(guildId) || {};
     config.interface_title = title;
     config.interface_emoji = emoji;
     config.interface_color = color;
+    config.interface_image_url = image;
     await setGuildConfig(guildId, config);
 
     // If already published, auto-update the live message
