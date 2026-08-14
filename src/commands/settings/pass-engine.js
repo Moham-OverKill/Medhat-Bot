@@ -304,11 +304,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       if (single.chestName) rewards.push(`${lootBoxEmoji} **${single.chestName}**`);
       const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
 
-      title = `⭐ Level Up!`;
-      description = `Congratulations <@${userId}>! You reached **Level ${single.level}** in **${guildName}**.\n\n**Rewards Unlocked:**\n• ${rewardText}`;
+      title = `⭐ Level Up! (Level ${single.level})`;
+      description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.\n\n**Rewards Unlocked:**\n• ${rewardText}`;
     } else {
       const highestLevel = Math.max(...claimedLevels.map(c => c.level));
-      title = `⭐ Level Up! (Reached Level ${highestLevel})`;
+      title = `⭐ Level Up! (Level ${highestLevel})`;
 
       const lines = claimedLevels.map(c => {
         const rewards = [];
@@ -319,7 +319,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
         return `• **Level ${c.level}:** ${rewardText}`;
       });
 
-      description = `Congratulations <@${userId}>! You advanced to **Level ${highestLevel}** (unlocked **${claimedLevels.length} levels**) in **${guildName}**.\n\n**Rewards Unlocked:**\n${lines.join('\n')}`;
+      description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.\n\n**Rewards Unlocked:**\n${lines.join('\n')}`;
     }
 
     const embed = new EmbedBuilder()
