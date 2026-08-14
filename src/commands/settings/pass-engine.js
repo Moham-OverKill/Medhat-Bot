@@ -282,8 +282,23 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
           `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
           [reward.loot_box_id, guildId]
         );
-        const chestShopItemId = shopItemRes.rows[0]?.id;
-        const chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${reward.loot_box_id}`;
+        let chestShopItemId = shopItemRes.rows[0]?.id;
+        let chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${reward.loot_box_id}`;
+
+        if (!chestShopItemId) {
+          // Self-healing fallback: Create missing shop_items paired row for this loot box
+          const boxRow = await client2.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [reward.loot_box_id, guildId]);
+          if (boxRow.rows.length > 0) {
+            const newShopItem = await client2.query(
+              `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
+               VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
+               RETURNING id, role_id`,
+              [guildId, boxRow.rows[0].name, `LOOT_BOX_${reward.loot_box_id}`, reward.loot_box_id]
+            );
+            chestShopItemId = newShopItem.rows[0]?.id;
+            chestRoleId = newShopItem.rows[0]?.role_id || chestRoleId;
+          }
+        }
 
         if (chestShopItemId) {
           const existingChest = await client2.query(
