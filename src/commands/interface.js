@@ -125,9 +125,9 @@ export function buildHubButtons(client) {
       .setEmoji('🎒')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId('hub_btn_vote')
       .setEmoji('🗳️')
-      .setStyle(ButtonStyle.Link)
-      .setURL(`https://top.gg/bot/${botId}/vote`),
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('hub_btn_notifications')
       .setEmoji('🔔')
@@ -553,7 +553,14 @@ export async function handleHubShortcut(interaction) {
       return handleInventoryButton(interaction);
     }
 
-    // 4. Notifications Shortcut
+    // 4. Vote Shortcut
+    if (customId === 'hub_btn_vote') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const { handleVoteCommand } = await import('./vote.js');
+      return handleVoteCommand(interaction);
+    }
+
+    // 5. Notifications Shortcut
     if (customId === 'hub_btn_notifications') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const settings = await getUserNotificationSettings(guildId, userId);
