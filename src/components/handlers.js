@@ -574,6 +574,9 @@ export function setupComponentHandlers(client) {
         } else {
           await handleHelpStepNavigation(interaction);
         }
+      } else if (customId.startsWith('notif_')) {
+        const { handleNotificationsComponent } = await import('../commands/notifications.js');
+        await handleNotificationsComponent(interaction);
       } else if (interaction.customId.startsWith('trade_')) {
         if (customId.startsWith('trade_setup_') || customId.startsWith('trade_cat_')) {
           await handleTradeSetupInteraction(interaction);

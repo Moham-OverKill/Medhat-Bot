@@ -952,6 +952,29 @@ export async function awardMvp(client, guildId, options = {}) {
       }
       sysLog('Award Ceremony Complete', { guild: guildId, detail: `Saved ${resultMembers.length} winners to history` });
 
+      // ========== OPT-IN MVP WINNER DMS ==========
+      try {
+        const { getUserNotificationSettings } = await import('../storage/notifications.js');
+        const coinEmoji = COIN_EMOJI.forGuild(guildId);
+        for (let i = 0; i < resultMembers.length; i++) {
+          const member = resultMembers[i];
+          const userSettings = await getUserNotificationSettings(guildId, member.id);
+          if (userSettings.notif_mvp_win) {
+            const mvpEmbed = new EmbedBuilder()
+              .setTitle('🏆 Daily MVP Winner!')
+              .setDescription(`Congratulations! You have been selected as a **Daily MVP** in **${guild.name}**!\n\n**Reward:** **${Number(rewardAmount).toLocaleString()}** ${coinEmoji}`)
+              .setColor(0xF1C40F)
+              .setFooter({
+                text: `${guild.name} • ${new Date().toLocaleString()}`,
+                iconURL: typeof guild.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null
+              });
+            await member.send({ embeds: [mvpEmbed] }).catch(() => {});
+          }
+        }
+      } catch (dmErr) {
+        sysError('MVP Winner DM Failed', dmErr, { guild: guildId });
+      }
+
       const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
       const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
 
@@ -1115,9 +1138,36 @@ export async function scheduleCairoMidnightReset(client) {
     // 1. Reset streaks globally
     await resetCairoStaleStreaks();
     
-    // 2. Quest rotations are now handled by src/cron/quests.js
-    // which supports multi-refresh schedules (1x, 2x, 3x, 4x per day)
-    // No action needed here for the new passive quest system.
+    // 2. Dispatch Opt-in Daily Claim Reminders
+    try {
+      const { getUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+      const { EmbedBuilder } = await import('discord.js');
+      const configs = await loadGuildConfigs();
+
+      for (const gId in configs) {
+        const userIds = await getUsersForNotification(gId, NOTIFICATION_KEYS.DAILY_CLAIM);
+        if (userIds.length === 0) continue;
+
+        const guild = client.guilds?.cache?.get(gId) || await client.guilds?.fetch(gId).catch(() => null);
+        if (!guild) continue;
+
+        const dmEmbed = new EmbedBuilder()
+          .setTitle('💰 Daily Reward Available!')
+          .setDescription(`Your daily claim is now ready in **${guild.name}**!\nClaim it in the server to keep your streak alive.`)
+          .setColor(0xF1C40F)
+          .setFooter({
+            text: `${guild.name} • ${new Date().toLocaleString()}`,
+            iconURL: typeof guild.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null
+          });
+
+        for (const uid of userIds) {
+          const user = await client.users.fetch(uid).catch(() => null);
+          if (user) await user.send({ embeds: [dmEmbed] }).catch(() => {});
+        }
+      }
+    } catch (dmErr) {
+      sysError('Daily Claim Reminder Dispatch Failed', dmErr);
+    }
 
     scheduleCairoMidnightReset(client); // Recurse
   }, msUntilMidnight);
