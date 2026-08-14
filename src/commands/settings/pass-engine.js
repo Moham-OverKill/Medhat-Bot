@@ -147,13 +147,22 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
     const alreadyClaimed = new Set(claimsResult.rows.map(r => r.level_claimed));
 
     // 5. Dispatch rewards for each newly reached unclaimed level
+    const claimedLevels = [];
     for (const levelRow of levelsResult.rows) {
       if (alreadyClaimed.has(levelRow.level)) continue;
 
-      await dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config);
+      const claimData = await dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config);
+      if (claimData) {
+        claimedLevels.push(claimData);
+      }
+    }
+
+    // 6. Send single consolidated notification for all newly claimed levels
+    if (claimedLevels.length > 0 && client) {
+      await sendLevelUpNotification(client, guildId, userId, username, claimedLevels, config);
     }
   } catch (err) {
-    sysError('Battlepass XP Engine Failed', err, { guild: guildId, user: userId });
+    sysError('Level XP Engine Failed', err, { guild: guildId, user: userId });
   }
 }
 
@@ -170,10 +179,10 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
     if (lockCheck.rows.length > 0) {
       // Already claimed by a concurrent process
       await client2.query('ROLLBACK');
-      return;
+      return null;
     }
 
-    // B. Insert claim record (prevents double-claiming)
+    // B. Insert claim record (prevents double-claiming permanently)
     await client2.query(
       `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed) VALUES ($1, $2, $3)`,
       [userId, guildId, levelRow.level]
@@ -228,13 +237,13 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
 
     await client2.query('COMMIT');
 
-    sysLog('Battlepass Reward Dispatched', {
+    sysLog('Level Reward Dispatched', {
       user: userId,
       guild: guildId,
       detail: `Level ${levelRow.level} | Coins: ${coins} | Item: ${levelRow.item_name || 'None'} | Chest: ${levelRow.chest_name || 'None'}`
     });
 
-    // F. Send Discord channel event logs
+    // F. Send Discord channel audit logs
     if (client) {
       const guild = client.guilds?.cache?.get(guildId);
       if (guild) {
@@ -252,18 +261,27 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
           sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Chest Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${levelRow.chest_name}**!`);
         }
       }
-      await sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config);
     }
+
+    return {
+      level: levelRow.level,
+      coins,
+      itemName: levelRow.item_name || null,
+      chestName: levelRow.chest_name || null
+    };
   } catch (err) {
     await client2.query('ROLLBACK').catch(() => {});
     sysError('Level Reward Dispatch Failed', err, { user: userId, guild: guildId, level: levelRow.level });
+    return null;
   } finally {
     client2.release();
   }
 }
 
-async function sendLevelUpNotification(client, guildId, userId, username, levelRow, coins, config) {
+async function sendLevelUpNotification(client, guildId, userId, username, claimedLevels, config) {
   try {
+    if (!claimedLevels || claimedLevels.length === 0) return;
+
     const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
     const { COIN_EMOJI } = await import('../../shared.js');
 
@@ -275,20 +293,39 @@ async function sendLevelUpNotification(client, guildId, userId, username, levelR
     const guildName = guild?.name || 'Discord Server';
     const guildIcon = guild?.iconURL?.({ dynamic: true }) || null;
 
-    const rewards = [];
-    if (coins > 0) rewards.push(`${coinEmoji} **${coins.toLocaleString()} Coins**`);
-    if (levelRow.item_name) rewards.push(`🏷️ **${levelRow.item_name}**`);
-    if (levelRow.chest_name) rewards.push(`${lootBoxEmoji} **${levelRow.chest_name}**`);
+    let title;
+    let description;
 
-    const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
+    if (claimedLevels.length === 1) {
+      const single = claimedLevels[0];
+      const rewards = [];
+      if (single.coins > 0) rewards.push(`${coinEmoji} **${single.coins.toLocaleString()} Coins**`);
+      if (single.itemName) rewards.push(`🏷️ **${single.itemName}**`);
+      if (single.chestName) rewards.push(`${lootBoxEmoji} **${single.chestName}**`);
+      const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
+
+      title = `⭐ Level Up!`;
+      description = `Congratulations <@${userId}>! You reached **Level ${single.level}** in **${guildName}**.\n\n**Rewards Unlocked:**\n• ${rewardText}`;
+    } else {
+      const highestLevel = Math.max(...claimedLevels.map(c => c.level));
+      title = `⭐ Level Up! (Reached Level ${highestLevel})`;
+
+      const lines = claimedLevels.map(c => {
+        const rewards = [];
+        if (c.coins > 0) rewards.push(`${coinEmoji} **${c.coins.toLocaleString()} Coins**`);
+        if (c.itemName) rewards.push(`🏷️ **${c.itemName}**`);
+        if (c.chestName) rewards.push(`${lootBoxEmoji} **${c.chestName}**`);
+        const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_None_';
+        return `• **Level ${c.level}:** ${rewardText}`;
+      });
+
+      description = `Congratulations <@${userId}>! You advanced to **Level ${highestLevel}** (unlocked **${claimedLevels.length} levels**) in **${guildName}**.\n\n**Rewards Unlocked:**\n${lines.join('\n')}`;
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle(`⭐ Level Up!`)
-      .setDescription(
-        `Congratulations <@${userId}>! You reached **Level ${levelRow.level}** in **${guildName}**.\n\n` +
-        `**Rewards Unlocked:**\n• ${rewardText}`
-      )
+      .setTitle(title)
+      .setDescription(description)
       .setFooter({ text: guildName, iconURL: guildIcon || undefined })
       .setTimestamp();
 
@@ -306,7 +343,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, levelR
       await user.send({ embeds: [embed] }).catch(() => {});
     }
   } catch (err) {
-    sysError('Battlepass Notification Failed', err, { user: userId, guild: guildId, level: levelRow?.level });
+    sysError('Level Notification Failed', err, { user: userId, guild: guildId });
   }
 }
 
