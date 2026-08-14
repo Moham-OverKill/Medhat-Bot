@@ -218,21 +218,56 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
     }
 
     // D. Award item
-    if (levelRow.reward_item_id && levelRow.item_role_id) {
-      await client2.query(
-        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, source, purchase_source)
-         VALUES ($1, $2, $3, $4, 'BATTLEPASS', 'battlepass')`,
-        [userId, guildId, levelRow.reward_item_id, levelRow.item_role_id]
+    if (levelRow.reward_item_id) {
+      const existingItem = await client2.query(
+        `SELECT id FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
+         ORDER BY is_active DESC LIMIT 1`,
+        [userId, guildId, levelRow.reward_item_id]
       );
+      if (existingItem.rows.length > 0) {
+        await client2.query(
+          `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $1`,
+          [existingItem.rows[0].id]
+        );
+      } else {
+        await client2.query(
+          `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+           VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
+          [userId, guildId, levelRow.reward_item_id, levelRow.item_role_id || null]
+        );
+      }
     }
 
-    // E. Award chest (loot box — add to inventory as a claimable item)
+    // E. Award chest (loot box — link to paired shop_item_id)
     if (levelRow.reward_chest_id) {
-      await client2.query(
-        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, source, purchase_source)
-         VALUES ($1, $2, NULL, 'CHEST_' || $3, 'BATTLEPASS', 'battlepass')`,
-        [userId, guildId, levelRow.reward_chest_id]
+      const shopItemRes = await client2.query(
+        `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+        [levelRow.reward_chest_id, guildId]
       );
+      const chestShopItemId = shopItemRes.rows[0]?.id;
+      const chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${levelRow.reward_chest_id}`;
+
+      if (chestShopItemId) {
+        const existingChest = await client2.query(
+          `SELECT id FROM user_inventory
+           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
+           ORDER BY is_active DESC LIMIT 1`,
+          [userId, guildId, chestShopItemId]
+        );
+        if (existingChest.rows.length > 0) {
+          await client2.query(
+            `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $1`,
+            [existingChest.rows[0].id]
+          );
+        } else {
+          await client2.query(
+            `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
+            [userId, guildId, chestShopItemId, chestRoleId]
+          );
+        }
+      }
     }
 
     await client2.query('COMMIT');
