@@ -58,7 +58,7 @@ async function checkQuests(client, forceCheck = false) {
 
     try {
       const { getPool } = await import('../storage/postgres.js');
-      await rotateGuildQuests(guildId, config, getPool());
+      await rotateGuildQuests(guildId, config, getPool(), client);
       
       // TRIGGER VOICE SWEEP (Fix for ghosting on rotation)
       const guild = client.guilds.cache.get(guildId);
@@ -86,7 +86,7 @@ async function checkQuests(client, forceCheck = false) {
 /**
  * Shuffles and selects a new batch of quests for a specific guild
  */
-export async function rotateGuildQuests(guildId, config, pool) {
+export async function rotateGuildQuests(guildId, config, pool, client = null) {
     const amount = parseInt(config.quests_per_refresh) || 1;
     const allQuests = await getQuests(guildId);
     
@@ -195,6 +195,34 @@ export async function rotateGuildQuests(guildId, config, pool) {
     
     // Broadcast to tracking engine memory
     await syncQuestChannelCache(guildId);
+
+    // Opt-in Quest Rotation DM Notifications
+    if (client && selectedQuests.length > 0) {
+      try {
+        const { getUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+        const userIds = await getUsersForNotification(guildId, NOTIFICATION_KEYS.QUESTS_REFRESH);
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+
+        if (userIds.length > 0 && guild) {
+          const { EmbedBuilder } = await import('discord.js');
+          const embed = new EmbedBuilder()
+            .setTitle('🎯 New Quests Available!')
+            .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in the server to view and complete your new tasks.`)
+            .setColor(0x2ECC71)
+            .setFooter({
+              text: `${guild.name} • ${new Date().toLocaleString()}`,
+              iconURL: typeof guild.iconURL === 'function' ? (guild.iconURL({ dynamic: true }) || guild.iconURL()) : null
+            });
+
+          for (const uid of userIds) {
+            const user = await client.users.fetch(uid).catch(() => null);
+            if (user) await user.send({ embeds: [embed] }).catch(() => {});
+          }
+        }
+      } catch (dmErr) {
+        sysError('Quest Rotation DM Failed', dmErr, { guild: guildId });
+      }
+    }
 
     sysLog('Quest Smart Rotation Complete', { guild: guildId, detail: `Cycle: ${currentCycle} | Quests: ${selectedIds.length} | Snapshot Saved` });
 }
