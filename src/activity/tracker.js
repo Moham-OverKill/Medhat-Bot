@@ -9,17 +9,26 @@ const MESSAGE_COOLDOWN_MS = 10000; // 10 seconds between valid messages
 const MIN_MESSAGE_LENGTH = 5; // Minimum 5 characters
 const COMMAND_PREFIXES = ['/', '!', '?', '.', '-', '$', '>']; // Ignore commands
 
-// In-memory cache for cooldowns and last message content
-// Key: `${guildId}:${userId}`, Value: { timestamp, lastContent }
-const userMessageCache = new Map();
-const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes (P-10: tightened from 1 hour)
+// In-memory cache for cooldowns (Key: `${guildId}:${userId}`, Value: timestamp)
+const userMessageCooldownCache = new Map();
+
+// In-memory cache for duplicate message checking per channel
+// Key: `${guildId}:${channelId}:${userId}`, Value: { content: string, timestamp: number }
+const userLastChannelContentCache = new Map();
+const CONTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours retention
+const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // Periodic cleanup to prevent memory leaks
 setInterval(() => {
   const now = Date.now();
-  for (const [key, data] of userMessageCache.entries()) {
-    if (now - data.timestamp > MESSAGE_COOLDOWN_MS * 10) {
-      userMessageCache.delete(key);
+  for (const [key, timestamp] of userMessageCooldownCache.entries()) {
+    if (now - timestamp > MESSAGE_COOLDOWN_MS * 10) {
+      userMessageCooldownCache.delete(key);
+    }
+  }
+  for (const [key, data] of userLastChannelContentCache.entries()) {
+    if (now - data.timestamp > CONTENT_CACHE_TTL_MS) {
+      userLastChannelContentCache.delete(key);
     }
   }
 }, CACHE_CLEANUP_INTERVAL);
@@ -213,7 +222,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   if (!guild || !userId) return false;
   const guildId = guild.id;
   const now = Date.now();
-  const key = `${guildId}:${userId}`;
+  const userKey = `${guildId}:${userId}`;
   const content = (messageContent || '').trim();
 
   // 1. Check if channel is ignored for activity
@@ -234,24 +243,37 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     if (COMMAND_PREFIXES.includes(firstChar)) return false;
   }
 
-  // 4. Cooldown check (10s)
-  const cached = userMessageCache.get(key);
-  if (cached && (now - cached.timestamp) < MESSAGE_COOLDOWN_MS) return false;
+  // 4. Cooldown check (10s per user)
+  const lastMsgTime = userMessageCooldownCache.get(userKey);
+  if (lastMsgTime && (now - lastMsgTime) < MESSAGE_COOLDOWN_MS) return false;
 
-  // 5. Consecutive duplicate content check (only if text exists and no attachments)
+  // 5. Channel-Specific Duplicate Content Check (anti-spam across all systems)
+  // If the message is identical to the user's previous message in the same channel -> REJECT
   const contentLower = content.toLowerCase();
-  if (contentLower.length > 0 && !hasAttachments && cached && cached.lastContent === contentLower) return false;
+  if (contentLower.length > 0 && !hasAttachments) {
+    const channelKey = channelId ? `${guildId}:${channelId}:${userId}` : `${guildId}:global:${userId}`;
+    const previousEntry = userLastChannelContentCache.get(channelKey);
+    if (previousEntry && previousEntry.content === contentLower) {
+      sysLog('Anti-Spam Duplicate Message Rejected', {
+        user: userId,
+        guild: guildId,
+        detail: `Channel: ${channelId || 'Global'} | Text: "${contentLower.slice(0, 30)}"`
+      });
+      return false;
+    }
+    userLastChannelContentCache.set(channelKey, { content: contentLower, timestamp: now });
+  }
 
-  userMessageCache.set(key, { timestamp: now, lastContent: contentLower });
+  userMessageCooldownCache.set(userKey, now);
 
   // 6. Buffer into pending batch
-  const existingBatch = pendingMessageBatch.get(key);
+  const existingBatch = pendingMessageBatch.get(userKey);
   if (existingBatch) {
     existingBatch.count += 1;
     existingBatch.lastTime = now;
     existingBatch.username = username;
   } else {
-    pendingMessageBatch.set(key, {
+    pendingMessageBatch.set(userKey, {
       guildId,
       userId,
       username,
