@@ -1522,6 +1522,21 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Admin-granted items are now synthesized live at the view layer.
     await query(`DELETE FROM user_inventory WHERE source = 'SYNC' AND guild_id = $1`, [guildId]);
 
+    // Self-heal any broken chest inventory rows with missing shop_item_id
+    await query(`
+      UPDATE user_inventory ui
+      SET shop_item_id = si.id,
+          role_id = si.role_id,
+          source = 'LEVEL',
+          purchase_source = 'level'
+      FROM shop_items si
+      WHERE ui.user_id = $1 AND ui.guild_id = $2
+        AND ui.shop_item_id IS NULL
+        AND ui.role_id LIKE 'CHEST_%'
+        AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
+        AND si.guild_id = ui.guild_id
+    `, [userId, guildId]).catch(() => {});
+
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
     await purgeUserInventory(userId, guildId, member);
 

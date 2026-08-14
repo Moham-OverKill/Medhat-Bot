@@ -807,6 +807,22 @@ async function createTables() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_battlepass_config_guild ON battlepass_config(guild_id, level)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_pass_claims_user ON user_pass_claims(guild_id, user_id)`);
 
+    // Self-healing migration: Fix legacy chest rows in user_inventory
+    await pool.query(`
+      UPDATE user_inventory ui
+      SET shop_item_id = si.id,
+          role_id = si.role_id,
+          source = 'LEVEL',
+          purchase_source = 'level'
+      FROM shop_items si
+      WHERE ui.shop_item_id IS NULL
+        AND ui.role_id LIKE 'CHEST_%'
+        AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
+        AND si.guild_id = ui.guild_id;
+    `).catch(() => {});
+
+    await pool.query(`DELETE FROM user_inventory WHERE shop_item_id IS NULL AND source = 'BATTLEPASS'`).catch(() => {});
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
