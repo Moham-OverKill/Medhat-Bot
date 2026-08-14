@@ -159,7 +159,7 @@ export async function publishOrUpdateHub(client, guildId) {
       return false;
     }
 
-    const embedImage = (config.interface_image_url || '').trim() || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
+    const embedImage = (config.interface_image_url || '').trim() || 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
     const attachment = new AttachmentBuilder(embedImage, { name: 'interface.png' });
 
     const embed = await buildHubEmbed(guild, config);
@@ -360,7 +360,7 @@ export async function handleInterfaceComponent(interaction) {
         .setCustomId('interface_image_input')
         .setLabel('Embed Image URL')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('https://i.ibb.co/gZPyVCvX/INTERFACE.png')
+        .setPlaceholder('https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png')
         .setValue(config.interface_image_url || '')
         .setMaxLength(256)
         .setRequired(false);
@@ -450,7 +450,7 @@ export async function handleInterfaceModal(interaction) {
     const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
     const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
     const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
-    const image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim() || 'https://i.ibb.co/gZPyVCvX/INTERFACE.png';
+    const image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim() || 'https://i.ibb.co/ymZp0sRd/INTERFACE-v2.png';
 
     const config = await getGuildConfig(guildId) || {};
     config.interface_title = title;
