@@ -65,9 +65,9 @@ async function getConfiguredLevel(guildId, level) {
 }
 
 /**
- * Render the Battlepass Dashboard payload with paginated dropdown
+ * Render the Battlepass Dashboard payload with persistent dropdown
  */
-export async function getPassDashboardPayload(guildId, page = 0) {
+export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null) {
   const levels = await getConfiguredLevels(guildId);
   const totalLevels = levels.length;
   const totalPages = Math.max(1, Math.ceil(totalLevels / ITEMS_PER_PAGE));
@@ -78,33 +78,7 @@ export async function getPassDashboardPayload(guildId, page = 0) {
   const pageLevels = levels.slice(startIdx, endIdx);
 
   const embed = new EmbedBuilder()
-    .setTitle('🎟️ Battlepass Configuration')
     .setColor(0x5865F2);
-
-  if (totalLevels === 0) {
-    embed.setDescription(
-      '_No level rewards configured yet._\n\n' +
-      'Use the dropdown menu below and select **➕ Create New Level** to add your first level reward.'
-    );
-  } else {
-    const lines = pageLevels.map(row => {
-      const parts = [];
-      if (row.reward_coins > 0) {
-        parts.push(COIN_EMOJI + ' **' + Number(row.reward_coins).toLocaleString() + '**');
-      }
-      if (row.item_name) {
-        parts.push('🎁 **' + row.item_name + '**');
-      }
-      const rewardText = parts.length > 0 ? parts.join(' + ') : '_No Reward_';
-      return '• **Level ' + row.level + ':** ' + rewardText;
-    });
-
-    embed.setDescription(
-      '**Configured Levels (' + totalLevels + ' total — Page ' + (currentPage + 1) + '/' + totalPages + ')**\n\n' +
-      lines.join('\n') +
-      '\n\n_Select a level from the dropdown to edit or remove it, or choose **Create New Level**._'
-    );
-  }
 
   // Build Dropdown Options
   const options = [];
@@ -114,17 +88,18 @@ export async function getPassDashboardPayload(guildId, page = 0) {
     const rewardParts = [];
     if (l.reward_coins > 0) rewardParts.push(l.reward_coins + ' Coins');
     if (l.item_name) rewardParts.push(l.item_name);
-    const desc = rewardParts.length > 0 ? rewardParts.join(' + ') : 'No reward';
+    const desc = rewardParts.length > 0 ? rewardParts.join(' + ') : 'No reward set';
 
     options.push({
       label: 'Level ' + l.level,
       value: 'pass_view_level_' + l.level + '_page_' + currentPage,
       description: desc.slice(0, 100),
-      emoji: '⭐'
+      emoji: '⭐',
+      default: selectedLevel !== null && Number(selectedLevel) === Number(l.level)
     });
   }
 
-  // 2. Previous Page (if not on first page)
+  // 2. Previous Page
   if (currentPage > 0) {
     options.push({
       label: 'Previous Page',
@@ -133,7 +108,7 @@ export async function getPassDashboardPayload(guildId, page = 0) {
     });
   }
 
-  // 3. Next Page (if more pages exist)
+  // 3. Next Page
   if (currentPage < totalPages - 1) {
     options.push({
       label: 'Next Page',
@@ -142,7 +117,7 @@ export async function getPassDashboardPayload(guildId, page = 0) {
     });
   }
 
-  // 4. Create New Level (Always at the very bottom)
+  // 4. Create New Level
   options.push({
     label: 'Create New Level',
     value: 'pass_create_level_page_' + currentPage,
@@ -156,54 +131,89 @@ export async function getPassDashboardPayload(guildId, page = 0) {
 
   const row1 = new ActionRowBuilder().addComponents(select);
 
-  // Row 2: Back to Settings Main Menu
+  // If a specific level is selected for management
+  if (selectedLevel !== null) {
+    const data = await getConfiguredLevel(guildId, selectedLevel);
+    embed.setTitle('🎟️ Battlepass — Level ' + selectedLevel);
+
+    const coinsText = data && data.reward_coins > 0
+      ? (COIN_EMOJI + ' **' + Number(data.reward_coins).toLocaleString() + '**')
+      : '_None_';
+
+    const itemText = data && data.item_name
+      ? ('🎁 **' + data.item_name + '** (' + (data.rarity || 'Common') + ')')
+      : '_None_';
+
+    embed.setDescription(
+      '**Level ' + selectedLevel + ' Rewards**\n\n' +
+      '• **Coins Reward:** ' + coinsText + '\n' +
+      '• **Item Reward:** ' + itemText + '\n\n' +
+      '_Use the buttons below to configure rewards for Level ' + selectedLevel + ', or switch levels using the menu above._'
+    );
+
+    // Row 2: Action buttons for the selected level
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('pass_coins_btn_' + selectedLevel + '_pg_' + currentPage)
+        .setLabel('Coins Reward')
+        .setEmoji('🪙')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('pass_item_btn_' + selectedLevel + '_pg_' + currentPage)
+        .setLabel('Item Reward')
+        .setEmoji('🎁')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('pass_del_btn_' + selectedLevel + '_pg_' + currentPage)
+        .setLabel('Delete Level')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    // Row 3: Back to main settings
+    const row3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('settings_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return { embeds: [embed], components: [row1, row2, row3] };
+  }
+
+  // Default Overview (No level selected)
+  embed.setTitle('🎟️ Battlepass Configuration');
+
+  if (totalLevels === 0) {
+    embed.setDescription(
+      '_No level rewards configured yet._\n\n' +
+      'Use the dropdown menu below and select **➕ Create New Level** to add your first level.'
+    );
+  } else {
+    const lines = pageLevels.map(row => {
+      const parts = [];
+      if (row.reward_coins > 0) {
+        parts.push(COIN_EMOJI + ' **' + Number(row.reward_coins).toLocaleString() + '**');
+      }
+      if (row.item_name) {
+        parts.push('🎁 **' + row.item_name + '**');
+      }
+      const rewardText = parts.length > 0 ? parts.join(' + ') : '_No Reward Set_';
+      return '• **Level ' + row.level + ':** ' + rewardText;
+    });
+
+    embed.setDescription(
+      '**Configured Levels (' + totalLevels + ' total — Page ' + (currentPage + 1) + '/' + totalPages + ')**\n\n' +
+      lines.join('\n') +
+      '\n\n_Select a level from the dropdown to manage its rewards, or choose **Create New Level**._'
+    );
+  }
+
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_home')
       .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return { embeds: [embed], components: [row1, row2] };
-}
-
-/**
- * Render single level detail & management view
- */
-async function getLevelDetailPayload(guildId, level, page = 0) {
-  const data = await getConfiguredLevel(guildId, level);
-  if (!data) {
-    return getPassDashboardPayload(guildId, page);
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle('🎟️ Battlepass — Level ' + level)
-    .setColor(0x5865F2)
-    .setDescription(
-      '**Level ' + level + ' Configuration**\n\n' +
-      '• **Coins Reward:** ' + (data.reward_coins > 0 ? (COIN_EMOJI + ' **' + Number(data.reward_coins).toLocaleString() + '**') : '_None_') + '\n' +
-      '• **Item Reward:** ' + (data.item_name ? ('🎁 **' + data.item_name + '** (' + (data.rarity || 'Common') + ')') : '_None_') + '\n\n' +
-      'Choose an action below:'
-    );
-
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('pass_edit_level_' + level + '_page_' + page)
-      .setLabel('Edit Reward')
-      .setEmoji('✏️')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('pass_delete_level_' + level + '_page_' + page)
-      .setLabel('Delete Level')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Danger)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('pass_home_page_' + page)
-      .setLabel('Back to Levels')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -231,7 +241,7 @@ export async function handlePassSetup(interaction) {
     }
 
     // 2. Render Dashboard
-    const payload = await getPassDashboardPayload(guildId, 0);
+    const payload = await getPassDashboardPayload(guildId, 0, null);
     await interaction.editReply({ content: '', ...payload });
   } catch (error) {
     await handleInteractionError(interaction, error, 'pass setup');
@@ -246,55 +256,43 @@ export async function handlePassComponent(interaction) {
   const guildId = interaction.guildId;
 
   try {
-    // 1. Dashboard Main Dropdown Select
+    // 1. Main Dropdown Selection
     if (customId === 'pass_main_select') {
       const selectedValue = interaction.values[0];
 
-      // A. Create New Level selected from dropdown
+      // A. Create New Level -> Show Modal asking ONLY for level number
       if (selectedValue.startsWith('pass_create_level_page_')) {
         const page = parseInt(selectedValue.replace('pass_create_level_page_', ''), 10) || 0;
         const modal = new ModalBuilder()
-          .setCustomId('pass_add_level_modal_page_' + page)
-          .setTitle('Create Level Reward');
+          .setCustomId('pass_create_lvl_modal_pg_' + page)
+          .setTitle('Create New Level');
 
         const levelInput = new TextInputBuilder()
           .setCustomId('pass_level_input')
-          .setLabel('Target Level (e.g. 5, 10, 25)')
+          .setLabel('Target Level Number (e.g. 5, 10, 25)')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter level number')
           .setMinLength(1)
           .setMaxLength(6)
           .setRequired(true);
 
-        const coinsInput = new TextInputBuilder()
-          .setCustomId('pass_coins_input')
-          .setLabel('Coin Reward (Optional, 0 for none)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('Enter coin amount (e.g. 100)')
-          .setValue('0')
-          .setRequired(false);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(levelInput),
-          new ActionRowBuilder().addComponents(coinsInput)
-        );
-
+        modal.addComponents(new ActionRowBuilder().addComponents(levelInput));
         await interaction.showModal(modal);
         return;
       }
 
-      // B. Pagination navigation selected from dropdown
+      // B. Pagination
       if (selectedValue.startsWith('pass_page_')) {
         if (!interaction.deferred && !interaction.replied) {
           await interaction.deferUpdate().catch(() => {});
         }
         const targetPage = parseInt(selectedValue.replace('pass_page_', ''), 10) || 0;
-        const payload = await getPassDashboardPayload(guildId, targetPage);
+        const payload = await getPassDashboardPayload(guildId, targetPage, null);
         await interaction.editReply({ content: '', ...payload });
         return;
       }
 
-      // C. Level selected -> Open Level Details view
+      // C. Switch to specific Level view
       if (selectedValue.startsWith('pass_view_level_')) {
         if (!interaction.deferred && !interaction.replied) {
           await interaction.deferUpdate().catch(() => {});
@@ -303,65 +301,141 @@ export async function handlePassComponent(interaction) {
         const level = match ? parseInt(match[1], 10) : 1;
         const page = match ? parseInt(match[2], 10) : 0;
 
-        const payload = await getLevelDetailPayload(guildId, level, page);
+        const payload = await getPassDashboardPayload(guildId, page, level);
         await interaction.editReply({ content: '', ...payload });
         return;
       }
     }
 
-    // 2. Back to Levels List
-    if (customId.startsWith('pass_home_page_') || customId === 'pass_home') {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
-      const page = customId.startsWith('pass_home_page_') ? (parseInt(customId.replace('pass_home_page_', ''), 10) || 0) : 0;
-      const payload = await getPassDashboardPayload(guildId, page);
-      await interaction.editReply({ content: '', ...payload });
-      return;
-    }
-
-    // 3. Edit Level Reward Button -> Show Modal (Cannot defer before showModal)
-    if (customId.startsWith('pass_edit_level_')) {
-      const match = customId.match(/pass_edit_level_(\d+)_page_(\d+)/);
+    // 2. Set Coins Button for Selected Level -> Show Coins Modal
+    if (customId.startsWith('pass_coins_btn_')) {
+      const match = customId.match(/pass_coins_btn_(\d+)_pg_(\d+)/);
       const level = match ? parseInt(match[1], 10) : 1;
       const page = match ? parseInt(match[2], 10) : 0;
 
-      const existingData = await getConfiguredLevel(guildId, level);
+      const data = await getConfiguredLevel(guildId, level);
 
       const modal = new ModalBuilder()
-        .setCustomId('pass_edit_level_modal_' + level + '_page_' + page)
-        .setTitle('Edit Level ' + level + ' Reward');
-
-      const levelInput = new TextInputBuilder()
-        .setCustomId('pass_level_input')
-        .setLabel('Target Level')
-        .setStyle(TextInputStyle.Short)
-        .setValue(String(level))
-        .setRequired(true);
+        .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
+        .setTitle('Set Level ' + level + ' Coins');
 
       const coinsInput = new TextInputBuilder()
         .setCustomId('pass_coins_input')
-        .setLabel('Coin Reward (Optional, 0 for none)')
+        .setLabel('Coin Reward (0 to remove)')
         .setStyle(TextInputStyle.Short)
-        .setValue(String(existingData?.reward_coins || 0))
-        .setRequired(false);
+        .setPlaceholder('Enter coin amount (e.g. 500)')
+        .setValue(String(data?.reward_coins || 0))
+        .setRequired(true);
 
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(levelInput),
-        new ActionRowBuilder().addComponents(coinsInput)
-      );
-
+      modal.addComponents(new ActionRowBuilder().addComponents(coinsInput));
       await interaction.showModal(modal);
       return;
     }
 
-    // 4. Delete Level Button
-    if (customId.startsWith('pass_delete_level_')) {
+    // 3. Set Item Button for Selected Level -> Show Shop Item Selector
+    if (customId.startsWith('pass_item_btn_')) {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate().catch(() => {});
       }
 
-      const match = customId.match(/pass_delete_level_(\d+)_page_(\d+)/);
+      const match = customId.match(/pass_item_btn_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+
+      const unlockedItems = await getUnlockedShopItems(guildId);
+
+      const options = [
+        {
+          label: 'None (Remove Item)',
+          value: 'none',
+          description: 'No item reward for this level',
+          emoji: '❌'
+        }
+      ];
+
+      for (const item of unlockedItems) {
+        options.push({
+          label: item.name.slice(0, 50),
+          value: String(item.id),
+          description: (item.price.toLocaleString() + ' Coins | ' + (item.rarity || 'Common')).slice(0, 50),
+          emoji: '🎁'
+        });
+      }
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('pass_bind_item_' + level + '_pg_' + page)
+        .setPlaceholder('Choose an unlocked shop item for Level ' + level + '...')
+        .addOptions(options.slice(0, 25));
+
+      const row1 = new ActionRowBuilder().addComponents(select);
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('pass_cancel_item_' + level + '_pg_' + page)
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      const embed = new EmbedBuilder()
+        .setTitle('🎁 Level ' + level + ' — Select Item Reward')
+        .setDescription('Choose an unlocked shop item from the list below to bind to **Level ' + level + '**.')
+        .setColor(0x5865F2);
+
+      await interaction.editReply({
+        embeds: [embed],
+        components: [row1, row2]
+      });
+      return;
+    }
+
+    // 4. Cancel Item Selection
+    if (customId.startsWith('pass_cancel_item_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const match = customId.match(/pass_cancel_item_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 5. Bind Item Selected
+    if (customId.startsWith('pass_bind_item_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const match = customId.match(/pass_bind_item_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+
+      const selectedValue = interaction.values[0];
+      const rewardItemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
+
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, 0, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_item_id = $3',
+        [guildId, level, rewardItemId]
+      );
+
+      sysLog('Battlepass Item Bound', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' item set to ' + (rewardItemId || 'None')
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      await interaction.editReply({ content: '', ...payload });
+      return;
+    }
+
+    // 6. Delete Level Button
+    if (customId.startsWith('pass_del_btn_')) {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+      }
+      const match = customId.match(/pass_del_btn_(\d+)_pg_(\d+)/);
       const level = match ? parseInt(match[1], 10) : 1;
       const page = match ? parseInt(match[2], 10) : 0;
 
@@ -377,46 +451,7 @@ export async function handlePassComponent(interaction) {
         detail: 'Level ' + level + ' deleted'
       });
 
-      const payload = await getPassDashboardPayload(guildId, page);
-      await interaction.editReply({ content: '', ...payload });
-      return;
-    }
-
-    // 5. Handle Item Picker Selection (Step 2 of Add/Edit Level)
-    if (customId.startsWith('pass_select_item_')) {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-      }
-
-      // pass_select_item_<level>_<coins>_page_<page>
-      const match = customId.match(/pass_select_item_(\d+)_(\d+)_page_(\d+)/);
-      const targetLevel = match ? parseInt(match[1], 10) : 1;
-      const coinsAmount = match ? parseInt(match[2], 10) : 0;
-      const page = match ? parseInt(match[3], 10) : 0;
-
-      const selectedValue = interaction.values[0];
-      const rewardItemId = selectedValue === 'none' ? null : parseInt(selectedValue, 10);
-
-      if (coinsAmount <= 0 && !rewardItemId) {
-        return interaction.followUp({
-          content: '⚠️ You must provide either Coins, an Item, or both for this level.',
-          flags: MessageFlags.Ephemeral
-        });
-      }
-
-      const pool = getPool();
-      await pool.query(
-        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, $3, $4) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3, reward_item_id = $4',
-        [guildId, targetLevel, coinsAmount, rewardItemId]
-      );
-
-      sysLog('Battlepass Level Configured', {
-        guild: guildId,
-        user: interaction.user.id,
-        detail: 'Level ' + targetLevel + ' configured (Coins: ' + coinsAmount + ', Item: ' + (rewardItemId || 'None') + ')'
-      });
-
-      const payload = await getPassDashboardPayload(guildId, page);
+      const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
       return;
     }
@@ -434,74 +469,68 @@ export async function handlePassModal(interaction) {
   const guildId = interaction.guildId;
 
   try {
-    if (customId.startsWith('pass_add_level_modal') || customId.startsWith('pass_edit_level_modal')) {
-      const pageMatch = customId.match(/_page_(\d+)/);
-      const page = pageMatch ? parseInt(pageMatch[1], 10) : 0;
-
+    // 1. Create New Level Modal (Level Number only)
+    if (customId.startsWith('pass_create_lvl_modal_pg_')) {
+      const page = parseInt(customId.replace('pass_create_lvl_modal_pg_', ''), 10) || 0;
       const levelRaw = interaction.fields.getTextInputValue('pass_level_input').trim();
-      const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input').trim();
 
       const level = parseInt(levelRaw, 10);
       if (isNaN(level) || level <= 0) {
         return interaction.reply({ content: '❌ Level must be a positive whole number.', flags: MessageFlags.Ephemeral });
       }
 
-      let coins = 0;
-      if (coinsRaw && coinsRaw.length > 0) {
-        coins = parseInt(coinsRaw, 10);
-        if (isNaN(coins) || coins < 0) {
-          return interaction.reply({ content: '❌ Coin reward must be 0 or a positive number.', flags: MessageFlags.Ephemeral });
-        }
-      }
-
-      // Step 2: Show Item Picker Select Menu
-      const unlockedItems = await getUnlockedShopItems(guildId);
-
-      const options = [
-        {
-          label: 'None (Coins Only)',
-          value: 'none',
-          description: coins > 0 ? ('Award ' + coins + ' coins only') : 'No item reward',
-          emoji: '🪙'
-        }
-      ];
-
-      for (const item of unlockedItems) {
-        options.push({
-          label: item.name.slice(0, 50),
-          value: String(item.id),
-          description: (item.price.toLocaleString() + ' Coins | ' + (item.rarity || 'Common')).slice(0, 50),
-          emoji: '🎁'
-        });
-      }
-
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('pass_select_item_' + level + '_' + coins + '_page_' + page)
-        .setPlaceholder('Choose an item reward for Level ' + level + '...')
-        .addOptions(options.slice(0, 25));
-
-      const row1 = new ActionRowBuilder().addComponents(select);
-      const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('pass_home_page_' + page)
-          .setLabel('Cancel')
-          .setStyle(ButtonStyle.Secondary)
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, 0, NULL) ON CONFLICT (guild_id, level) DO NOTHING',
+        [guildId, level]
       );
 
-      const embed = new EmbedBuilder()
-        .setTitle('🎟️ Level ' + level + ' — Select Item Reward')
-        .setDescription(
-          '**Configuring Level ' + level + '**\n' +
-          '• **Coins:** ' + (coins > 0 ? (COIN_EMOJI + ' ' + coins.toLocaleString()) : '_None_') + '\n\n' +
-          'Choose an unlocked item from the shop below, or select **None (Coins Only)**.'
-        )
-        .setColor(0x5865F2);
-
-      await interaction.reply({
-        embeds: [embed],
-        components: [row1, row2],
-        flags: MessageFlags.Ephemeral
+      sysLog('Battlepass Level Created', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' created'
       });
+
+      // Render Level Management View directly for this newly created level
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '', ...payload });
+      } else {
+        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // 2. Set Coins Modal
+    if (customId.startsWith('pass_set_coins_modal_')) {
+      const match = customId.match(/pass_set_coins_modal_(\d+)_pg_(\d+)/);
+      const level = match ? parseInt(match[1], 10) : 1;
+      const page = match ? parseInt(match[2], 10) : 0;
+
+      const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input').trim();
+      const coins = parseInt(coinsRaw, 10);
+      if (isNaN(coins) || coins < 0) {
+        return interaction.reply({ content: '❌ Coin amount must be 0 or a positive whole number.', flags: MessageFlags.Ephemeral });
+      }
+
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO battlepass_config (guild_id, level, reward_coins, reward_item_id) VALUES ($1, $2, $3, NULL) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3',
+        [guildId, level, coins]
+      );
+
+      sysLog('Battlepass Coins Configured', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: 'Level ' + level + ' coins set to ' + coins
+      });
+
+      const payload = await getPassDashboardPayload(guildId, page, level);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '', ...payload });
+      } else {
+        await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+      }
       return;
     }
   } catch (error) {
