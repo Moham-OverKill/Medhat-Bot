@@ -228,7 +228,7 @@ export async function rotateGuildQuests(guildId, config, pool, client = null) {
     if (client) {
       try {
         const { publishOrUpdateHub } = await import('../commands/interface.js');
-        await publishOrUpdateHub(client, guildId);
+        await publishOrUpdateHub(client, guildId, { allowCreate: false });
       } catch (hubErr) {
         sysError('Hub Auto-Update Failed on Quest Rotation', hubErr, { guild: guildId });
       }

@@ -66,17 +66,29 @@ async function runHourlyRefresh(client, isStartup = false) {
         sysLog('Midnight Pre-Processing', { detail: `Voice time flushed for ${guildIds.length} guild(s)` });
     }
 
-    // ── STEP 2: Refresh leaderboard UI messages & Community Interface Hubs ──
+    // ── STEP 2: Refresh leaderboard UI messages ──
     for (const guildId of guildIds) {
         await runInGuildContext(guildId, async () => {
             try {
                 await updateLeaderboards(client, guildId, null, []);
-                const { publishOrUpdateHub } = await import('../commands/interface.js');
-                await publishOrUpdateHub(client, guildId);
             } catch (err) {
-                sysError('Guild Leaderboard/Hub Sync Failed', err, { guild: guildId });
+                sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
             }
         });
+    }
+
+    // ── STEP 2.2: Refresh Community Interface Hubs at Midnight ──
+    if (isMidnight) {
+        for (const guildId of guildIds) {
+            await runInGuildContext(guildId, async () => {
+                try {
+                    const { publishOrUpdateHub } = await import('../commands/interface.js');
+                    await publishOrUpdateHub(client, guildId, { allowCreate: false });
+                } catch (err) {
+                    sysError('Midnight Hub Sync Failed', err, { guild: guildId });
+                }
+            });
+        }
     }
 
     // ── STEP 2.5: Apply Richest & Streak role rewards ──
