@@ -442,6 +442,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
  * Get a user's Battlepass progress summary for /pass command
  */
 export async function getUserPassProgress(guildId, userId) {
+  try {
+    const { flushMessageBatch } = await import('../../activity/tracker.js');
+    await flushMessageBatch().catch(() => {});
+  } catch {}
+
   const pool = getPool();
 
   const { getGuildConfig } = await import('../../storage/config.js');
