@@ -111,3 +111,26 @@ export async function getUsersForNotification(guildId, key) {
     return [];
   }
 }
+
+/**
+ * Retrieve unique user IDs across all guilds who have enabled a specific notification
+ * @param {string} key
+ * @returns {Promise<string[]>}
+ */
+export async function getAllUniqueUsersForNotification(key) {
+  if (!Object.values(NOTIFICATION_KEYS).includes(key)) {
+    return [];
+  }
+
+  try {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT DISTINCT user_id FROM user_notification_settings WHERE ${key} = TRUE`
+    );
+    return result.rows.map(r => r.user_id);
+  } catch (error) {
+    sysError('Fetch All Unique Users for Notification Failed', error, { key });
+    return [];
+  }
+}
+
