@@ -515,11 +515,12 @@ export async function handleShopBuyButton(interaction) {
     const guildName = interaction.guild.name;
     const buyerName = interaction.user.username;
 
-    // STEP 1: Calculate Seller Payout
+    // STEP 1: Calculate Seller Payout & Effective Item Price
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const { getShopItem } = await import('../economy/shop.js');
-    const itemForPrice = await getShopItem(itemId);
+    const itemForPrice = await getShopItem(itemId, guildId);
+    const itemPrice = overridePrice !== null && overridePrice !== undefined ? overridePrice : (itemForPrice ? (parseInt(itemForPrice.price, 10) || 0) : 0);
     const customPayout = parseInt(payoutStr) || 0;
     const payoutAmount = hasSeller ? customPayout : 0;
 
@@ -537,9 +538,9 @@ export async function handleShopBuyButton(interaction) {
       if (result.error === 'Insufficient balance') {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0);
-        const missing = itemPrice - currentBal;
+        const missing = Math.max(0, itemPrice - currentBal);
         return interaction.editReply({
-          content: `\u274C You need **${missing}** ${COIN_EMOJI} more to buy this.`,
+          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`,
           components: []
         });
       } else if (result.error.includes('higher than my highest role')) {
