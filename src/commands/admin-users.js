@@ -431,9 +431,7 @@ export async function handleLevelModal(interaction) {
             [guildId, targetUserId, targetMember?.user?.username || 'User', targetXp]
         );
 
-        if (newLevel === 0) {
-            await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2', [guildId, targetUserId]);
-        } else {
+        if (newLevel > 0) {
             const { syncUserLevelRewards } = await import('./settings/pass-engine.js');
             await syncUserLevelRewards(guildId, targetUserId, targetMember?.user?.username || 'User', interaction.client);
         }
