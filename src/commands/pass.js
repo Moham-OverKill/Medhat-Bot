@@ -44,9 +44,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     for (let i = 0; i < filled; i++) bar += String.fromCodePoint(0x2588);
     for (let i = 0; i < empty; i++) bar += String.fromCodePoint(0x2591);
 
-    embed.setTitle('Your Level Progress');
+    embed.setTitle(`You Are Level ${data.currentLevel}`);
     embed.addFields({
-      name: `You Are Level ${data.currentLevel}`,
+      name: 'Progress:',
       value: `\`${bar}\` ${data.xpIntoCurrentLevel} / ${data.xpForNextLevel} XP`,
       inline: false
     });
