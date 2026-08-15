@@ -27,37 +27,24 @@ import { handleInteractionError } from '../utils/errors.js';
 
 export const INTERFACE_BANNER_IMAGE = 'https://i.ibb.co/WWmfY73Z/INTERFACE-v3.png';
 
-/**
- * Validate and parse a hex color string into an integer
- * @param {string} colorStr 
- * @param {number} fallback 
- * @returns {number}
- */
-export function parseColor(colorStr, fallback = 0x5865F2) {
-  if (!colorStr) return fallback;
-  const clean = colorStr.trim().replace(/^#/, '').replace(/^0x/i, '');
-  const parsed = parseInt(clean, 16);
-  if (isNaN(parsed) || parsed < 0 || parsed > 0xFFFFFF) return fallback;
-  return parsed;
-}
-
-/**
- * Build the public Hub embed for a guild
- * @param {import('discord.js').Guild} guild 
- * @param {Object} config 
- * @returns {Promise<EmbedBuilder>}
- */
 export async function buildHubEmbed(guild, config = null) {
   const guildId = guild.id;
   const guildConfig = config || await getGuildConfig(guildId) || {};
   const coinEmoji = COIN_EMOJI.forGuild(guildId);
 
-  const rawTitle = (guildConfig.interface_title || 'Server Hub').trim();
-  const rawEmoji = (guildConfig.interface_emoji || '🖥️').trim();
-  const rawColor = guildConfig.interface_color || '#5865F2';
-  const embedColor = parseColor(rawColor, 0x5865F2);
-
-  const titleWithEmoji = rawEmoji ? `${rawEmoji} ${rawTitle}` : rawTitle;
+  // Self-healing: Purge any legacy appearance configurations from DB
+  if (
+    guildConfig.interface_title !== undefined ||
+    guildConfig.interface_emoji !== undefined ||
+    guildConfig.interface_color !== undefined ||
+    guildConfig.interface_image_url !== undefined
+  ) {
+    delete guildConfig.interface_title;
+    delete guildConfig.interface_emoji;
+    delete guildConfig.interface_color;
+    delete guildConfig.interface_image_url;
+    await setGuildConfig(guildId, guildConfig).catch(() => {});
+  }
 
   // Active Quests Section
   const questsEnabled = guildConfig.quests_enabled ?? guildConfig.missions_enabled ?? false;
@@ -86,8 +73,8 @@ export async function buildHubEmbed(guild, config = null) {
   const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
 
   const embed = new EmbedBuilder()
-    .setTitle(titleWithEmoji)
-    .setColor(embedColor)
+    .setTitle('🖥️ INTERFACE')
+    .setColor(0x000000)
     .setImage('attachment://interface.png')
     .addFields({
       name: questFieldName,
@@ -236,17 +223,26 @@ export async function showInterfaceSettings(interaction, configOverride = null) 
   const guildId = interaction.guildId;
   const config = configOverride || await getGuildConfig(guildId) || {};
 
+  // Self-healing: Purge legacy appearance configurations
+  if (
+    config.interface_title !== undefined ||
+    config.interface_emoji !== undefined ||
+    config.interface_color !== undefined ||
+    config.interface_image_url !== undefined
+  ) {
+    delete config.interface_title;
+    delete config.interface_emoji;
+    delete config.interface_color;
+    delete config.interface_image_url;
+    await setGuildConfig(guildId, config).catch(() => {});
+  }
+
   const currentChannel = config.interface_channel_id ? `<#${config.interface_channel_id}>` : '*Not Set*';
-  const currentTitle = (config.interface_title || 'Server Hub').trim();
-  const currentEmoji = (config.interface_emoji || '🖥️').trim();
-  const currentColor = config.interface_color || '#5865F2';
   const isPublished = Boolean(config.interface_channel_id && config.interface_message_id);
 
   const desc = [
-    'Configure the public Interface message with live active quests, countdown timers, and shortcuts.\n',
+    'Configure the public Community Interface message with active quests, countdown timers, and quick shortcuts.\n',
     `• **Target Channel:** ${currentChannel}`,
-    `• **Title:** \`${currentEmoji} ${currentTitle}\``,
-    `• **Embed Color:** \`${currentColor}\``,
     `• **Status:** ${isPublished ? '`🟢 Published & Active`' : config.interface_channel_id ? '`🟡 Pending Deployment`' : '`🔴 Not Configured`'}`
   ].join('\n');
 
@@ -265,17 +261,12 @@ export async function showInterfaceSettings(interaction, configOverride = null) 
     channelSelect.setDefaultChannels([config.interface_channel_id]);
   }
 
-  // Row 2: Action Buttons
+  // Row 2: Action Buttons (No edit appearance button)
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_users')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('interface_edit_modal_btn')
-      .setLabel('Edit Appearance')
-      .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('interface_publish_btn')
@@ -343,52 +334,7 @@ export async function handleInterfaceComponent(interaction) {
       return showInterfaceSettings(interaction, config);
     }
 
-    // 2. Open Edit Appearance Modal
-    if (customId === 'interface_edit_modal_btn') {
-      const config = await getGuildConfig(guildId) || {};
-      const currentTitle = config.interface_title || 'Server Hub';
-      const currentEmoji = config.interface_emoji || '🖥️';
-      const currentColor = config.interface_color || '#5865F2';
 
-      const modal = new ModalBuilder()
-        .setCustomId('interface_edit_modal')
-        .setTitle('Edit Interface Appearance');
-
-      const titleInput = new TextInputBuilder()
-        .setCustomId('interface_title_input')
-        .setLabel('Embed Title')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Server Hub')
-        .setValue(config.interface_title ? currentTitle : '')
-        .setMaxLength(64)
-        .setRequired(false);
-
-      const emojiInput = new TextInputBuilder()
-        .setCustomId('interface_emoji_input')
-        .setLabel('Title Emoji (Unicode or Custom <:name:id>)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('🖥️')
-        .setValue(config.interface_emoji ? currentEmoji : '')
-        .setMaxLength(64)
-        .setRequired(false);
-
-      const colorInput = new TextInputBuilder()
-        .setCustomId('interface_color_input')
-        .setLabel('Embed Color Code (e.g. #5865F2, #2F3136)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('#5865F2')
-        .setValue(config.interface_color ? currentColor : '')
-        .setMaxLength(10)
-        .setRequired(false);
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(titleInput),
-        new ActionRowBuilder().addComponents(emojiInput),
-        new ActionRowBuilder().addComponents(colorInput)
-      );
-
-      return interaction.showModal(modal);
-    }
 
     // 3. Publish / Force Update
     if (customId === 'interface_publish_btn') {
@@ -452,42 +398,8 @@ export async function handleInterfaceComponent(interaction) {
   }
 }
 
-/**
- * Handle Modal Submit for Interface appearance
- * @param {import('discord.js').ModalSubmitInteraction} interaction 
- */
 export async function handleInterfaceModal(interaction) {
-  const guildId = interaction.guildId;
-
-  try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-
-    const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
-    const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
-    const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
-    const config = await getGuildConfig(guildId) || {};
-    config.interface_title = title;
-    config.interface_emoji = emoji;
-    config.interface_color = color;
-    delete config.interface_image_url;
-    await setGuildConfig(guildId, config);
-
-    // If already published, auto-update the live message
-    if (config.interface_channel_id) {
-      await publishOrUpdateHub(interaction.client, guildId);
-    }
-
-    const logName = getUserLogName(interaction);
-    sendLog(interaction.guild, 'audit', 'cyan', '🖥️ Interface Appearance Updated',
-      `**Admin:** \`${logName}\`\n` +
-      `**Title:** \`${emoji} ${title}\`\n` +
-      `**Color:** \`${color}\``
-    );
-
-    return showInterfaceSettings(interaction, config);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'interface modal');
-  }
+  // Appearance customization has been deprecated and locked globally
 }
 
 /**
