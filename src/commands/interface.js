@@ -427,6 +427,7 @@ export async function handleHubShortcut(interaction) {
     }
 
     // 3. Daily Shortcut
+    // 3. Daily Shortcut (Exact same output as /bank daily)
     if (customId === 'hub_btn_daily') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -440,12 +441,10 @@ export async function handleHubShortcut(interaction) {
           const nextMidnight = getNextCairoMidnight();
           const nextMidnightTs = Math.floor(nextMidnight.getTime() / 1000);
 
-          const alreadyClaimedEmbed = new EmbedBuilder()
-            .setTitle('⏳ Daily Already Claimed')
-            .setColor(0xE74C3C)
-            .setDescription(`You have already claimed your daily reward! Try again **<t:${nextMidnightTs}:R>**.`);
-
-          return interaction.editReply({ embeds: [alreadyClaimedEmbed] });
+          return interaction.editReply({
+            content: `You already claimed your daily! Try again <t:${nextMidnightTs}:R>.`,
+            embeds: []
+          });
         }
 
         throw new Error(result.error);
@@ -460,16 +459,13 @@ export async function handleHubShortcut(interaction) {
         `**Balance:** \`${initialBal.toLocaleString()}\` ➡️ \`${result.balance.toLocaleString()}\``
       );
 
-      const successEmbed = new EmbedBuilder()
-        .setTitle('💰 Daily Reward Claimed!')
-        .setColor(0x2ECC71)
-        .setDescription([
-          `• **Earned:** **+${result.amount.toLocaleString()}** ${coinEmoji}`,
-          `• **Daily Streak:** **${result.streak} days** 🔥`,
-          `• **New Balance:** **${result.balance.toLocaleString()}** ${coinEmoji}`
-        ].join('\n'));
+      const { breakdown } = result;
+      let msg = `You received **${result.amount}** ${coinEmoji}\n`;
+      msg += `> 💰 Base: **+${breakdown.base}**\n`;
+      msg += `> 🔥 Streak Bonus: **+${breakdown.streakBonus}**\n`;
+      msg += `> 🚀 Boost Bonus: **+${breakdown.boostBonus}**\n`;
 
-      return interaction.editReply({ embeds: [successEmbed] });
+      return interaction.editReply({ content: msg, embeds: [] });
     }
 
     // 3. Inventory Shortcut
