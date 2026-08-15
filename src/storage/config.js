@@ -70,10 +70,7 @@ const CONFIG_SCHEMA = {
   battlepass_notif_channel: { type: 'string', validate: isValidSnowflake, required: false },
   // Community Interface / Server Hub Module
   interface_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
-  interface_message_id: { type: 'string', validate: isValidSnowflake, required: false },
-  interface_title: { type: 'string', required: false },
-  interface_emoji: { type: 'string', required: false },
-  interface_color: { type: 'string', required: false }
+  interface_message_id: { type: 'string', validate: isValidSnowflake, required: false }
 };
 
 export const configCache = new Map();

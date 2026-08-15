@@ -880,6 +880,13 @@ async function createTables() {
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_message_id TEXT`).catch(() => {});
 
+    // Self-healing migration: Purge legacy interface appearance customizations
+    await pool.query(`
+      UPDATE guild_configs
+      SET config = config - 'interface_title' - 'interface_emoji' - 'interface_color' - 'interface_image_url'
+      WHERE config ? 'interface_title' OR config ? 'interface_emoji' OR config ? 'interface_color' OR config ? 'interface_image_url'
+    `).catch(() => {});
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
