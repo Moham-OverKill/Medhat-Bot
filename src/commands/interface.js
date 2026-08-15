@@ -12,6 +12,9 @@ import {
   PermissionFlagsBits,
   AttachmentBuilder
 } from 'discord.js';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { getNextQuestRefresh, getNextCairoMidnight } from '../utils/time.js';
 import { formatCompactQuest } from '../quests/quests.js';
@@ -25,7 +28,9 @@ import { COIN_EMOJI, getUserDisplayName, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-export const INTERFACE_BANNER_IMAGE = 'https://i.ibb.co/WWmfY73Z/INTERFACE-v3.png';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const LOCAL_BANNER_PATH = path.join(__dirname, '../../assets/interface.png');
+export const INTERFACE_BANNER_IMAGE = 'https://media.discordapp.net/attachments/1537838869570002994/1538293185070235668/RGWP2LQ.png?ex=6a8226ab&is=6a80d52b&hm=b96ca59f431d7c3a08a1981505efb337516294c4485beb56fe8e783c39e02a5e&animated=true';
 
 export async function buildHubEmbed(guild, config = null) {
   const guildId = guild.id;
@@ -156,7 +161,8 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       return false;
     }
 
-    const attachment = new AttachmentBuilder(INTERFACE_BANNER_IMAGE, { name: 'interface.png' });
+    const attachmentSource = fs.existsSync(LOCAL_BANNER_PATH) ? LOCAL_BANNER_PATH : INTERFACE_BANNER_IMAGE;
+    const attachment = new AttachmentBuilder(attachmentSource, { name: 'interface.png' });
 
     const embed = await buildHubEmbed(guild, config);
     const buttonRows = buildHubButtons(client);
