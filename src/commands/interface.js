@@ -25,25 +25,7 @@ import { COIN_EMOJI, getUserDisplayName, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-export const DEFAULT_INTERFACE_IMAGE = 'https://i.ibb.co/WWmfY73Z/INTERFACE-v3.png';
-
-/**
- * Check if an image URL is unset or is one of the default/legacy stock banners
- * @param {string} url 
- * @returns {boolean}
- */
-export function isDefaultOrLegacyImage(url) {
-  if (!url || typeof url !== 'string') return true;
-  const trimmed = url.trim();
-  if (!trimmed) return true;
-  return (
-    trimmed.includes('INTERFACE.png') ||
-    trimmed.includes('INTERFACE-v2.png') ||
-    trimmed.includes('gZPyVCvX') ||
-    trimmed.includes('ymZp0sRd') ||
-    trimmed.includes('CpY6B0tm')
-  );
-}
+export const INTERFACE_BANNER_IMAGE = 'https://i.ibb.co/WWmfY73Z/INTERFACE-v3.png';
 
 /**
  * Validate and parse a hex color string into an integer
@@ -187,13 +169,7 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       return false;
     }
 
-    let embedImage = (config.interface_image_url || '').trim();
-    if (isDefaultOrLegacyImage(embedImage)) {
-      embedImage = DEFAULT_INTERFACE_IMAGE;
-      config.interface_image_url = embedImage;
-      await setGuildConfig(guildId, config).catch(() => {});
-    }
-    const attachment = new AttachmentBuilder(embedImage, { name: 'interface.png' });
+    const attachment = new AttachmentBuilder(INTERFACE_BANNER_IMAGE, { name: 'interface.png' });
 
     const embed = await buildHubEmbed(guild, config);
     const buttonRows = buildHubButtons(client);
@@ -405,25 +381,10 @@ export async function handleInterfaceComponent(interaction) {
         .setMaxLength(10)
         .setRequired(false);
 
-      let currentImage = (config.interface_image_url || '').trim();
-      if (isDefaultOrLegacyImage(currentImage)) {
-        currentImage = DEFAULT_INTERFACE_IMAGE;
-      }
-
-      const imageInput = new TextInputBuilder()
-        .setCustomId('interface_image_input')
-        .setLabel('Embed Image URL')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder(DEFAULT_INTERFACE_IMAGE)
-        .setValue(config.interface_image_url ? currentImage : '')
-        .setMaxLength(256)
-        .setRequired(false);
-
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
         new ActionRowBuilder().addComponents(emojiInput),
-        new ActionRowBuilder().addComponents(colorInput),
-        new ActionRowBuilder().addComponents(imageInput)
+        new ActionRowBuilder().addComponents(colorInput)
       );
 
       return interaction.showModal(modal);
@@ -504,16 +465,11 @@ export async function handleInterfaceModal(interaction) {
     const title = (interaction.fields.getTextInputValue('interface_title_input') || '').trim() || 'Server Hub';
     const emoji = (interaction.fields.getTextInputValue('interface_emoji_input') || '').trim() || '🖥️';
     const color = (interaction.fields.getTextInputValue('interface_color_input') || '').trim() || '#5865F2';
-    let image = (interaction.fields.getTextInputValue('interface_image_input') || '').trim();
-    if (isDefaultOrLegacyImage(image)) {
-      image = DEFAULT_INTERFACE_IMAGE;
-    }
-
     const config = await getGuildConfig(guildId) || {};
     config.interface_title = title;
     config.interface_emoji = emoji;
     config.interface_color = color;
-    config.interface_image_url = image;
+    delete config.interface_image_url;
     await setGuildConfig(guildId, config);
 
     // If already published, auto-update the live message
