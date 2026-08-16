@@ -358,7 +358,7 @@ async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
   }
 }
 
-async function dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config) {
+export async function dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config) {
   const client2 = await pool.connect();
   try {
     await client2.query('BEGIN');
