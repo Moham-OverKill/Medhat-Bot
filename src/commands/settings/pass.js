@@ -333,13 +333,15 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     .setCustomId('pass_set_xp_threshold_pg_' + currentPage)
     .setLabel('XP')
     .setEmoji('⚡')
-    .setStyle(ButtonStyle.Primary);
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(isEnabled);
 
   const boostsBtn = new ButtonBuilder()
     .setCustomId('pass_boosts_pg_' + currentPage)
     .setLabel('Boosts')
     .setEmoji('🚀')
-    .setStyle(ButtonStyle.Primary);
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(isEnabled);
 
   const startPauseBtn = isEnabled
     ? new ButtonBuilder()
@@ -533,6 +535,11 @@ export async function handlePassComponent(interaction) {
 
     // ── 5. XP Threshold Modal ─────────────────────────────────────────────
     if (customId.startsWith('pass_set_xp_threshold_pg_')) {
+      if (isEnabled) {
+        const msg = { content: '⚠️ You must pause levels before changing XP settings.', flags: MessageFlags.Ephemeral };
+        if (interaction.deferred || interaction.replied) return interaction.followUp(msg);
+        return interaction.reply(msg);
+      }
       const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
       const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
       const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
@@ -603,6 +610,11 @@ export async function handlePassComponent(interaction) {
 
     // ── 6. Boosts Dashboard ───────────────────────────────────────────────
     if (customId.startsWith('pass_boosts_pg_')) {
+      if (isEnabled) {
+        const msg = { content: '⚠️ You must pause levels before changing Boosts.', flags: MessageFlags.Ephemeral };
+        if (interaction.deferred || interaction.replied) return interaction.followUp(msg);
+        return interaction.reply(msg);
+      }
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const page = parseInt(customId.replace('pass_boosts_pg_', ''), 10) || 0;
       const payload = await getBoostsDashboardPayload(guildId, page);
