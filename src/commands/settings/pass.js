@@ -649,22 +649,26 @@ export async function handlePassComponent(interaction) {
         return interaction.followUp({ content: '⚠️ Role not found.', flags: MessageFlags.Ephemeral });
       }
 
-      // Show modal to enter boost percentage
+      const pool = getPool();
+      const existingBoost = await pool.query('SELECT boost_percentage FROM role_xp_boosters WHERE guild_id = $1 AND role_id = $2', [guildId, roleId]);
+      const currentBoost = existingBoost.rows[0]?.boost_percentage;
+
+      const boostInput = new TextInputBuilder()
+        .setCustomId('boost_pct_input')
+        .setLabel('XP Boost %')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('35')
+        .setMaxLength(4)
+        .setRequired(true);
+
+      if (currentBoost) {
+        boostInput.setValue(String(currentBoost));
+      }
+
       const modal = new ModalBuilder()
         .setCustomId('pass_boost_pct_modal_' + roleId + '_pg_' + page)
-        .setTitle('Set Boost Percentage');
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('boost_pct_input')
-            .setLabel('XP Boost % (e.g. 50 = +50% XP)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 50')
-            .setMinLength(1).setMaxLength(4)
-            .setRequired(true)
-        )
-      );
+        .setTitle('Set Boost Percentage')
+        .addComponents(new ActionRowBuilder().addComponents(boostInput));
 
       await interaction.showModal(modal);
       return;
