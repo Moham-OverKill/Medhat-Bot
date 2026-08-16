@@ -935,14 +935,14 @@ export async function handlePassComponent(interaction) {
 
       const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
+          .setCustomId('pass_home_page_' + page)
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
           .setCustomId('pass_import_proceed_pg_' + page)
           .setLabel('Proceed')
           .setEmoji('✅')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('pass_home_page_' + page)
-          .setLabel('Cancel')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Danger)
       );
 
       await interaction.editReply({ embeds: [embed], components: [row1] });
