@@ -553,12 +553,12 @@ export async function handlePassComponent(interaction) {
         if (interaction.deferred || interaction.replied) return interaction.followUp(msg);
         return interaction.reply(msg);
       }
-      const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
-      const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-      const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
-      const msgXp = parseInt(config.battlepass_msg_xp ?? 1, 10);
-      const voiceXp = parseInt(config.battlepass_voice_xp ?? 1, 10);
-      const questXp = parseInt(config.battlepass_quest_xp ?? 150, 10);
+      const freshConfig = await getGuildConfig(guildId) || {};
+      const baseXp = parseInt(freshConfig.battlepass_base_xp ?? freshConfig.battlepass_xp_per_level ?? 100, 10);
+      const incrementXp = parseInt(freshConfig.battlepass_xp_increment ?? 50, 10);
+      const msgXp = parseInt(freshConfig.battlepass_msg_xp ?? 1, 10);
+      const voiceXp = parseInt(freshConfig.battlepass_voice_xp ?? 1, 10);
+      const questXp = parseInt(freshConfig.battlepass_quest_xp ?? 150, 10);
 
       const modal = new ModalBuilder()
         .setCustomId('pass_xp_threshold_modal_pg_' + page)
@@ -570,7 +570,7 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_base_xp_input')
             .setLabel('Base XP (Level 1)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Default: 100')
+            .setPlaceholder('100')
             .setValue(String(baseXp))
             .setMaxLength(6)
             .setRequired(false)
@@ -580,7 +580,7 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_increment_xp_input')
             .setLabel('XP Increment per Level (0 = flat)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Default: 50')
+            .setPlaceholder('50')
             .setValue(String(incrementXp))
             .setMaxLength(6)
             .setRequired(false)
@@ -590,7 +590,7 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_msg_xp_input')
             .setLabel('Message XP (per valid message)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Default: 1')
+            .setPlaceholder('1')
             .setValue(String(msgXp))
             .setMaxLength(4)
             .setRequired(false)
@@ -600,7 +600,7 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_voice_xp_input')
             .setLabel('Voice XP (per voice minute)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Default: 1')
+            .setPlaceholder('1')
             .setValue(String(voiceXp))
             .setMaxLength(4)
             .setRequired(false)
@@ -610,7 +610,7 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_quest_xp_input')
             .setLabel('Quest Completion XP')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Default: 150')
+            .setPlaceholder('150')
             .setValue(String(questXp))
             .setMaxLength(6)
             .setRequired(false)
