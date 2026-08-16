@@ -926,11 +926,17 @@ export async function handlePassComponent(interaction) {
         .setTitle('📥 Import Levels — Warning')
         .setColor(0xED4245)
         .setDescription(
-          '**This action will overwrite the level progress of all members.**\n\n' +
-          'You will map Discord roles to level numbers. The bot will then scan all members and assign them levels based on their roles.\n\n' +
-          '**If a member has multiple mapped roles, they will be assigned the LOWEST level.**\n\n' +
-          '⚠️ This operation cannot be undone. All existing level claims for affected users will be reset.\n\n' +
-          '_Make sure levels are paused before continuing._'
+          '**Before you continue, make sure you have:**\n' +
+          '• Disabled or removed your current leveling bot from the server\n' +
+          '• Confirmed this is a one-time migration — do not run this again after members start earning XP naturally\n' +
+          '• Notified your members that their level progress is being transferred\n' +
+          '\n' +
+          '─────────────────────────\n' +
+          '\n' +
+          '**How it works:**\n' +
+          'You will map Discord roles to level numbers. The bot scans all members, checks which mapped roles they hold, and assigns them the corresponding level.\n\n' +
+          'If a member holds multiple mapped roles, they will be assigned the **lowest** level.\n\n' +
+          '⚠️ This will overwrite existing level progress for all affected members and cannot be undone.'
         );
 
       const row1 = new ActionRowBuilder().addComponents(
