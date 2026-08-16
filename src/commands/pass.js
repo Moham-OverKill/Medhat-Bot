@@ -64,7 +64,6 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     if (data.nextReward) {
       const nr = data.nextReward;
       const parts = [];
-      if (nr.reward_role_id) parts.push(`<@&${nr.reward_role_id}>`);
       if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
       for (const r of (nr.rewards || [])) {
         const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
@@ -84,7 +83,6 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     if (data.claims.length > 0) {
       const claimLines = data.claims.map(c => {
         const parts = [];
-        if (c.reward_role_id) parts.push(`<@&${c.reward_role_id}>`);
         if (c.reward_coins > 0) parts.push(`${coinEmoji} **${Number(c.reward_coins).toLocaleString()} Coins**`);
         for (const r of (c.rewards || [])) {
           const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
