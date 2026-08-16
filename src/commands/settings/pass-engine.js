@@ -710,6 +710,36 @@ export async function getUserPassProgress(guildId, userId) {
     };
   }
 
+  // Get active role XP boosters for this user
+  let activeBoosts = [];
+  let totalBoostPct = 0;
+  try {
+    const { getDiscordClient } = await import('../../activity/index.js');
+    const client = getDiscordClient();
+    const guild = client?.guilds?.cache?.get(guildId);
+    if (guild) {
+      const member = guild.members.cache.get(userId)
+        || await guild.members.fetch(userId).catch(() => null);
+      if (member) {
+        const memberRoleIds = Array.from(member.roles.cache.keys());
+        if (memberRoleIds.length > 0) {
+          const placeholders = memberRoleIds.map((_, i) => `$${i + 2}`).join(', ');
+          const boostersRes = await pool.query(
+            `SELECT role_id, boost_percentage FROM role_xp_boosters
+             WHERE guild_id = $1 AND role_id IN (${placeholders})
+             ORDER BY boost_percentage DESC`,
+            [guildId, ...memberRoleIds]
+          );
+          activeBoosts = boostersRes.rows.map(b => ({
+            roleId: b.role_id,
+            boostPct: parseInt(b.boost_percentage, 10) || 0
+          }));
+          totalBoostPct = activeBoosts.reduce((sum, b) => sum + b.boostPct, 0);
+        }
+      }
+    }
+  } catch {}
+
   return {
     isEnabled,
     totalXp,
@@ -720,6 +750,8 @@ export async function getUserPassProgress(guildId, userId) {
     incrementXp,
     claims,
     nextReward,
+    activeBoosts,
+    totalBoostPct,
     config
   };
 }
