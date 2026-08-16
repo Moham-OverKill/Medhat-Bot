@@ -202,6 +202,10 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       .setMinValues(0)
       .setMaxValues(1);
 
+    if (levelData?.reward_role_id) {
+      roleSelect.setDefaultRoles(levelData.reward_role_id);
+    }
+
     const row2 = new ActionRowBuilder().addComponents(roleSelect);
 
     // Row 3: Coins Selector
