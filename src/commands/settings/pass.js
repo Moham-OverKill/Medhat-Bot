@@ -929,8 +929,8 @@ export async function handlePassComponent(interaction) {
           '• Only use this tool if you are transferring levels from another bot\n' +
           '• Disable or remove your previous leveling bot from the server\n' +
           '• Configure your XP settings before starting the import\n' +
-          '• Do not create levels manually yet — they will be added automatically during import\n' +
-          '• This is a one-time migration — do not run this again after members begin earning XP naturally\n' +
+          '• Do not create levels manually yet, they will be added automatically during import\n' +
+          '• This is a one-time migration, do not run this again after members begin earning XP naturally\n' +
           '• Notify your members that their levels are being transferred\n' +
           '• Members who have left the server will not have their levels transferred\n' +
           '\n' +
