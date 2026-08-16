@@ -532,6 +532,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
     return {
       level: levelRow.level,
+      roleId: levelRow.reward_role_id,
       coins,
       rewards: grantedRewards
     };
@@ -564,6 +565,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
     if (claimedLevels.length === 1) {
       const single = claimedLevels[0];
       const rewards = [];
+      if (single.roleId) rewards.push(`<@&${single.roleId}>`);
       if (single.coins > 0) rewards.push(`${coinEmoji} **${single.coins.toLocaleString()} Coins**`);
       for (const r of (single.rewards || [])) {
         const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
@@ -580,6 +582,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
 
       const lines = claimedLevels.map(c => {
         const rewards = [];
+        if (c.roleId) rewards.push(`<@&${c.roleId}>`);
         if (c.coins > 0) rewards.push(`${coinEmoji} **${c.coins.toLocaleString()} Coins**`);
         for (const r of (c.rewards || [])) {
           const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
@@ -658,7 +661,7 @@ export async function getUserPassProgress(guildId, userId) {
 
   // Get claimed levels
   const claimsResult = await pool.query(
-    `SELECT upc.level_claimed, bc.reward_coins
+    `SELECT upc.level_claimed, bc.reward_coins, bc.reward_role_id
      FROM user_pass_claims upc
      LEFT JOIN battlepass_config bc ON bc.guild_id = upc.guild_id AND bc.level = upc.level_claimed
      WHERE upc.guild_id = $1 AND upc.user_id = $2
@@ -686,13 +689,14 @@ export async function getUserPassProgress(guildId, userId) {
 
   const claims = claimsResult.rows.map(c => ({
     level_claimed: c.level_claimed,
+    reward_role_id: c.reward_role_id,
     reward_coins: parseInt(c.reward_coins, 10) || 0,
     rewards: rewardsByLevel.get(c.level_claimed) || []
   }));
 
   // Get next unclaimed reward level
   const nextLevelResult = await pool.query(
-    `SELECT level, reward_coins
+    `SELECT level, reward_coins, reward_role_id
      FROM battlepass_config
      WHERE guild_id = $1 AND level > $2
      ORDER BY level ASC
@@ -705,6 +709,7 @@ export async function getUserPassProgress(guildId, userId) {
     const nextRow = nextLevelResult.rows[0];
     nextReward = {
       level: nextRow.level,
+      reward_role_id: nextRow.reward_role_id,
       reward_coins: parseInt(nextRow.reward_coins, 10) || 0,
       rewards: rewardsByLevel.get(nextRow.level) || []
     };
