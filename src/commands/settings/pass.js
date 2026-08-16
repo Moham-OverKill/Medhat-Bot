@@ -1076,10 +1076,8 @@ async function renderImportMappingPanel(interaction, guildId, flowKey, page) {
     .setColor(0x5865F2)
     .setTitle('📥 Import Levels — Role Mapping');
 
-  const lines = [];
-  for (const [roleId, level] of mappings.entries()) {
-    lines.push(`• <@&${roleId}> → **Level ${level}**`);
-  }
+  const sortedMappings = [...mappings.entries()].sort((a, b) => Number(a[1]) - Number(b[1]));
+  const lines = sortedMappings.map(([roleId, level]) => `• <@&${roleId}> → **Level ${level}**`);
 
   embed.setDescription(
     (lines.length > 0 ? lines.join('\n') + '\n\n' : '') +
@@ -1321,7 +1319,10 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   importFlowState.delete(flowKey);
 
   // Audit log
-  const mappingDesc = [...mappings.entries()].map(([rId, lv]) => `<@&${rId}> → Level ${lv}`).join(', ');
+  const mappingDesc = [...mappings.entries()]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map(([rId, lv]) => `<@&${rId}> → Level ${lv}`)
+    .join(', ');
   sendLog(
     interaction.guild, 'audit', 'green', '📥 Level Import Complete',
     `Admin **<@${interaction.user.id}>** imported levels for **${syncCount} member${syncCount === 1 ? '' : 's'}**.\n**Mappings:** ${mappingDesc}`
