@@ -570,50 +570,50 @@ export async function handlePassComponent(interaction) {
             .setCustomId('pass_base_xp_input')
             .setLabel('Base XP (Level 1)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 100')
+            .setPlaceholder('Default: 100')
             .setValue(String(baseXp))
-            .setMinLength(1).setMaxLength(6)
-            .setRequired(true)
+            .setMaxLength(6)
+            .setRequired(false)
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('pass_increment_xp_input')
             .setLabel('XP Increment per Level (0 = flat)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 50')
+            .setPlaceholder('Default: 50')
             .setValue(String(incrementXp))
-            .setMinLength(1).setMaxLength(6)
-            .setRequired(true)
+            .setMaxLength(6)
+            .setRequired(false)
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('pass_msg_xp_input')
             .setLabel('Message XP (per valid message)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 1')
+            .setPlaceholder('Default: 1')
             .setValue(String(msgXp))
-            .setMinLength(1).setMaxLength(4)
-            .setRequired(true)
+            .setMaxLength(4)
+            .setRequired(false)
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('pass_voice_xp_input')
             .setLabel('Voice XP (per voice minute)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 1')
+            .setPlaceholder('Default: 1')
             .setValue(String(voiceXp))
-            .setMinLength(1).setMaxLength(4)
-            .setRequired(true)
+            .setMaxLength(4)
+            .setRequired(false)
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('pass_quest_xp_input')
             .setLabel('Quest Completion XP')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. 150')
+            .setPlaceholder('Default: 150')
             .setValue(String(questXp))
-            .setMinLength(1).setMaxLength(6)
-            .setRequired(true)
+            .setMaxLength(6)
+            .setRequired(false)
         )
       );
 
@@ -1466,17 +1466,17 @@ export async function handlePassModal(interaction) {
     if (customId.startsWith('pass_xp_threshold_modal_pg_')) {
       const page = parseInt(customId.replace('pass_xp_threshold_modal_pg_', ''), 10) || 0;
 
-      const baseRaw = interaction.fields.getTextInputValue('pass_base_xp_input').trim();
-      const incRaw = interaction.fields.getTextInputValue('pass_increment_xp_input').trim();
-      const msgRaw = interaction.fields.getTextInputValue('pass_msg_xp_input').trim();
-      const voiceRaw = interaction.fields.getTextInputValue('pass_voice_xp_input').trim();
-      const questRaw = interaction.fields.getTextInputValue('pass_quest_xp_input').trim();
+      const baseRaw = (interaction.fields.getTextInputValue('pass_base_xp_input') || '').trim();
+      const incRaw = (interaction.fields.getTextInputValue('pass_increment_xp_input') || '').trim();
+      const msgRaw = (interaction.fields.getTextInputValue('pass_msg_xp_input') || '').trim();
+      const voiceRaw = (interaction.fields.getTextInputValue('pass_voice_xp_input') || '').trim();
+      const questRaw = (interaction.fields.getTextInputValue('pass_quest_xp_input') || '').trim();
 
-      const baseXp = parseInt(baseRaw, 10);
-      const incrementXp = parseInt(incRaw, 10);
-      const msgXp = parseInt(msgRaw, 10);
-      const voiceXp = parseInt(voiceRaw, 10);
-      const questXp = parseInt(questRaw, 10);
+      const baseXp = baseRaw === '' ? 100 : parseInt(baseRaw, 10);
+      const incrementXp = incRaw === '' ? 50 : parseInt(incRaw, 10);
+      const msgXp = msgRaw === '' ? 1 : parseInt(msgRaw, 10);
+      const voiceXp = voiceRaw === '' ? 1 : parseInt(voiceRaw, 10);
+      const questXp = questRaw === '' ? 150 : parseInt(questRaw, 10);
 
       if (isNaN(baseXp) || baseXp < 1) return interaction.reply({ content: '❌ Base XP must be at least 1.', flags: MessageFlags.Ephemeral });
       if (isNaN(incrementXp) || incrementXp < 0) return interaction.reply({ content: '❌ XP Increment must be 0 or higher.', flags: MessageFlags.Ephemeral });
