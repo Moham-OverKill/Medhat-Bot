@@ -930,6 +930,7 @@ export async function handlePassComponent(interaction) {
           '• Disable or remove your previous leveling bot from the server\n' +
           '• Configure your XP settings before starting the import\n' +
           '• Do not create levels manually yet, they will be added automatically during import\n' +
+          '• After importing, you can add coin, item, and chest rewards to each level before starting\n' +
           '• This is a one-time migration, do not run this again after members begin earning XP naturally\n' +
           '• Notify your members that their levels are being transferred\n' +
           '• Members who have left the server will not have their levels transferred\n' +
@@ -941,7 +942,7 @@ export async function handlePassComponent(interaction) {
           '• The bot will scan all server members and assign levels based on their roles\n' +
           '• This requires that your previous bot assigned level roles (otherwise no levels can be read)\n' +
           '• If a member holds multiple level roles, they will be assigned the lowest level\n' +
-          '• This will overwrite existing level progress for all affected members and cannot be undone'
+          '• Rewards are unlocked once you finish setup and click Start'
         );
 
       const row1 = new ActionRowBuilder().addComponents(
@@ -1163,9 +1164,9 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
     .setDescription(
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
-      '• Level & XP progress will be updated\n' +
-      '• Unclaimed past rewards will be granted automatically\n' +
-      '• Previously claimed rewards will be skipped (no duplicates)'
+      '• Level & XP progress will be set for all mapped members\n' +
+      '• Mapped milestone roles will be synchronized\n' +
+      '• You can configure coins, items, and chests for each level before clicking Start'
     );
 
   const row1 = new ActionRowBuilder().addComponents(
@@ -1241,33 +1242,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
         || await guild.members.fetch(userId).catch(() => null);
       const username = member?.user?.username || 'Member';
 
-      // 1. Fetch existing claims for this user (preserve history)
-      const existingClaimsRes = await pool.query(
-        'SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2',
-        [guildId, userId]
-      );
-      const alreadyClaimed = new Set(existingClaimsRes.rows.map(r => r.level_claimed));
-
-      // 2. Delta Payout: Award any unclaimed past level rewards
-      for (let lv = 1; lv <= assignedLevel; lv++) {
-        if (alreadyClaimed.has(lv)) continue;
-
-        const levelConfig = configuredLevelsMap.get(lv);
-        if (levelConfig) {
-          // Dispatches coins, items, chests atomically and writes to user_pass_claims
-          await dispatchLevelReward(pool, guildId, userId, username, levelConfig, null, config);
-        } else {
-          // Level has no specific rewards; mark as claimed to maintain consistent state
-          await pool.query(
-            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-             VALUES ($1, $2, $3)
-             ON CONFLICT DO NOTHING`,
-            [userId, guildId, lv]
-          );
-        }
-      }
-
-      // 3. Upsert user XP and username
+      // 1. Upsert user XP and username (Level and XP are now set)
       await pool.query(
         `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
          VALUES ($1, $2, $3, $4)
@@ -1276,7 +1251,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
         [guildId, userId, username, totalXp]
       );
 
-      // 4. Role alignment: strip conflicting level roles, ensure lowest-level role is active
+      // 2. Role alignment: strip conflicting level roles, ensure lowest-level role is active
       try {
         if (member) {
           const levelRoleRes = await pool.query(
