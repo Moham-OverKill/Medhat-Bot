@@ -935,9 +935,23 @@ export async function handlePassComponent(interaction) {
       await pool.query('DELETE FROM battlepass_config WHERE guild_id = $1 AND level = $2', [guildId, level]);
       await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2', [guildId, level]);
       await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
-      sysLog('Level Deleted', { guild: guildId, user: interaction.user.id, detail: 'Level ' + level + ' deleted' });
-      sendLog(interaction.guild, 'audit', 'red', '🗑️ Level Deleted', `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`);
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      // Find previous level (or closest remaining level)
+      const prevLevelRes = await pool.query(
+        `SELECT level FROM battlepass_config WHERE guild_id = $1 AND level < $2 ORDER BY level DESC LIMIT 1`,
+        [guildId, level]
+      );
+      let targetLevel = prevLevelRes.rows[0]?.level ?? null;
+
+      if (targetLevel === null) {
+        // If no lower level, check for the lowest remaining level
+        const fallbackRes = await pool.query(
+          `SELECT level FROM battlepass_config WHERE guild_id = $1 ORDER BY level ASC LIMIT 1`,
+          [guildId]
+        );
+        targetLevel = fallbackRes.rows[0]?.level ?? null;
+      }
+
+      const payload = await getPassDashboardPayload(guildId, page, targetLevel);
       await interaction.editReply({ content: '', ...payload });
       return;
     }
