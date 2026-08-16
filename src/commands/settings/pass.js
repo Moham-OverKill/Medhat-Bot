@@ -945,18 +945,18 @@ export async function handlePassComponent(interaction) {
         .setColor(0xED4245)
         .setDescription(
           '**Before Importing:**\n' +
-          '-# • Only use this tool if transferring levels from another bot.\n' +
-          '-# • Disable or remove your previous leveling bot from the server.\n' +
-          '-# • Configure your XP settings before importing.\n' +
-          '-# • Do not add levels manually; they are created automatically on import.\n' +
-          '-# • Customize coins, items, and chests for each level after importing.\n' +
-          '-# • Do not re-run this migration after members start earning XP naturally.\n' +
-          '-# • Members who left the server will lose their levels.\n' +
+          '• Only use this tool if transferring levels from another bot.\n' +
+          '• Disable or remove your previous leveling bot from the server.\n' +
+          '• Configure your XP settings before importing.\n' +
+          '• Do not add levels manually; they are created automatically on import.\n' +
+          '• Customize coins, items, and chests for each level after importing.\n' +
+          '• Do not re-run this migration after members start earning XP naturally.\n' +
+          '• Members who left the server will lose their levels.\n' +
           '---\n' +
           '**How Importing Works:**\n' +
-          '-# • Map each Discord role to its corresponding level number.\n' +
-          '-# • The bot scans all members and assigns levels based on held roles.\n' +
-          '-# • Levels are saved to settings and users can resume their progress.'
+          '• Map each Discord role to its corresponding level number.\n' +
+          '• The bot scans all members and assigns levels based on held roles.\n' +
+          '• Levels are saved to settings and users can resume their progress.'
         );
 
       const row1 = new ActionRowBuilder().addComponents(
