@@ -1164,7 +1164,9 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
     .setDescription(
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
-      '⚠️ This will overwrite their existing level progress and claims.'
+      '• Level & XP progress will be updated\n' +
+      '• Unclaimed past rewards will be granted automatically\n' +
+      '• Previously claimed rewards will be skipped (no duplicates)'
     );
 
   const row1 = new ActionRowBuilder().addComponents(
@@ -1191,7 +1193,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
   const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
 
-  const { getTotalXpForLevel } = await import('./pass-engine.js');
+  const { getTotalXpForLevel, dispatchLevelReward } = await import('./pass-engine.js');
   const pool = getPool();
 
   let syncCount = 0;
@@ -1204,53 +1206,69 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   );
   const allConfiguredRoleIds = configuredRolesRes.rows.map(r => r.reward_role_id);
 
+  // Fetch all configured level rows for this guild
+  const configuredLevelsRes = await pool.query(
+    `SELECT bc.level, bc.reward_coins, bc.reward_role_id,
+            bc.reward_item_id, bc.reward_chest_id,
+            si.name as item_name, si.role_id as item_role_id,
+            lb.name as chest_name
+     FROM battlepass_config bc
+     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
+     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
+     WHERE bc.guild_id = $1
+     ORDER BY bc.level ASC`,
+    [guildId]
+  );
+  const configuredLevelsMap = new Map();
+  for (const row of configuredLevelsRes.rows) {
+    configuredLevelsMap.set(row.level, row);
+  }
+
   for (const [userId, assignedLevel] of userAssignments.entries()) {
     try {
       const totalXp = getTotalXpForLevel(assignedLevel, baseXp, incrementXp);
+      const member = guild.members.cache.get(userId)
+        || await guild.members.fetch(userId).catch(() => null);
+      const username = member?.user?.username || 'Member';
 
-      const dbClient = await pool.connect();
-      try {
-        await dbClient.query('BEGIN');
+      // 1. Fetch existing claims for this user (preserve history)
+      const existingClaimsRes = await pool.query(
+        'SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2',
+        [guildId, userId]
+      );
+      const alreadyClaimed = new Set(existingClaimsRes.rows.map(r => r.level_claimed));
 
-        // 1. Upsert XP
-        await dbClient.query(
-          `INSERT INTO user_activity (guild_id, user_id, battlepass_xp)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (guild_id, user_id)
-           DO UPDATE SET battlepass_xp = $3`,
-          [guildId, userId, totalXp]
-        );
+      // 2. Delta Payout: Award any unclaimed past level rewards
+      for (let lv = 1; lv <= assignedLevel; lv++) {
+        if (alreadyClaimed.has(lv)) continue;
 
-        // 2. Clear old claims for this user in this guild
-        await dbClient.query(
-          'DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2',
-          [guildId, userId]
-        );
-
-        // 3. Backfill claims for levels 1..assignedLevel
-        for (let lv = 1; lv <= assignedLevel; lv++) {
-          await dbClient.query(
+        const levelConfig = configuredLevelsMap.get(lv);
+        if (levelConfig) {
+          // Dispatches coins, items, chests atomically and writes to user_pass_claims
+          await dispatchLevelReward(pool, guildId, userId, username, levelConfig, null, config);
+        } else {
+          // Level has no specific rewards; mark as claimed to maintain consistent state
+          await pool.query(
             `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
              VALUES ($1, $2, $3)
              ON CONFLICT DO NOTHING`,
             [userId, guildId, lv]
           );
         }
-
-        await dbClient.query('COMMIT');
-      } catch (e) {
-        await dbClient.query('ROLLBACK').catch(() => {});
-        throw e;
-      } finally {
-        dbClient.release();
       }
 
-      // 4. Role alignment: strip ALL configured level roles, add only the assigned one (if configured)
+      // 3. Upsert user XP and username
+      await pool.query(
+        `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (guild_id, user_id)
+         DO UPDATE SET battlepass_xp = $4, username = $3`,
+        [guildId, userId, username, totalXp]
+      );
+
+      // 4. Role alignment: strip conflicting level roles, ensure lowest-level role is active
       try {
-        const member = guild.members.cache.get(userId)
-          || await guild.members.fetch(userId).catch(() => null);
         if (member) {
-          // Find configured role for assigned level
           const levelRoleRes = await pool.query(
             'SELECT reward_role_id FROM battlepass_config WHERE guild_id = $1 AND level = $2 AND reward_role_id IS NOT NULL',
             [guildId, assignedLevel]
