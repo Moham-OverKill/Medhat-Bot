@@ -70,12 +70,13 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
         else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
       }
-      const rewardStr = parts.length > 0 ? parts.join(' + ') : '_No reward configured_';
-      embed.addFields({
-        name: `Next Reward (Level ${nr.level})`,
-        value: rewardStr,
-        inline: false
-      });
+      if (parts.length > 0) {
+        embed.addFields({
+          name: `Next Reward (Level ${nr.level})`,
+          value: parts.join(' + '),
+          inline: false
+        });
+      }
     }
   } else {
     embed.setTitle('🎉 Claimed Rewards');
