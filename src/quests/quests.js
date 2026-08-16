@@ -270,6 +270,21 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
         triggerQuestLog(guildId, userId, quest).catch(() => {});
     }
 
+    // Award Battlepass XP for quest completion (fire-and-forget, never blocks quest tx)
+    if (justCompleted) {
+      Promise.all([
+        import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
+        import('./index.js').then(m => m.client || null).catch(() => null)
+      ])
+        .then(([cfg, discordClient]) => {
+          const questXp = Math.max(0, parseInt(cfg?.battlepass_quest_xp ?? 150, 10));
+          if (questXp <= 0) return;
+          return import('../commands/settings/pass-engine.js')
+            .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, null, questXp, discordClient));
+        })
+        .catch(() => {});
+    }
+
     return { 
       progress: newProgress, 
       completed: justCompleted, 

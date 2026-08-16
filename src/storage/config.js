@@ -66,7 +66,10 @@ const CONFIG_SCHEMA = {
   battlepass_enabled: { type: 'boolean', required: false },
   battlepass_base_xp: { type: 'number', min: 1, max: 999999, required: false },
   battlepass_xp_increment: { type: 'number', min: 0, max: 999999, required: false },
-  battlepass_xp_per_level: { type: 'number', min: 1, max: 999999, required: false },
+  battlepass_xp_per_level: { type: 'number', min: 1, max: 999999, required: false }, // legacy alias
+  battlepass_msg_xp: { type: 'number', min: 0, max: 9999, required: false },
+  battlepass_voice_xp: { type: 'number', min: 0, max: 9999, required: false },
+  battlepass_quest_xp: { type: 'number', min: 0, max: 9999, required: false },
   battlepass_notif_channel: { type: 'string', validate: isValidSnowflake, required: false },
   // Community Interface / Server Hub Module
   interface_channel_id: { type: 'string', validate: isValidSnowflake, required: false },

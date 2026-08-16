@@ -792,6 +792,18 @@ async function createTables() {
     `);
 
     await pool.query(`ALTER TABLE battlepass_config ADD COLUMN IF NOT EXISTS reward_chest_id INT REFERENCES loot_boxes(id) ON DELETE SET NULL`);
+    await pool.query(`ALTER TABLE battlepass_config ADD COLUMN IF NOT EXISTS reward_role_id VARCHAR(32)`);
+
+    // Role XP Boosters (Percentage multipliers per Discord role)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS role_xp_boosters (
+        guild_id VARCHAR(32) NOT NULL,
+        role_id VARCHAR(32) NOT NULL,
+        boost_percentage INT NOT NULL DEFAULT 50,
+        PRIMARY KEY (guild_id, role_id)
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_role_xp_boosters_guild ON role_xp_boosters(guild_id)`);
 
     // Multi-Reward Table for Levels (supports multiple items & chests with custom quantities)
     await pool.query(`

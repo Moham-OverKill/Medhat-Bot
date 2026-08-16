@@ -1,12 +1,59 @@
 /**
- * Battlepass XP Engine — Phase 2
+ * Battlepass XP Engine — Phase 3
  * Awards XP to users on activity, detects level-ups, and dispatches rewards.
  * All progress is stored in user_activity.battlepass_xp — never reset by MVP cycles.
  * Rewards are locked in user_pass_claims (permanent anti-exploit ledger).
+ *
+ * Security guarantees:
+ *  - All queries are scoped by guild_id — no cross-guild data leakage.
+ *  - Dangerous permission bitfield check before any role.add().
+ *  - Role hierarchy check before any role.add().
+ *  - Anti-double-claim lock in every dispatchLevelReward call.
  */
 import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
+
+// Dangerous permissions that must never be awarded via the level system
+const DANGEROUS_PERMS = [
+  'Administrator',
+  'ManageGuild',
+  'ManageRoles',
+  'ManageChannels',
+  'KickMembers',
+  'BanMembers',
+  'ManageWebhooks',
+  'ManageMessages',
+  'MentionEveryone',
+  'ModerateMembers',
+  'ViewAuditLog'
+];
+
+/**
+ * Validate a Discord role for safe assignment:
+ *  1. Role must not hold any dangerous permission.
+ *  2. Bot's highest role must be positioned above the target role.
+ *
+ * Returns null on success, or an error message string on failure.
+ */
+export function validateRoleForAssignment(role, guild) {
+  if (!role || !guild) return '⚠️ Role or guild not found.';
+
+  // Dangerous permission check
+  for (const perm of DANGEROUS_PERMS) {
+    if (role.permissions.has(perm)) {
+      return `⚠️ <@&${role.id}> has a dangerous permission (**${perm}**) and cannot be used as a level reward.`;
+    }
+  }
+
+  // Hierarchy check
+  const botHighest = guild.members.me?.roles?.highest;
+  if (!botHighest || role.position >= botHighest.position) {
+    return `⚠️ My bot role must be placed higher than <@&${role.id}> in the server settings to award it!`;
+  }
+
+  return null; // safe
+}
 
 /**
  * Total cumulative XP needed to reach Level L.
@@ -14,11 +61,11 @@ import { sysLog, sysError, sendLog } from '../../utils/logger.js';
  * Level 1: Base XP
  * Level L: L * Base + (L * (L - 1) / 2) * Increment
  */
-export function getTotalXpForLevel(level, base = 20, increment = 10) {
+export function getTotalXpForLevel(level, base = 100, increment = 50) {
   if (level <= 0) return 0;
   const L = Math.floor(level);
-  const B = Math.max(1, parseInt(base ?? 20, 10));
-  const I = Math.max(0, parseInt(increment ?? 10, 10));
+  const B = Math.max(1, parseInt(base ?? 100, 10));
+  const I = Math.max(0, parseInt(increment ?? 50, 10));
   return L * B + Math.floor((L * (L - 1) * I) / 2);
 }
 
@@ -28,9 +75,9 @@ export function getTotalXpForLevel(level, base = 20, increment = 10) {
  * - xpIntoCurrentLevel (XP earned inside current level)
  * - xpForNextLevel (XP needed to complete current level and reach next level)
  */
-export function calculateLevelFromXp(totalXp, base = 20, increment = 10) {
-  const B = Math.max(1, parseInt(base ?? 20, 10));
-  const I = Math.max(0, parseInt(increment ?? 10, 10));
+export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
+  const B = Math.max(1, parseInt(base ?? 100, 10));
+  const I = Math.max(0, parseInt(increment ?? 50, 10));
   const xp = Math.max(0, parseInt(totalXp || 0, 10));
 
   if (xp === 0) {
@@ -79,13 +126,49 @@ export function calculateLevelFromXp(totalXp, base = 20, increment = 10) {
 }
 
 /**
+ * Calculate the effective XP multiplier for a member based on their roles.
+ * Stacks additively. Returns a multiplier ≥ 1.0.
+ * Example: 50% boost → multiplier 1.5
+ */
+export async function getMemberXpMultiplier(guildId, userId) {
+  try {
+    const pool = getPool();
+    const { getDiscordClient } = await import('../../activity/index.js');
+    const client = getDiscordClient();
+    if (!client) return 1.0;
+
+    const guild = client.guilds?.cache?.get(guildId);
+    if (!guild) return 1.0;
+
+    const member = guild.members.cache.get(userId)
+      || await guild.members.fetch(userId).catch(() => null);
+    if (!member) return 1.0;
+
+    const memberRoleIds = [...member.roles.cache.keys()];
+    if (memberRoleIds.length === 0) return 1.0;
+
+    const placeholders = memberRoleIds.map((_, i) => `$${i + 2}`).join(', ');
+    const res = await pool.query(
+      `SELECT boost_percentage FROM role_xp_boosters
+       WHERE guild_id = $1 AND role_id IN (${placeholders})`,
+      [guildId, ...memberRoleIds]
+    );
+
+    const totalBoost = res.rows.reduce((sum, r) => sum + (parseInt(r.boost_percentage, 10) || 0), 0);
+    return 1.0 + totalBoost / 100;
+  } catch {
+    return 1.0;
+  }
+}
+
+/**
  * Award battlepass XP to a user and dispatch any newly unlocked level rewards.
  * Called after each message point or voice point is awarded.
  *
  * @param {string} guildId
  * @param {string} userId
  * @param {string} username
- * @param {number} xpToAdd — how many XP points to add (1 per message point or voice minute)
+ * @param {number} xpToAdd — base XP points to add before multiplier
  * @param {object} client — Discord client, used to DM or post level-up notification
  */
 export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client = null) {
@@ -98,7 +181,11 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     const pool = getPool();
 
-    // 1. Atomically increment battlepass_xp
+    // Apply role XP multiplier (multiplicative boost)
+    const multiplier = await getMemberXpMultiplier(guildId, userId);
+    const finalXp = Math.round(xpToAdd * multiplier);
+
+    // Atomically increment battlepass_xp
     await pool.query(
       `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
        VALUES ($1, $2, $3, $4)
@@ -106,10 +193,10 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
        DO UPDATE SET
          battlepass_xp = user_activity.battlepass_xp + $4,
          username = $3`,
-      [guildId, userId, username, xpToAdd]
+      [guildId, userId, username, finalXp]
     );
 
-    // 2. Dispatch any newly qualified level rewards
+    // Dispatch any newly qualified level rewards
     await syncUserLevelRewards(guildId, userId, username, client);
   } catch (err) {
     sysError('Level XP Engine Failed', err, { guild: guildId, user: userId });
@@ -141,13 +228,14 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
     const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
     if (totalXp <= 0) return;
 
-    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
     const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
     if (currentLevel <= 0) return;
 
     const levelsResult = await pool.query(
-      `SELECT bc.level, bc.reward_coins, bc.reward_item_id, bc.reward_chest_id,
+      `SELECT bc.level, bc.reward_coins, bc.reward_role_id,
+              bc.reward_item_id, bc.reward_chest_id,
               si.name as item_name, si.role_id as item_role_id,
               lb.name as chest_name
        FROM battlepass_config bc
@@ -176,11 +264,97 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       }
     }
 
+    // After all rewards are dispatched, perform role alignment
+    if (claimedLevels.length > 0) {
+      await alignMemberLevelRole(guildId, userId, currentLevel, client);
+    }
+
     if (claimedLevels.length > 0 && client) {
       await sendLevelUpNotification(client, guildId, userId, username, claimedLevels, config);
     }
   } catch (err) {
     sysError('Level Sync Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Enforce the role reward rules:
+ *  - The Persistence Rule: If the user's current level has NO role configured,
+ *    they keep whatever the last milestone role was.
+ *  - The Replacement Rule: If the user's current level DOES have a role configured,
+ *    remove all other configured level roles and add only this one.
+ *
+ * Only operates on roles that are actually configured as level rewards.
+ */
+async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
+  try {
+    if (!client) return;
+    const guild = client.guilds?.cache?.get(guildId);
+    if (!guild) return;
+
+    const member = guild.members.cache.get(userId)
+      || await guild.members.fetch(userId).catch(() => null);
+    if (!member) return;
+
+    const pool = getPool();
+
+    // Fetch all configured role rewards for this guild, ordered by level ASC
+    const rolesRes = await pool.query(
+      `SELECT level, reward_role_id FROM battlepass_config
+       WHERE guild_id = $1 AND reward_role_id IS NOT NULL
+       ORDER BY level ASC`,
+      [guildId]
+    );
+
+    if (rolesRes.rows.length === 0) return; // No roles configured
+
+    const allConfiguredRoleIds = rolesRes.rows.map(r => r.reward_role_id);
+
+    // Find the highest configured level with a role that the user has earned
+    // (i.e., level <= currentLevel)
+    const earnedRoleRows = rolesRes.rows.filter(r => r.level <= currentLevel);
+
+    if (earnedRoleRows.length === 0) {
+      // User hasn't reached any role milestone yet — remove all configured level roles
+      for (const roleId of allConfiguredRoleIds) {
+        if (member.roles.cache.has(roleId)) {
+          const role = guild.roles.cache.get(roleId);
+          if (role) {
+            const err = validateRoleForAssignment(role, guild);
+            if (!err) await member.roles.remove(role).catch(() => {});
+          }
+        }
+      }
+      return;
+    }
+
+    // The active role is the LOWEST level milestone role the user has earned
+    // (Matches the import conflict resolution rule — LOWEST wins)
+    const activeRoleRow = earnedRoleRows[0]; // rows are ordered ASC
+    const activeRoleId = activeRoleRow.reward_role_id;
+
+    // Remove all configured level roles that are NOT the active one
+    for (const roleId of allConfiguredRoleIds) {
+      if (roleId === activeRoleId) continue;
+      if (member.roles.cache.has(roleId)) {
+        const role = guild.roles.cache.get(roleId);
+        if (role) await member.roles.remove(role).catch(() => {});
+      }
+    }
+
+    // Add the active role if the member doesn't already have it
+    if (!member.roles.cache.has(activeRoleId)) {
+      const activeRole = guild.roles.cache.get(activeRoleId)
+        || await guild.roles.fetch(activeRoleId).catch(() => null);
+      if (activeRole) {
+        const err = validateRoleForAssignment(activeRole, guild);
+        if (!err) {
+          await member.roles.add(activeRole).catch(() => {});
+        }
+      }
+    }
+  } catch (err) {
+    sysError('Level Role Alignment Failed', err, { guild: guildId, user: userId });
   }
 }
 
@@ -195,7 +369,6 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
       [guildId, userId, levelRow.level]
     );
     if (lockCheck.rows.length > 0) {
-      // Already claimed by a concurrent process
       await client2.query('ROLLBACK');
       return null;
     }
@@ -286,7 +459,6 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
         let chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${reward.loot_box_id}`;
 
         if (!chestShopItemId) {
-          // Self-healing fallback: Create missing shop_items paired row for this loot box
           const boxRow = await client2.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [reward.loot_box_id, guildId]);
           if (boxRow.rows.length > 0) {
             const newShopItem = await client2.query(
@@ -336,7 +508,7 @@ async function dispatchLevelReward(pool, guildId, userId, username, levelRow, cl
       detail: `Level ${levelRow.level} | Coins: ${coins} | Rewards: ${grantedRewards.map(r => `${r.quantity}x ${r.name}`).join(', ') || 'None'}`
     });
 
-    // F. Send Discord channel audit logs
+    // Send Discord channel audit logs
     if (client) {
       const guild = client.guilds?.cache?.get(guildId);
       if (guild) {
@@ -385,7 +557,6 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
 
     const guild = client.guilds?.cache?.get(guildId) || await client.guilds?.fetch(guildId).catch(() => null);
     const guildName = guild?.name || 'Discord Server';
-    const guildIcon = guild?.iconURL?.({ dynamic: true }) || null;
 
     let title;
     let description;
@@ -454,7 +625,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
 }
 
 /**
- * Get a user's Battlepass progress summary for /pass command
+ * Get a user's Battlepass progress summary for /level command
  */
 export async function getUserPassProgress(guildId, userId) {
   try {
@@ -466,8 +637,8 @@ export async function getUserPassProgress(guildId, userId) {
 
   const { getGuildConfig } = await import('../../storage/config.js');
   const config = await getGuildConfig(guildId) || {};
-  const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
-  const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+  const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
+  const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
   const isEnabled = config.battlepass_enabled === true;
 
   // Get user XP

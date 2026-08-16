@@ -287,9 +287,15 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     flushMessageBatch().catch(() => {});
   }
 
-  // 7. Battlepass XP hook (1 XP per valid message, fire-and-forget)
-  import('../commands/settings/pass-engine.js')
-    .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, 1, null))
+  // 7. Battlepass XP hook — reads msg XP rate from guild config (default: 1)
+  import('../../storage/config.js')
+    .then(({ getGuildConfig }) => getGuildConfig(guildId))
+    .then(cfg => {
+      const msgXp = Math.max(0, parseInt(cfg?.battlepass_msg_xp ?? 1, 10));
+      if (msgXp <= 0) return;
+      return import('../commands/settings/pass-engine.js')
+        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, msgXp, null));
+    })
     .catch(() => {}); // Silent fail — never block message tracking
 
   return true;
@@ -517,10 +523,17 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
       [guildId, userId, remainingBuffer, pointsToAward, new Date(now)]
     );
 
-    // Battlepass XP hook for voice points
+    // Battlepass XP hook for voice points — reads voice XP rate from guild config (default: 1)
     if (pointsToAward > 0) {
-      import('../commands/settings/pass-engine.js')
-        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, pointsToAward, null))
+      import('../../storage/config.js')
+        .then(({ getGuildConfig }) => getGuildConfig(guildId))
+        .then(cfg => {
+          const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
+          if (voiceXpRate <= 0) return;
+          const totalVoiceXp = pointsToAward * voiceXpRate;
+          return import('../commands/settings/pass-engine.js')
+            .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalVoiceXp, null));
+        })
         .catch(() => {});
     }
 
