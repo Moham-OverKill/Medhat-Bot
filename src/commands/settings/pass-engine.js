@@ -328,9 +328,8 @@ async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
       return;
     }
 
-    // The active role is the LOWEST level milestone role the user has earned
-    // (Matches the import conflict resolution rule — LOWEST wins)
-    const activeRoleRow = earnedRoleRows[0]; // rows are ordered ASC
+    // The active role is the HIGHEST level milestone role the user has earned
+    const activeRoleRow = earnedRoleRows[earnedRoleRows.length - 1]; // rows are ordered ASC
     const activeRoleId = activeRoleRow.reward_role_id;
 
     // Remove all configured level roles that are NOT the active one
@@ -532,7 +531,6 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
     return {
       level: levelRow.level,
-      roleId: levelRow.reward_role_id,
       coins,
       rewards: grantedRewards
     };
@@ -565,35 +563,42 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
     if (claimedLevels.length === 1) {
       const single = claimedLevels[0];
       const rewards = [];
-      if (single.roleId) rewards.push(`<@&${single.roleId}>`);
       if (single.coins > 0) rewards.push(`${coinEmoji} **${single.coins.toLocaleString()} Coins**`);
       for (const r of (single.rewards || [])) {
         const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
         if (r.type === 'item') rewards.push(`🏷️ **${qStr}${r.name}**`);
         else if (r.type === 'chest') rewards.push(`${lootBoxEmoji} **${qStr}${r.name}**`);
       }
-      const rewardText = rewards.length > 0 ? rewards.join('\n• ') : '_No rewards configured for this level_';
 
       title = `⭐ Level Up! (Level ${single.level})`;
-      description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.\n\n**Rewards Unlocked:**\n• ${rewardText}`;
+      if (rewards.length > 0) {
+        description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.\n\n**Rewards Unlocked:**\n• ${rewards.join('\n• ')}`;
+      } else {
+        description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.`;
+      }
     } else {
       const highestLevel = Math.max(...claimedLevels.map(c => c.level));
       title = `⭐ Level Up! (Level ${highestLevel})`;
 
-      const lines = claimedLevels.map(c => {
+      const rewardLines = [];
+      for (const c of claimedLevels) {
         const rewards = [];
-        if (c.roleId) rewards.push(`<@&${c.roleId}>`);
         if (c.coins > 0) rewards.push(`${coinEmoji} **${c.coins.toLocaleString()} Coins**`);
         for (const r of (c.rewards || [])) {
           const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
           if (r.type === 'item') rewards.push(`🏷️ **${qStr}${r.name}**`);
           else if (r.type === 'chest') rewards.push(`${lootBoxEmoji} **${qStr}${r.name}**`);
         }
-        const rewardText = rewards.length > 0 ? rewards.join(' + ') : '_None_';
-        return `• **Level ${c.level}:** ${rewardText}`;
-      });
+        if (rewards.length > 0) {
+          rewardLines.push(`• **Level ${c.level}:** ${rewards.join(' + ')}`);
+        }
+      }
 
-      description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.\n\n**Rewards Unlocked:**\n${lines.join('\n')}`;
+      if (rewardLines.length > 0) {
+        description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.\n\n**Rewards Unlocked:**\n${rewardLines.join('\n')}`;
+      } else {
+        description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.`;
+      }
     }
 
     const embed = new EmbedBuilder()
