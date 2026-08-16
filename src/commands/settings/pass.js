@@ -1178,8 +1178,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
     .setDescription(
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
-      '• Level & XP progress will be set for all mapped members\n' +
-      '• Mapped milestone roles will be synchronized\n' +
+      '• XP progress will be set for all mapped members\n' +
       '• You can configure coins, items, and chests for each level before clicking Start'
     );
 
