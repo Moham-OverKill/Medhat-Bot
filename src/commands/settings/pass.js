@@ -769,6 +769,7 @@ export async function handlePassComponent(interaction) {
           'UPDATE battlepass_config SET reward_role_id = NULL WHERE guild_id = $1 AND level = $2',
           [guildId, level]
         );
+        await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
         sysLog('Level Role Reward Cleared', { guild: guildId, user: interaction.user.id, detail: `Level ${level}` });
         sendLog(interaction.guild, 'audit', 'orange', '⭐ Level Role Cleared', `Admin **<@${interaction.user.id}>** cleared the role reward for **Level ${level}**.`);
         const payload = await getPassDashboardPayload(guildId, page, level);
@@ -791,6 +792,7 @@ export async function handlePassComponent(interaction) {
         'UPDATE battlepass_config SET reward_role_id = $3 WHERE guild_id = $1 AND level = $2',
         [guildId, level, selectedRoleId]
       );
+      await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
       sysLog('Level Role Reward Set', { guild: guildId, user: interaction.user.id, detail: `Level ${level} → role ${selectedRoleId}` });
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Role Reward Set', `Admin **<@${interaction.user.id}>** set the role reward for **Level ${level}** to <@&${selectedRoleId}>.`);
@@ -835,6 +837,7 @@ export async function handlePassComponent(interaction) {
         'INSERT INTO battlepass_config (guild_id, level, reward_coins) VALUES ($1, $2, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3',
         [guildId, level, coins]
       );
+      await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
       sysLog('Level Coins Updated', { guild: guildId, user: interaction.user.id, detail: 'Level ' + level + ' coins set to ' + coins });
 
@@ -1407,6 +1410,9 @@ export async function handlePassModal(interaction) {
         sysLog('Level Reward Updated', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} qty: ${quantity}` });
       }
 
+      // Reset claims for this level so newly added/modified rewards can be claimed
+      await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
+
       const payload = await getPassDashboardPayload(guildId, page, level, 'root');
       await interaction.editReply({ content: '', ...payload });
       return;
@@ -1429,6 +1435,7 @@ export async function handlePassModal(interaction) {
         'INSERT INTO battlepass_config (guild_id, level, reward_coins) VALUES ($1, $2, 0) ON CONFLICT (guild_id, level) DO NOTHING',
         [guildId, level]
       );
+      await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
       sysLog('Level Created', { guild: guildId, user: interaction.user.id, detail: 'Level ' + level + ' created' });
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}**.`);
@@ -1457,6 +1464,7 @@ export async function handlePassModal(interaction) {
         'INSERT INTO battlepass_config (guild_id, level, reward_coins) VALUES ($1, $2, $3) ON CONFLICT (guild_id, level) DO UPDATE SET reward_coins = $3',
         [guildId, level, coins]
       );
+      await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
       sysLog('Level Coins Configured', { guild: guildId, user: interaction.user.id, detail: `Level ${level} coins set to ${coins}` });
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
