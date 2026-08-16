@@ -941,26 +941,22 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_import_start_pg_', ''), 10) || 0;
 
       const embed = new EmbedBuilder()
-        .setTitle('📥 Import Levels — Warning')
+        .setTitle('📥 Import Levels')
         .setColor(0xED4245)
         .setDescription(
-          '• Only use this tool if you are transferring levels from another bot\n' +
-          '• Disable or remove your previous leveling bot from the server\n' +
-          '• Configure your XP settings before starting the import\n' +
-          '• Do not create levels manually yet, they will be added automatically during import\n' +
-          '• After importing, you can add coin, item, and chest rewards to each level before starting\n' +
-          '• This is a one-time migration, do not run this again after members begin earning XP naturally\n' +
-          '• Notify your members that their levels are being transferred\n' +
-          '• Members who have left the server will not have their levels transferred\n' +
-          '\n' +
-          '─────────────────────────\n' +
-          '\n' +
-          '**How it works:**\n' +
-          '• You will map each Discord role to its corresponding level number\n' +
-          '• The bot will scan all server members and assign levels based on their roles\n' +
-          '• This requires that your previous bot assigned level roles (otherwise no levels can be read)\n' +
-          '• If a member holds multiple level roles, they will be assigned the lowest level\n' +
-          '• Rewards are unlocked once you finish setup and click Start'
+          '**Before Importing:**\n' +
+          '-# • Only use this tool if transferring levels from another bot.\n' +
+          '-# • Disable or remove your previous leveling bot from the server.\n' +
+          '-# • Configure your XP settings before importing.\n' +
+          '-# • Do not add levels manually; they are created automatically on import.\n' +
+          '-# • Customize coins, items, and chests for each level after importing.\n' +
+          '-# • Do not re-run this migration after members start earning XP naturally.\n' +
+          '-# • Members who left the server will lose their levels.\n' +
+          '---\n' +
+          '**How Importing Works:**\n' +
+          '-# • Map each Discord role to its corresponding level number.\n' +
+          '-# • The bot scans all members and assigns levels based on held roles.\n' +
+          '-# • Levels are saved to settings and users can resume their progress.'
         );
 
       const row1 = new ActionRowBuilder().addComponents(
