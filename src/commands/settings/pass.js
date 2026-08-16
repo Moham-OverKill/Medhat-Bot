@@ -553,6 +553,7 @@ export async function handlePassComponent(interaction) {
         if (interaction.deferred || interaction.replied) return interaction.followUp(msg);
         return interaction.reply(msg);
       }
+      const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
       const freshConfig = await getGuildConfig(guildId) || {};
       const baseXp = parseInt(freshConfig.battlepass_base_xp ?? freshConfig.battlepass_xp_per_level ?? 100, 10);
       const incrementXp = parseInt(freshConfig.battlepass_xp_increment ?? 50, 10);
