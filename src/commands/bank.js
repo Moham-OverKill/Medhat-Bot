@@ -1150,7 +1150,10 @@ export async function handleInventoryItemSelect(interaction) {
     const displayQty = parseInt(item.quantity) || 1;
 
     // --- LOOT BOX SPECIALIZED VIEW ---
-    if (item.item_type === 'loot_box') {
+    const guildConfig = await getGuildConfig(interaction.guildId);
+    const isInterfaceChannel = Boolean(guildConfig?.interface_channel_id && interaction.channelId === guildConfig.interface_channel_id);
+
+    if (isLootBoxCategory) {
       const masterBox = item.loot_box_id ? await getLootBox(item.loot_box_id, interaction.guildId) : null;
       const boxName = masterBox?.name || item.name;
       const boxImg = masterBox?.image_url || item.image_url;
@@ -1198,13 +1201,17 @@ export async function handleInventoryItemSelect(interaction) {
       }
 
       const row1 = new ActionRowBuilder();
+      if (!isInterfaceChannel) {
+        row1.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
+            .setLabel('Drop')
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(item.is_tradable === false)
+        );
+      }
       row1.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
-          .setLabel('Drop')
-          .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(item.is_tradable === false),
         new ButtonBuilder()
           .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
           .setLabel('Open')
@@ -1313,15 +1320,17 @@ export async function handleInventoryItemSelect(interaction) {
     // ROW 1: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate]
     const row1 = new ActionRowBuilder();
 
-    // [🗑️ Drop]
-    row1.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_drop_${item.id}_${catIdStr}_${currentIndex}`)
-        .setLabel('Drop')
-        .setEmoji('🗑️')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(cannotSell)
-    );
+    // [🗑️ Drop] (Hidden in interface channel)
+    if (!isInterfaceChannel) {
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_drop_${item.id}_${catIdStr}_${currentIndex}`)
+          .setLabel('Drop')
+          .setEmoji('🗑️')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(cannotSell)
+      );
+    }
 
     // Dynamic button based on item type and state
     let toggleLabel = 'Equip';
@@ -1564,6 +1573,11 @@ export async function handleInventoryAction(interaction) {
     // IMPORTANT: showModal() MUST be called on the original non-deferred interaction.
     // We do NOT defer here — we run our validation synchronously then call showModal.
     if (action === 'drop') {
+      const config = await getGuildConfig(interaction.guildId);
+      if (config?.interface_channel_id && interaction.channelId === config.interface_channel_id) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+        return interaction.followUp({ content: '❌ Dropping items is disabled in the interface channel.', flags: MessageFlags.Ephemeral });
+      }
       // Trade lock check (without deferring)
       // (Already handled above in the combined action guard)
 
