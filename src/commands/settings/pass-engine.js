@@ -699,25 +699,27 @@ export async function getUserPassProgress(guildId, userId) {
     rewards: rewardsByLevel.get(c.level_claimed) || []
   }));
 
-  // Get next unclaimed reward level
-  const nextLevelResult = await pool.query(
-    `SELECT level, reward_coins, reward_role_id
+  // Get next level that actually has tangible rewards (coins, items, or chests)
+  const nextLevelsResult = await pool.query(
+    `SELECT level, reward_coins
      FROM battlepass_config
      WHERE guild_id = $1 AND level > $2
-     ORDER BY level ASC
-     LIMIT 1`,
+     ORDER BY level ASC`,
     [guildId, currentLevel]
   );
 
   let nextReward = null;
-  if (nextLevelResult.rows.length > 0) {
-    const nextRow = nextLevelResult.rows[0];
-    nextReward = {
-      level: nextRow.level,
-      reward_role_id: nextRow.reward_role_id,
-      reward_coins: parseInt(nextRow.reward_coins, 10) || 0,
-      rewards: rewardsByLevel.get(nextRow.level) || []
-    };
+  for (const nextRow of nextLevelsResult.rows) {
+    const coins = parseInt(nextRow.reward_coins, 10) || 0;
+    const itemsAndChests = rewardsByLevel.get(nextRow.level) || [];
+    if (coins > 0 || itemsAndChests.length > 0) {
+      nextReward = {
+        level: nextRow.level,
+        reward_coins: coins,
+        rewards: itemsAndChests
+      };
+      break;
+    }
   }
 
   // Get active role XP boosters for this user
