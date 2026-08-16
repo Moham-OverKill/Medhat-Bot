@@ -52,6 +52,15 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       inline: false
     });
 
+    if (data.totalBoostPct > 0 && data.activeBoosts && data.activeBoosts.length > 0) {
+      const rolesList = data.activeBoosts.map(b => `<@&${b.roleId}>`).join(' - ');
+      embed.addFields({
+        name: 'XP Boost:',
+        value: `🚀 **+${data.totalBoostPct}%** XP Boost from ${rolesList}`,
+        inline: false
+      });
+    }
+
     if (data.nextReward) {
       const nr = data.nextReward;
       const parts = [];
