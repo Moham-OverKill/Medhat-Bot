@@ -926,6 +926,8 @@ export async function handlePassComponent(interaction) {
         .setTitle('📥 Import Levels — Warning')
         .setColor(0xED4245)
         .setDescription(
+          '• Configure your XP settings first!\n' +
+          '• Do not add levels yet, they will be auto added with the import\n' +
           '• Only do this if you\'re transferring levels from another bot\n' +
           '• Disable or remove your current leveling bot from the server\n' +
           '• This is a one-time migration!\n' +
@@ -1198,6 +1200,17 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
 
   let syncCount = 0;
   const guild = interaction.guild;
+
+  // 0. Auto-create/update all mapped levels and their reward roles in battlepass_config
+  for (const [roleId, level] of mappings.entries()) {
+    await pool.query(
+      `INSERT INTO battlepass_config (guild_id, level, reward_role_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (guild_id, level)
+       DO UPDATE SET reward_role_id = EXCLUDED.reward_role_id`,
+      [guildId, level, roleId]
+    );
+  }
 
   // Fetch all configured role reward IDs for role alignment
   const configuredRolesRes = await pool.query(
