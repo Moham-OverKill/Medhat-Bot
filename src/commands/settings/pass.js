@@ -519,6 +519,19 @@ export async function handlePassComponent(interaction) {
       await setGuildConfig(guildId, { battlepass_enabled: true });
       sysLog('Levels Started', { guild: guildId, user: interaction.user.id });
       sendLog(interaction.guild, 'audit', 'green', '⭐ Levels Started', `Admin **<@${interaction.user.id}>** started Level progression.`);
+
+      // Background reward distribution for all members with imported/existing XP
+      import('./pass-engine.js').then(async ({ syncUserLevelRewards }) => {
+        const pool = getPool();
+        const activeUsers = await pool.query(
+          'SELECT user_id, username FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0',
+          [guildId]
+        );
+        for (const u of activeUsers.rows) {
+          await syncUserLevelRewards(guildId, u.user_id, u.username, null).catch(() => {});
+        }
+      }).catch(() => {});
+
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ content: '', ...payload });
       return;
