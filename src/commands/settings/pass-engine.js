@@ -647,6 +647,13 @@ export async function getUserPassProgress(guildId, userId) {
     [guildId, userId]
   );
   const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
+  const username = xpResult.rows[0]?.username || null;
+
+  // Proactively claim any newly configured level rewards if system is enabled
+  if (isEnabled && totalXp > 0) {
+    await syncUserLevelRewards(guildId, userId, username, null).catch(() => {});
+  }
+
   const { level: currentLevel, xpIntoCurrentLevel, xpForNextLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
   // Get claimed levels
