@@ -926,21 +926,20 @@ export async function handlePassComponent(interaction) {
         .setTitle('📥 Import Levels — Warning')
         .setColor(0xED4245)
         .setDescription(
-          '• Configure your XP settings first!\n' +
-          '• Do not add levels yet, they will be auto added with the import\n' +
-          '• Only do this if you\'re transferring levels from another bot\n' +
-          '• Disable or remove your current leveling bot from the server\n' +
-          '• This is a one-time migration!\n' +
-          '• Do not run this again after members start earning XP naturally\n' +
-          '• Notify your members that their level is being transferred\n' +
-          '• Members who left the server won\'t have their level transferred\n' +
+          '• Only use this tool if you are transferring levels from another bot\n' +
+          '• Disable or remove your previous leveling bot from the server\n' +
+          '• Configure your XP settings before starting the import\n' +
+          '• Do not create levels manually yet — they will be added automatically during import\n' +
+          '• This is a one-time migration — do not run this again after members begin earning XP naturally\n' +
+          '• Notify your members that their levels are being transferred\n' +
+          '• Members who have left the server will not have their levels transferred\n' +
           '\n' +
           '─────────────────────────\n' +
           '\n' +
           '**How it works:**\n' +
-          '• You will configure the bot to know which roles are connected to what level\n' +
-          '• The bot will scan all members and give them levels based on their roles\n' +
-          '• If your previous leveling bot did not auto-assign level roles, this won\'t work\n' +
+          '• You will map each Discord role to its corresponding level number\n' +
+          '• The bot will scan all server members and assign levels based on their roles\n' +
+          '• This requires that your previous bot assigned level roles (otherwise no levels can be read)\n' +
           '• If a member holds multiple level roles, they will be assigned the lowest level\n' +
           '• This will overwrite existing level progress for all affected members and cannot be undone'
         );
