@@ -675,15 +675,18 @@ export async function handleItemModalSubmit(interaction) {
           throw new Error('Database failed to return created item record.');
         }
 
-        // Success message formatting
-        const successHeader = `✅ **Item Created: ${name}**`;
-        let successDescription = `Use the **Post** panel to set a price and publish it.`;
+        // Format Item Created embed description
+        const roleMention = roleId ? `<@&${roleId}>` : '_None_';
+        const descLines = [
+          `**Name:** ${name}`,
+          `**Role:** ${roleMention}`
+        ];
         
         if (reqValidation.hasBooster) {
-          successDescription += `\n🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`;
+          descLines.push(`🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`);
         }
         if (reqValidation.hasMvp) {
-          successDescription += `\n🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`;
+          descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
         }
 
         sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
@@ -704,7 +707,7 @@ export async function handleItemModalSubmit(interaction) {
         const confirmEmbed = new EmbedBuilder()
           .setColor('#2ECC71')
           .setTitle('Item Created')
-          .setDescription(successDescription);
+          .setDescription(descLines.join('\n'));
 
         const img = getItemImage(item);
         if (img) confirmEmbed.setThumbnail(img);
@@ -747,7 +750,7 @@ export async function handleItemModalSubmit(interaction) {
         );
 
         await interaction.editReply({
-          content: successHeader,
+          content: null,
           embeds: [confirmEmbed],
           components: [rowCat, rowRarity, rowTradable, rowActions]
         });
@@ -973,10 +976,16 @@ export async function handleNewItemAttrSelect(interaction) {
   ];
 
   const img = getItemImage(item);
+  const roleMention = item.role_id ? `<@&${item.role_id}>` : '_None_';
+  const descLines = [
+    `**Name:** ${item.name}`,
+    `**Role:** ${roleMention}`
+  ];
+
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
     .setTitle('Item Created')
-    .setDescription('Use the **Post** panel to set a price and publish it.');
+    .setDescription(descLines.join('\n'));
   if (img) embed.setThumbnail(img);
 
   const rowCat = new ActionRowBuilder().addComponents(
@@ -1014,7 +1023,7 @@ export async function handleNewItemAttrSelect(interaction) {
   );
 
   await interaction.editReply({
-    content: `✅ **Item Created: ${item.name}**`,
+    content: null,
     embeds: [embed],
     components: [rowCat, rowRarity, rowTradable, rowActions]
   });
