@@ -398,6 +398,11 @@ export async function handleShopItemSelect(interaction) {
 
 export async function handleShopBuyButton(interaction) {
   try {
+    // Automatically trigger image healer on the shop post message on every buy click
+    if (interaction.message) {
+      verifyAndHealMessageImages(interaction.message);
+    }
+
     const isForce = interaction.customId.startsWith('force_buy_');
 
     // Parse customId:
@@ -631,6 +636,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             embeds: [embed],
             components: [row]
           }).catch(() => { });
+          verifyAndHealMessageImages(interaction.message);
         }
       }
     }
@@ -645,6 +651,9 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
  */
 export async function handleShopBuyModalSubmit(interaction) {
   try {
+    if (interaction.message) {
+      verifyAndHealMessageImages(interaction.message);
+    }
     const parts = interaction.customId.split('_');
     // shop(0) buy(1) qty(2) modal(3) [itemId](4) [sellerId](5) [payoutStr](6) [overridePrice](7)
     const itemId = parseInt(parts[4]);
