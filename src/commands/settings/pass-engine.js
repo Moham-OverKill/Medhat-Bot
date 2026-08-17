@@ -78,7 +78,7 @@ export function getTotalXpForLevel(level, base = 100, increment = 50) {
 export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
   const B = Math.max(1, parseInt(base ?? 100, 10));
   const I = Math.max(0, parseInt(increment ?? 50, 10));
-  const xp = Math.max(0, parseInt(totalXp || 0, 10));
+  const xp = Math.max(0, parseFloat(totalXp || 0));
 
   if (xp === 0) {
     return {
@@ -90,7 +90,7 @@ export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
 
   if (I === 0) {
     const level = Math.floor(xp / B);
-    const xpIntoCurrentLevel = xp % B;
+    const xpIntoCurrentLevel = Number((xp % B).toFixed(2));
     return {
       level,
       xpIntoCurrentLevel,
@@ -116,7 +116,7 @@ export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
 
   const xpAtCurrentLevel = getTotalXpForLevel(level, B, I);
   const xpForNext = B + level * I;
-  const xpIntoCurrentLevel = xp - xpAtCurrentLevel;
+  const xpIntoCurrentLevel = Number((xp - xpAtCurrentLevel).toFixed(2));
 
   return {
     level,
@@ -183,7 +183,7 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     // Apply role XP multiplier (multiplicative boost)
     const multiplier = await getMemberXpMultiplier(guildId, userId);
-    const finalXp = Math.round(xpToAdd * multiplier);
+    const finalXp = Number((xpToAdd * multiplier).toFixed(2));
 
     // Atomically increment battlepass_xp
     await pool.query(
@@ -225,7 +225,7 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       `SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
-    const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
+    const totalXp = parseFloat(xpResult.rows[0]?.battlepass_xp || 0);
     if (totalXp <= 0) return;
 
     const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
@@ -729,7 +729,7 @@ export async function getUserPassProgress(guildId, userId) {
     `SELECT battlepass_xp, username FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
     [guildId, userId]
   );
-  const totalXp = parseInt(xpResult.rows[0]?.battlepass_xp || 0, 10);
+  const totalXp = parseFloat(xpResult.rows[0]?.battlepass_xp || 0);
   const username = xpResult.rows[0]?.username || null;
 
   // Proactively claim any newly configured level rewards if system is enabled
