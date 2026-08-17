@@ -34,16 +34,7 @@ export function buildPaginatedSelectMenu({
 
   const options = [];
 
-  // 1. Previous Option (All the way at the top if page > 1)
-  if (currentPage > 1) {
-    options.push({
-      label: 'Previous',
-      value: `${pageNavPrefix}${currentPage - 1}`,
-      emoji: '◀️'
-    });
-  }
-
-  // 2. Back Option
+  // 1. Back Option (Top-most navigation)
   if (backOption) {
     const bOpt = {
       label: backOption.label || 'Back',
@@ -52,6 +43,15 @@ export function buildPaginatedSelectMenu({
     };
     if (backOption.description) bOpt.description = backOption.description;
     options.push(bOpt);
+  }
+
+  // 2. Previous Option (Below Back, before page items)
+  if (currentPage > 1) {
+    options.push({
+      label: 'Previous',
+      value: `${pageNavPrefix}${currentPage - 1}`,
+      emoji: '◀️'
+    });
   }
 
   // 3. Page Item Options
