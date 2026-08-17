@@ -92,14 +92,20 @@ async function checkQuests(client, forceCheck = false) {
   // Consolidated dispatch of quest rotation DMs across all rotated guilds (Single DM per user)
   if (client && rotatedGuilds.length > 0 && !forceCheck) {
     try {
-      const { getUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+      const { getUsersForNotification, NOTIFICATION_KEYS, disableUserNotificationsOnLeave } = await import('../storage/notifications.js');
       const { EmbedBuilder } = await import('discord.js');
 
       const userGuildsMap = new Map();
 
       for (const { guildId, guildName } of rotatedGuilds) {
+        const guild = client.guilds?.cache?.get(guildId) || await client.guilds?.fetch(guildId).catch(() => null);
         const userIds = await getUsersForNotification(guildId, NOTIFICATION_KEYS.QUESTS_REFRESH);
         for (const uid of userIds) {
+          const isStillMember = guild?.members?.cache?.has(uid) || !!(await guild?.members?.fetch(uid).catch(() => null));
+          if (!isStillMember) {
+            await disableUserNotificationsOnLeave(guildId, uid);
+            continue;
+          }
           if (!userGuildsMap.has(uid)) userGuildsMap.set(uid, new Set());
           userGuildsMap.get(uid).add(guildName);
         }
@@ -244,23 +250,35 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
     // Opt-in Quest Rotation DM Notifications (Standalone fallback)
     if (client && selectedQuests.length > 0 && !skipNotifications) {
       try {
-        const { getUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+        const { getUsersForNotification, NOTIFICATION_KEYS, disableUserNotificationsOnLeave } = await import('../storage/notifications.js');
         const userIds = await getUsersForNotification(guildId, NOTIFICATION_KEYS.QUESTS_REFRESH);
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
 
         if (userIds.length > 0 && guild) {
-          const { EmbedBuilder } = await import('discord.js');
-          const embed = new EmbedBuilder()
-            .setTitle('🎯 New Quests Available!')
-            .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in servers to view and complete new tasks.`)
-            .setColor(0x2ECC71);
+          const validUserIds = [];
+          for (const uid of userIds) {
+            const isStillMember = guild.members.cache.has(uid) || !!(await guild.members.fetch(uid).catch(() => null));
+            if (!isStillMember) {
+              await disableUserNotificationsOnLeave(guildId, uid);
+            } else {
+              validUserIds.push(uid);
+            }
+          }
 
-          await Promise.allSettled(
-            userIds.map(async (uid) => {
-              const user = client.users?.cache?.get(uid) || await client.users?.fetch(uid).catch(() => null);
-              if (user) await user.send({ embeds: [embed] }).catch(() => {});
-            })
-          );
+          if (validUserIds.length > 0) {
+            const { EmbedBuilder } = await import('discord.js');
+            const embed = new EmbedBuilder()
+              .setTitle('🎯 New Quests Available!')
+              .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in servers to view and complete new tasks.`)
+              .setColor(0x2ECC71);
+
+            await Promise.allSettled(
+              validUserIds.map(async (uid) => {
+                const user = client.users?.cache?.get(uid) || await client.users?.fetch(uid).catch(() => null);
+                if (user) await user.send({ embeds: [embed] }).catch(() => {});
+              })
+            );
+          }
         }
       } catch (dmErr) {
         sysError('Quest Rotation DM Failed', dmErr, { guild: guildId });

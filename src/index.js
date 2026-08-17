@@ -355,19 +355,23 @@ client.once(Events.ClientReady, async () => {
       }
     }, 8 * 60 * 60 * 1000); // 8 hours in milliseconds
 
-    // Reconcile inventory for users who left while the bot was offline.
+    // Reconcile inventory and notifications for users who left while the bot was offline.
     // Runs in the background — one guild at a time with a short delay to avoid rate limits.
     (async () => {
       try {
         const { reconcileGuildInventory } = await import('./economy/shop.js');
+        const { reconcileGuildNotifications } = await import('./storage/notifications.js');
         for (const guild of client.guilds.cache.values()) {
           await reconcileGuildInventory(guild).catch(err =>
             sysError('Inventory Reconciliation Error', err, { guild: guild.id })
           );
+          await reconcileGuildNotifications(guild).catch(err =>
+            sysError('Notification Reconciliation Error', err, { guild: guild.id })
+          );
           await new Promise(r => setTimeout(r, 2000)); // 2s between guilds
         }
       } catch (err) {
-        sysError('Inventory Reconciliation Startup Error', err);
+        sysError('Reconciliation Startup Error', err);
       }
     })();
 
@@ -579,7 +583,7 @@ client.on('guildDelete', async (guild) => {
   });
 });
 
-// Deactivate inventory records when a member leaves the server while the bot is online
+// Deactivate inventory records and disable notification settings when a member leaves the server while the bot is online
 client.on('guildMemberRemove', async (member) => {
   return runInGuildContext(member.guild?.id, async () => {
     try {
@@ -587,8 +591,10 @@ client.on('guildMemberRemove', async (member) => {
       if (!isDatabaseReady()) return;
       const { cleanupDepartedMember } = await import('./economy/shop.js');
       await cleanupDepartedMember(member.id, member.guild.id);
+      const { disableUserNotificationsOnLeave } = await import('./storage/notifications.js');
+      await disableUserNotificationsOnLeave(member.guild.id, member.id);
     } catch (error) {
-      sysError('Member Leave Inventory Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
+      sysError('Member Leave Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
     }
   });
 });
