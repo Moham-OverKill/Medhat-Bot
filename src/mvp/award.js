@@ -865,10 +865,10 @@ export async function awardMvp(client, guildId, options = {}) {
     const resultMembers = [];
     const successfulWinnerData = [];
     const assignmentFailures = [];
+    let oldMvpUserIds = [];
 
     if (!isTest) {
       // ========== CAPTURE OLD MVPS FOR DEPENDENCY SWEEP ==========
-      let oldMvpUserIds = [];
       try {
         const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
         const oldCycle = await getLastMvpCycleResults(guildId, 5);

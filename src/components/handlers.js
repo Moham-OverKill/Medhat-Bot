@@ -485,8 +485,11 @@ export function setupComponentHandlers(client) {
       } else if (customId === 'shop_lb_home') {
         await handleLootBoxesPage(interaction);
       } else if (customId === 'shop_lb_select_box') {
-        const boxId = parseInt(interaction.values[0].replace('lb_', ''), 10);
-        await showLootBoxEditorPanel(interaction, boxId);
+        const val = interaction.values?.[0];
+        if (val) {
+          const boxId = parseInt(val.replace('lb_', ''), 10);
+          if (!isNaN(boxId)) await showLootBoxEditorPanel(interaction, boxId);
+        }
       } else if (customId === 'shop_lb_create_start') {
         await handleLootBoxCreateModalStart(interaction);
       } else if (customId === 'shop_edit_lootbox') {

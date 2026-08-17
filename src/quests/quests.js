@@ -1,5 +1,5 @@
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError } from '../shared.js';
+import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { getCairoDateString, getTodayCairo } from '../utils/time.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';

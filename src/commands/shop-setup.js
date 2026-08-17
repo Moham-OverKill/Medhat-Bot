@@ -3977,7 +3977,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
   }
 }
 
-export async function handlePackAddContentStart(interaction, layer = 'root', messageStr = null) {
+export async function handlePackAddContentStart(interaction, layer = 'root', messageStr = null, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
