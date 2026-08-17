@@ -15,7 +15,7 @@ import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { sysLog, sendLog } from '../../utils/logger.js';
 import { getShopCategories } from '../../economy/shop.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
-import { COIN_EMOJI, parseSelectEmoji } from '../../shared.js';
+import { COIN_EMOJI, parseSelectEmoji, getItemRarityEmoji, sortItemsByRolePosition } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { validateRoleForAssignment } from './pass-engine.js';
 import { buildPaginatedSelectMenu } from '../../utils/paginator.js';
@@ -251,7 +251,13 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     // Row 4: Merged Rewards Browser Menu
     const categories = await getShopCategories(guildId);
-    const unlockedItems = await getUnlockedShopItems(guildId);
+    let unlockedItems = await getUnlockedShopItems(guildId);
+    const { getDiscordClient } = await import('../../activity/index.js');
+    const client = getDiscordClient();
+    const guildObj = client?.guilds?.cache?.get(guildId) || null;
+    if (guildObj) {
+      unlockedItems = await sortItemsByRolePosition(unlockedItems, guildObj);
+    }
     const guildLootBoxes = await getGuildLootBoxes(guildId);
 
     let rewardsSelect;
@@ -331,7 +337,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
           mapOption: (item) => ({
             label: item.name.slice(0, 50),
             value: 'add_item_' + item.id,
-            emoji: '🏷️'
+            emoji: getItemRarityEmoji(item)
           })
         });
         rewardsSelect = selectMenu;
@@ -385,7 +391,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
           mapOption: (item) => ({
             label: item.name.slice(0, 50),
             value: 'add_item_' + item.id,
-            emoji: '🏷️'
+            emoji: getItemRarityEmoji(item)
           })
         });
         rewardsSelect = selectMenu;
