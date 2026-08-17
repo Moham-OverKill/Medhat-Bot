@@ -26,9 +26,10 @@ const CAT_STATUSES = [
  * @param {import('discord.js').Client} client 
  */
 export function updateBotPresence(client) {
+  let statusText = `${client.guilds.cache.size} Servers`;
   try {
     const rawStatus = CAT_STATUSES[Math.floor(Math.random() * CAT_STATUSES.length)];
-    const statusText = rawStatus.replace('XX', client.guilds.cache.size);
+    statusText = rawStatus.replace('XX', client.guilds.cache.size);
 
     // Dynamic ActivityType: Prefer Custom, fallback to Playing
     let type = ActivityType.Custom;

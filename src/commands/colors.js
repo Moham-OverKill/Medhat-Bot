@@ -13,7 +13,8 @@ import {
   addColorRole,
   removeColorRole,
   getColorRoles,
-  getAllColorRoles
+  getAllColorRoles,
+  setBoosterRole
 } from '../storage/colors.js';
 import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
 import { logServerEvent, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
@@ -682,10 +683,11 @@ export async function handleRoleSelection(interaction) {
     const guildId = interaction.guildId;
     const selectedRoleId = interaction.values[0];
     const isBooster = colorType === 'booster';
-    const username = getUserDisplayName(interaction.member);
 
     // Defer the update immediately to prevent timeout
-    await interaction.deferUpdate();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     if (operation === 'booster') {
       await setBoosterRole(guildId, selectedRoleId);
@@ -698,104 +700,27 @@ export async function handleRoleSelection(interaction) {
           `**Action:** Set server booster role to ${role || `\`${selectedRoleId}\``}`
         );
       }
-      await showColorPanel(interaction);
-      return;
-    }
-
-    const guild = await interaction.client.guilds.fetch(guildId);
-    const selectedRole = await guild.roles.fetch(selectedRoleId).catch(() => null);
-
-    if (!selectedRole) {
-      const { content, components } = await buildRoleSelectorResponse(
-        interaction.client,
-        guildId,
-        isBooster,
-        operation
-      );
-
-      await interaction.editReply({
-        content: [`❌ That role no longer exists!`, content].filter(Boolean).join('\n\n'),
-        components,
-        embeds: []
-      });
-      return;
+      return await showColorPanel(interaction, 'booster');
     }
 
     if (operation === 'add') {
-      const result = await addColorRole(guildId, selectedRoleId, isBooster);
-      const message = result.success
-        ? `✅ Added <@&${selectedRoleId}>!`
-        : `❌ ${result.error}`;
-
-      if (result.success) {
-        const typeLabel = isBooster ? 'booster color' : 'color';
-        const logName = getUserLogName(interaction);
-        sendLog(guild, 'audit', 'cyan', `🎨 ${isBooster ? 'Booster ' : ''}Color Added`, 
-          `**Admin:** \`${logName}\`\n` +
-          `**Action:** Added ${selectedRole} to the available colors list.`
-        );
-      }
-
-      const { content, components } = await buildRoleSelectorResponse(
-        interaction.client,
-        guildId,
-        isBooster,
-        operation
-      );
-
-      await interaction.editReply({
-        content: [message, content].filter(Boolean).join('\n\n'),
-        components,
-        embeds: []
-      });
-
-      if (result.success) {
-        // Role added
-      }
+      return await processRoleAddition(interaction, guildId, selectedRoleId, isBooster);
     } else if (operation === 'remove') {
-      const result = await removeColorRole(guildId, selectedRoleId, isBooster);
-      const message = result.deleted
-        ? `✅ Removed <@&${selectedRoleId}>!`
-        : `❌ Failed to remove <@&${selectedRoleId}>!`;
-
-      if (result.deleted) {
-        const typeLabel = isBooster ? 'booster color' : 'color';
-        const logName = getUserLogName(interaction);
-        sendLog(guild, 'audit', 'red', `🎨 ${isBooster ? 'Booster ' : ''}Color Removed`, 
-          `**Admin:** \`${logName}\`\n` +
-          `**Action:** Removed ${selectedRole} from the available colors list.`
-        );
-      }
-
-      const { content, components } = await buildRoleSelectorResponse(
-        interaction.client,
-        guildId,
-        isBooster,
-        operation
-      );
-
-      await interaction.editReply({
-        content: [message, content].filter(Boolean).join('\n\n'),
-        components,
-        embeds: []
-      });
-
-      if (result.deleted) {
-        // Role removed
-      }
+      return await processRoleRemoval(interaction, guildId, selectedRoleId, isBooster);
     }
+
+    return await showColorPanel(interaction, isBooster ? 'booster' : 'normal');
   } catch (error) {
     sysError('Colors role selection failed', error, { user: interaction.user.id, guild: interaction.guildId });
-
-    const errorMsg = 'Failed to process role selection.';
-
+    const errorMsg = '❌ Failed to process role selection.';
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
+      await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
-      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
+      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 }
+
 /**
  * Get all booster color role IDs for a guild
  */

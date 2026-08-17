@@ -43,7 +43,7 @@ process.on('warning', (warning) => {
   sysLog('Process Warning', { name: warning.name, message: warning.message });
 });
 
-const client = new Client({
+export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
