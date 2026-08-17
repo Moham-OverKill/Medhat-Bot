@@ -55,35 +55,52 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     embed.setDescription(desc);
   } else {
-    embed.setTitle('🎉 Claimed Rewards');
+    embed.setTitle('🎉 Level Rewards');
 
     if (data.claims.length > 0) {
-      const claimLines = data.claims.map(c => {
-        const parts = [];
-        if (c.reward_coins > 0) parts.push(`${coinEmoji} **${Number(c.reward_coins).toLocaleString()} Coins**`);
-        for (const r of (c.rewards || [])) {
-          const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
-          if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
-          else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
-        }
-        const rewardStr = parts.length > 0 ? parts.join(' + ') : '_None_';
-        return `• **Level ${c.level_claimed}:** ${rewardStr}`;
-      });
+      // 1. Calculate Lifetime Aggregates
+      const totalCoins = data.claims.reduce((sum, c) => sum + (c.reward_coins || 0), 0);
+      let totalItems = 0;
+      let totalChests = 0;
 
-      let fullText = claimLines.join('\n');
-      if (fullText.length > 3900) {
-        const header = `_Showing latest claimed rewards (${data.claims.length} total):_\n`;
-        let budget = 3800 - header.length;
-        const sliced = [];
-        for (let i = claimLines.length - 1; i >= 0; i--) {
-          if (budget - claimLines[i].length - 1 < 0) break;
-          sliced.unshift(claimLines[i]);
-          budget -= (claimLines[i].length + 1);
+      for (const c of data.claims) {
+        for (const r of (c.rewards || [])) {
+          const qty = r.quantity || 1;
+          if (r.reward_type === 'item') totalItems += qty;
+          else if (r.reward_type === 'chest') totalChests += qty;
         }
-        fullText = header + sliced.join('\n');
       }
 
-      embed.setDescription(fullText);
+      const summaryLines = [];
+      if (totalCoins > 0) summaryLines.push(`• ${coinEmoji} **${totalCoins.toLocaleString()} Total Coins**`);
+      if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
+      if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
+
+      // 2. Filter down to only levels that actually had rewards
+      const rewardedClaims = data.claims.filter(c => 
+        (c.reward_coins > 0) || (c.rewards && c.rewards.length > 0)
+      );
+
+      let desc = `📊 **Lifetime Summary (${data.claims.length} Levels Claimed):**\n${summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed._'}`;
+
+      if (rewardedClaims.length > 0) {
+        // Show up to 8 latest milestone claims
+        const recentClaims = rewardedClaims.slice(-8);
+        const recentLines = recentClaims.map(c => {
+          const parts = [];
+          if (c.reward_coins > 0) parts.push(`${coinEmoji} ${Number(c.reward_coins).toLocaleString()}`);
+          for (const r of (c.rewards || [])) {
+            const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+            if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ ${qStr}${r.item_name}`);
+            else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} ${qStr}${r.chest_name}`);
+          }
+          return `• **Level ${c.level_claimed}:** ${parts.join(' + ')}`;
+        });
+
+        desc += `\n\n━━━━━━━━━━━━━━━━━━━━━\n🕒 **Recent Milestone Claims:**\n${recentLines.join('\n')}`;
+      }
+
+      embed.setDescription(desc);
     } else {
       embed.setDescription('_You have not claimed any level rewards yet._');
     }
@@ -99,11 +116,17 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       }
       if (parts.length > 0) {
         embed.addFields({
-          name: `Next Reward (Level ${nr.level})`,
+          name: `▶️ Next Reward (Level ${nr.level})`,
           value: parts.join(' + '),
           inline: false
         });
       }
+    } else if (data.currentLevel > 0) {
+      embed.addFields({
+        name: '🏆 Max Level Reached',
+        value: '_You have claimed all available configured level rewards!_',
+        inline: false
+      });
     }
   }
 
