@@ -18,6 +18,7 @@ import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/l
 import { COIN_EMOJI, parseSelectEmoji } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { validateRoleForAssignment } from './pass-engine.js';
+import { buildPaginatedSelectMenu } from '../../utils/paginator.js';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -132,7 +133,7 @@ export async function getConfiguredLevel(guildId, level) {
 // DASHBOARD PAYLOAD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null, rewardFolder = 'root') {
+export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null, rewardFolder = 'root', rewardPage = 1) {
   const levels = await getConfiguredLevels(guildId);
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.battlepass_enabled === true;
@@ -253,7 +254,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     const unlockedItems = await getUnlockedShopItems(guildId);
     const guildLootBoxes = await getGuildLootBoxes(guildId);
 
-    const rewardOptions = [];
+    let rewardsSelect;
     const rewardsPlaceholder = `Set Items/${lootBoxCatName}`;
 
     if (rewardFolder === 'root') {
@@ -261,6 +262,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       const hasUncategorized = unlockedItems.some(i => !i.category_id);
       const hasLootBoxes = guildLootBoxes.length > 0;
 
+      const rewardOptions = [];
       if (hasCategorized) {
         rewardOptions.push({ label: 'Categorized Items', value: 'folder_categorized', emoji: '📂' });
       }
@@ -273,36 +275,122 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       if (rewardOptions.length === 0) {
         rewardOptions.push({ label: 'No Items or Chests Available', value: 'folder_root', emoji: '❌' });
       }
+
+      rewardsSelect = new StringSelectMenuBuilder()
+        .setCustomId(`pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_root_rpg_1`)
+        .setPlaceholder(rewardsPlaceholder)
+        .addOptions(rewardOptions.slice(0, 25));
     } else if (rewardFolder === 'categorized') {
-      rewardOptions.push({ label: 'Back', value: 'folder_root', emoji: '⬅️' });
-      for (const cat of categories.slice(0, 24)) {
-        const count = unlockedItems.filter(i => Number(i.category_id) === Number(cat.id)).length;
-        if (count > 0) {
-          rewardOptions.push({ label: cat.name.slice(0, 50), value: 'folder_' + cat.id, emoji: '📂' });
-        }
+      const validCats = categories.filter(cat =>
+        unlockedItems.some(i => Number(i.category_id) === Number(cat.id))
+      );
+      if (validCats.length === 0) {
+        rewardsSelect = new StringSelectMenuBuilder()
+          .setCustomId(`pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_categorized_rpg_1`)
+          .setPlaceholder(rewardsPlaceholder)
+          .addOptions([
+            { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+            { label: 'No Categories Available', value: 'folder_root', emoji: '❌' }
+          ]);
+      } else {
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: validCats,
+          page: rewardPage,
+          customId: `pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_categorized_rpg_${rewardPage}`,
+          placeholder: rewardsPlaceholder,
+          backOption: { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+          pageNavPrefix: 'folder_catnav_',
+          pageSize: 20,
+          mapOption: (cat) => ({
+            label: cat.name.slice(0, 50),
+            value: 'folder_' + cat.id,
+            emoji: '📂'
+          })
+        });
+        rewardsSelect = selectMenu;
       }
     } else if (rewardFolder === 'null') {
-      rewardOptions.push({ label: 'Back', value: 'folder_root', emoji: '⬅️' });
-      for (const item of unlockedItems.filter(i => !i.category_id).slice(0, 24)) {
-        rewardOptions.push({ label: item.name.slice(0, 50), value: 'add_item_' + item.id, emoji: '🏷️' });
+      const uncategorized = unlockedItems.filter(i => !i.category_id);
+      if (uncategorized.length === 0) {
+        rewardsSelect = new StringSelectMenuBuilder()
+          .setCustomId(`pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_null_rpg_1`)
+          .setPlaceholder(rewardsPlaceholder)
+          .addOptions([
+            { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+            { label: 'No Uncategorized Items', value: 'folder_root', emoji: '❌' }
+          ]);
+      } else {
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: uncategorized,
+          page: rewardPage,
+          customId: `pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_null_rpg_${rewardPage}`,
+          placeholder: rewardsPlaceholder,
+          backOption: { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+          pageNavPrefix: 'folder_itemnav_',
+          pageSize: 20,
+          mapOption: (item) => ({
+            label: item.name.slice(0, 50),
+            value: 'add_item_' + item.id,
+            emoji: '🏷️'
+          })
+        });
+        rewardsSelect = selectMenu;
       }
     } else if (rewardFolder === 'chests') {
-      rewardOptions.push({ label: 'Back', value: 'folder_root', emoji: '⬅️' });
-      for (const chest of guildLootBoxes.slice(0, 24)) {
-        rewardOptions.push({ label: chest.name.slice(0, 50), value: 'add_chest_' + chest.id, emoji: parseSelectEmoji(selectChestEmoji) });
+      if (guildLootBoxes.length === 0) {
+        rewardsSelect = new StringSelectMenuBuilder()
+          .setCustomId(`pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_chests_rpg_1`)
+          .setPlaceholder(rewardsPlaceholder)
+          .addOptions([
+            { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+            { label: 'No Chests Available', value: 'folder_root', emoji: '❌' }
+          ]);
+      } else {
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: guildLootBoxes,
+          page: rewardPage,
+          customId: `pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_chests_rpg_${rewardPage}`,
+          placeholder: rewardsPlaceholder,
+          backOption: { label: 'Back', value: 'folder_root', emoji: '⬅️' },
+          pageNavPrefix: 'folder_chestnav_',
+          pageSize: 20,
+          mapOption: (chest) => ({
+            label: chest.name.slice(0, 50),
+            value: 'add_chest_' + chest.id,
+            emoji: parseSelectEmoji(selectChestEmoji)
+          })
+        });
+        rewardsSelect = selectMenu;
       }
     } else {
       const catId = parseInt(rewardFolder, 10);
-      rewardOptions.push({ label: 'Back', value: 'folder_categorized', emoji: '⬅️' });
-      for (const item of unlockedItems.filter(i => Number(i.category_id) === catId).slice(0, 24)) {
-        rewardOptions.push({ label: item.name.slice(0, 50), value: 'add_item_' + item.id, emoji: '🏷️' });
+      const catItems = unlockedItems.filter(i => Number(i.category_id) === catId);
+      if (catItems.length === 0) {
+        rewardsSelect = new StringSelectMenuBuilder()
+          .setCustomId(`pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_${rewardFolder}_rpg_1`)
+          .setPlaceholder(rewardsPlaceholder)
+          .addOptions([
+            { label: 'Back', value: 'folder_categorized', emoji: '⬅️' },
+            { label: 'No Items In Category', value: 'folder_categorized', emoji: '❌' }
+          ]);
+      } else {
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: catItems,
+          page: rewardPage,
+          customId: `pass_rewards_select_lvl_${selectedLevel}_pg_${currentPage}_fld_${rewardFolder}_rpg_${rewardPage}`,
+          placeholder: rewardsPlaceholder,
+          backOption: { label: 'Back', value: 'folder_categorized', emoji: '⬅️' },
+          pageNavPrefix: 'folder_itemnav_',
+          pageSize: 20,
+          mapOption: (item) => ({
+            label: item.name.slice(0, 50),
+            value: 'add_item_' + item.id,
+            emoji: '🏷️'
+          })
+        });
+        rewardsSelect = selectMenu;
       }
     }
-
-    const rewardsSelect = new StringSelectMenuBuilder()
-      .setCustomId('pass_rewards_select_lvl_' + selectedLevel + '_pg_' + currentPage + '_fld_' + rewardFolder)
-      .setPlaceholder(rewardsPlaceholder)
-      .addOptions(rewardOptions.slice(0, 25));
 
     const row4 = new ActionRowBuilder().addComponents(rewardsSelect);
 
@@ -861,16 +949,29 @@ export async function handlePassComponent(interaction) {
 
     // ── 12. Rewards Browser ───────────────────────────────────────────────
     if (customId.startsWith('pass_rewards_select_lvl_')) {
-      const match = customId.match(/pass_rewards_select_lvl_(\d+)_pg_(\d+)_fld_(.+)/);
+      const match = customId.match(/pass_rewards_select_lvl_(\d+)_pg_(\d+)_fld_([a-zA-Z0-9_]+?)(?:_rpg_(\d+))?$/);
       const level = match ? parseInt(match[1], 10) : 1;
       const page = match ? parseInt(match[2], 10) : 0;
       const currentFolder = match ? match[3] : 'root';
+      const currentRewardPage = match && match[4] ? parseInt(match[4], 10) : 1;
       const selectedValue = interaction.values[0];
+
+      if (
+        selectedValue.startsWith('folder_catnav_') ||
+        selectedValue.startsWith('folder_itemnav_') ||
+        selectedValue.startsWith('folder_chestnav_')
+      ) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+        const newRewardPage = parseInt(selectedValue.split('_').pop(), 10) || 1;
+        const payload = await getPassDashboardPayload(guildId, page, level, currentFolder, newRewardPage);
+        await interaction.editReply({ files: [], content: '', ...payload });
+        return;
+      }
 
       if (selectedValue.startsWith('folder_')) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
         const folderTarget = selectedValue.replace('folder_', '');
-        const payload = await getPassDashboardPayload(guildId, page, level, folderTarget);
+        const payload = await getPassDashboardPayload(guildId, page, level, folderTarget, 1);
         await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
@@ -887,7 +988,7 @@ export async function handlePassComponent(interaction) {
         const currentQty = existRes.rows[0]?.quantity || 1;
 
         const modal = new ModalBuilder()
-          .setCustomId(`pass_reward_qty_${level}_item_${itemId}_pg_${page}_fld_${currentFolder}`)
+          .setCustomId(`pass_reward_qty_${level}_item_${itemId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}`)
           .setTitle(`Set Quantity: ${itemName}`.slice(0, 45));
 
         modal.addComponents(
@@ -918,7 +1019,7 @@ export async function handlePassComponent(interaction) {
         const currentQty = existRes.rows[0]?.quantity || 1;
 
         const modal = new ModalBuilder()
-          .setCustomId(`pass_reward_qty_${level}_chest_${chestId}_pg_${page}_fld_${currentFolder}`)
+          .setCustomId(`pass_reward_qty_${level}_chest_${chestId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}`)
           .setTitle(`Set Quantity: ${chestName}`.slice(0, 45));
 
         modal.addComponents(
@@ -1411,13 +1512,15 @@ export async function handlePassModal(interaction) {
 
     // ── 1. Reward Quantity Modal ──────────────────────────────────────────
     if (customId.startsWith('pass_reward_qty_')) {
-      const match = customId.match(/pass_reward_qty_(\d+)_(item|chest)_(\d+)_pg_(\d+)_fld_(.+)/);
+      const match = customId.match(/pass_reward_qty_(\d+)_(item|chest)_(\d+)_pg_(\d+)_fld_([a-zA-Z0-9_]+?)(?:_rpg_(\d+))?$/);
       if (!match) return;
 
       const level = parseInt(match[1], 10);
       const type = match[2];
       const targetId = parseInt(match[3], 10);
       const page = parseInt(match[4], 10);
+      const currentFolder = match[5] || 'root';
+      const currentRewardPage = match[6] ? parseInt(match[6], 10) : 1;
 
       const qtyRaw = interaction.fields.getTextInputValue('reward_quantity').trim();
       const quantity = parseInt(qtyRaw, 10);
@@ -1460,7 +1563,7 @@ export async function handlePassModal(interaction) {
       // Reset claims for this level so newly added/modified rewards can be claimed
       await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
-      const payload = await getPassDashboardPayload(guildId, page, level, 'root');
+      const payload = await getPassDashboardPayload(guildId, page, level, currentFolder, currentRewardPage);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
