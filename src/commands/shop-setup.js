@@ -51,7 +51,7 @@ import {
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
-import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI } from '../shared.js';
+import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
 
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
 const pendingPosts = new Map();
@@ -1219,6 +1219,7 @@ export async function handleShopPostStart(interaction) {
 
       if (state.postFilter === 'standalone') {
         filtered = itemsAll.filter(i => !i.category_id && !i.is_pack && i.item_type !== 'loot_box');
+        filtered = await sortItemsByRolePosition(filtered, interaction.guild);
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
       } else if (state.postFilter === 'packs') {
@@ -1233,6 +1234,7 @@ export async function handleShopPostStart(interaction) {
       } else if (state.postFilter?.startsWith('cat_')) {
         const catId = parseInt(state.postFilter.split('_').pop());
         filtered = itemsAll.filter(i => i.category_id === catId && !i.is_pack && i.item_type !== 'loot_box');
+        filtered = await sortItemsByRolePosition(filtered, interaction.guild);
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
         groupPrefix = '🏷️';
       }
@@ -1256,7 +1258,7 @@ export async function handleShopPostStart(interaction) {
         mapOption: i => ({
           label: i.name.slice(0, 100),
           value: i.id.toString(),
-          emoji: parseSelectEmoji(groupPrefix),
+          emoji: (state.postFilter === 'packs' || state.postFilter === 'loot_boxes') ? parseSelectEmoji(groupPrefix) : getItemRarityEmoji(i),
           default: state.itemId === i.id.toString()
         })
       });
@@ -2482,6 +2484,8 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
       return interaction.guild.roles.cache.has(roleId); // Role must exist
     });
 
+    const sortedStandalone = await sortItemsByRolePosition(standalone, interaction.guild);
+
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
         .setLabel('Back')
@@ -2489,14 +2493,14 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    if (standalone.length === 0) {
+    if (sortedStandalone.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
       return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
     const { selectMenu } = buildPaginatedSelectMenu({
-      items: standalone,
+      items: sortedStandalone,
       page: pageNum,
       customId: `shop_edit_cat_add_select_${categoryId}`,
       placeholder: 'Select',
@@ -2505,7 +2509,7 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
       mapOption: i => ({
         label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
         value: i.id.toString(),
-        emoji: '🏷️'
+        emoji: getItemRarityEmoji(i)
       })
     });
 
@@ -2571,6 +2575,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       const roleId = i.role_id.split(/[,\s]+/)[0];
       return interaction.guild.roles.cache.has(roleId);
     });
+    const sortedStandaloneRemaining = await sortItemsByRolePosition(standalone, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
@@ -2579,7 +2584,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    if (standalone.length === 0) {
+    if (sortedStandaloneRemaining.length === 0) {
       // No more items - Standardized Empty State
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
@@ -2593,7 +2598,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
     } else {
       // Update dropdown
       const { selectMenu } = buildPaginatedSelectMenu({
-        items: standalone,
+        items: sortedStandaloneRemaining,
         page: 1,
         customId: `shop_edit_cat_add_select_${categoryId}`,
         placeholder: 'Select',
@@ -2602,7 +2607,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
         mapOption: i => ({
           label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
           value: i.id.toString(),
-          emoji: '🏷️'
+          emoji: getItemRarityEmoji(i)
         })
       });
 
@@ -2629,6 +2634,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
     const categoryId = interaction.customId.split('_').pop();
 
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
+    const sortedItems = await sortItemsByRolePosition(items, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
@@ -2637,14 +2643,14 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
         .setStyle(ButtonStyle.Secondary)
     );
 
-    if (items.length === 0) {
+    if (sortedItems.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
       return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
     const { selectMenu } = buildPaginatedSelectMenu({
-      items,
+      items: sortedItems,
       page: pageNum,
       customId: `shop_edit_cat_remove_select_${categoryId}`,
       placeholder: 'Select',
@@ -2653,7 +2659,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
       mapOption: i => ({
         label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
         value: i.id.toString(),
-        emoji: '🏷️'
+        emoji: getItemRarityEmoji(i)
       })
     });
 
@@ -2701,6 +2707,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
 
     // 3. Fetch remaining items in this category
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
+    const sortedItems = await sortItemsByRolePosition(items, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
@@ -2709,7 +2716,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    if (items.length === 0) {
+    if (sortedItems.length === 0) {
       // Standardized Empty State
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
@@ -2722,7 +2729,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
       });
     } else {
       const { selectMenu } = buildPaginatedSelectMenu({
-        items,
+        items: sortedItems,
         page: 1,
         customId: `shop_edit_cat_remove_select_${categoryId}`,
         placeholder: 'Select',
@@ -2731,7 +2738,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         mapOption: i => ({
           label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
           value: i.id.toString(),
-          emoji: '🏷️'
+          emoji: getItemRarityEmoji(i)
         })
       });
 
@@ -3055,7 +3062,8 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
       // 3. ITEM VIEW - List items inside a specific Category or Uncategorized
       const targetCategoryId = folder === 'cat_null' ? null : parseInt(folder.replace('cat_', ''), 10);
-      const folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
+      let folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
+      folderItems = await sortItemsByRolePosition(folderItems, interaction.guild);
 
       if (folderItems.length === 0) {
          pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root', page: 1 });
@@ -3074,7 +3082,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         mapOption: i => ({
           label: (i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
           value: `item_${i.id}`,
-          emoji: '🏷️'
+          emoji: getItemRarityEmoji(i)
         })
       });
 
@@ -4019,9 +4027,10 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
     else if (layer === 'browse_uncategorized') {
       // --- LAYER 1: UN-CATEGORIZED ITEMS ---
       const standaloneItems = availableItems.filter(i => !i.category_id);
+      const sortedStandalone = await sortItemsByRolePosition(standaloneItems, interaction.guild);
       
       const { selectMenu } = buildPaginatedSelectMenu({
-        items: standaloneItems,
+        items: sortedStandalone,
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
@@ -4030,7 +4039,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         mapOption: i => ({
           label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
           value: `item_${i.id}`,
-          emoji: '🏷️'
+          emoji: getItemRarityEmoji(i)
         })
       });
       selectMenuToRender = selectMenu;
@@ -4039,9 +4048,10 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       // --- LAYER 2: ITEMS INSIDE A CATEGORY ---
       const categoryId = parseInt(layer);
       const itemsInCat = availableItems.filter(i => i.category_id === categoryId);
+      const sortedInCat = await sortItemsByRolePosition(itemsInCat, interaction.guild);
       
       const { selectMenu } = buildPaginatedSelectMenu({
-        items: itemsInCat,
+        items: sortedInCat,
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
@@ -4050,7 +4060,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         mapOption: i => ({ 
           label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
           value: `item_${i.id}`,
-          emoji: '🏷️'
+          emoji: getItemRarityEmoji(i)
         })
       });
       selectMenuToRender = selectMenu;
@@ -4208,10 +4218,11 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
     const contentIds = currentContentIds.map(id => parseInt(id));
     const packItems = allItems.filter(i => contentIds.includes(i.id));
+    const sortedPackItems = await sortItemsByRolePosition(packItems, interaction.guild);
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
     const { selectMenu } = buildPaginatedSelectMenu({
-      items: packItems,
+      items: sortedPackItems,
       page: pageNum,
       customId: `shop_pack_remove_content_select_${packId}`,
       placeholder: 'Select',
@@ -4220,7 +4231,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
       mapOption: i => ({
         label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
         value: `item_${i.id}`,
-        emoji: '🏷️'
+        emoji: getItemRarityEmoji(i)
       })
     });
 

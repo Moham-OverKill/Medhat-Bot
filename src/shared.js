@@ -366,6 +366,17 @@ export const RARITY_EMOJIS = {
   legendary: '🟡'
 };
 
+/**
+ * Get the rarity emoji for an item
+ * @param {Object|string} item - Shop item object or rarity string
+ * @returns {string} - Emoji corresponding to the item's rarity
+ */
+export function getItemRarityEmoji(item) {
+  if (!item) return RARITY_EMOJIS.common;
+  const rarity = (typeof item === 'string' ? item : (item.rarity || 'common')).toLowerCase();
+  return RARITY_EMOJIS[rarity] || RARITY_EMOJIS.common;
+}
+
 export const RARITY_DISPLAY = {
   common: '⚪ Common',
   uncommon: '🟢 Uncommon',
