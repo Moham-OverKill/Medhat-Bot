@@ -45,6 +45,9 @@ import {
   handleEditItemDetails,
   handleEditPackDetails,
   handleAdminBrowserSelect,
+  handleAdminBrowserBackRoot,
+  handleAdminBrowserBackCat,
+  handleShopPostBackFolder,
   handleManageTiers,
   handleAddTierModal,
   handleTierModalSubmit,
@@ -528,6 +531,16 @@ export function setupComponentHandlers(client) {
         await handleEditCategoryAddItemsStart(interaction);
       } else if (customId.startsWith('shop_cat_remove_')) {
         await handleEditCategoryRemoveItemsStart(interaction);
+      } else if (customId === 'shop_admin_browser_back_root') {
+        await handleAdminBrowserBackRoot(interaction);
+      } else if (customId === 'shop_admin_browser_back_cat') {
+        await handleAdminBrowserBackCat(interaction);
+      } else if (customId === 'shop_post_back_folder') {
+        await handleShopPostBackFolder(interaction);
+      } else if (customId.startsWith('shop_pack_add_back_root_')) {
+        await handlePackAddContentStart(interaction, 'root');
+      } else if (customId.startsWith('shop_pack_add_back_cat_')) {
+        await handlePackAddContentStart(interaction, 'browse_categorized');
       }
       // ADMIN SHOP SETUP - DELETE FLOW
       else if (customId === 'shop_delete_item') {
