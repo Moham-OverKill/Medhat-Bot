@@ -175,11 +175,11 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 3: Rarity Select
     const rarityOptions = [
-        { label: 'Common',    value: 'common',    emoji: '⚪', description: 'Highest drop rate (~60% chance in loot boxes)' },
-        { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢', description: 'Moderate drop rate (~25% chance in loot boxes)' },
-        { label: 'Rare',      value: 'rare',      emoji: '🔵', description: 'Low drop rate (~10% chance in loot boxes)' },
-        { label: 'Epic',      value: 'epic',      emoji: '🟣', description: 'Very low drop rate (~4% chance in loot boxes)' },
-        { label: 'Legendary', value: 'legendary', emoji: '🟡', description: 'Ultra rare drop (~1% chance in loot boxes)' }
+        { label: 'Common',    value: 'common',    emoji: '⚪' },
+        { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢' },
+        { label: 'Rare',      value: 'rare',      emoji: '🔵' },
+        { label: 'Epic',      value: 'epic',      emoji: '🟣' },
+        { label: 'Legendary', value: 'legendary', emoji: '🟡' }
     ];
     const { rarity: currentRarity, is_tradable: currentTradable } = state;
     const raritySelect = new StringSelectMenuBuilder()
