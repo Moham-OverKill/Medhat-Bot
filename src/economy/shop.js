@@ -713,24 +713,36 @@ export async function cleanupDepartedMember(userId, guildId) {
  */
 export async function reconcileGuildInventory(guild) {
   try {
-    // Fetch all current guild members
-    const members = await guild.members.fetch();
-    const memberIds = new Set(members.keys());
-
-    // Find all user_ids that have active inventory records in this guild
+    // 1. Find only user_ids that actually have active inventory records in this guild
     const result = await query(
       `SELECT DISTINCT user_id FROM user_inventory
        WHERE guild_id = $1 AND is_active = true`,
       [guild.id]
     );
 
-    const departed = result.rows
-      .map(r => r.user_id)
-      .filter(uid => !memberIds.has(uid));
+    if (!result.rows || result.rows.length === 0) return;
+
+    const activeUserIds = result.rows.map(r => r.user_id);
+    const departed = [];
+
+    // 2. Check each active inventory holder without requesting a full-guild member chunk (Opcode 8)
+    for (const userId of activeUserIds) {
+      if (guild.members.cache.has(userId)) continue;
+      try {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (!member) {
+          departed.push(userId);
+        }
+      } catch (err) {
+        if (err.code === 10007 || err.status === 404) {
+          departed.push(userId);
+        }
+      }
+    }
 
     if (departed.length === 0) return;
 
-    // Deactivate inventory for all departed users in one query
+    // 3. Deactivate inventory for all departed users in one query
     await query(
       `UPDATE user_inventory SET is_active = false
        WHERE guild_id = $1 AND user_id = ANY($2::text[]) AND is_active = true`,
