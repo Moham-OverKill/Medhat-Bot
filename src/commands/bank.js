@@ -900,10 +900,12 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       await interaction.deferUpdate().catch(() => { });
     }
 
-    const catIdStr = interaction.customId.replace('bank_inv_cat_', '');
+    const catIdStr = interaction.customId.startsWith('bank_inv_item_select_')
+      ? interaction.customId.replace('bank_inv_item_select_', '')
+      : interaction.customId.replace('bank_inv_cat_', '');
     const isLootBox = catIdStr === 'lootboxes';
     const isOther = catIdStr === 'null';
-    const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr);
+    const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr, 10);
 
     // Unified Fetch: Includes DB items + Live synthesis of admin roles
     const [inventory, categories] = await Promise.all([
@@ -950,10 +952,21 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       ? items.map(i => `• ${lootBoxEmoji} **${i.name}** \`(x${parseInt(i.quantity) || 1})\``)
       : items.map(i => formatInventoryItemLine(i));
 
+    const pageSize = 20;
+    const startIndex = (targetPage - 1) * pageSize;
+    const pagedLines = listLines.slice(startIndex, startIndex + pageSize);
+    const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+    const remainingCount = items.length - (startIndex + pagedLines.length);
+
+    let desc = pagedLines.join('\n');
+    if (remainingCount > 0) {
+      desc += `\n...and ${remainingCount} more`;
+    }
+
     const embed = new EmbedBuilder()
-      .setTitle(`📂 Category: ${categoryName}`)
+      .setTitle(`📂 Category: ${categoryName}${totalPages > 1 ? ` (Page ${targetPage}/${totalPages})` : ''}`)
       .setColor('#2ECC71')
-      .setDescription(listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : ''));
+      .setDescription(desc);
 
     const { selectMenu } = buildPaginatedSelectMenu({
       items,
