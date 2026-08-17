@@ -76,31 +76,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
       if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
 
-      // 2. Filter down to only levels that actually had rewards
-      const rewardedClaims = data.claims.filter(c => 
-        (c.reward_coins > 0) || (c.rewards && c.rewards.length > 0)
-      );
-
-      let desc = `📊 **Lifetime Summary (${data.claims.length} Levels Claimed):**\n${summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed._'}`;
-
-      if (rewardedClaims.length > 0) {
-        // Show up to 8 latest milestone claims
-        const recentClaims = rewardedClaims.slice(-8);
-        const recentLines = recentClaims.map(c => {
-          const parts = [];
-          if (c.reward_coins > 0) parts.push(`${coinEmoji} ${Number(c.reward_coins).toLocaleString()}`);
-          for (const r of (c.rewards || [])) {
-            const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
-            if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ ${qStr}${r.item_name}`);
-            else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} ${qStr}${r.chest_name}`);
-          }
-          return `• **Level ${c.level_claimed}:** ${parts.join(' + ')}`;
-        });
-
-        desc += `\n\n━━━━━━━━━━━━━━━━━━━━━\n🕒 **Recent Milestone Claims:**\n${recentLines.join('\n')}`;
-      }
-
-      embed.setDescription(desc);
+      embed.setDescription(summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._');
     } else {
       embed.setDescription('_You have not claimed any level rewards yet._');
     }
