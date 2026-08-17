@@ -38,6 +38,11 @@ process.on('uncaughtException', (error) => {
   sysError('Uncaught Exception', error);
 });
 
+process.on('warning', (warning) => {
+  if (warning.name === 'ExperimentalWarning') return;
+  sysLog('Process Warning', { name: warning.name, message: warning.message });
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
