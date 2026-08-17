@@ -253,14 +253,33 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       [guildId, userId]
     );
     const alreadyClaimed = new Set(claimsResult.rows.map(r => r.level_claimed));
+    const toClaim = levelsResult.rows.filter(r => !alreadyClaimed.has(r.level));
+    if (toClaim.length === 0) return;
 
+    const isBulk = toClaim.length > 5;
     const claimedLevels = [];
-    for (const levelRow of levelsResult.rows) {
-      if (alreadyClaimed.has(levelRow.level)) continue;
-
-      const claimData = await dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config);
+    for (const levelRow of toClaim) {
+      const claimData = await dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config, isBulk);
       if (claimData) {
         claimedLevels.push(claimData);
+      }
+    }
+
+    // If bulk, send ONE consolidated audit log instead of spamming 50-200 logs
+    if (isBulk && claimedLevels.length > 0 && client) {
+      const guild = client.guilds?.cache?.get(guildId);
+      if (guild) {
+        const { COIN_EMOJI } = await import('../../shared.js');
+        const coinEmoji = COIN_EMOJI.forGuild(guildId);
+        const totalCoins = claimedLevels.reduce((sum, c) => sum + (c.coins || 0), 0);
+        const totalRewardsCount = claimedLevels.reduce((sum, c) => sum + (c.rewards?.length || 0), 0);
+        sendLog(
+          guild,
+          'economy',
+          'green',
+          '⭐ Bulk Level Sync',
+          `<@${userId}> synchronized **${claimedLevels.length} levels** (up to Level ${currentLevel}), receiving **${totalCoins.toLocaleString()}** ${coinEmoji} and **${totalRewardsCount} items/chests**.`
+        );
       }
     }
 
@@ -355,7 +374,7 @@ async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
   }
 }
 
-export async function dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config) {
+export async function dispatchLevelReward(pool, guildId, userId, username, levelRow, client, config, skipChannelLogs = false) {
   const client2 = await pool.connect();
   try {
     await client2.query('BEGIN');
@@ -379,51 +398,63 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
     // C. Award coins
     const coins = parseInt(levelRow.reward_coins || 0, 10);
     if (coins > 0) {
-      const balRes = await client2.query(
+      await client2.query(
         `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
          VALUES ($1, $2, $3, $3)
          ON CONFLICT (user_id, guild_id)
          DO UPDATE SET
            balance = user_balances.balance + $3,
            total_earned = user_balances.total_earned + $3,
-           updated_at = NOW()
-         RETURNING balance`,
+           updated_at = NOW()`,
         [userId, guildId, coins]
-      );
-      const newBal = parseInt(balRes.rows[0]?.balance || coins, 10);
-
-      await client2.query(
-        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
-         VALUES ($1, $2, $3, $4, 'battlepass', $5)`,
-        [userId, guildId, coins, newBal, `Level ${levelRow.level} reward`]
       );
 
       await client2.query(
         `INSERT INTO transaction_history (user_id, guild_id, amount, type, description)
          VALUES ($1, $2, $3, 'battlepass_reward', $4)`,
-        [userId, guildId, coins, `Level ${levelRow.level} reward`]
+        [userId, guildId, coins, `Battlepass Level ${levelRow.level} reward`]
       );
     }
 
-    // D. Fetch all configured item & chest rewards for this level
-    const rewardsRes = await client2.query(
-      `SELECT br.id, br.level, br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
+    // D. Fetch and award configured items/chests from battlepass_level_rewards (Phase 3 multi-reward)
+    const rewardsResult = await client2.query(
+      `SELECT blr.reward_type, blr.shop_item_id, blr.loot_box_id, blr.quantity,
               si.name as item_name, si.role_id as item_role_id,
               lb.name as chest_name
-       FROM battlepass_rewards br
-       LEFT JOIN shop_items si ON br.shop_item_id = si.id
-       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
-       WHERE br.guild_id = $1 AND br.level = $2
-       ORDER BY br.reward_type ASC, br.id ASC`,
+       FROM battlepass_level_rewards blr
+       LEFT JOIN shop_items si ON blr.shop_item_id = si.id
+       LEFT JOIN loot_boxes lb ON blr.loot_box_id = lb.id
+       WHERE blr.guild_id = $1 AND blr.level = $2`,
       [guildId, levelRow.level]
     );
 
     const grantedRewards = [];
 
-    for (const reward of rewardsRes.rows) {
-      const qty = parseInt(reward.quantity, 10) || 1;
+    // Fallback if no multi-rewards were found: check legacy single columns on battlepass_config
+    if (rewardsResult.rows.length === 0) {
+      if (levelRow.reward_item_id) {
+        rewardsResult.rows.push({
+          reward_type: 'item',
+          shop_item_id: levelRow.reward_item_id,
+          item_name: levelRow.item_name,
+          item_role_id: levelRow.item_role_id,
+          quantity: 1
+        });
+      }
+      if (levelRow.reward_chest_id) {
+        rewardsResult.rows.push({
+          reward_type: 'chest',
+          loot_box_id: levelRow.reward_chest_id,
+          chest_name: levelRow.chest_name,
+          quantity: 1
+        });
+      }
+    }
 
+    for (const reward of rewardsResult.rows) {
+      const qty = Math.max(1, parseInt(reward.quantity || 1, 10));
       if (reward.reward_type === 'item' && reward.shop_item_id) {
+        // Stack into existing inventory or create a new row
         const existingItem = await client2.query(
           `SELECT id FROM user_inventory
            WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
@@ -505,8 +536,8 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       detail: `Level ${levelRow.level} | Coins: ${coins} | Rewards: ${grantedRewards.map(r => `${r.quantity}x ${r.name}`).join(', ') || 'None'}`
     });
 
-    // Send Discord channel audit logs
-    if (client) {
+    // Send Discord channel audit logs (suppressed during bulk claims to avoid spam)
+    if (!skipChannelLogs && client) {
       const guild = client.guilds?.cache?.get(guildId);
       if (guild) {
         if (coins > 0) {
@@ -574,7 +605,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       } else {
         description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.`;
       }
-    } else {
+    } else if (claimedLevels.length <= 15) {
       const highestLevel = Math.max(...claimedLevels.map(c => c.level));
       title = `⭐ Level Up! (Level ${highestLevel})`;
 
@@ -593,10 +624,50 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       }
 
       if (rewardLines.length > 0) {
-        description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.\n\n**Rewards Unlocked:**\n${rewardLines.join('\n')}`;
+        description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.\n\n**Rewards Unlocked (${claimedLevels.length} Levels):**\n${rewardLines.join('\n')}`;
       } else {
         description = `Congratulations <@${userId}>! You reached **Level ${highestLevel}**.`;
       }
+    } else {
+      // Bulk unlock (e.g. 16 to 200 levels claimed in one go)
+      const highestLevel = Math.max(...claimedLevels.map(c => c.level));
+      const lowestLevel = Math.min(...claimedLevels.map(c => c.level));
+      title = `⭐ Bulk Rewards Unlocked! (Levels ${lowestLevel} - ${highestLevel})`;
+
+      const totalCoins = claimedLevels.reduce((sum, c) => sum + (c.coins || 0), 0);
+      const itemsMap = new Map();
+      const chestsMap = new Map();
+
+      for (const c of claimedLevels) {
+        for (const r of (c.rewards || [])) {
+          if (r.type === 'item') {
+            itemsMap.set(r.name, (itemsMap.get(r.name) || 0) + (r.quantity || 1));
+          } else if (r.type === 'chest') {
+            chestsMap.set(r.name, (chestsMap.get(r.name) || 0) + (r.quantity || 1));
+          }
+        }
+      }
+
+      const summaryParts = [];
+      if (totalCoins > 0) summaryParts.push(`${coinEmoji} **${totalCoins.toLocaleString()} Total Coins**`);
+      for (const [name, qty] of itemsMap.entries()) {
+        const qStr = qty > 1 ? `${qty}x ` : '';
+        summaryParts.push(`🏷️ **${qStr}${name}**`);
+      }
+      for (const [name, qty] of chestsMap.entries()) {
+        const qStr = qty > 1 ? `${qty}x ` : '';
+        summaryParts.push(`${lootBoxEmoji} **${qStr}${name}**`);
+      }
+
+      const summaryText = summaryParts.length > 0 ? `• ${summaryParts.slice(0, 25).join('\n• ')}` : '_No rewards configured for these levels._';
+      const extraCount = summaryParts.length > 25 ? `\n_...and ${summaryParts.length - 25} more rewards_` : '';
+
+      description = `Congratulations <@${userId}>! You unlocked rewards for **${claimedLevels.length} levels** (Levels ${lowestLevel} to ${highestLevel}).\n\n**Total Rewards Claimed:**\n${summaryText}${extraCount}`;
+    }
+
+    // Safety guard against Discord 4096 char limit
+    if (description && description.length > 4000) {
+      description = description.slice(0, 3990) + '\n...';
     }
 
     const embed = new EmbedBuilder()
