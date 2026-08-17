@@ -1199,7 +1199,6 @@ export async function handleShopPostStart(interaction) {
         page,
         customId: 'shop_post_item_select',
         placeholder: '📂 Choose Category Folder...',
-        backOption: { label: 'Back', value: 'folder_reset', emoji: '⬅️' },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
         mapOption: c => ({
@@ -1239,7 +1238,7 @@ export async function handleShopPostStart(interaction) {
 
       if (filtered.length === 0) {
         const emptyRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('shop_post_back_folder').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
         const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
         return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
@@ -1251,7 +1250,6 @@ export async function handleShopPostStart(interaction) {
         page,
         customId: 'shop_post_item_select',
         placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`,
-        backOption: { label: 'Back', value: 'folder_reset', emoji: '⬅️' },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
         mapOption: i => ({
@@ -1268,18 +1266,24 @@ export async function handleShopPostStart(interaction) {
     // Unified Empty State Fallback for step 0
     if (state.postStep === 0 && itemOptions.length === 0) {
       const emptyRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId((state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home')
+          .setLabel('Back')
+          .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary)
       );
-      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#95A5A6')
+        .setDescription('No items found.');
       return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
     }
-  }
 
-  if (state.postStep === 0 && !itemSelect) {
-    itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
-      .setCustomId('shop_post_item_select')
-      .setPlaceholder(placeholder)
-      .addOptions(itemOptions) : null;
+    if (state.postStep === 0) {
+      const placeholder = '📦 Select Item/Pack (Required)';
+      itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
+        .setCustomId('shop_post_item_select')
+        .setPlaceholder(placeholder)
+        .addOptions(itemOptions) : null;
+    }
   }
 
   // Row 2: Channel Select
@@ -1336,10 +1340,17 @@ export async function handleShopPostStart(interaction) {
   );
 
   // Row 5: Action Buttons (4 buttons)
+  let postBackCustomId;
+  if (state.postStep > 0) {
+    postBackCustomId = 'shop_post_back_folder';
+  } else {
+    postBackCustomId = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
+  }
+
   const actionComponents = [];
   actionComponents.push(
     new ButtonBuilder()
-      .setCustomId((state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home')
+      .setCustomId(postBackCustomId)
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
@@ -1396,6 +1407,27 @@ export async function handleShopPostStart(interaction) {
     embeds: [embed],
     components: components
   });
+}
+
+export async function handleShopPostBackFolder(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const userId = interaction.user.id;
+    let state = pendingPosts.get(userId);
+    if (!state) return handleShopPostStart(interaction);
+
+    if (state.postStep === 2) {
+      state.postStep = state.postFilter?.startsWith('cat_') ? 1 : 0;
+      state.postPage = 1;
+    } else if (state.postStep === 1) {
+      state.postStep = 0;
+      state.postPage = 1;
+    }
+    pendingPosts.set(userId, state);
+    return handleShopPostStart(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post back folder');
+  }
 }
 
 // Handle Item Selection in Staging Panel
@@ -2891,7 +2923,17 @@ export async function renderAdminBrowser(interaction, contextMap) {
     const isEdit = action.startsWith('edit');
     const isItem = action.endsWith('item');
     const isLootBox = action.endsWith('lootbox');
-    const backRoute = isLootBox ? 'shop_lb_home' : (isEdit ? 'shop_admin_edit' : 'shop_admin_delete');
+    
+    // Smart hierarchical Back button routing:
+    let backRoute;
+    if (folder === 'root') {
+      backRoute = isLootBox ? 'shop_lb_home' : (isEdit ? 'shop_admin_edit' : 'shop_admin_delete');
+    } else if (folder === 'browse_categories' || folder === 'cat_null') {
+      backRoute = 'shop_admin_browser_back_root';
+    } else {
+      // inside a specific category (e.g. cat_5)
+      backRoute = 'shop_admin_browser_back_cat';
+    }
     
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
@@ -3005,7 +3047,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
           page,
           customId: 'shop_admin_browser_select',
           placeholder: 'Select',
-          backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
           pageNavPrefix: 'admin_browser_page_',
           pageSize: 20,
           mapOption: cat => ({
@@ -3031,7 +3072,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
          return renderAdminBrowser(interaction, pendingAdminBrowser.get(interaction.user.id));
       }
 
-      const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
       const page = contextMap.page || 1;
 
       const { selectMenu } = buildPaginatedSelectMenu({
@@ -3039,7 +3079,6 @@ export async function renderAdminBrowser(interaction, contextMap) {
         page,
         customId: 'shop_admin_browser_select',
         placeholder: 'Select',
-        backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: 'admin_browser_page_',
         pageSize: 20,
         mapOption: i => ({
@@ -3093,6 +3132,34 @@ export async function renderAdminBrowser(interaction, contextMap) {
     }
   } catch (error) {
      await handleInteractionError(interaction, error, 'admin browser render');
+  }
+}
+
+export async function handleAdminBrowserBackRoot(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    let context = pendingAdminBrowser.get(interaction.user.id) || { action: 'edit_item', folder: 'root', page: 1, message: null };
+    context.folder = 'root';
+    context.page = 1;
+    context.message = null;
+    pendingAdminBrowser.set(interaction.user.id, context);
+    return renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'admin browser back root');
+  }
+}
+
+export async function handleAdminBrowserBackCat(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    let context = pendingAdminBrowser.get(interaction.user.id) || { action: 'edit_item', folder: 'browse_categories', page: 1, message: null };
+    context.folder = 'browse_categories';
+    context.page = 1;
+    context.message = null;
+    pendingAdminBrowser.set(interaction.user.id, context);
+    return renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'admin browser back cat');
   }
 }
 
@@ -3170,7 +3237,7 @@ export async function handleAdminBrowserSelect(interaction) {
       if (action === 'delete_pack') return await handleDeletePackSelect(interaction);
     }
   } catch (error) {
-    await handleInteractionError(interaction, error, 'admin browser select');
+    await handleInteractionError(interaction, error, 'admin browser selection');
   }
 }
 
@@ -3956,7 +4023,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
-        backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
         pageNavPrefix: `pack_add_cat_nav_${packId}_`,
         pageSize: 20,
         mapOption: cat => ({
@@ -3976,7 +4042,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
-        backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
         pageNavPrefix: `pack_add_item_nav_${packId}_uncat_`,
         pageSize: 20,
         mapOption: i => ({
@@ -3997,7 +4062,6 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
-        backOption: { label: 'Back', value: 'layer_browse_categorized', emoji: '⬅️' },
         pageNavPrefix: `pack_add_item_nav_${packId}_${categoryId}_`,
         pageSize: 20,
         mapOption: i => ({ 
@@ -4009,8 +4073,17 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       selectMenuToRender = selectMenu;
     }
 
+    let packBackCustomId;
+    if (layer === 'root') {
+      packBackCustomId = `shop_pack_manage_${packId}`;
+    } else if (layer === 'browse_categorized' || layer === 'browse_uncategorized') {
+      packBackCustomId = `shop_pack_add_back_root_${packId}`;
+    } else {
+      packBackCustomId = `shop_pack_add_back_cat_${packId}`;
+    }
+
     const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
+      new ButtonBuilder().setCustomId(packBackCustomId)
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)

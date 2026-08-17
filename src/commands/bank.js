@@ -972,7 +972,6 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       page: targetPage,
       customId: `bank_inv_item_select_${isLootBox ? 'lootboxes' : (isOther ? 'null' : categoryId)}`,
       placeholder: isLootBox ? 'Select a Loot Box to Open' : 'Select an Item to Manage',
-      backOption: { label: 'Back', value: 'back_to_inventory', emoji: '⬅️' },
       pageNavPrefix: 'inv_page_',
       pageSize: 20,
       mapOption: (i, idx) => {
@@ -1020,11 +1019,14 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
     });
 
     const row1 = new ActionRowBuilder().addComponents(selectMenu);
+    const rowBack = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('bank_inventory').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+    );
 
     await interaction.editReply({
       content: null,
       embeds: [embed],
-      components: [row1]
+      components: [row1, rowBack]
     });
 
   } catch (error) {
