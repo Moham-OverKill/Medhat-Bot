@@ -726,11 +726,13 @@ export async function handleItemModalSubmit(interaction) {
             .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === 'common' })))
         );
 
+        const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+        const tradableOpts = getTradableOptions(lootBoxCatName);
         const rowTradable = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId(`shop_new_tradable_select_${item.id}`)
             .setPlaceholder('Status')
-            .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: o.value === 'tradable' })))
+            .addOptions(tradableOpts.map(o => ({ ...o, default: o.value === 'tradable' })))
         );
 
         const rowActions = new ActionRowBuilder().addComponents(
@@ -929,10 +931,13 @@ const RARITY_OPTIONS = [
   { label: 'Legendary', value: 'legendary', emoji: '🟡' }
 ];
 
-const TRADABLE_OPTIONS = [
-  { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: 'Can be traded, dropped, or found in loot boxes' },
-  { label: 'Locked',   value: 'untradable', emoji: '🔒', description: 'Cannot be traded, dropped, or found in loot boxes' }
-];
+export function getTradableOptions(lootBoxName = 'loot boxes') {
+  const name = (lootBoxName && lootBoxName.trim().length > 0) ? lootBoxName.trim() : 'Loot Boxes';
+  return [
+    { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: `Can be traded, dropped, or found in ${name.toLowerCase()}` },
+    { label: 'Locked',   value: 'untradable', emoji: '🔒', description: `Cannot be traded, dropped, or found in ${name.toLowerCase()}` }
+  ];
+}
 
 /**
  * Handles select menu changes on the Item Created panel.
@@ -999,11 +1004,13 @@ export async function handleNewItemAttrSelect(interaction) {
       .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === state.rarity })))
   );
 
+  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+  const tradableOpts = getTradableOptions(lootBoxCatName);
   const rowTradable = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`shop_new_tradable_select_${itemId}`)
       .setPlaceholder('Status')
-      .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: (o.value === 'tradable') === state.is_tradable })))
+      .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === state.is_tradable })))
   );
 
   const rowActions = new ActionRowBuilder().addComponents(
@@ -3440,11 +3447,13 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
 
     // Tradability select (auto-saves on change)
     const itemTradable = item.is_tradable !== false; // default true for existing items
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const tradableOpts = getTradableOptions(lootBoxCatName);
     const rowTradable = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`shop_edit_tradable_select_${itemId}`)
         .setPlaceholder('Status')
-        .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: (o.value === 'tradable') === itemTradable })))
+        .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === itemTradable })))
     );
 
     const isOnUsers = view === 'users';

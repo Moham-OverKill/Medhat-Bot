@@ -11,6 +11,8 @@ import {
   TextInputStyle
 } from 'discord.js';
 import { getShopCategories, getShopItems, getShopItem, updateShopItem, addShopItem, addShopCategory, validateRoleUniqueness } from '../economy/shop.js';
+import { getLootBoxCategoryName } from '../economy/lootbox.js';
+import { getTradableOptions } from './shop-setup.js';
 import { query } from '../storage/postgres.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { addColorRole, removeColorRole } from '../storage/colors.js';
@@ -189,10 +191,8 @@ async function renderMassPanel(interaction, userId) {
     components.push(new ActionRowBuilder().addComponents(raritySelect));
 
     // Row 4: Status Select
-    const tradableOptions = [
-        { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: 'Can be traded, dropped, or found in loot boxes' },
-        { label: 'Locked',   value: 'untradable', emoji: '🔒', description: 'Cannot be traded, dropped, or found in loot boxes' }
-    ];
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const tradableOptions = getTradableOptions(lootBoxCatName);
     const tradableSelect = new StringSelectMenuBuilder()
         .setCustomId('mass_select_tradable')
         .setPlaceholder('Status')
