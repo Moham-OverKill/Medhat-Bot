@@ -3605,7 +3605,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
         'name', 
         true
       );
-      const siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+      let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+      siblingShopItems = await sortItemsByRolePosition(siblingShopItems, interaction.guild);
+
       if (siblingShopItems.length > 1) {
         const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
         prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
