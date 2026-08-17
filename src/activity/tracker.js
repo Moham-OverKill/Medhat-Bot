@@ -288,7 +288,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   }
 
   // 7. Battlepass XP hook — reads msg XP rate from guild config (default: 1)
-  import('../../storage/config.js')
+  import('../storage/config.js')
     .then(({ getGuildConfig }) => getGuildConfig(guildId))
     .then(cfg => {
       const msgXp = Math.max(0, parseInt(cfg?.battlepass_msg_xp ?? 1, 10));
@@ -296,7 +296,9 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       return import('../commands/settings/pass-engine.js')
         .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, msgXp, null));
     })
-    .catch(() => {}); // Silent fail — never block message tracking
+    .catch(err => {
+      import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Msg XP Hook Error', err));
+    });
 
   return true;
 }
@@ -525,7 +527,7 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
 
     // Battlepass XP hook for voice points — reads voice XP rate from guild config (default: 1)
     if (pointsToAward > 0) {
-      import('../../storage/config.js')
+      import('../storage/config.js')
         .then(({ getGuildConfig }) => getGuildConfig(guildId))
         .then(cfg => {
           const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
@@ -534,7 +536,9 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
           return import('../commands/settings/pass-engine.js')
             .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalVoiceXp, null));
         })
-        .catch(() => {});
+        .catch(err => {
+          import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Voice XP Hook Error', err));
+        });
     }
 
     // NEW: Sync with Quest Engine
@@ -663,7 +667,7 @@ export async function voicePointsTick(client) {
           }
 
           // Battlepass XP hook for voice tick
-          import('../../storage/config.js')
+          import('../storage/config.js')
             .then(({ getGuildConfig }) => getGuildConfig(row.guild_id))
             .then(cfg => {
               const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
@@ -672,7 +676,9 @@ export async function voicePointsTick(client) {
               return import('../commands/settings/pass-engine.js')
                 .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, totalVoiceXp, null));
             })
-            .catch(() => {});
+            .catch(err => {
+              import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Voice Tick XP Hook Error', err));
+            });
 
           try {
             const { checkVoiceQuest } = await import('./index.js');
