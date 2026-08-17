@@ -416,15 +416,15 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       );
     }
 
-    // D. Fetch and award configured items/chests from battlepass_level_rewards (Phase 3 multi-reward)
+    // D. Fetch and award configured items/chests from battlepass_rewards (Phase 3 multi-reward)
     const rewardsResult = await client2.query(
-      `SELECT blr.reward_type, blr.shop_item_id, blr.loot_box_id, blr.quantity,
+      `SELECT br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
               si.name as item_name, si.role_id as item_role_id,
               lb.name as chest_name
-       FROM battlepass_level_rewards blr
-       LEFT JOIN shop_items si ON blr.shop_item_id = si.id
-       LEFT JOIN loot_boxes lb ON blr.loot_box_id = lb.id
-       WHERE blr.guild_id = $1 AND blr.level = $2`,
+       FROM battlepass_rewards br
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+       WHERE br.guild_id = $1 AND br.level = $2`,
       [guildId, levelRow.level]
     );
 
@@ -734,7 +734,9 @@ export async function getUserPassProgress(guildId, userId) {
 
   // Proactively claim any newly configured level rewards if system is enabled
   if (isEnabled && totalXp > 0) {
-    await syncUserLevelRewards(guildId, userId, username, null).catch(() => {});
+    const { getDiscordClient } = await import('../../activity/index.js');
+    const client = getDiscordClient();
+    await syncUserLevelRewards(guildId, userId, username, client).catch(() => {});
   }
 
   const { level: currentLevel, xpIntoCurrentLevel, xpForNextLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);

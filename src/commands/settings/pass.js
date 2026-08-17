@@ -639,7 +639,7 @@ export async function handlePassComponent(interaction) {
           [guildId]
         );
         for (const u of activeUsers.rows) {
-          await syncUserLevelRewards(guildId, u.user_id, u.username, null).catch(() => {});
+          await syncUserLevelRewards(guildId, u.user_id, u.username, interaction.client).catch(() => {});
         }
       }).catch(() => {});
 
