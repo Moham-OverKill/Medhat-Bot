@@ -198,8 +198,6 @@ export async function handleLeaderboardDisable(interaction) {
             try {
                 const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
                 if (chan) {
-                    const { sweepLeaderboardChannel } = await import('../leaderboard.js');
-                    await sweepLeaderboardChannel(chan, cat.name);
                     const msg = await chan.messages.fetch(oldMsg).catch(() => null);
                     if (msg) await msg.delete().catch(() => {});
                 }

@@ -1,0 +1,62 @@
+export default [
+  {
+    files: ["src/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        setImmediate: "readonly",
+        clearImmediate: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        queueMicrotask: "readonly",
+        structuredClone: "readonly",
+        crypto: "readonly",
+        fetch: "readonly",
+        AbortController: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        Map: "readonly",
+        Set: "readonly",
+        WeakMap: "readonly",
+        WeakSet: "readonly",
+        Promise: "readonly",
+        Date: "readonly",
+        Math: "readonly",
+        parseInt: "readonly",
+        parseFloat: "readonly",
+        isNaN: "readonly",
+        isFinite: "readonly",
+        String: "readonly",
+        Number: "readonly",
+        Boolean: "readonly",
+        Array: "readonly",
+        Object: "readonly",
+        Error: "readonly",
+        TypeError: "readonly",
+        RangeError: "readonly",
+        SyntaxError: "readonly",
+        ReferenceError: "readonly",
+        RegExp: "readonly",
+        JSON: "readonly"
+      }
+    },
+    rules: {
+      "no-undef": "error",
+      "no-dupe-keys": "error",
+      "no-unreachable": "error",
+      "no-duplicate-case": "error",
+      "no-func-assign": "error",
+      "no-import-assign": "error",
+      "no-self-assign": "error",
+      "no-constant-binary-expression": "error",
+      "use-isnan": "error",
+      "valid-typeof": "error"
+    }
+  }
+];
