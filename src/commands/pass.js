@@ -87,14 +87,14 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     if (data.nextReward) {
       const nr = data.nextReward;
       const parts = [];
-      if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
+      if (nr.reward_coins > 0) parts.push(`• ${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
       for (const r of (nr.rewards || [])) {
         const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
-        if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
-        else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
+        if (r.reward_type === 'item' && r.item_name) parts.push(`• 🏷️ **${qStr}${r.item_name}**`);
+        else if (r.reward_type === 'chest' && r.chest_name) parts.push(`• ${lootBoxEmoji} **${qStr}${r.chest_name}**`);
       }
       if (parts.length > 0) {
-        desc += `\n\n**▶️ Next Reward (Level ${nr.level})**\n${parts.join(' + ')}`;
+        desc += `\n\n**▶️ Next Reward (Level ${nr.level})**\n${parts.join('\n')}`;
       }
     } else if (data.currentLevel > 0) {
       desc += '\n\n**🏆 Max Level Reached**\n_You have claimed all available configured level rewards!_';
