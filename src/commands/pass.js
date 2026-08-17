@@ -57,6 +57,8 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
   } else {
     embed.setTitle('🎉 Level Rewards');
 
+    let desc = '';
+
     if (data.claims.length > 0) {
       // 1. Calculate Lifetime Aggregates
       const totalCoins = data.claims.reduce((sum, c) => sum + (c.reward_coins || 0), 0);
@@ -76,9 +78,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
       if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
 
-      embed.setDescription(summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._');
+      desc = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
     } else {
-      embed.setDescription('_You have not claimed any level rewards yet._');
+      desc = '_You have not claimed any level rewards yet._';
     }
 
     if (data.nextReward) {
@@ -91,19 +93,13 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
       }
       if (parts.length > 0) {
-        embed.addFields({
-          name: `▶️ Next Reward (Level ${nr.level})`,
-          value: parts.join(' + '),
-          inline: false
-        });
+        desc += `\n\n**▶️ Next Reward (Level ${nr.level})**\n${parts.join(' + ')}`;
       }
     } else if (data.currentLevel > 0) {
-      embed.addFields({
-        name: '🏆 Max Level Reached',
-        value: '_You have claimed all available configured level rewards!_',
-        inline: false
-      });
+      desc += '\n\n**🏆 Max Level Reached**\n_You have claimed all available configured level rewards!_';
     }
+
+    embed.setDescription(desc);
   }
 
   const buttonsRow = new ActionRowBuilder().addComponents(
