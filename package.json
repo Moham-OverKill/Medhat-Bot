@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node --max-old-space-size=384 src/index.js"
+    "start": "node --no-warnings=ExperimentalWarning --max-old-space-size=384 src/index.js"
   },
   "dependencies": {
     "@discordjs/rest": "^2.2.0",
