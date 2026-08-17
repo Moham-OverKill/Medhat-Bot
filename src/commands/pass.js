@@ -56,7 +56,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     embed.setDescription(desc);
   } else {
-    embed.setTitle('🎉 Level Rewards');
+    embed.setTitle('Rewards');
 
     let desc = '';
 
@@ -79,9 +79,10 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
       if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
 
-      desc = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
+      const claimedBody = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
+      desc = `**Claimed**\n\n${claimedBody}`;
     } else {
-      desc = '_You have not claimed any level rewards yet._';
+      desc = '**Claimed**\n\n_You have not claimed any level rewards yet._';
     }
 
     if (data.nextReward) {
@@ -94,7 +95,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         else if (r.reward_type === 'chest' && r.chest_name) parts.push(`• ${lootBoxEmoji} **${qStr}${r.chest_name}**`);
       }
       if (parts.length > 0) {
-        desc += `\n\n**▶️ Next Reward (Level ${nr.level})**\n${parts.join('\n')}`;
+        desc += `\n\n───────────────\n\n**▶️ Next Reward (Level ${nr.level})**\n\n${parts.join('\n')}`;
       }
     }
 
