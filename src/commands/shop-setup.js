@@ -720,13 +720,7 @@ export async function handleItemModalSubmit(interaction) {
           new StringSelectMenuBuilder()
             .setCustomId(`shop_new_rarity_select_${item.id}`)
             .setPlaceholder('Rarity')
-            .addOptions([
-              { label: '⚪ Common',    value: 'common',    description: 'Highest drop rate (~60% chance in loot boxes)', default: true },
-              { label: '🟢 Uncommon',  value: 'uncommon',  description: 'Moderate drop rate (~25% chance in loot boxes)', default: false },
-              { label: '🔵 Rare',      value: 'rare',      description: 'Low drop rate (~10% chance in loot boxes)', default: false },
-              { label: '🟣 Epic',      value: 'epic',      description: 'Very low drop rate (~4% chance in loot boxes)', default: false },
-              { label: '🟡 Legendary', value: 'legendary', description: 'Ultra rare drop (~1% chance in loot boxes)', default: false }
-            ])
+            .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === 'common' })))
         );
 
         const rowTradable = new ActionRowBuilder().addComponents(
@@ -928,11 +922,11 @@ export async function handleAssignCategorySelect(interaction) {
 // ============================================================
 
 const RARITY_OPTIONS = [
-  { label: 'Common',    value: 'common',    emoji: '⚪', description: 'Highest drop rate (~60% chance in loot boxes)' },
-  { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢', description: 'Moderate drop rate (~25% chance in loot boxes)' },
-  { label: 'Rare',      value: 'rare',      emoji: '🔵', description: 'Low drop rate (~10% chance in loot boxes)' },
-  { label: 'Epic',      value: 'epic',      emoji: '🟣', description: 'Very low drop rate (~4% chance in loot boxes)' },
-  { label: 'Legendary', value: 'legendary', emoji: '🟡', description: 'Ultra rare drop (~1% chance in loot boxes)' }
+  { label: 'Common',    value: 'common',    emoji: '⚪' },
+  { label: 'Uncommon',  value: 'uncommon',  emoji: '🟢' },
+  { label: 'Rare',      value: 'rare',      emoji: '🔵' },
+  { label: 'Epic',      value: 'epic',      emoji: '🟣' },
+  { label: 'Legendary', value: 'legendary', emoji: '🟡' }
 ];
 
 const TRADABLE_OPTIONS = [
