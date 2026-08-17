@@ -662,7 +662,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       const summaryText = summaryParts.length > 0 ? `• ${summaryParts.slice(0, 25).join('\n• ')}` : '_No rewards configured for these levels._';
       const extraCount = summaryParts.length > 25 ? `\n_...and ${summaryParts.length - 25} more rewards_` : '';
 
-      description = `Congratulations <@${userId}>! You unlocked rewards for **${claimedLevels.length} levels** (Levels ${lowestLevel} to ${highestLevel}).\n\n**Total Rewards Claimed:**\n${summaryText}${extraCount}`;
+      description = `Congratulations <@${userId}>! You unlocked rewards for **${claimedLevels.length} levels**.\n\n**Total Rewards Claimed:**\n${summaryText}${extraCount}`;
     }
 
     // Safety guard against Discord 4096 char limit
