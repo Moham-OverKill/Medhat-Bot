@@ -142,8 +142,12 @@ export async function handleLevelTabButton(interaction) {
       return interaction.reply({ content: '❌ This level progress view belongs to someone else.', flags: MessageFlags.Ephemeral });
     }
 
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+
     const payload = await getLevelViewPayload(interaction.guildId, interaction.user.id, tab);
-    await interaction.update(payload);
+    await interaction.editReply(payload);
   } catch (error) {
     await handleInteractionError(interaction, error, 'level tab button');
   }
