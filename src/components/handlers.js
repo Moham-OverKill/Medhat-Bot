@@ -397,7 +397,7 @@ export function setupComponentHandlers(client) {
         await handleInventoryItemSelect(interaction);
       } else if (customId.startsWith('bank_item_claim_') || customId.startsWith('force_claim_')) {
         await handleItemClaim(interaction);
-      } else if (customId.startsWith('bank_inv_open_') || customId.startsWith('bank_inv_equip_') || customId.startsWith('bank_inv_drop_') || customId.startsWith('bank_inv_dropconfirm_') || customId.startsWith('bank_inv_dropcancel_')) {
+      } else if (customId.startsWith('bank_inv_open_') || customId.startsWith('bank_inv_equip_') || customId.startsWith('bank_inv_forceequip_') || customId.startsWith('bank_inv_cancel_') || customId.startsWith('bank_inv_drop_') || customId.startsWith('bank_inv_dropconfirm_') || customId.startsWith('bank_inv_dropcancel_')) {
         await handleInventoryAction(interaction);
       } else if (customId === 'bank_back') {
         await handleBackButton(interaction);

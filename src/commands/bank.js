@@ -29,6 +29,7 @@ import {
   syncInventoryWithDiscord,
   getSynthesizedInventory,
   toggleEquipItem,
+  checkSingleCategoryActiveTimerConflict,
   calculatePackPrice,
   checkPrerequisites,
   formatPrerequisiteError,
@@ -1691,6 +1692,32 @@ export async function handleInventoryAction(interaction) {
 
     // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
+      const hasConflict = await checkSingleCategoryActiveTimerConflict(interaction.user.id, interaction.guildId, invId);
+
+      if (hasConflict) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
+        const embed = new EmbedBuilder()
+          .setColor(0xFEE75C)
+          .setDescription('You already have an active timer running in this category!');
+
+        const confirmRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`bank_inv_cancel_${invId}_${catIdStr}_${currentIndex}`)
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`bank_inv_forceequip_${invId}_${catIdStr}_${currentIndex}`)
+            .setLabel('Equip')
+            .setStyle(ButtonStyle.Success)
+        );
+
+        return interaction.editReply({
+          embeds: [embed],
+          components: [confirmRow]
+        });
+      }
+
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
       const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
 
@@ -1699,6 +1726,23 @@ export async function handleInventoryAction(interaction) {
       }
 
       // Refresh the inventory view to show updated status
+      return handleInventoryItemSelect(interaction);
+    }
+
+    if (action === 'forceequip') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
+
+      if (!result.success) {
+        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+      }
+
+      // Refresh the inventory view to show updated status
+      return handleInventoryItemSelect(interaction);
+    }
+
+    if (action === 'cancel') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
       return handleInventoryItemSelect(interaction);
     }
 
