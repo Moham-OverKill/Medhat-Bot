@@ -86,9 +86,10 @@ registerEmojiResolver((guildId) => {
 
 /**
  * Validates and sanitizes configuration object against schema
+ * Never discards the whole config if a single field is invalid.
  */
 function validateConfig(config) {
-  if (!config || typeof config !== 'object') return null;
+  if (!config || typeof config !== 'object') return {};
   
   const sanitized = {};
   
@@ -97,7 +98,6 @@ function validateConfig(config) {
     
     // Handle null values for optional fields
     if (config[key] === null) {
-      if (schema.required) return null;
       sanitized[key] = null;
       continue;
     }
@@ -105,23 +105,46 @@ function validateConfig(config) {
     // Type checking
     if (schema.type === 'number') {
       const num = Number(config[key]);
-      if (isNaN(num)) return null;
-      if (schema.min !== undefined && num < schema.min) return null;
-      if (schema.max !== undefined && num > schema.max) return null;
-      sanitized[key] = num;
+      if (!isNaN(num)) {
+        if (schema.min !== undefined && num < schema.min) {
+          sanitized[key] = schema.min;
+        } else if (schema.max !== undefined && num > schema.max) {
+          sanitized[key] = schema.max;
+        } else {
+          sanitized[key] = num;
+        }
+      }
     } 
     else if (schema.type === 'string') {
-      if (typeof config[key] !== 'string') return null;
-      if (schema.validate && !schema.validate(config[key])) return null;
-      if (schema.enum && !schema.enum.includes(config[key])) return null;
-      sanitized[key] = config[key];
+      if (typeof config[key] === 'string') {
+        const trimmed = config[key].trim();
+        if (trimmed === '') {
+          sanitized[key] = null;
+        } else if (schema.validate) {
+          sanitized[key] = schema.validate(trimmed) ? trimmed : null;
+        } else if (schema.enum) {
+          sanitized[key] = schema.enum.includes(trimmed) ? trimmed : null;
+        } else {
+          sanitized[key] = trimmed;
+        }
+      } else {
+        sanitized[key] = null;
+      }
     }
     else if (schema.type === 'boolean') {
       sanitized[key] = Boolean(config[key]);
     }
     else if (schema.type === 'object') {
-      if (typeof config[key] !== 'object') return null;
-      sanitized[key] = config[key];
+      if (typeof config[key] === 'object' && config[key] !== null) {
+        sanitized[key] = config[key];
+      }
+    }
+  }
+
+  // Preserve any additional top-level keys that may exist in JSON
+  for (const [key, val] of Object.entries(config)) {
+    if (sanitized[key] === undefined && val !== undefined) {
+      sanitized[key] = val;
     }
   }
   
@@ -148,7 +171,8 @@ export async function initializeGuildConfigs() {
 
 export async function loadGuildConfigs() {
   try {
-    const result = await query('SELECT guild_id, config FROM guild_configs');
+    const pool = getPool();
+    const result = await pool.query('SELECT guild_id, config FROM guild_configs');
     
     const validConfigs = {};
     for (const row of result.rows) {
@@ -157,10 +181,8 @@ export async function loadGuildConfigs() {
       
       if (isValidSnowflake(guildId) && config && typeof config === 'object') {
         const validated = validateConfig(config);
-        if (validated) {
-          validConfigs[guildId] = validated;
-          configCache.set(guildId, validated);
-        }
+        validConfigs[guildId] = validated;
+        configCache.set(guildId, validated);
       }
     }
     
@@ -173,35 +195,26 @@ export async function loadGuildConfigs() {
 
 export async function saveGuildConfigs(configs) {
   try {
-    // Security: Validate all configs before saving
-    const validConfigs = {};
-    for (const [guildId, config] of Object.entries(configs)) {
-      if (isValidSnowflake(guildId)) {
-        const validated = validateConfig(config);
-        if (validated) {
-          validConfigs[guildId] = validated;
-        }
-      }
-    }
-    
-    // Use a transaction to ensure all-or-nothing save
     const pool = getPool();
     const client = await pool.connect();
     
     try {
       await client.query('BEGIN');
       
-      for (const [guildId, config] of Object.entries(validConfigs)) {
-        const existing = (await getGuildConfig(guildId)) || {};
-        const merged = { ...existing, ...config };
-        configCache.set(guildId, merged);
-        await client.query(
-          `INSERT INTO guild_configs (guild_id, config, updated_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT (guild_id)
-           DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()`,
-          [guildId, JSON.stringify(merged)]
-        );
+      for (const [guildId, config] of Object.entries(configs)) {
+        if (isValidSnowflake(guildId) && config && typeof config === 'object') {
+          const sanitized = validateConfig(config);
+          const res = await client.query(
+            `INSERT INTO guild_configs (guild_id, config, updated_at)
+             VALUES ($1, $2::jsonb, NOW())
+             ON CONFLICT (guild_id)
+             DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+             RETURNING config`,
+            [guildId, JSON.stringify(sanitized)]
+          );
+          const fullConfig = validateConfig(res.rows[0]?.config || {});
+          configCache.set(guildId, fullConfig);
+        }
       }
       
       await client.query('COMMIT');
@@ -229,7 +242,8 @@ export async function getGuildConfig(guildId) {
   }
   
   try {
-    const result = await query(
+    const pool = getPool();
+    const result = await pool.query(
       'SELECT config FROM guild_configs WHERE guild_id = $1',
       [guildId]
     );
@@ -239,10 +253,8 @@ export async function getGuildConfig(guildId) {
     }
     
     const config = result.rows[0].config;
-    const validated = validateConfig(config);
-    if (validated) {
-      configCache.set(guildId, validated);
-    }
+    const validated = validateConfig(config || {});
+    configCache.set(guildId, validated);
     return validated;
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Getting guild config' });
@@ -256,23 +268,27 @@ export async function setGuildConfig(guildId, config) {
     throw new Error('Invalid guild ID');
   }
   
-  // Security: Validate config
-  const sanitized = validateConfig(config);
-  if (!sanitized) {
+  if (!config || typeof config !== 'object') {
     throw new Error('Invalid configuration');
   }
   
+  const sanitized = validateConfig(config);
+  
   try {
-    const existing = (await getGuildConfig(guildId)) || {};
-    const merged = { ...existing, ...sanitized };
-    configCache.set(guildId, merged);
-    await query(
+    const pool = getPool();
+    // Atomic PostgreSQL JSONB merge - only updates sanitized keys, preserving all other existing keys
+    const result = await pool.query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
-       VALUES ($1, $2, NOW())
+       VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (guild_id)
-       DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()`,
-      [guildId, JSON.stringify(merged)]
+       DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+       RETURNING config`,
+      [guildId, JSON.stringify(sanitized)]
     );
+    
+    const fullConfig = validateConfig(result.rows[0]?.config || {});
+    configCache.set(guildId, fullConfig);
+    return fullConfig;
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Setting guild config', error: formatError(error) });
     throw new Error('Failed to save configuration');
