@@ -119,7 +119,7 @@ async function renderMassPanel(interaction, userId) {
     const state = pendingMassOps.get(userId);
     if (!state) {
         try {
-             await interaction.editReply({ content: '❌ Session expired. Please run /mass item again.', components: [] });
+             await interaction.editReply({ files: [], content: '❌ Session expired. Please run /mass item again.', components: [] });
         } catch (e) {
              if (!interaction.replied) await interaction.followUp({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
         }
@@ -222,7 +222,7 @@ async function renderMassPanel(interaction, userId) {
 
     const content = `Found **${ids.length}** Role IDs.\nConfigure how you want to import them:`;
     
-    await interaction.editReply({ content, components, embeds: [] });
+    await interaction.editReply({ files: [], content, components, embeds: [] });
 }
 
 // --- Handlers ---
@@ -232,7 +232,7 @@ export async function handleMassSelect(interaction) {
     const userId = interaction.user.id;
     const state = pendingMassOps.get(userId);
     
-    if (!state) return interaction.editReply({ content: '❌ Session expired.', components: [] });
+    if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
 
     const value = interaction.values[0];
     
@@ -254,7 +254,7 @@ export async function handleMassCreateStandalone(interaction) {
     const userId = interaction.user.id;
     const state = pendingMassOps.get(userId);
     
-    if (!state) return interaction.editReply({ content: '❌ Session expired.', components: [] });
+    if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
 
     // Reset to standalone
     state.categoryId = null;
@@ -331,7 +331,7 @@ export async function handleMassSave(interaction) {
     const userId = interaction.user.id;
     const state = pendingMassOps.get(userId);
     
-    if (!state) return interaction.editReply({ content: '❌ Session expired.', components: [] });
+    if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
     
     const { ids, categoryId, packId, rarity, is_tradable, price } = state;
     
@@ -450,7 +450,7 @@ export async function handleMassSave(interaction) {
             errors > 0 ? `⚠️ Errors/Skipped: ${errors} (${skipped.join(', ')})` : null
         ].filter(Boolean).join('\n');
         
-        await interaction.editReply({ content: summary, components: [], embeds: [] });
+        await interaction.editReply({ files: [], content: summary, components: [], embeds: [] });
         pendingMassOps.delete(userId);
 
         // Bulk Audit Log

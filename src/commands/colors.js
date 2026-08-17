@@ -440,11 +440,9 @@ async function handleColorReact(interaction, guildId, isBooster) {
 
     const backRow = new ActionRowBuilder().addComponents(backButton);
 
-    await interaction.editReply({
-      content: errorMessage,
+    await interaction.editReply({ files: [], content: errorMessage,
       embeds: [],
-      components: [backRow]
-    });
+      components: [backRow] });
     return;
   }
 
@@ -825,9 +823,7 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.editReply({
-        content: '❌ Boost the server to unlock this color!',
-      });
+      await interaction.editReply({ files: [], content: '❌ Boost the server to unlock this color!', });
       return;
     }
 
@@ -843,9 +839,7 @@ export async function handleColorButton(interaction) {
       const targetRole = interaction.guild.roles.cache.get(roleId);
       
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({
-          content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!',
-        });
+        return interaction.editReply({ files: [], content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!', });
       }
 
       // Remove the role
@@ -876,9 +870,7 @@ export async function handleColorButton(interaction) {
       // Add the new color role (Check hierarchy first)
       const targetRole = interaction.guild.roles.cache.get(roleId);
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({
-          content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.',
-        });
+        return interaction.editReply({ files: [], content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.', });
       }
 
       await member.roles.add(roleId);
@@ -909,7 +901,7 @@ export async function handleColorButton(interaction) {
     }
 
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: errorMsg }).catch(() => { });
+      await interaction.editReply({ files: [], content: errorMsg }).catch(() => { });
     } else {
       await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
     }

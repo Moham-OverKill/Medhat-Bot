@@ -489,7 +489,7 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
         if (!interaction.deferred && !interaction.replied) {
             return interaction.reply({ content: errorContent, flags: MessageFlags.Ephemeral });
         }
-        return interaction.editReply({ content: errorContent, components: [], embeds: [] }).catch(() => { });
+        return interaction.editReply({ files: [], content: errorContent, components: [], embeds: [] }).catch(() => { });
     }
 
     // Fetch balances to show current wealth
@@ -704,7 +704,7 @@ export async function handleTradeSetupInteraction(interaction) {
         const errorContent = `❌ **Error:** ${error.message || 'An unexpected error occurred during trade setup.'}`;
         
         if (interaction.deferred || interaction.replied) {
-            return interaction.editReply({ content: errorContent, components: [], embeds: [] }).catch(() => {});
+            return interaction.editReply({ files: [], content: errorContent, components: [], embeds: [] }).catch(() => {});
         } else {
             return interaction.reply({ content: errorContent, flags: MessageFlags.Ephemeral }).catch(() => {});
         }
@@ -749,7 +749,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         }
     } else {
         const member = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
-        if (!member) return interaction.editReply({ content: '❌ Target member not found.', components: [], embeds: [] });
+        if (!member) return interaction.editReply({ files: [], content: '❌ Target member not found.', components: [], embeds: [] });
         
         const allItems = await getUserInventory(setup.targetId, setup.guildId);
         const senderInv = await getUserInventory(setup.senderId, setup.guildId);
@@ -895,7 +895,7 @@ export async function handleTradeModal(interaction) {
     const setup = ACTIVE_SETUPS.get(setupId);
     if (!setup) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+        return interaction.editReply({ files: [], content: '❌ Session expired.', components: [], embeds: [] });
     }
 
     if (interaction.customId.startsWith('trade_modal_item_qty_')) {
@@ -997,7 +997,7 @@ export async function handleTradeSelect(interaction) {
     const setup = ACTIVE_SETUPS.get(setupId);
     if (!setup) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+        return interaction.editReply({ files: [], content: '❌ Session expired.', components: [], embeds: [] });
     }
 
     if (interaction.values[0]?.startsWith('trade_folder_back_')) {
@@ -1267,7 +1267,7 @@ async function finalizeTradePosting(interaction, setup) {
         TRADE_TIMEOUTS.set(tradeId, timeoutId);
 
         // 5. Finalize the ephemeral setup UI
-        return interaction.editReply({ content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
+        return interaction.editReply({ files: [], content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
     } catch (error) {
         sysError('Finalize post error', error, { user: interaction.user.id, guild: interaction.guildId });
         return interaction.followUp({ content: '❌ Failed to post trade. Check logs.', flags: MessageFlags.Ephemeral });
@@ -1334,8 +1334,7 @@ export async function handleTradeExecution(interaction) {
             ? EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)
             : new EmbedBuilder().setColor(0xEE4444);
 
-        await interaction.editReply({
-            content: '',
+        await interaction.editReply({ files: [], content: '',
             components: [],
             embeds: [declinedEmbed.setFooter({ text: 'Trade Declined' }).setTimestamp()]
         });
@@ -1361,7 +1360,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
     if (interaction.type === InteractionType.ModalSubmit) {
         const confirmText = interaction.fields.getTextInputValue('confirm');
         if (confirmText.toUpperCase() !== 'CONFIRM') {
-            return interaction.editReply({ content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
+            return interaction.editReply({ files: [], content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
         }
     }
 
@@ -1384,8 +1383,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             await client.query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', tradeId]);
             await client.query('COMMIT');
             
-            await interaction.editReply({
-                content: '',
+            await interaction.editReply({ files: [], content: '',
                 components: [],
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x95A5A6).setFooter({ text: 'Trade Expired' }).setTimestamp()]
             });
@@ -1798,8 +1796,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
-        await interaction.editReply({
-            content: '',
+        await interaction.editReply({ files: [], content: '',
             components: [],
             embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' }).setTimestamp()]
         });
@@ -1891,14 +1888,13 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         // Update public message if it's a verification failure
         if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]).catch(() => {});
-           await interaction.editReply({
-                content: '',
+           await interaction.editReply({ files: [], content: '',
                 components: [],
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled: Assets Missing' })]
            }).catch(() => { });
         } else {
             const finalMsg = errorMessage;
-            if (interaction.deferred || interaction.replied) await interaction.editReply({ content: finalMsg, components: [], embeds: [] }).catch(() => { });
+            if (interaction.deferred || interaction.replied) await interaction.editReply({ files: [], content: finalMsg, components: [], embeds: [] }).catch(() => { });
             else await interaction.reply({ content: finalMsg, flags: MessageFlags.Ephemeral, components: [], embeds: [] }).catch(() => { });
         }
     } finally {
