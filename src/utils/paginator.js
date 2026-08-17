@@ -34,7 +34,17 @@ export function buildPaginatedSelectMenu({
 
   const options = [];
 
-  // 1. Back Option (Option 0)
+  // 1. Previous Option (All the way at the top if page > 1)
+  if (currentPage > 1) {
+    options.push({
+      label: 'Previous',
+      value: `${pageNavPrefix}${currentPage - 1}`,
+      emoji: '◀️',
+      description: `Show items from page ${currentPage - 1}`
+    });
+  }
+
+  // 2. Back Option
   if (backOption) {
     const bOpt = {
       label: backOption.label || 'Back',
@@ -45,26 +55,16 @@ export function buildPaginatedSelectMenu({
     options.push(bOpt);
   }
 
-  // 2. Previous Page Option
-  if (currentPage > 1) {
-    options.push({
-      label: `Previous Page (${currentPage - 1}/${totalPages})`,
-      value: `${pageNavPrefix}${currentPage - 1}`,
-      emoji: '◀️',
-      description: `Show items from page ${currentPage - 1}`
-    });
-  }
-
   // 3. Page Item Options
   pageSlice.forEach((item, idx) => {
     const opt = mapOption(item, startIndex + idx);
     if (opt) options.push(opt);
   });
 
-  // 4. Next Page Option
+  // 4. Next Option (All the way at the bottom if page < totalPages)
   if (currentPage < totalPages) {
     options.push({
-      label: `Next Page (${currentPage + 1}/${totalPages})`,
+      label: 'Next',
       value: `${pageNavPrefix}${currentPage + 1}`,
       emoji: '▶️',
       description: `Show items from page ${currentPage + 1}`
