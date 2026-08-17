@@ -19,6 +19,7 @@ import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
+import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import {
   getShopCategories,
   getShopItems,
@@ -1678,6 +1679,7 @@ export async function handleInventoryAction(interaction) {
         );
 
         const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [row] });
+        verifyAndHealMessageImages(publicMsg);
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
           [publicMsg.id, interaction.channelId, res.dropId]);
 
@@ -1883,6 +1885,8 @@ export async function handleItemClaim(interaction) {
         await publicMsg.edit({ 
             embeds: [claimedEmbed], 
             components: [lockedRow] 
+        }).then(() => {
+            verifyAndHealMessageImages(publicMsg);
         }).catch(err => {
             sysError('Failed to disable public claim button', err, { guild: interaction.guildId });
         });
@@ -2152,6 +2156,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     );
 
     const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [claimRow] });
+    verifyAndHealMessageImages(publicMsg);
     await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
       [publicMsg.id, interaction.channelId, res.dropId]);
 

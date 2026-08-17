@@ -682,7 +682,11 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
     if (notifChannelId) {
       const channel = guild?.channels?.cache?.get(notifChannelId) || await client.channels?.fetch(notifChannelId).catch(() => null);
       if (channel?.isTextBased?.()) {
-        await channel.send({ embeds: [embed] }).catch(() => {});
+        const sentMsg = await channel.send({ embeds: [embed] }).catch(() => null);
+        if (sentMsg) {
+          const { verifyAndHealMessageImages } = await import('../../utils/image-healer.js');
+          verifyAndHealMessageImages(sentMsg);
+        }
       }
     }
 
