@@ -171,7 +171,7 @@ function buildBankUI(userData, member) {
 async function refreshBankUI(interaction) {
   const userData = await getUserBalance(interaction.guildId, interaction.user.id);
   const { embed, components } = buildBankUI(userData, interaction.member);
-  await interaction.editReply({ content: null, embeds: [embed], components });
+  await interaction.editReply({ files: [], content: null, embeds: [embed], components });
 }
 
 // --- Handlers ---
@@ -213,7 +213,7 @@ export async function handleBankDaily(interaction) {
         const { embed, components } = buildBankUI(userData, member);
 
         // Update original message immediately
-        await interaction.editReply({ content: null, embeds: [embed], components });
+        await interaction.editReply({ files: [], content: null, embeds: [embed], components });
 
         // Optionally tell them why nothing happened
         await interaction.followUp({ content: '❌ You have already claimed your daily reward today.', flags: MessageFlags.Ephemeral });
@@ -228,7 +228,7 @@ export async function handleBankDaily(interaction) {
     const { embed, components } = buildBankUI(updatedData, member);
 
     // Update original message immediately
-    await interaction.editReply({ content: null, embeds: [embed], components });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components });
 
     // 2.5 Log to Discord Logs
     const logUsername = getUserLogName(member);
@@ -276,11 +276,9 @@ export async function handleShopButton(interaction) {
     );
 
     if (categories.length === 0 && items.length === 0) {
-      return interaction.editReply({
-        content: '🏪 The shop is currently empty.',
+      return interaction.editReply({ files: [], content: '🏪 The shop is currently empty.',
         embeds: [],
-        components: [backRow]
-      });
+        components: [backRow] });
     }
 
     const select = new StringSelectMenuBuilder()
@@ -293,11 +291,9 @@ export async function handleShopButton(interaction) {
         description: (c.type && c.type.trim().length > 0) ? c.type.slice(0, 100) : undefined
       })));
 
-    await interaction.editReply({
-      content: '🏪 **Shop**\nSelect a category to browse items:',
+    await interaction.editReply({ files: [], content: '🏪 **Shop**\nSelect a category to browse items:',
       components: [new ActionRowBuilder().addComponents(select), backRow],
-      embeds: []
-    });
+      embeds: [] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Shop main menu');
   }
@@ -310,7 +306,7 @@ export async function handleShopCategorySelect(interaction) {
     const items = await getShopItems(interaction.guildId, categoryId);
 
     if (items.length === 0) {
-      return interaction.editReply({ content: 'This category is empty.' });
+      return interaction.editReply({ files: [], content: 'This category is empty.' });
     }
 
     // Build embed listing items
@@ -341,11 +337,9 @@ export async function handleShopCategorySelect(interaction) {
       new ButtonBuilder().setCustomId('bank_shop').setLabel('Back').setStyle(ButtonStyle.Secondary).setEmoji('⬅️')
     );
 
-    await interaction.editReply({
-      content: null,
+    await interaction.editReply({ files: [], content: null,
       embeds: [embed],
-      components: [new ActionRowBuilder().addComponents(select), backRow]
-    });
+      components: [new ActionRowBuilder().addComponents(select), backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Shop category select');
   }
@@ -357,7 +351,7 @@ export async function handleShopItemSelect(interaction) {
     const itemId = parseInt(interaction.values[0]);
     const item = await getShopItem(itemId);
 
-    if (!item) return interaction.editReply({ content: 'Item not found.' });
+    if (!item) return interaction.editReply({ files: [], content: 'Item not found.' });
 
     const role = await interaction.guild.roles.fetch(item.role_id).catch(() => null);
 
@@ -389,14 +383,12 @@ export async function handleShopItemSelect(interaction) {
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('⬅️');
 
-    await interaction.editReply({
-      content: null,
+    await interaction.editReply({ files: [], content: null,
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(buyButton),
         new ActionRowBuilder().addComponents(backButton)
-      ]
-    });
+      ] });
   } catch (error) {
     sysError('Item View Failed', error, { user: interaction.user.id, guild: interaction.guildId });
   }
@@ -545,10 +537,8 @@ export async function handleShopBuyButton(interaction) {
           components: []
         });
       } else if (result.error.includes('higher than my highest role')) {
-        return interaction.editReply({
-          content: '\u274C Error: I cannot assign this role. Please contact an admin.',
-          components: []
-        });
+        return interaction.editReply({ files: [], content: '\u274C Error: I cannot assign this role. Please contact an admin.',
+          components: [] });
       } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
         return interaction.editReply({
           content: `\u2755 ${result.error}`,
@@ -578,17 +568,15 @@ export async function handleShopBuyButton(interaction) {
     } else {
       msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    return interaction.editReply({
-      content: msg,
-      components: []
-    });
+    return interaction.editReply({ files: [], content: msg,
+      components: [] });
 
   } catch (error) {
     sysError('Transaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop purchase handler' });
     const errMsg = `\u274C An error occurred. Please try again.`;
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: errMsg, components: [] });
+        await interaction.editReply({ files: [], content: errMsg, components: [] });
       } else {
         await interaction.reply({ content: errMsg, flags: MessageFlags.Ephemeral });
       }
@@ -717,13 +705,13 @@ export async function handleShopBuyModalSubmit(interaction) {
     } else {
       msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
-    return interaction.editReply({ content: msg, components: [] });
+    return interaction.editReply({ files: [], content: msg, components: [] });
 
   } catch (error) {
     sysError('BuyModalSubmit Error', error, { user: interaction.user.id, guild: interaction.guildId });
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '\u274C An error occurred. Please try again.', components: [] });
+        await interaction.editReply({ files: [], content: '\u274C An error occurred. Please try again.', components: [] });
       } else {
         await interaction.reply({ content: '\u274C An error occurred.', flags: MessageFlags.Ephemeral });
       }
@@ -893,11 +881,9 @@ export async function handleInventoryButton(interaction) {
       rows.push(navRow);
     }
 
-    await interaction.editReply({
-      content: null,
+    await interaction.editReply({ files: [], content: null,
       embeds: [embed],
-      components: rows
-    });
+      components: rows });
 
   } catch (error) {
     await handleInteractionError(interaction, error, 'Inventory dashboard');
@@ -1024,17 +1010,15 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       new ButtonBuilder().setCustomId('bank_inventory').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({
-      content: null,
+    await interaction.editReply({ files: [], content: null,
       embeds: [embed],
-      components: [row1, rowBack]
-    });
+      components: [row1, rowBack] });
 
   } catch (error) {
     sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '❌ Error loading category.', components: [] });
+        await interaction.editReply({ files: [], content: '❌ Error loading category.', components: [] });
       } else {
         await interaction.reply({ content: '❌ Error loading category.', flags: MessageFlags.Ephemeral });
       }
@@ -1147,7 +1131,7 @@ export async function handleInventoryItemSelect(interaction) {
     if (currentIndex < 0) currentIndex = items.length - 1;
 
     const item = items[currentIndex];
-    if (!item) return interaction.editReply({ content: '\u274C Item not found.' });
+    if (!item) return interaction.editReply({ files: [], content: '\u274C Item not found.' });
 
     // Quantity count
     const displayQty = parseInt(item.quantity) || 1;
@@ -1290,11 +1274,9 @@ export async function handleInventoryItemSelect(interaction) {
         .setPlaceholder('Select a Loot Box to Manage')
         .addOptions(selectOptionsFallback);
 
-      return await interaction.editReply({
-        content: null,
+      return await interaction.editReply({ files: [], content: null,
         embeds: [embed],
-        components: [row1Fallback, new ActionRowBuilder().addComponents(itemSelectFallback)]
-      });
+        components: [row1Fallback, new ActionRowBuilder().addComponents(itemSelectFallback)] });
     }
 
     // Get role color for embed
@@ -1465,7 +1447,7 @@ export async function handleInventoryItemSelect(interaction) {
     sysError('Item Manage Error', error, { user: interaction.user.id, guild: interaction.guildId });
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '❌ Error loading item.', components: [] });
+        await interaction.editReply({ files: [], content: '❌ Error loading item.', components: [] });
       } else {
         await interaction.reply({ content: '❌ Error loading item.', flags: MessageFlags.Ephemeral });
       }
@@ -1696,7 +1678,7 @@ export async function handleInventoryAction(interaction) {
           newRow.components.forEach(c => c.setDisabled(true));
           return newRow;
         });
-        await interaction.editReply({ components: disabledRows }).catch(() => { });
+        await interaction.editReply({ files: [], components: disabledRows }).catch(() => { });
       }
 
       // Execute with qty=1 (legacy confirm button path)
@@ -1851,7 +1833,7 @@ export async function handleItemClaim(interaction) {
         ? `\u2705 You have reclaimed your own dropped **${claimLabel}**!`
         : `\u2705 You have successfully claimed **${claimLabel}**!`;
       
-      await interaction.editReply({ content: successMsg }).catch(() => { });
+      await interaction.editReply({ files: [], content: successMsg }).catch(() => { });
 
       // 2. Update Public Message
       // Find the public message (even if we're on a private warning interaction)
@@ -1923,7 +1905,7 @@ export async function handleItemClaim(interaction) {
     } else {
       // Private error response (Interaction is ephemeral-deferred)
       // Clear components so the "Claim Anyway" button vanishes on error
-      await interaction.editReply({ content: errorMessage, components: [] }).catch(() => { });
+      await interaction.editReply({ files: [], content: errorMessage, components: [] }).catch(() => { });
     }
   }
 }
@@ -1961,7 +1943,7 @@ export async function handleBankHistory(interaction) {
 
     if (result.rowCount === 0) {
       const emptyEmbed = new EmbedBuilder().setColor(0x808080).setTitle('📜 Recent History').setDescription('No transactions found.').setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
-      await interaction.editReply({ content: null, embeds: [emptyEmbed], components: [navRow, backRow] });
+      await interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [navRow, backRow] });
       return;
     }
     const { getCairoDateString } = await import('../utils/time.js');
@@ -1983,7 +1965,7 @@ export async function handleBankHistory(interaction) {
       return `\`${date}\` ${amountDisplay} | ${desc}`;
     });
     const embed = new EmbedBuilder().setColor(0x808080).setTitle('📜 Recent History').setDescription(lines.join('\n')).setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
-    await interaction.editReply({ content: null, embeds: [embed], components: [navRow, backRow] });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [navRow, backRow] });
   } catch (error) {
     sysError('History interaction failure', error, { user: interaction.user.id, guild: interaction.guildId });
   }

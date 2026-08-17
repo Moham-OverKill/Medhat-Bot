@@ -185,7 +185,7 @@ export async function handleShopSetup(interaction) {
       );
 
     // Always use editReply since we likely deferred
-    await interaction.editReply({ content: null, embeds: [embed], components: [row1, row2] });
+    await interaction.editReply({ content: null, embeds: [embed], files: [], components: [row1, row2] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop setup');
   }
@@ -228,7 +228,7 @@ export async function handleShopAdminAdd(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
 }
 
 export async function handleShopAdminEdit(interaction) {
@@ -266,7 +266,7 @@ export async function handleShopAdminEdit(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
 }
 
 export async function handleShopAdminDelete(interaction) {
@@ -304,7 +304,7 @@ export async function handleShopAdminDelete(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
 }
 
 /**
@@ -381,8 +381,10 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     await interaction.editReply({
       content: statusMessage || null,
       embeds: [embed],
+      files: [],
       components
     });
+
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot boxes page');
   }
@@ -598,15 +600,13 @@ export async function handleItemModalSubmit(interaction) {
         } catch (e) { /* field may be absent on old interactions */ }
 
         if (!/^\d{17,20}$/.test(roleId)) {
-          return interaction.editReply({ 
-            content: '❌ Invalid Role ID.', 
+          return interaction.editReply({ files: [], content: '❌ Invalid Role ID.', 
             embeds: [],
             components: [
               new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
               )
-            ]
-          });
+            ] });
         }
         
         // Block Booster Role as main Item Role
@@ -623,15 +623,13 @@ export async function handleItemModalSubmit(interaction) {
         }
 
         if (!interaction.guild.roles.cache.has(roleId)) {
-          return interaction.editReply({ 
-            content: '❌ Role not found in server.', 
+          return interaction.editReply({ files: [], content: '❌ Role not found in server.', 
             embeds: [],
             components: [
               new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
               )
-            ]
-          });
+            ] });
         }
 
         const uniqueCheck = await validateRoleUniqueness(interaction.guildId, roleId);
@@ -1091,7 +1089,7 @@ export async function handleShopPostStart(interaction) {
       new ButtonBuilder().setCustomId('shop_admin_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
     const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-    return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
+    return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
   }
 
   // Get current pending state or initialize
@@ -1258,7 +1256,7 @@ export async function handleShopPostStart(interaction) {
           new ButtonBuilder().setCustomId('shop_post_back_folder').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
         const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-        return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
+        return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
       }
 
       const page = state.postPage || 1;
@@ -1291,7 +1289,7 @@ export async function handleShopPostStart(interaction) {
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
         .setDescription('No items found.');
-      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
+      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
     }
 
     if (state.postStep === 0) {
@@ -2051,7 +2049,7 @@ export async function handleManageTiers(interaction) {
     const item = await getShopItem(itemId, interaction.guildId);
 
     if (!item) {
-      return interaction.editReply({ content: '❌ Item not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], content: '❌ Item not found.', embeds: [], components: [] });
     }
 
     const embed = new EmbedBuilder()
@@ -2081,7 +2079,7 @@ export async function handleManageTiers(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [actionRow, backRow] });
+    await interaction.editReply({ files: [], embeds: [embed], components: [actionRow, backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop manage tiers');
   }
@@ -2347,7 +2345,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     if (categories.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2372,7 +2370,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
-    await interaction.editReply({ content: null, embeds: [embed], components: [row, rowBack] });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row, rowBack] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category start');
   }
@@ -2399,7 +2397,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
     const category = categories.find(c => c.id.toString() === categoryId);
 
     if (!category) {
-      return interaction.editReply({ content: '❌ Category not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], content: '❌ Category not found.', embeds: [], components: [] });
     }
 
     // NEW: Fetch items to show count in dashboard
@@ -2439,7 +2437,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
+    await interaction.editReply({ files: [], content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category select');
   }
@@ -2512,7 +2510,7 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
 
     if (standalone.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2536,11 +2534,9 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
       .setColor('#2ECC71')
       .setTitle('Select Item(s) to Add to Category');
 
-    await interaction.editReply({ 
-        content: null, 
+    await interaction.editReply({ files: [], content: null, 
         components: [row, rowBack], 
-        embeds: [embedPrompt] 
-    });
+        embeds: [embedPrompt] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category add items start');
   }
@@ -2662,7 +2658,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
 
     if (items.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2686,11 +2682,9 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
       .setColor('#3498DB')
       .setTitle('Select Item(s) to Remove from Category');
 
-    await interaction.editReply({ 
-        content: successHeader || null, 
+    await interaction.editReply({ files: [], content: successHeader || null, 
         components: [row, rowBack], 
-        embeds: [embedPrompt] 
-    });
+        embeds: [embedPrompt] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category remove items start');
   }
@@ -2828,7 +2822,7 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
 
     if (categories.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2853,11 +2847,9 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
-    await interaction.editReply({
-      content: null,
+    await interaction.editReply({ files: [], content: null,
       embeds: [embed],
-      components: [row, rowBack]
-    });
+      components: [row, rowBack] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete category start');
   }
@@ -3004,11 +2996,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
         })
       });
 
-      return interaction.editReply({
-        content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+      return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
         components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
-        embeds: [embed]
-      });
+        embeds: [embed] });
     }
 
     // Fetch items mapping to current folder (if item mode) or just list packs (if pack mode)
@@ -3051,11 +3041,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(options);
 
-        return interaction.editReply({
-          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
-          embeds: [embed]
-        });
+          embeds: [embed] });
       }
 
       // 2. CATEGORY LIST VIEW - Show specific Category folders
@@ -3079,11 +3067,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
           })
         });
 
-        return interaction.editReply({
-          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
-          embeds: [embed]
-        });
+          embeds: [embed] });
       }
 
       // 3. ITEM VIEW - List items inside a specific Category or Uncategorized
@@ -3111,11 +3097,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
         })
       });
 
-      return interaction.editReply({
-         content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+      return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
          components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
-         embeds: [embed]
-      });
+         embeds: [embed] });
     }
 
     // PACKS logic (no categories for packs currently, so they display flat)
@@ -3147,11 +3131,9 @@ export async function renderAdminBrowser(interaction, contextMap) {
           })
         });
 
-        return interaction.editReply({
-          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
-          embeds: [embed]
-        });
+          embeds: [embed] });
     }
   } catch (error) {
      await handleInteractionError(interaction, error, 'admin browser render');
@@ -3333,7 +3315,7 @@ export async function handleRevokeItemStart(interaction) {
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(cancelBtn, confirmBtn);
-    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item start');
   }
@@ -3407,7 +3389,7 @@ export async function handleRevokeItemConfirm(interaction) {
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(backBtn);
-    await interaction.editReply({ content: null, embeds: [successEmbed], components: [row] });
+    await interaction.editReply({ files: [], content: null, embeds: [successEmbed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item confirm');
   }
@@ -3967,11 +3949,9 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ 
-      content: successHeader || null, 
+    await interaction.editReply({ files: [], content: successHeader || null, 
       embeds: [embed], 
-      components: [actionRow, backRow] 
-    });
+      components: [actionRow, backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit pack select');
   }
@@ -4006,11 +3986,9 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         .setColor('#95A5A6')
         .setDescription('No items found.');
 
-      return interaction.editReply({ 
-        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+      return interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
-        embeds: [emptyEmbed] 
-      });
+        embeds: [emptyEmbed] });
     }
 
     let selectMenuToRender = null;
@@ -4121,11 +4099,9 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       .setColor('#3498DB')
       .setTitle('Select Item(s) to Add to Pack');
 
-    await interaction.editReply({
-        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+    await interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
-        embeds: [embedPrompt]
-    });
+        embeds: [embedPrompt] });
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
     await handleInteractionError(interaction, error, 'pack add content start');
@@ -4244,11 +4220,9 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
         .setColor('#95A5A6')
         .setDescription('No items found.');
 
-      return interaction.editReply({ 
-        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+      return interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
-        embeds: [emptyEmbed] 
-      });
+        embeds: [emptyEmbed] });
     }
 
     // Fetch names of items in pack
@@ -4283,11 +4257,9 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
       .setColor('#E74C3C')
       .setTitle('Select Item(s) to Remove from Pack');
 
-    await interaction.editReply({
-        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+    await interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
-        embeds: [embedPrompt]
-    });
+        embeds: [embedPrompt] });
   } catch (error) {
     console.error('CRITICAL ADMIN ERROR DETAILS:', error);
     await handleInteractionError(interaction, error, 'pack remove content start');
@@ -4394,7 +4366,7 @@ export async function handleShopPostGate(interaction) {
           .setStyle(ButtonStyle.Primary)
       );
 
-    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post gate');
   }
@@ -5001,7 +4973,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
   try {
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) {
-      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
@@ -5702,7 +5674,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
   try {
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) {
-      return interaction.editReply({ content: '❌ Loot box not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
@@ -5733,7 +5705,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await interaction.editReply({ content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box delete confirm view');
   }
