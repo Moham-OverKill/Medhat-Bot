@@ -39,8 +39,7 @@ export function buildPaginatedSelectMenu({
     options.push({
       label: 'Previous',
       value: `${pageNavPrefix}${currentPage - 1}`,
-      emoji: '◀️',
-      description: `Show items from page ${currentPage - 1}`
+      emoji: '◀️'
     });
   }
 
@@ -66,8 +65,7 @@ export function buildPaginatedSelectMenu({
     options.push({
       label: 'Next',
       value: `${pageNavPrefix}${currentPage + 1}`,
-      emoji: '▶️',
-      description: `Show items from page ${currentPage + 1}`
+      emoji: '▶️'
     });
   }
 
