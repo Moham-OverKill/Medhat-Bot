@@ -19,6 +19,7 @@ import { handleInteractionError, diagnoseChannelPermissions } from '../utils/err
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
+import { resolveImageAttachment, invalidateImageCache } from '../utils/image-cache.js';
 import {
   addShopCategory,
   addShopItem,
@@ -710,7 +711,9 @@ export async function handleItemModalSubmit(interaction) {
           .setDescription(descLines.join('\n'));
 
         const img = getItemImage(item);
-        if (img) confirmEmbed.setThumbnail(img);
+        const imgResolved = img ? await resolveImageAttachment(img, 'item_thumb.png') : null;
+        if (imgResolved) confirmEmbed.setThumbnail(imgResolved.uri);
+        else if (img) confirmEmbed.setThumbnail(img);
 
         const rowCat = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
@@ -751,6 +754,7 @@ export async function handleItemModalSubmit(interaction) {
         await interaction.editReply({
           content: null,
           embeds: [confirmEmbed],
+          files: imgResolved ? [imgResolved.attachment] : [],
           components: [rowCat, rowRarity, rowTradable, rowActions]
         });
         return;
@@ -779,8 +783,12 @@ export async function handleItemModalSubmit(interaction) {
           // Empty string or 'none' = clear image
           if (rawImg === '' || rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
             updates.default_image_url = null;
+            if (oldItem.default_image_url) invalidateImageCache(oldItem.default_image_url);
           } else {
             updates.default_image_url = rawImg;
+            if (oldItem.default_image_url && oldItem.default_image_url !== rawImg) {
+              invalidateImageCache(oldItem.default_image_url);
+            }
           }
         } catch (e) { /* field may be absent */ }
 
@@ -978,6 +986,7 @@ export async function handleNewItemAttrSelect(interaction) {
   ];
 
   const img = getItemImage(item);
+  const imgResolved = img ? await resolveImageAttachment(img, 'item_thumb.png') : null;
   const roleMention = item.role_id ? `<@&${item.role_id}>` : '_None_';
   const descLines = [
     `**Name:** ${item.name}`,
@@ -988,7 +997,8 @@ export async function handleNewItemAttrSelect(interaction) {
     .setColor('#2ECC71')
     .setTitle('Item Created')
     .setDescription(descLines.join('\n'));
-  if (img) embed.setThumbnail(img);
+  if (imgResolved) embed.setThumbnail(imgResolved.uri);
+  else if (img) embed.setThumbnail(img);
 
   const rowCat = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -1029,6 +1039,7 @@ export async function handleNewItemAttrSelect(interaction) {
   await interaction.editReply({
     content: null,
     embeds: [embed],
+    files: imgResolved ? [imgResolved.attachment] : [],
     components: [rowCat, rowRarity, rowTradable, rowActions]
   });
 }
@@ -1131,9 +1142,14 @@ export async function handleShopPostStart(interaction) {
     .setColor(0x9B59B6);
 
   // Show item image as small thumbnail preview in the staging embed
+  let previewImgResolved = null;
   if (selectedItem) {
     const previewImg = state.imageUrl || getItemImage(selectedItem);
-    if (previewImg) embed.setThumbnail(previewImg);
+    if (previewImg) {
+      previewImgResolved = await resolveImageAttachment(previewImg, 'item_preview.png');
+      if (previewImgResolved) embed.setThumbnail(previewImgResolved.uri);
+      else embed.setThumbnail(previewImg);
+    }
   }
 
   // Prioritized status description
@@ -1405,6 +1421,7 @@ export async function handleShopPostStart(interaction) {
   await interaction.editReply({
     content: null,
     embeds: [embed],
+    files: previewImgResolved ? [previewImgResolved.attachment] : [],
     components: components
   });
 }
@@ -1736,8 +1753,10 @@ export async function handleShopPostModalSubmit(interaction) {
     }
 
     if (customId === 'shop_post_image_modal') {
+      const oldVal = state.imageUrl;
       const val = (interaction.fields.getTextInputValue('image_url') || '').trim().toLowerCase();
       state.imageUrl = (val === '' || val === 'none' || val === 'default') ? null : interaction.fields.getTextInputValue('image_url');
+      if (oldVal && oldVal !== state.imageUrl) invalidateImageCache(oldVal);
     } else if (customId === 'shop_post_desc_modal') {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
       state.description = val === '' ? null : val;
@@ -1877,7 +1896,10 @@ export async function handleShopPostPublish(interaction) {
 
     // Image: instance-specific override takes priority, then item's default image
     const finalImage = imageUrl || getItemImage(item);
-    if (finalImage) {
+    const finalImageResolved = finalImage ? await resolveImageAttachment(finalImage, 'shop_item.png') : null;
+    if (finalImageResolved) {
+      embed.setImage(finalImageResolved.uri); // LARGE banner image for publicly posted shop embeds
+    } else if (finalImage) {
       embed.setImage(finalImage); // LARGE banner image for publicly posted shop embeds
     }
 
@@ -1954,7 +1976,7 @@ export async function handleShopPostPublish(interaction) {
 
     const row = new ActionRowBuilder().addComponents(buyButton);
 
-    await channel.send({ embeds: [embed], components: [row] });
+    await channel.send({ embeds: [embed], files: finalImageResolved ? [finalImageResolved.attachment] : [], components: [row] });
 
     // Standardized Shop Admin Log
     if (item.item_type === 'loot_box' || item.loot_box_id) {
@@ -3558,7 +3580,9 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     }
 
     const itemImg = getItemImage(item);
-    if (itemImg) embed.setThumbnail(itemImg);
+    const itemImgResolved = itemImg ? await resolveImageAttachment(itemImg, 'item_thumb.png') : null;
+    if (itemImgResolved) embed.setThumbnail(itemImgResolved.uri);
+    else if (itemImg) embed.setThumbnail(itemImg);
 
     const catOptions = [
       { label: 'No Category', value: 'null', emoji: '🏷️', default: !item.category_id },
@@ -3687,6 +3711,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     await interaction.editReply({
       content: successHeader || null,
       embeds: [embed],
+      files: itemImgResolved ? [itemImgResolved.attachment] : [],
       components
     });
   } catch (error) {
@@ -4620,7 +4645,10 @@ export async function handleShopPostUpdate(interaction) {
       .setColor('#3498DB');
 
     const finalImage = imageUrl || getItemImage(item);
-    if (finalImage) {
+    const finalImageResolved = finalImage ? await resolveImageAttachment(finalImage, 'shop_item.png') : null;
+    if (finalImageResolved) {
+      embed.setImage(finalImageResolved.uri);
+    } else if (finalImage) {
       embed.setImage(finalImage);
     }
 
@@ -4689,7 +4717,7 @@ export async function handleShopPostUpdate(interaction) {
     const row = new ActionRowBuilder().addComponents(buyButton);
 
     // Edit message live
-    await message.edit({ embeds: [embed], components: [row] });
+    await message.edit({ embeds: [embed], files: finalImageResolved ? [finalImageResolved.attachment] : [], components: [row] });
 
     // Log & Cleanup
     if (item.item_type === 'loot_box' || item.loot_box_id) {
@@ -5015,8 +5043,14 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       .setTitle(box.name)
       .setDescription(description);
 
+    let boxImgResolved = null;
     if (box.image_url && box.image_url.trim().startsWith('http')) {
-      embed.setThumbnail(box.image_url.trim());
+      boxImgResolved = await resolveImageAttachment(box.image_url.trim(), 'chest_thumb.png');
+      if (boxImgResolved) {
+        embed.setThumbnail(boxImgResolved.uri);
+      } else {
+        embed.setThumbnail(box.image_url.trim());
+      }
     }
 
     const components = [];
@@ -5107,6 +5141,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     await interaction.editReply({
       content: null,
       embeds: [embed],
+      files: boxImgResolved ? [boxImgResolved.attachment] : [],
       components
     });
   } catch (error) {
@@ -5628,6 +5663,10 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
 
     const oldBox = await getLootBox(boxId, interaction.guildId);
+    if (oldBox) {
+      if (oldBox.image_url && oldBox.image_url !== imageUrl) invalidateImageCache(oldBox.image_url);
+      if (oldBox.opened_image_url && oldBox.opened_image_url !== openedImageUrl) invalidateImageCache(oldBox.opened_image_url);
+    }
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl, openedImageUrl });
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
