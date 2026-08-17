@@ -156,7 +156,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // Build Level Switcher options
   const options = [];
   if (currentPage > 0) {
-    options.push({ label: 'Previous', value: 'pass_page_' + (currentPage - 1), emoji: '⬅️' });
+    options.push({ label: 'Previous', value: 'pass_page_' + (currentPage - 1), emoji: '◀️' });
   }
   for (const l of pageLevels) {
     options.push({
@@ -167,7 +167,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     });
   }
   if (currentPage < totalPages - 1) {
-    options.push({ label: 'Next', value: 'pass_page_' + (currentPage + 1), emoji: '➡️' });
+    options.push({ label: 'Next', value: 'pass_page_' + (currentPage + 1), emoji: '▶️' });
   }
   options.push({ label: 'Create New Level', value: 'pass_create_level_page_' + currentPage, emoji: '➕' });
 
