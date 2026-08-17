@@ -605,7 +605,6 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 page,
                 customId: `admin_user_isel_${targetUserId}_${categoryId}`,
                 placeholder: isLootBox ? 'Select a Loot Box to Manage' : 'Select an Item to Manage',
-                backOption: { label: 'Back', value: 'back_to_categories', emoji: '⬅️' },
                 pageNavPrefix: 'admin_page_',
                 pageSize: 20,
                 mapOption: (i, idx) => {
@@ -628,15 +627,15 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             });
 
             rows.push(new ActionRowBuilder().addComponents(selectMenu));
-        } else {
-            rows.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`admin_user_items_${targetUserId}`)
-                    .setLabel('Back')
-                    .setEmoji('⬅️')
-                    .setStyle(ButtonStyle.Secondary)
-            ));
         }
+
+        rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`admin_user_items_${targetUserId}`)
+                .setLabel('Back')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary)
+        ));
 
         const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
         await interaction[responseMethod]({ embeds: [embed], components: rows });
