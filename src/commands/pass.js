@@ -96,8 +96,6 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       if (parts.length > 0) {
         desc += `\n\n**▶️ Next Reward (Level ${nr.level})**\n${parts.join('\n')}`;
       }
-    } else if (data.currentLevel > 0) {
-      desc += '\n\n**🏆 Max Level Reached**\n_You have claimed all available configured level rewards!_';
     }
 
     embed.setDescription(desc);
