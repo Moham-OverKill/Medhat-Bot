@@ -46,38 +46,14 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
     for (let i = 0; i < empty; i++) bar += String.fromCodePoint(0x2591);
 
     embed.setTitle(`You Are Level ${data.currentLevel}`);
-    embed.addFields({
-      name: 'Progress:',
-      value: `\`${bar}\` ${data.xpIntoCurrentLevel} / ${data.xpForNextLevel} XP`,
-      inline: false
-    });
 
+    let desc = `**Progress:**\n\`${bar}\` ${data.xpIntoCurrentLevel} / ${data.xpForNextLevel} XP`;
     if (data.totalBoostPct > 0 && data.activeBoosts && data.activeBoosts.length > 0) {
       const rolesList = data.activeBoosts.map(b => `<@&${b.roleId}>`).join(' - ');
-      embed.addFields({
-        name: 'XP Boost:',
-        value: `🚀 **+${data.totalBoostPct}%** XP Boost from ${rolesList}`,
-        inline: false
-      });
+      desc += `\n\n🚀 **+${data.totalBoostPct}%** XP Boost from ${rolesList}`;
     }
 
-    if (data.nextReward) {
-      const nr = data.nextReward;
-      const parts = [];
-      if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
-      for (const r of (nr.rewards || [])) {
-        const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
-        if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
-        else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
-      }
-      if (parts.length > 0) {
-        embed.addFields({
-          name: `Next Reward (Level ${nr.level})`,
-          value: parts.join(' + '),
-          inline: false
-        });
-      }
-    }
+    embed.setDescription(desc);
   } else {
     embed.setTitle('🎉 Claimed Rewards');
 
@@ -110,6 +86,24 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       embed.setDescription(fullText);
     } else {
       embed.setDescription('_You have not claimed any level rewards yet._');
+    }
+
+    if (data.nextReward) {
+      const nr = data.nextReward;
+      const parts = [];
+      if (nr.reward_coins > 0) parts.push(`${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
+      for (const r of (nr.rewards || [])) {
+        const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
+        if (r.reward_type === 'item' && r.item_name) parts.push(`🏷️ **${qStr}${r.item_name}**`);
+        else if (r.reward_type === 'chest' && r.chest_name) parts.push(`${lootBoxEmoji} **${qStr}${r.chest_name}**`);
+      }
+      if (parts.length > 0) {
+        embed.addFields({
+          name: `Next Reward (Level ${nr.level})`,
+          value: parts.join(' + '),
+          inline: false
+        });
+      }
     }
   }
 
