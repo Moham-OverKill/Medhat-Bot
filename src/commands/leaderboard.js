@@ -696,7 +696,7 @@ async function handleSetup(interaction) {
             .setColor(0x00FF00)
             .setDescription(descLines.join('\n'));
 
-        await interaction.editReply({ embeds: [successEmbed] });
+        await interaction.editReply({ files: [], embeds: [successEmbed] });
 
     } catch (error) {
         sysError('Leaderboard setup failed', error, { guildId });
@@ -714,9 +714,7 @@ async function handleStatus(interaction) {
         const config = await getLeaderboardConfig(interaction.guildId);
 
         if (!config || !config.daily_channel_id) {
-            await interaction.editReply({
-                content: '⚠️ Leaderboards not configured. Use `/leaderboard setup` to set them up.'
-            });
+            await interaction.editReply({ files: [], content: '⚠️ Leaderboards not configured. Use `/leaderboard setup` to set them up.' });
             return;
         }
 
@@ -731,7 +729,7 @@ async function handleStatus(interaction) {
             )
             .setFooter({ text: 'Refreshes daily at 00:00 Cairo time' });
 
-        await interaction.editReply({ embeds: [embed] });
+        await interaction.editReply({ files: [], embeds: [embed] });
 
     } catch (error) {
         sysError('Leaderboard status failed', error, { guildId: interaction.guildId });

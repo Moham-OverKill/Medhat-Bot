@@ -471,7 +471,7 @@ export async function handleHubShortcut(interaction) {
       msg += `> 🔥 Streak Bonus: **+${breakdown.streakBonus}**\n`;
       msg += `> 🚀 Boost Bonus: **+${breakdown.boostBonus}**\n`;
 
-      return interaction.editReply({ content: msg, embeds: [] });
+      return interaction.editReply({ files: [], content: msg, embeds: [] });
     }
 
     // 3. Inventory Shortcut

@@ -49,7 +49,7 @@ export async function renderQuests(interaction, page = 0) {
 
     if (!questsEnabled) {
       const msg = '❌ Daily quests are currently disabled or not set up for this server.';
-      return isButton ? interaction.editReply({ content: msg, embeds: [], components: [] }) : interaction.editReply({ content: msg });
+      return isButton ? interaction.editReply({ files: [], content: msg, embeds: [], components: [] }) : interaction.editReply({ files: [], content: msg });
     }
 
     // Snapshot Architecture: Render directly from the immutable snapshot
@@ -57,7 +57,7 @@ export async function renderQuests(interaction, page = 0) {
     
     if (validQuests.length === 0) {
       const msg = '📝 There are currently no active quests. Please check back later!';
-      return isButton ? interaction.editReply({ content: msg, embeds: [], components: [] }) : interaction.editReply({ content: msg });
+      return isButton ? interaction.editReply({ files: [], content: msg, embeds: [], components: [] }) : interaction.editReply({ files: [], content: msg });
     }
 
     // --- PAGINATION ---
@@ -142,16 +142,14 @@ export async function renderQuests(interaction, page = 0) {
         );
     }
 
-    await interaction.editReply({
-      embeds: [embed],
-      components: [row]
-    });
+    await interaction.editReply({ files: [], embeds: [embed],
+      components: [row] });
 
   } catch (error) {
     sysError('Quest command failed', error, { user: user.id, guild: guildId });
     const errorMsg = '❌ An error occurred while fetching your quest progress.';
-    if (isButton) await interaction.editReply({ content: errorMsg });
-    else await interaction.editReply({ content: errorMsg });
+    if (isButton) await interaction.editReply({ files: [], content: errorMsg });
+    else await interaction.editReply({ files: [], content: errorMsg });
   }
 }
 

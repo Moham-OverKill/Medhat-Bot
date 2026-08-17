@@ -110,11 +110,9 @@ export async function handleRewardsComponent(interaction) {
     if (customId === 'rewards_home') {
       await interaction.deferUpdate().catch(() => {});
       const payload = await getRewardsPayload(guildId);
-      await interaction.editReply({
-        content: null,
+      await interaction.editReply({ files: [], content: null,
         embeds: payload.embeds,
-        components: payload.components
-      });
+        components: payload.components });
       return;
     }
 
@@ -184,7 +182,7 @@ export async function handleRewardsComponent(interaction) {
         new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
 
-      await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
+      await interaction.editReply({ files: [], content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
     }
     else if (customId === 'rewards_give_select') {
       const targetUserId = interaction.users?.first()?.id || (interaction.values ? interaction.values[0] : null);
@@ -363,7 +361,7 @@ export async function handleRewardsModal(interaction) {
           new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
 
-        await interaction.editReply({ content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
+        await interaction.editReply({ files: [], content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
         await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
 
         // Real-time role re-evaluation for Richest Role

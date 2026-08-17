@@ -19,7 +19,7 @@ export async function handleHelpCommand(interaction) {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.reply({ content: 'Working on it . . .', flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.editReply({ content: 'Working on it . . .', embeds: [], components: [] });
+      await interaction.editReply({ files: [], content: 'Working on it . . .', embeds: [], components: [] });
     }
   } catch (error) {
     await handleInteractionError(interaction, error, 'help command');

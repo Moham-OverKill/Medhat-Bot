@@ -127,11 +127,9 @@ export async function showQuestsDashboard(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({
-      embeds: [embed],
+    await interaction.editReply({ files: [], embeds: [embed],
       components: [row1, row2, row3, row4],
-      content: null
-    });
+      content: null });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Quest dashboard render');
   }
@@ -203,14 +201,12 @@ export async function showQuestsSchedule(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({
-      embeds: [embed],
+    await interaction.editReply({ files: [], embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(perRefreshMenu),
         new ActionRowBuilder().addComponents(refreshesMenu),
         backRow
-      ]
-    });
+      ] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Quest schedule view');
   }
@@ -252,7 +248,7 @@ export async function showQuestDetail(interaction, questId) {
 
     const quest = await getQuest(questId);
     if (!quest) {
-      await interaction.editReply({ content: '❌ Quest not found.', embeds: [], components: [] });
+      await interaction.editReply({ files: [], content: '❌ Quest not found.', embeds: [], components: [] });
       return;
     }
 
@@ -292,7 +288,7 @@ export async function showQuestDetail(interaction, questId) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [row, backRow], content: null });
+    await interaction.editReply({ files: [], embeds: [embed], components: [row, backRow], content: null });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Quest detail render');
   }
@@ -331,14 +327,12 @@ export async function handleAddQuestStart(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({
-      embeds: [embed],
+    await interaction.editReply({ files: [], embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(channelSelect),
         backRow
       ],
-      content: null
-    });
+      content: null });
   } catch (error) {
     await handleInteractionError(interaction, error, 'Add quest start');
   }
