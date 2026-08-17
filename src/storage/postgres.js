@@ -851,7 +851,8 @@ async function createTables() {
       );
     `);
 
-    await pool.query(`ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS battlepass_xp BIGINT NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS battlepass_xp NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE user_activity ALTER COLUMN battlepass_xp TYPE NUMERIC(14, 2) USING battlepass_xp::NUMERIC(14, 2)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_activity_bp_xp ON user_activity(guild_id, battlepass_xp)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_battlepass_config_guild ON battlepass_config(guild_id, level)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_pass_claims_user ON user_pass_claims(guild_id, user_id)`);

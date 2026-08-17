@@ -47,7 +47,8 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     embed.setTitle(`You Are Level ${data.currentLevel}`);
 
-    let desc = `**Progress:**\n\`${bar}\` ${data.xpIntoCurrentLevel} / ${data.xpForNextLevel} XP`;
+    const currentXpDisplay = Math.floor(data.xpIntoCurrentLevel || 0);
+    let desc = `**Progress:**\n\`${bar}\` ${currentXpDisplay} / ${data.xpForNextLevel} XP`;
     if (data.totalBoostPct > 0 && data.activeBoosts && data.activeBoosts.length > 0) {
       const rolesList = data.activeBoosts.map(b => `<@&${b.roleId}>`).join(' + ');
       desc += `\n\n🚀 **+${data.totalBoostPct}%** XP Boost from ${rolesList}`;
