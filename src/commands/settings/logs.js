@@ -10,8 +10,8 @@ import {
     ComponentType,
     MessageFlags
 } from 'discord.js';
-import { getPool } from '../../storage/postgres.js';
-import { sendLog, checkChannelPermissions, sysLog, sysError } from '../../utils/logger.js';
+import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
+import { sendLog, sysLog, checkChannelPermissions } from '../../utils/logger.js';
 import { getUserLogName } from '../../shared.js';
 
 /**
@@ -19,21 +19,12 @@ import { getUserLogName } from '../../shared.js';
  */
 export async function handleLogsSettings(interaction) {
     const guildId = interaction.guildId;
-    const pool = getPool();
-
-    // Fetch current log config
-    const result = await pool.query(
-        'SELECT config FROM guild_configs WHERE guild_id = $1',
-        [guildId]
-    );
-
-    const config = result.rows[0]?.config || {};
+    const config = (await getGuildConfig(guildId)) || {};
     
     // Helper to get channel mention
     const getChannelInfo = (id) => {
         if (!id) return 'Disabled';
-        const channel = interaction.guild.channels.cache.get(id);
-        return channel ? `<#${id}>` : 'Unknown Channel';
+        return `<#${id}>`;
     };
 
     const embed = new EmbedBuilder()
@@ -113,7 +104,6 @@ export async function handleLogCategorySelect(interaction) {
 
     const channelId = interaction.values[0];
     const guildId = interaction.guildId;
-    const pool = getPool();
 
     // Map internal key
     const categoryMap = {
@@ -136,14 +126,8 @@ export async function handleLogCategorySelect(interaction) {
         });
     }
 
-    // Update database using JSONB merge to preserve other keys
-    await pool.query(
-        `INSERT INTO guild_configs (guild_id, config)
-         VALUES ($1, $2::jsonb)
-         ON CONFLICT (guild_id)
-         DO UPDATE SET config = guild_configs.config || $2::jsonb, updated_at = NOW()`,
-        [guildId, JSON.stringify({ [configKey]: channelId })]
-    );
+    // Update database and cache using setGuildConfig
+    await setGuildConfig(guildId, { [configKey]: channelId });
 
     // Format human-readable name
     const logName = getUserLogName(interaction);
@@ -181,20 +165,15 @@ export async function handleLogCategorySelect(interaction) {
  */
 export async function handleLogDisable(interaction) {
     const guildId = interaction.guildId;
-
-
-    const pool = getPool();
-    const guildName = interaction.guild.name;
     const logName = getUserLogName(interaction);
 
     // Remove all log-related keys from config
-    await pool.query(
-        `UPDATE guild_configs 
-         SET config = config - 'log_eco_channel_id' - 'log_inv_channel_id' - 'log_shop_channel_id' - 'log_audit_channel_id', 
-             updated_at = NOW()
-         WHERE guild_id = $1`,
-        [guildId]
-    );
+    await setGuildConfig(guildId, {
+        log_eco_channel_id: null,
+        log_inv_channel_id: null,
+        log_shop_channel_id: null,
+        log_audit_channel_id: null
+    });
 
     // Standard Audit Log
     sendLog(interaction.guild, 'audit', 'crimson', '🚫 Logs Disabled', 

@@ -26,12 +26,9 @@ const FILTER_TYPES = {
  * Fetch current filter config from DB
  */
 async function getFilters(guildId) {
-    const pool = getPool();
-    const result = await pool.query(
-        `SELECT config->'channel_filters' as filters FROM guild_configs WHERE guild_id = $1`,
-        [guildId]
-    );
-    return result.rows[0]?.filters || {};
+    const { getGuildConfig } = await import('../../storage/config.js');
+    const config = await getGuildConfig(guildId);
+    return config?.channel_filters || {};
 }
 
 /**
@@ -46,9 +43,8 @@ async function renderPanel(interaction, activeFilter = null) {
     const summaryLines = [];
     for (const [key, meta] of Object.entries(FILTER_TYPES)) {
         const channels = Array.isArray(filters[key]) ? filters[key] : [];
-        const validChannels = channels.filter(id => interaction.guild.channels.cache.has(id));
-        const channelMentions = validChannels.length > 0
-            ? validChannels.map(id => `<#${id}>`).join(', ')
+        const channelMentions = channels.length > 0
+            ? channels.map(id => `<#${id}>`).join(', ')
             : '_None_';
         summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
     }
@@ -173,7 +169,8 @@ async function handleChannelToggle(interaction, filterKey) {
 
     // Fetch current list for this filter
     const filters = await getFilters(guildId);
-    let channels = Array.isArray(filters[filterKey]) ? [...filters[filterKey]] : [];
+    const updatedFilters = { ...filters };
+    let channels = Array.isArray(updatedFilters[filterKey]) ? [...updatedFilters[filterKey]] : [];
 
     // Toggle logic
     let action;
@@ -185,28 +182,10 @@ async function handleChannelToggle(interaction, filterKey) {
         channels.push(channelId);
         action = 'added';
     }
+    updatedFilters[filterKey] = channels;
 
-    // Save using nested jsonb_set to ensure channel_filters key exists first.
-    // PostgreSQL's jsonb_set cannot create intermediate keys — a single
-    // ARRAY['channel_filters', filterKey] path silently fails if channel_filters
-    // doesn't exist yet. The inner jsonb_set creates it if missing.
-    await pool.query(
-        `INSERT INTO guild_configs (guild_id, config)
-         VALUES ($1, jsonb_build_object('channel_filters', jsonb_build_object($2::text, $3::jsonb)))
-         ON CONFLICT (guild_id)
-         DO UPDATE SET config = jsonb_set(
-           jsonb_set(
-             COALESCE(guild_configs.config, '{}'::jsonb),
-             '{channel_filters}',
-             COALESCE(guild_configs.config->'channel_filters', '{}'::jsonb),
-             true
-           ),
-           ARRAY['channel_filters', $2::text],
-           $3::jsonb,
-           true
-         ), updated_at = NOW()`,
-        [guildId, filterKey, JSON.stringify(channels)]
-    );
+    const { setGuildConfig } = await import('../../storage/config.js');
+    await setGuildConfig(guildId, { channel_filters: updatedFilters });
 
     // Invalidate cache so the middleware picks up the change immediately
     invalidateFilterCache(guildId);
