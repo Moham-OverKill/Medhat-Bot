@@ -19,7 +19,7 @@ import { COIN_EMOJI, parseSelectEmoji } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { validateRoleForAssignment } from './pass-engine.js';
 
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 20;
 
 // In-memory state store for multi-step import flow (keyed by `${guildId}:${userId}`)
 const importFlowState = new Map();
