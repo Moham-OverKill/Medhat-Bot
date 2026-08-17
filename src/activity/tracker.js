@@ -663,8 +663,15 @@ export async function voicePointsTick(client) {
           }
 
           // Battlepass XP hook for voice tick
-          import('../commands/settings/pass-engine.js')
-            .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, pointsToAward, null))
+          import('../../storage/config.js')
+            .then(({ getGuildConfig }) => getGuildConfig(row.guild_id))
+            .then(cfg => {
+              const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
+              if (voiceXpRate <= 0) return;
+              const totalVoiceXp = pointsToAward * voiceXpRate;
+              return import('../commands/settings/pass-engine.js')
+                .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, totalVoiceXp, null));
+            })
             .catch(() => {});
 
           try {
