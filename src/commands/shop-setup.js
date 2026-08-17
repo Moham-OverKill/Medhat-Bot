@@ -2281,7 +2281,7 @@ export async function handleCategoryModalSubmit(interaction) {
   }
 }
 
-export async function handleEditCategoryStart(interaction) {
+export async function handleEditCategoryStart(interaction, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categories = await getShopCategories(interaction.guildId);
@@ -2295,21 +2295,27 @@ export async function handleEditCategoryStart(interaction) {
       return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_cat_edit_rename')
-      .setPlaceholder('Select')
-      .addOptions(categories.map(c => ({ 
-        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items: categories,
+      page: pageNum,
+      customId: 'shop_select_cat_edit_rename',
+      placeholder: 'Select',
+      pageNavPrefix: 'cat_edit_rename_page_',
+      pageSize: 20,
+      mapOption: c => ({
+        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
         value: c.id.toString(),
         emoji: '📂'
-      })));
+      })
+    });
 
     const embed = new EmbedBuilder()
       .setColor('#3498DB')
       .setTitle('📂 Category Management')
       .setDescription('**Select a category to manage:**');
 
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.editReply({ content: null, embeds: [embed], components: [row, rowBack] });
   } catch (error) {
@@ -2327,6 +2333,11 @@ export async function handleEditCategorySelect(interaction, successHeader = null
       categoryId = interaction.values[0];
     } else {
       categoryId = interaction.customId.split('_').pop();
+    }
+
+    if (categoryId.startsWith('cat_edit_rename_page_')) {
+      const page = parseInt(categoryId.replace('cat_edit_rename_page_', ''), 10) || 1;
+      return handleEditCategoryStart(interaction, page);
     }
 
     const categories = await getShopCategories(interaction.guildId);
@@ -2422,7 +2433,7 @@ export async function handleEditCategoryRenameStart(interaction) {
   }
 }
 
-export async function handleEditCategoryAddItemsStart(interaction) {
+export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = interaction.customId.split('_').pop();
@@ -2449,16 +2460,22 @@ export async function handleEditCategoryAddItemsStart(interaction) {
       return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-      .setPlaceholder('Select')
-      .addOptions(standalone.slice(0, 25).map(i => ({ 
-        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items: standalone,
+      page: pageNum,
+      customId: `shop_edit_cat_add_select_${categoryId}`,
+      placeholder: 'Select',
+      pageNavPrefix: `cat_add_nav_${categoryId}_`,
+      pageSize: 20,
+      mapOption: i => ({
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
         value: i.id.toString(),
         emoji: '🏷️'
-      })));
+      })
+    });
 
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenu);
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#2ECC71')
@@ -2478,7 +2495,15 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = interaction.customId.split('_').pop();
-    const itemId = interaction.values[0];
+    const selection = interaction.values[0];
+
+    // Handle pagination page navigation
+    if (selection.startsWith(`cat_add_nav_${categoryId}_`)) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handleEditCategoryAddItemsStart(interaction, page);
+    }
+
+    const itemId = selection;
 
     // Validation: Check if item already has a category (strict exclusivity)
     const item = await getShopItem(itemId, interaction.guildId);
@@ -2535,16 +2560,21 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       });
     } else {
       // Update dropdown
-      const select = new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_cat_add_select_${categoryId}`)
-        .setPlaceholder('Select')
-        .addOptions(standalone.slice(0, 25).map(i => ({ 
-          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: standalone,
+        page: 1,
+        customId: `shop_edit_cat_add_select_${categoryId}`,
+        placeholder: 'Select',
+        pageNavPrefix: `cat_add_nav_${categoryId}_`,
+        pageSize: 20,
+        mapOption: i => ({
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
           value: i.id.toString(),
           emoji: '🏷️'
-        })));
+        })
+      });
 
-      const row = new ActionRowBuilder().addComponents(select);
+      const row = new ActionRowBuilder().addComponents(selectMenu);
 
       const embedPrompt = new EmbedBuilder()
         .setColor('#2ECC71')
@@ -2561,7 +2591,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
   }
 }
 
-export async function handleEditCategoryRemoveItemsStart(interaction, successHeader = null) {
+export async function handleEditCategoryRemoveItemsStart(interaction, successHeader = null, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = interaction.customId.split('_').pop();
@@ -2580,16 +2610,22 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
       return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-      .setPlaceholder('Select')
-      .addOptions(items.slice(0, 25).map(i => ({ 
-        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items,
+      page: pageNum,
+      customId: `shop_edit_cat_remove_select_${categoryId}`,
+      placeholder: 'Select',
+      pageNavPrefix: `cat_remove_nav_${categoryId}_`,
+      pageSize: 20,
+      mapOption: i => ({
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
         value: i.id.toString(),
         emoji: '🏷️'
-      })));
+      })
+    });
 
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenu);
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#3498DB')
@@ -2609,7 +2645,15 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = interaction.customId.split('_').pop();
-    const itemId = parseInt(interaction.values[0]);
+    const selection = interaction.values[0];
+
+    // Handle pagination page navigation
+    if (selection.startsWith(`cat_remove_nav_${categoryId}_`)) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handleEditCategoryRemoveItemsStart(interaction, null, page);
+    }
+
+    const itemId = parseInt(selection);
 
     const item = await getShopItem(itemId, interaction.guildId);
     const removedItemName = item?.name || itemId;
@@ -2647,16 +2691,21 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
         embeds: [emptyEmbed]
       });
     } else {
-      const select = new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_cat_remove_select_${categoryId}`)
-        .setPlaceholder('Select')
-        .addOptions(items.slice(0, 25).map(i => ({ 
-          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items,
+        page: 1,
+        customId: `shop_edit_cat_remove_select_${categoryId}`,
+        placeholder: 'Select',
+        pageNavPrefix: `cat_remove_nav_${categoryId}_`,
+        pageSize: 20,
+        mapOption: i => ({
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
           value: i.id.toString(),
           emoji: '🏷️'
-        })));
+        })
+      });
 
-      const row = new ActionRowBuilder().addComponents(select);
+      const row = new ActionRowBuilder().addComponents(selectMenu);
 
       const embedPrompt = new EmbedBuilder()
         .setColor('#E74C3C')
@@ -2713,7 +2762,7 @@ export async function handleEditCategoryModalSubmit(interaction) {
   }
 }
 
-export async function handleDeleteCategoryStart(interaction) {
+export async function handleDeleteCategoryStart(interaction, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categories = await getShopCategories(interaction.guildId);
@@ -2727,21 +2776,27 @@ export async function handleDeleteCategoryStart(interaction) {
       return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('shop_select_cat_delete_confirm')
-      .setPlaceholder('Select')
-      .addOptions(categories.map(c => ({ 
-        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items: categories,
+      page: pageNum,
+      customId: 'shop_select_cat_delete_confirm',
+      placeholder: 'Select',
+      pageNavPrefix: 'cat_del_nav_',
+      pageSize: 20,
+      mapOption: c => ({
+        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
         value: c.id.toString(),
         emoji: '📂'
-      })));
+      })
+    });
 
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
       .setTitle('🗑️ Delete Category')
       .setDescription('**Select a category to delete:**');
 
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenu);
 
     await interaction.editReply({
       content: null,
@@ -2756,7 +2811,15 @@ export async function handleDeleteCategoryStart(interaction) {
 export async function handleDeleteCategoryConfirm(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    const categoryId = interaction.values[0];
+    const selection = interaction.values[0];
+
+    // Handle pagination page navigation
+    if (selection.startsWith('cat_del_nav_')) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handleDeleteCategoryStart(interaction, page);
+    }
+
+    const categoryId = selection;
 
     // Get name for feedback
     const categoriesBefore = await getShopCategories(interaction.guildId);
@@ -2793,16 +2856,21 @@ export async function handleDeleteCategoryConfirm(interaction) {
         embeds: [emptyEmbed]
       });
     } else {
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('shop_select_cat_delete_confirm')
-        .setPlaceholder('Select Category to Delete')
-        .addOptions(categories.map(c => ({ 
-          label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100), 
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: categories,
+        page: 1,
+        customId: 'shop_select_cat_delete_confirm',
+        placeholder: 'Select Category to Delete',
+        pageNavPrefix: 'cat_del_nav_',
+        pageSize: 20,
+        mapOption: c => ({
+          label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
           value: c.id.toString(),
           emoji: '📂'
-        })));
+        })
+      });
 
-      const row = new ActionRowBuilder().addComponents(select);
+      const row = new ActionRowBuilder().addComponents(selectMenu);
 
       await interaction.editReply({
         content: `✅ Category **${categoryName}** deleted. Select another to delete:`,
@@ -2856,20 +2924,24 @@ export async function renderAdminBrowser(interaction, contextMap) {
         return interaction.followUp({ content: `❌ No ${catName.toLowerCase()} found.`, flags: MessageFlags.Ephemeral });
       }
 
-      const lbOptions = lootBoxes.slice(0, 25).map(b => ({
-        label: (b.name || `Unnamed Box #${b.id}`).slice(0, 100),
-        value: `lb_${b.id}`,
-        emoji: parseSelectEmoji(catEmoji)
-      }));
-
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('shop_admin_browser_select')
-        .setPlaceholder(`Select ${catName}`)
-        .addOptions(lbOptions);
+      const page = contextMap.page || 1;
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: lootBoxes,
+        page,
+        customId: 'shop_admin_browser_select',
+        placeholder: `Select ${catName}`,
+        pageNavPrefix: 'admin_browser_page_',
+        pageSize: 20,
+        mapOption: b => ({
+          label: (b.name || `Unnamed Box #${b.id}`).slice(0, 100),
+          value: `lb_${b.id}`,
+          emoji: parseSelectEmoji(catEmoji)
+        })
+      });
 
       return interaction.editReply({
         content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
-        components: [new ActionRowBuilder().addComponents(select), rowBack],
+        components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
         embeds: [embed]
       });
     }
@@ -3848,69 +3920,93 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       });
     }
 
-    let options = [];
+    let selectMenuToRender = null;
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
 
     if (layer === 'root') {
       // --- LAYER 0: ROOT SELECTION ---
       const hasCategorized = availableItems.some(i => i.category_id);
       const hasUncategorized = availableItems.some(i => !i.category_id);
       
-      if (hasCategorized) options.push({ label: 'Categorized Items', value: 'layer_browse_categorized', emoji: '📂' });
-      if (hasUncategorized) options.push({ label: 'Uncategorized Items', value: 'layer_browse_uncategorized', emoji: '🏷️' });
+      const rootOptions = [];
+      if (hasCategorized) rootOptions.push({ label: 'Categorized Items', value: 'layer_browse_categorized', emoji: '📂' });
+      if (hasUncategorized) rootOptions.push({ label: 'Uncategorized Items', value: 'layer_browse_uncategorized', emoji: '🏷️' });
+
+      if (rootOptions.length === 0) {
+        const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+        return interaction.editReply({ 
+          content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+          components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary))], 
+          embeds: [emptyEmbed] 
+        });
+      }
+
+      selectMenuToRender = new StringSelectMenuBuilder()
+        .setCustomId(`shop_pack_add_content_select_${packId}`)
+        .setPlaceholder('Select')
+        .addOptions(rootOptions);
     } 
     else if (layer === 'browse_categorized') {
       // --- LAYER 1: CATEGORY LIST ---
       const categories = await getShopCategories(interaction.guildId);
+      const activeCats = categories.filter(cat => availableItems.some(i => i.category_id === cat.id));
       
-      options.push({
-        label: 'Back',
-        value: 'action_back_root',
-        emoji: '⬅️'
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: activeCats,
+        page: pageNum,
+        customId: `shop_pack_add_content_select_${packId}`,
+        placeholder: 'Select',
+        backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
+        pageNavPrefix: `pack_add_cat_nav_${packId}_`,
+        pageSize: 20,
+        mapOption: cat => ({
+          label: cat.name.slice(0, 100),
+          value: `cat_${cat.id}`,
+          emoji: '📂'
+        })
       });
-
-      for (const cat of categories) {
-        const itemsInCat = availableItems.filter(i => i.category_id === cat.id);
-        if (itemsInCat.length > 0) {
-          options.push({
-            label: cat.name.slice(0, 100),
-            value: `cat_${cat.id}`,
-            emoji: '📂'
-          });
-        }
-      }
+      selectMenuToRender = selectMenu;
     }
     else if (layer === 'browse_uncategorized') {
       // --- LAYER 1: UN-CATEGORIZED ITEMS ---
       const standaloneItems = availableItems.filter(i => !i.category_id);
       
-      options.push({
-        label: 'Back',
-        value: 'action_back_root',
-        emoji: '⬅️'
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: standaloneItems,
+        page: pageNum,
+        customId: `shop_pack_add_content_select_${packId}`,
+        placeholder: 'Select',
+        backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
+        pageNavPrefix: `pack_add_item_nav_${packId}_uncat_`,
+        pageSize: 20,
+        mapOption: i => ({
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+          value: `item_${i.id}`,
+          emoji: '🏷️'
+        })
       });
-
-      options.push(...standaloneItems.slice(0, 24).map(i => ({
-        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
-        value: `item_${i.id}`,
-        emoji: '🏷️'
-      })));
+      selectMenuToRender = selectMenu;
     }
     else if (typeof layer === 'number' || !isNaN(parseInt(layer))) {
       // --- LAYER 2: ITEMS INSIDE A CATEGORY ---
       const categoryId = parseInt(layer);
       const itemsInCat = availableItems.filter(i => i.category_id === categoryId);
       
-      options.push({
-        label: 'Back',
-        value: 'layer_browse_categorized',
-        emoji: '⬅️'
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: itemsInCat,
+        page: pageNum,
+        customId: `shop_pack_add_content_select_${packId}`,
+        placeholder: 'Select',
+        backOption: { label: 'Back', value: 'layer_browse_categorized', emoji: '⬅️' },
+        pageNavPrefix: `pack_add_item_nav_${packId}_${categoryId}_`,
+        pageSize: 20,
+        mapOption: i => ({ 
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+          value: `item_${i.id}`,
+          emoji: '🏷️'
+        })
       });
-
-      options.push(...itemsInCat.slice(0, 24).map(i => ({ 
-        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
-        value: `item_${i.id}`,
-        emoji: '🏷️'
-      })));
+      selectMenuToRender = selectMenu;
     }
 
     const rowBack = new ActionRowBuilder().addComponents(
@@ -3920,22 +4016,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         .setStyle(ButtonStyle.Secondary)
     );
 
-    // Unified Empty State Fallback
-    if (options.length === 0 || (options.length === 1 && options[0].value.includes('back'))) {
-      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ 
-        content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
-        components: [rowBack], 
-        embeds: [emptyEmbed] 
-      });
-    }
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_pack_add_content_select_${packId}`)
-      .setPlaceholder('Select')
-      .addOptions(options.slice(0, 25));
-
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenuToRender);
 
     const embedPrompt = new EmbedBuilder()
       .setColor('#3498DB')
@@ -3960,6 +4041,22 @@ export async function handlePackAddContentSelect(interaction) {
 
     if (!packId || isNaN(parseInt(packId))) {
       return interaction.followUp({ content: '❌ Invalid Pack ID.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Handle Pagination Navigation
+    if (selection.startsWith(`pack_add_cat_nav_${packId}_`)) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handlePackAddContentStart(interaction, 'browse_categorized', null, page);
+    }
+    if (selection.startsWith(`pack_add_item_nav_${packId}_uncat_`)) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handlePackAddContentStart(interaction, 'browse_uncategorized', null, page);
+    }
+    if (selection.startsWith(`pack_add_item_nav_${packId}_`)) {
+      const parts = selection.split('_');
+      const catId = parseInt(parts[parts.length - 2], 10);
+      const page = parseInt(parts[parts.length - 1], 10) || 1;
+      return handlePackAddContentStart(interaction, catId, null, page);
     }
 
     // Handle Folder Navigation
@@ -4024,7 +4121,7 @@ export async function handlePackAddContentSelect(interaction) {
   }
 }
 
-export async function handlePackRemoveContentStart(interaction, messageStr = null) {
+export async function handlePackRemoveContentStart(interaction, messageStr = null, page = 1) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
@@ -4060,28 +4157,22 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
     const contentIds = currentContentIds.map(id => parseInt(id));
     const packItems = allItems.filter(i => contentIds.includes(i.id));
 
-    let options = packItems.slice(0, 25).map(i => ({
-      label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
-      value: `item_${i.id}`,
-      emoji: '🏷️'
-    }));
-
-    // Add fallback for deleted/missing items
-    if (options.length < 25 && packItems.length < contentIds.length) {
-      const missingIds = contentIds.filter(id => !packItems.some(i => i.id === id));
-      options.push(...missingIds.slice(0, 25 - options.length).map(id => ({ 
-        label: `Unknown Item ${id} (Deleted?)`, 
-        value: `item_${id}`,
+    const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items: packItems,
+      page: pageNum,
+      customId: `shop_pack_remove_content_select_${packId}`,
+      placeholder: 'Select',
+      pageNavPrefix: `pack_rem_nav_${packId}_`,
+      pageSize: 20,
+      mapOption: i => ({
+        label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100), 
+        value: `item_${i.id}`,
         emoji: '🏷️'
-      })));
-    }
+      })
+    });
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`shop_pack_remove_content_select_${packId}`)
-      .setPlaceholder('Select')
-      .addOptions(options);
-
-    const row = new ActionRowBuilder().addComponents(select);
+    const row = new ActionRowBuilder().addComponents(selectMenu);
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_pack_manage_${packId}`)
         .setLabel('Back')
@@ -4109,6 +4200,12 @@ export async function handlePackRemoveContentSelect(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const packId = interaction.customId.split('_').pop();
     const selection = interaction.values[0];
+
+    // Handle pagination navigation
+    if (selection.startsWith(`pack_rem_nav_${packId}_`)) {
+      const page = parseInt(selection.split('_').pop(), 10) || 1;
+      return handlePackRemoveContentStart(interaction, null, page);
+    }
 
     if (!packId || isNaN(parseInt(packId))) {
       return interaction.followUp({ content: '❌ Invalid Pack ID.', flags: MessageFlags.Ephemeral });
