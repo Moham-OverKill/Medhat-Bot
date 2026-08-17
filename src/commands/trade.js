@@ -1199,7 +1199,7 @@ async function finalizeTradePosting(interaction, setup) {
                     const senderName = senderMember ? getUserDisplayName(senderMember) : 'A user';
                     const dmEmbed = new EmbedBuilder()
                         .setTitle('🤝 New Trade Offer')
-                        .setDescription(`**${senderName}** has sent you a trade offer in **${interaction.guild.name}**!\n\n[Click here to view the trade](${publicMsg.url})`)
+                        .setDescription(`**${senderName}** has sent you a trade offer!\n\n[Click here to view the trade](${publicMsg.url})`)
                         .setColor(0xF1C40F)
                         .setFooter({
                             text: `${interaction.guild.name} • ${new Date().toLocaleString()}`,
