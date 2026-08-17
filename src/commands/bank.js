@@ -19,7 +19,6 @@ import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
-import { resolveImageAttachment } from '../utils/image-cache.js';
 import {
   getShopCategories,
   getShopItems,
@@ -1184,66 +1183,12 @@ export async function handleInventoryItemSelect(interaction) {
         .setDescription(sections.join('\n\n'));
 
       if (boxImg && typeof boxImg === 'string' && boxImg.startsWith('http')) {
-        const resolved = await resolveImageAttachment(boxImg, 'chest_closed.png');
-        if (resolved) {
-          embed.setImage(resolved.uri);
-          const row1 = new ActionRowBuilder();
-          if (!isInterfaceChannel) {
-            row1.addComponents(
-              new ButtonBuilder()
-                .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
-                .setLabel('Drop')
-                .setEmoji('🗑️')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(item.is_tradable === false)
-            );
-          }
-          row1.addComponents(
-            new ButtonBuilder()
-              .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
-              .setLabel('Open')
-              .setEmoji('🔓')
-              .setStyle(ButtonStyle.Success)
-          );
-
-          const selectOptions = [
-            {
-              label: 'Back',
-              value: 'back_to_inventory',
-              emoji: '⬅️'
-            },
-            ...items.slice(0, 24).map((i, idx) => {
-              const itemQty = parseInt(i.quantity) || 1;
-              const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
-              return {
-                label: `${baseName} (x${itemQty})`,
-                value: `${i.id}_${idx}`,
-                emoji: '🎁',
-                default: String(i.id) === String(item.id)
-              };
-            })
-          ];
-
-          const itemSelect = new StringSelectMenuBuilder()
-            .setCustomId('bank_inv_item_select_lootboxes')
-            .setPlaceholder('Select a Loot Box to Manage')
-            .addOptions(selectOptions);
-
-          const row2 = new ActionRowBuilder().addComponents(itemSelect);
-
-          return await interaction.editReply({
-            content: null,
-            embeds: [embed],
-            files: [resolved.attachment],
-            components: [row1, row2]
-          });
-        }
+        embed.setThumbnail(boxImg);
       }
 
-      // Fallback: no image or image failed to resolve — render without attachment
-      const row1Fallback = new ActionRowBuilder();
+      const row1 = new ActionRowBuilder();
       if (!isInterfaceChannel) {
-        row1Fallback.addComponents(
+        row1.addComponents(
           new ButtonBuilder()
             .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
             .setLabel('Drop')
@@ -1252,7 +1197,7 @@ export async function handleInventoryItemSelect(interaction) {
             .setDisabled(item.is_tradable === false)
         );
       }
-      row1Fallback.addComponents(
+      row1.addComponents(
         new ButtonBuilder()
           .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
           .setLabel('Open')
@@ -1260,23 +1205,37 @@ export async function handleInventoryItemSelect(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-      const selectOptionsFallback = [
-        { label: 'Back', value: 'back_to_inventory', emoji: '⬅️' },
+      const selectOptions = [
+        {
+          label: 'Back',
+          value: 'back_to_inventory',
+          emoji: '⬅️'
+        },
         ...items.slice(0, 24).map((i, idx) => {
           const itemQty = parseInt(i.quantity) || 1;
           const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
-          return { label: `${baseName} (x${itemQty})`, value: `${i.id}_${idx}`, emoji: '🎁', default: String(i.id) === String(item.id) };
+          return {
+            label: `${baseName} (x${itemQty})`,
+            value: `${i.id}_${idx}`,
+            emoji: '🎁',
+            default: String(i.id) === String(item.id)
+          };
         })
       ];
 
-      const itemSelectFallback = new StringSelectMenuBuilder()
+      const itemSelect = new StringSelectMenuBuilder()
         .setCustomId('bank_inv_item_select_lootboxes')
         .setPlaceholder('Select a Loot Box to Manage')
-        .addOptions(selectOptionsFallback);
+        .addOptions(selectOptions);
 
-      return await interaction.editReply({ files: [], content: null,
+      const row2 = new ActionRowBuilder().addComponents(itemSelect);
+
+      return await interaction.editReply({
+        content: null,
         embeds: [embed],
-        components: [row1Fallback, new ActionRowBuilder().addComponents(itemSelectFallback)] });
+        files: [],
+        components: [row1, row2]
+      });
     }
 
     // Get role color for embed
@@ -1340,9 +1299,7 @@ export async function handleInventoryItemSelect(interaction) {
 
     // Show item image as small thumbnail (corner) in the management embed
     const itemImg = getItemImage(item);
-    const itemImgResolved = itemImg ? await resolveImageAttachment(itemImg, 'item_thumb.png') : null;
-    if (itemImgResolved) embed.setThumbnail(itemImgResolved.uri);
-    else if (itemImg) embed.setThumbnail(itemImg);
+    if (itemImg) embed.setThumbnail(itemImg);
 
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
@@ -1383,7 +1340,7 @@ export async function handleInventoryItemSelect(interaction) {
       new ButtonBuilder()
         .setCustomId(`bank_inv_equip_${item.id}_${catIdStr}_${currentIndex}`)
         .setLabel(toggleLabel)
-        .setEmoji(cannotToggle ? lockEmoji : toggleEmoji)
+        .setEmoji(cannotToggle ? '🔒' : toggleEmoji)
         .setStyle(item.is_active ? ButtonStyle.Secondary : ButtonStyle.Success)
         .setDisabled(cannotToggle)
     );
@@ -1439,7 +1396,7 @@ export async function handleInventoryItemSelect(interaction) {
     await interaction.editReply({
       content: null,
       embeds: [embed],
-      files: itemImgResolved ? [itemImgResolved.attachment] : [],
+      files: [],
       components: [row1, row2]
     });
 
@@ -1535,11 +1492,7 @@ export async function handleInventoryAction(interaction) {
         .setDescription(`${rewardsText}\n\n${remainingText}`);
 
       const openedThumbnail = result.box?.opened_image_url || result.box?.image_url;
-      const openedResolved = openedThumbnail && typeof openedThumbnail === 'string' && openedThumbnail.startsWith('http')
-        ? await resolveImageAttachment(openedThumbnail, 'chest_opened.png')
-        : null;
-      if (openedResolved) resultEmbed.setThumbnail(openedResolved.uri);
-      else if (openedThumbnail && typeof openedThumbnail === 'string' && openedThumbnail.startsWith('http')) {
+      if (openedThumbnail && typeof openedThumbnail === 'string' && openedThumbnail.startsWith('http')) {
         resultEmbed.setThumbnail(openedThumbnail);
       }
 
@@ -1571,7 +1524,7 @@ export async function handleInventoryAction(interaction) {
       await interaction.editReply({
         content: null,
         embeds: [resultEmbed],
-        files: openedResolved ? [openedResolved.attachment] : [],
+        files: [],
         components: [resultRow]
       });
 
@@ -1699,9 +1652,7 @@ export async function handleInventoryAction(interaction) {
           .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
           .setTimestamp();
 
-        const dropImgResolved = dropImg ? await resolveImageAttachment(dropImg, 'drop_item.png') : null;
-        if (dropImgResolved) publicEmbed.setImage(dropImgResolved.uri);
-        else if (dropImg) publicEmbed.setImage(dropImg);
+        if (dropImg) publicEmbed.setImage(dropImg);
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -1711,7 +1662,7 @@ export async function handleInventoryAction(interaction) {
             .setStyle(ButtonStyle.Success)
         );
 
-        const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], files: dropImgResolved ? [dropImgResolved.attachment] : [], components: [row] });
+        const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [row] });
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
           [publicMsg.id, interaction.channelId, res.dropId]);
 
@@ -2132,9 +2083,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
       .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
       .setTimestamp();
 
-    const dropImgResolved = dropImg ? await resolveImageAttachment(dropImg, 'drop_item.png') : null;
-    if (dropImgResolved) publicEmbed.setImage(dropImgResolved.uri);
-    else if (dropImg) publicEmbed.setImage(dropImg);
+    if (dropImg) publicEmbed.setImage(dropImg);
 
     const claimRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -2144,7 +2093,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
         .setStyle(ButtonStyle.Success)
     );
 
-    const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], files: dropImgResolved ? [dropImgResolved.attachment] : [], components: [claimRow] });
+    const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [claimRow] });
     await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
       [publicMsg.id, interaction.channelId, res.dropId]);
 
