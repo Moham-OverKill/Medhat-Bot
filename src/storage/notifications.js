@@ -134,3 +134,100 @@ export async function getAllUniqueUsersForNotification(key) {
   }
 }
 
+/**
+ * Reset all notification preferences to FALSE when a member leaves a guild.
+ * @param {string} guildId
+ * @param {string} userId
+ */
+export async function disableUserNotificationsOnLeave(guildId, userId) {
+  if (!guildId || !userId) return;
+
+  try {
+    const pool = getPool();
+    await pool.query(
+      `UPDATE user_notification_settings
+       SET notif_level_up = FALSE,
+           notif_daily_claim = FALSE,
+           notif_trades = FALSE,
+           notif_mvp_win = FALSE,
+           notif_quests_refresh = FALSE,
+           updated_at = NOW()
+       WHERE guild_id = $1 AND user_id = $2`,
+      [guildId, userId]
+    );
+    const { sysLog } = await import('../utils/logger.js');
+    sysLog('Member Leave Notifications Reset', {
+      user: userId,
+      guild: guildId,
+      detail: 'Disabled all notification preferences for departed member'
+    });
+  } catch (error) {
+    sysError('Disable Notifications On Leave Failed', error, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Startup reconciliation: checks all users in a guild with active notification settings
+ * and turns them off if the user has left the server while the bot was offline.
+ * @param {Guild} guild - The Discord.js Guild object
+ */
+export async function reconcileGuildNotifications(guild) {
+  if (!guild?.id) return;
+
+  try {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT DISTINCT user_id FROM user_notification_settings
+       WHERE guild_id = $1 AND (
+         notif_level_up = TRUE OR
+         notif_daily_claim = TRUE OR
+         notif_trades = TRUE OR
+         notif_mvp_win = TRUE OR
+         notif_quests_refresh = TRUE
+       )`,
+      [guild.id]
+    );
+
+    if (!result.rows || result.rows.length === 0) return;
+
+    const activeUserIds = result.rows.map(r => r.user_id);
+    const departed = [];
+
+    for (const userId of activeUserIds) {
+      if (guild.members.cache.has(userId)) continue;
+      try {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (!member) {
+          departed.push(userId);
+        }
+      } catch (err) {
+        if (err.code === 10007 || err.status === 404) {
+          departed.push(userId);
+        }
+      }
+    }
+
+    if (departed.length === 0) return;
+
+    await pool.query(
+      `UPDATE user_notification_settings
+       SET notif_level_up = FALSE,
+           notif_daily_claim = FALSE,
+           notif_trades = FALSE,
+           notif_mvp_win = FALSE,
+           notif_quests_refresh = FALSE,
+           updated_at = NOW()
+       WHERE guild_id = $1 AND user_id = ANY($2::text[])`,
+      [guild.id, departed]
+    );
+
+    const { sysLog } = await import('../utils/logger.js');
+    sysLog('Startup Notification Reconciliation', {
+      guild: guild.id,
+      detail: `Disabled notifications for ${departed.length} users who left while offline`
+    });
+  } catch (error) {
+    sysError('Startup Notification Reconciliation Failed', error, { guild: guild.id });
+  }
+}
+

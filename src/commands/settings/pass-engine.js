@@ -687,10 +687,16 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
     }
 
     // Direct Message Notification (Opt-in only)
-    const { getUserNotificationSettings } = await import('../../storage/notifications.js');
+    const { getUserNotificationSettings, disableUserNotificationsOnLeave } = await import('../../storage/notifications.js');
     const userSettings = await getUserNotificationSettings(guildId, userId);
 
     if (userSettings.notif_level_up) {
+      const isStillMember = guild?.members?.cache?.has(userId) || !!(await guild?.members?.fetch(userId).catch(() => null));
+      if (!isStillMember) {
+        await disableUserNotificationsOnLeave(guildId, userId);
+        return;
+      }
+
       const user = await client.users.fetch(userId).catch(() => null);
       if (user) {
         await user.send({ embeds: [embed] }).catch(() => {});
