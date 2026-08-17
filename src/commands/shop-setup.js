@@ -1180,13 +1180,23 @@ export async function handleShopPostStart(interaction) {
       const usedCategoryIds = new Set(itemsAll.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box' && i.category_id).map(i => i.category_id));
       const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
-      itemOptions = activeCategories.map(c => ({
-        label: c.name.slice(0, 100),
-        value: `filter_cat_${c.id}`,
-        emoji: '📂'
-      }));
-      itemOptions.unshift({ label: 'Back', value: 'folder_reset', emoji: '⬅️' });
-      placeholder = '📂 Choose Category Folder...';
+      const page = state.postPage || 1;
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: activeCategories,
+        page,
+        customId: 'shop_post_item_select',
+        placeholder: '📂 Choose Category Folder...',
+        backOption: { label: 'Back', value: 'folder_reset', emoji: '⬅️' },
+        pageNavPrefix: 'shop_post_page_',
+        pageSize: 20,
+        mapOption: c => ({
+          label: c.name.slice(0, 100),
+          value: `filter_cat_${c.id}`,
+          emoji: '📂'
+        })
+      });
+
+      itemSelect = !state.isEditing ? selectMenu : null;
     } 
     else if (state.postStep === 2) {
       // Final Item List (Filtered)
@@ -1214,21 +1224,36 @@ export async function handleShopPostStart(interaction) {
         groupPrefix = '🏷️';
       }
 
-      itemOptions = filtered.slice(0, 24).map(i => {
-        return {
+      if (filtered.length === 0) {
+        const emptyRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+        );
+        const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
+        return interaction.editReply({ content: null, embeds: [emptyEmbed], components: [emptyRow] });
+      }
+
+      const page = state.postPage || 1;
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: filtered,
+        page,
+        customId: 'shop_post_item_select',
+        placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`,
+        backOption: { label: 'Back', value: 'folder_reset', emoji: '⬅️' },
+        pageNavPrefix: 'shop_post_page_',
+        pageSize: 20,
+        mapOption: i => ({
           label: i.name.slice(0, 100),
           value: i.id.toString(),
           emoji: parseSelectEmoji(groupPrefix),
           default: state.itemId === i.id.toString()
-        };
+        })
       });
 
-      itemOptions.unshift({ label: 'Back', value: 'folder_reset', emoji: '⬅️' });
-      placeholder = `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`;
+      itemSelect = !state.isEditing ? selectMenu : null;
     }
 
-    // Unified Empty State Fallback
-    if (itemOptions.length === 0 || (itemOptions.length === 1 && itemOptions[0].value === 'folder_reset')) {
+    // Unified Empty State Fallback for step 0
+    if (state.postStep === 0 && itemOptions.length === 0) {
       const emptyRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('shop_post_start').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
@@ -1237,10 +1262,12 @@ export async function handleShopPostStart(interaction) {
     }
   }
 
-  const itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
-    .setCustomId('shop_post_item_select')
-    .setPlaceholder(placeholder)
-    .addOptions(itemOptions) : null;
+  if (state.postStep === 0 && !itemSelect) {
+    itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
+      .setCustomId('shop_post_item_select')
+      .setPlaceholder(placeholder)
+      .addOptions(itemOptions) : null;
+  }
 
   // Row 2: Channel Select
   const channelSelect = !state.isEditing ? new ChannelSelectMenuBuilder()
@@ -1373,29 +1400,43 @@ export async function handleShopPostItemSelect(interaction) {
     };
   }
 
-  // --- Navigation Routing ---
+  // --- Page Navigation Routing ---
+  if (itemId.startsWith('shop_post_page_')) {
+    state.postPage = parseInt(itemId.replace('shop_post_page_', ''), 10) || 1;
+    pendingPosts.set(userId, state);
+    return handleShopPostStart(interaction);
+  }
+
+  // --- Folder Navigation Routing ---
   if (itemId === 'folder_reset') {
     state.postStep = 0;
     state.postFilter = null;
+    state.postPage = 1;
   } else if (itemId === 'folder_categorized') {
     state.postStep = 1;
     state.postFilter = null;
+    state.postPage = 1;
   } else if (itemId === 'folder_standalone') {
     state.postStep = 2;
     state.postFilter = 'standalone';
+    state.postPage = 1;
   } else if (itemId === 'folder_packs') {
     state.postStep = 2;
     state.postFilter = 'packs';
+    state.postPage = 1;
   } else if (itemId === 'folder_loot_boxes') {
     state.postStep = 2;
     state.postFilter = 'loot_boxes';
+    state.postPage = 1;
   } else if (itemId.startsWith('filter_cat_')) {
     state.postStep = 2;
     state.postFilter = itemId.replace('filter_', '');
+    state.postPage = 1;
   } else {
     // Final Item Selection
     state.itemId = itemId;
     state.postStep = 0; // Return to root after selection
+    state.postPage = 1;
     
     const items = await getShopItems(interaction.guildId, null, 'name', true);
     const selectedItem = items.find(i => i.id === parseInt(itemId));
@@ -2873,25 +2914,25 @@ export async function renderAdminBrowser(interaction, contextMap) {
         const usedCategoryIds = new Set(singleItems.map(i => i.category_id));
         const activeCategories = categories.filter(c => usedCategoryIds.has(c.id));
 
-        const options = activeCategories.slice(0, 24).map(cat => {
-          return { 
-            label: (cat.name || `Category #${cat.id}`).slice(0, 100), 
+        const page = contextMap.page || 1;
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: activeCategories,
+          page,
+          customId: 'shop_admin_browser_select',
+          placeholder: 'Select',
+          backOption: { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
+          pageNavPrefix: 'admin_browser_page_',
+          pageSize: 20,
+          mapOption: cat => ({
+            label: (cat.name || `Category #${cat.id}`).slice(0, 100),
             value: `cat_${cat.id}`,
             emoji: '📂'
-          };
+          })
         });
-
-        const select = new StringSelectMenuBuilder()
-          .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select')
-          .addOptions([
-            { label: 'Back', value: 'action_back_root', emoji: '⬅️' },
-            ...options
-          ]);
 
         return interaction.editReply({
           content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
-          components: [new ActionRowBuilder().addComponents(select), rowBack],
+          components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
           embeds: [embed]
         });
       }
@@ -2901,29 +2942,31 @@ export async function renderAdminBrowser(interaction, contextMap) {
       const folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
 
       if (folderItems.length === 0) {
-         pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root' });
+         pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root', page: 1 });
          return renderAdminBrowser(interaction, pendingAdminBrowser.get(interaction.user.id));
       }
 
-      const itemOptions = folderItems.slice(0, 24).map(i => ({
-        label: (i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
-        value: `item_${i.id}`,
-        emoji: '🏷️'
-      }));
-
       const backValue = folder === 'cat_null' ? 'action_back_root' : 'action_browse_categorized';
+      const page = contextMap.page || 1;
 
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('shop_admin_browser_select')
-        .setPlaceholder('Select')
-        .addOptions([
-          { label: 'Back', value: backValue, emoji: '⬅️' },
-          ...itemOptions
-        ]);
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: folderItems,
+        page,
+        customId: 'shop_admin_browser_select',
+        placeholder: 'Select',
+        backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
+        pageNavPrefix: 'admin_browser_page_',
+        pageSize: 20,
+        mapOption: i => ({
+          label: (i.name && i.name.trim().length > 0 ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
+          value: `item_${i.id}`,
+          emoji: '🏷️'
+        })
+      });
 
       return interaction.editReply({
          content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
-         components: [new ActionRowBuilder().addComponents(select), rowBack],
+         components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
          embeds: [embed]
       });
     }
@@ -2942,20 +2985,24 @@ export async function renderAdminBrowser(interaction, contextMap) {
            return interaction.followUp({ content: '❌ No packs found.', flags: MessageFlags.Ephemeral });
         }
 
-        const packOptions = packs.slice(0, 25).map(p => ({
-           label: (p.name && p.name.trim().length > 0 ? p.name : `Unnamed Pack #${p.id}`).slice(0, 100),
-           value: `item_${p.id}`,
-           emoji: '📦'
-        }));
-
-        const select = new StringSelectMenuBuilder()
-          .setCustomId('shop_admin_browser_select')
-          .setPlaceholder('Select')
-          .addOptions(packOptions);
+        const page = contextMap.page || 1;
+        const { selectMenu } = buildPaginatedSelectMenu({
+          items: packs,
+          page,
+          customId: 'shop_admin_browser_select',
+          placeholder: 'Select',
+          pageNavPrefix: 'admin_browser_page_',
+          pageSize: 20,
+          mapOption: p => ({
+            label: (p.name && p.name.trim().length > 0 ? p.name : `Unnamed Pack #${p.id}`).slice(0, 100),
+            value: `item_${p.id}`,
+            emoji: '📦'
+          })
+        });
 
         return interaction.editReply({
           content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
-          components: [new ActionRowBuilder().addComponents(select), rowBack],
+          components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
           embeds: [embed]
         });
     }
@@ -2974,13 +3021,21 @@ export async function handleAdminBrowserSelect(interaction) {
     let context = pendingAdminBrowser.get(interaction.user.id);
 
     if (!context) {
-      context = { action: 'edit_item', folder: 'root', message: null };
+      context = { action: 'edit_item', folder: 'root', page: 1, message: null };
       pendingAdminBrowser.set(interaction.user.id, context);
+    }
+
+    // Handle pagination page change
+    if (selection.startsWith('admin_browser_page_')) {
+      context.page = parseInt(selection.replace('admin_browser_page_', ''), 10) || 1;
+      pendingAdminBrowser.set(interaction.user.id, context);
+      return renderAdminBrowser(interaction, context);
     }
 
     // Handle navigating back up to the root layer
     if (selection === 'action_back_root') {
       context.folder = 'root';
+      context.page = 1;
       context.message = null;
       pendingAdminBrowser.set(interaction.user.id, context);
       return renderAdminBrowser(interaction, context);
@@ -2989,6 +3044,7 @@ export async function handleAdminBrowserSelect(interaction) {
     // Handle navigating to the categories list
     if (selection === 'action_browse_categorized') {
       context.folder = 'browse_categories';
+      context.page = 1;
       context.message = null;
       pendingAdminBrowser.set(interaction.user.id, context);
       return renderAdminBrowser(interaction, context);
@@ -2997,6 +3053,7 @@ export async function handleAdminBrowserSelect(interaction) {
     // Handle drilling into a specific Category folder
     if (selection.startsWith('cat_')) {
       context.folder = selection;
+      context.page = 1;
       context.message = null;
       pendingAdminBrowser.set(interaction.user.id, context);
       return renderAdminBrowser(interaction, context);
