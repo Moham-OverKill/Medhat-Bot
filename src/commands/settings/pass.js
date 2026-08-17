@@ -456,7 +456,7 @@ export async function handlePassSetup(interaction) {
       await interaction.deferUpdate().catch(() => {});
     }
     const payload = await getPassDashboardPayload(guildId, 0, null);
-    await interaction.editReply({ content: '', ...payload });
+    await interaction.editReply({ files: [], content: '', ...payload });
   } catch (error) {
     await handleInteractionError(interaction, error, 'pass setup');
   }
@@ -482,7 +482,7 @@ export async function handlePassComponent(interaction) {
       sysLog('Levels Paused', { guild: guildId, user: interaction.user.id });
       sendLog(interaction.guild, 'audit', 'orange', '⏸️ Levels Paused', `Admin **<@${interaction.user.id}>** paused Level progression.`);
       const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -512,7 +512,7 @@ export async function handlePassComponent(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-      await interaction.editReply({ embeds: [embed], components: [row1] });
+      await interaction.editReply({ files: [], embeds: [embed], components: [row1] });
       return;
     }
 
@@ -537,7 +537,7 @@ export async function handlePassComponent(interaction) {
       }).catch(() => {});
 
       const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -546,7 +546,7 @@ export async function handlePassComponent(interaction) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const page = customId.startsWith('pass_home_page_') ? (parseInt(customId.replace('pass_home_page_', ''), 10) || 0) : 0;
       const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -636,7 +636,7 @@ export async function handlePassComponent(interaction) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const page = parseInt(customId.replace('pass_boosts_pg_', ''), 10) || 0;
       const payload = await getBoostsDashboardPayload(guildId, page);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -693,7 +693,7 @@ export async function handlePassComponent(interaction) {
       }
 
       const payload = await getBoostsDashboardPayload(guildId, page);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -738,7 +738,7 @@ export async function handlePassComponent(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
         const page = parseInt(selectedValue.replace('pass_page_', ''), 10) || 0;
         const payload = await getPassDashboardPayload(guildId, page, null);
-        await interaction.editReply({ content: '', ...payload });
+        await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
 
@@ -748,7 +748,7 @@ export async function handlePassComponent(interaction) {
         const level = match ? parseInt(match[1], 10) : 1;
         const page = match ? parseInt(match[2], 10) : 0;
         const payload = await getPassDashboardPayload(guildId, page, level);
-        await interaction.editReply({ content: '', ...payload });
+        await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
     }
@@ -773,7 +773,7 @@ export async function handlePassComponent(interaction) {
         sysLog('Level Role Reward Cleared', { guild: guildId, user: interaction.user.id, detail: `Level ${level}` });
         sendLog(interaction.guild, 'audit', 'orange', '⭐ Level Role Cleared', `Admin **<@${interaction.user.id}>** cleared the role reward for **Level ${level}**.`);
         const payload = await getPassDashboardPayload(guildId, page, level);
-        await interaction.editReply({ content: '', ...payload });
+        await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
 
@@ -798,7 +798,7 @@ export async function handlePassComponent(interaction) {
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Role Reward Set', `Admin **<@${interaction.user.id}>** set the role reward for **Level ${level}** to <@&${selectedRoleId}>.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -842,7 +842,7 @@ export async function handlePassComponent(interaction) {
       sysLog('Level Coins Updated', { guild: guildId, user: interaction.user.id, detail: 'Level ' + level + ' coins set to ' + coins });
 
       const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -858,7 +858,7 @@ export async function handlePassComponent(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
         const folderTarget = selectedValue.replace('folder_', '');
         const payload = await getPassDashboardPayload(guildId, page, level, folderTarget);
-        await interaction.editReply({ content: '', ...payload });
+        await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
 
@@ -952,7 +952,7 @@ export async function handlePassComponent(interaction) {
       }
 
       const payload = await getPassDashboardPayload(guildId, page, targetLevel);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -992,7 +992,7 @@ export async function handlePassComponent(interaction) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await interaction.editReply({ embeds: [embed], components: [row1] });
+      await interaction.editReply({ files: [], embeds: [embed], components: [row1] });
       return;
     }
 
@@ -1018,7 +1018,7 @@ export async function handlePassComponent(interaction) {
       if (!state) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
         const payload = await getPassDashboardPayload(guildId, page, null);
-        return interaction.editReply({ content: '⚠️ Import session expired. Please start again.', ...payload });
+        return interaction.editReply({ files: [], content: '⚠️ Import session expired. Please start again.', ...payload });
       }
 
       const roleId = interaction.values[0];
@@ -1076,7 +1076,7 @@ export async function handlePassComponent(interaction) {
       const flowKey = `${guildId}:${interaction.user.id}`;
       importFlowState.delete(flowKey);
       const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -1140,7 +1140,7 @@ async function renderImportMappingPanel(interaction, guildId, flowKey, page) {
       .setDisabled(mappings.size === 0)
   );
 
-  await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  await interaction.editReply({ files: [], embeds: [embed], components: [row1, row2] });
 }
 
 async function renderImportPreview(interaction, guildId, flowKey, page) {
@@ -1215,7 +1215,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
       .setStyle(ButtonStyle.Success)
   );
 
-  await interaction.editReply({ embeds: [embed], components: [row1] });
+  await interaction.editReply({ files: [], embeds: [embed], components: [row1] });
 }
 
 async function executeImportSync(interaction, guildId, flowKey, page) {
@@ -1251,7 +1251,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
       .setDisabled(true)
   );
 
-  await interaction.editReply({ embeds: [loadingEmbed], components: [disabledRow] }).catch(() => {});
+  await interaction.editReply({ files: [], embeds: [loadingEmbed], components: [disabledRow] }).catch(() => {});
 
   // 0. Auto-create/update all mapped levels and their reward roles in battlepass_config
   for (const [roleId, level] of mappings.entries()) {
@@ -1336,7 +1336,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
             `• Progress: **${syncCount.toLocaleString()} / ${totalMembers.toLocaleString()}** members (${percent}%)\n` +
             '• Writing records and aligning roles in the database. Please wait...'
           );
-        interaction.editReply({ embeds: [progressEmbed], components: [disabledRow] }).catch(() => {});
+        interaction.editReply({ files: [], embeds: [progressEmbed], components: [disabledRow] }).catch(() => {});
       }
 
     } catch (err) {
@@ -1376,7 +1376,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ embeds: [embed], components: [backRow] }).catch(() => {});
+  await interaction.editReply({ files: [], embeds: [embed], components: [backRow] }).catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1448,7 +1448,7 @@ export async function handlePassModal(interaction) {
       await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
 
       const payload = await getPassDashboardPayload(guildId, page, level, 'root');
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -1475,7 +1475,7 @@ export async function handlePassModal(interaction) {
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -1504,7 +1504,7 @@ export async function handlePassModal(interaction) {
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -1554,7 +1554,7 @@ export async function handlePassModal(interaction) {
       );
 
       const payload = await getPassDashboardPayload(guildId, page, null);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 
@@ -1590,7 +1590,7 @@ export async function handlePassModal(interaction) {
       );
 
       const payload = await getBoostsDashboardPayload(guildId, page);
-      await interaction.editReply({ content: '', ...payload });
+      await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
 

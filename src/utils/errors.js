@@ -201,7 +201,7 @@ export async function handleInteractionError(interaction, error, context = 'Acti
         embeds: [embed], 
         flags: MessageFlags.Ephemeral 
       }).catch(() => {
-        return interaction.editReply({ embeds: [embed] }).catch(() => {});
+        return interaction.editReply({ files: [], embeds: [embed] }).catch(() => {});
       });
     } else {
       await interaction.reply({ 
