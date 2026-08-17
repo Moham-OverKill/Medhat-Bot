@@ -730,10 +730,7 @@ export async function handleItemModalSubmit(interaction) {
           new StringSelectMenuBuilder()
             .setCustomId(`shop_new_tradable_select_${item.id}`)
             .setPlaceholder('Status')
-            .addOptions([
-              { label: '🔓 Unlocked', value: 'tradable',   description: 'Can be traded, dropped, or found in loot boxes', default: true },
-              { label: '🔒 Locked',   value: 'untradable', description: 'Cannot be traded, dropped, or found in loot boxes', default: false }
-            ])
+            .addOptions(TRADABLE_OPTIONS.map(o => ({ ...o, default: o.value === 'tradable' })))
         );
 
         const rowActions = new ActionRowBuilder().addComponents(
