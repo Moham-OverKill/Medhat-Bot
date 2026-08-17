@@ -31,7 +31,13 @@ const importFlowState = new Map();
 export async function getUnlockedItemCount(guildId) {
   const pool = getPool();
   const res = await pool.query(
-    'SELECT COUNT(*) as count FROM shop_items WHERE guild_id = $1 AND is_active = true AND (is_tradable IS TRUE OR is_tradable IS NULL)',
+    `SELECT COUNT(*) as count FROM shop_items 
+     WHERE guild_id = $1 
+       AND is_active = true 
+       AND (is_tradable IS TRUE OR is_tradable IS NULL)
+       AND (item_type != 'loot_box' AND loot_box_id IS NULL)
+       AND (item_type != 'pack' AND (is_pack IS FALSE OR is_pack IS NULL))
+       AND role_id IS NOT NULL AND role_id != ''`,
     [guildId]
   );
   return parseInt(res.rows[0]?.count || 0, 10);
@@ -40,7 +46,14 @@ export async function getUnlockedItemCount(guildId) {
 async function getUnlockedShopItems(guildId) {
   const pool = getPool();
   const res = await pool.query(
-    "SELECT id, name, price, rarity, item_type, category_id FROM shop_items WHERE guild_id = $1 AND is_active = true AND (is_tradable IS TRUE OR is_tradable IS NULL) AND (item_type != 'loot_box' AND loot_box_id IS NULL) ORDER BY price ASC, name ASC LIMIT 100",
+    `SELECT id, name, price, rarity, item_type, category_id, role_id FROM shop_items 
+     WHERE guild_id = $1 
+       AND is_active = true 
+       AND (is_tradable IS TRUE OR is_tradable IS NULL) 
+       AND (item_type != 'loot_box' AND loot_box_id IS NULL)
+       AND (item_type != 'pack' AND (is_pack IS FALSE OR is_pack IS NULL))
+       AND role_id IS NOT NULL AND role_id != ''
+     ORDER BY price ASC, name ASC LIMIT 100`,
     [guildId]
   );
   return res.rows;
