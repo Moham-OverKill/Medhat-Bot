@@ -47,11 +47,11 @@ import {
   deleteLootBox,
   toggleLootBoxFeature,
   getLootBoxCategoryName,
-  getLootBoxCategoryEmoji
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
+import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
 const pendingPosts = new Map();
@@ -1958,7 +1958,8 @@ export async function handleShopPostPublish(interaction) {
 
     const row = new ActionRowBuilder().addComponents(buyButton);
 
-    await channel.send({ embeds: [embed], components: [row] });
+    const postMsg = await channel.send({ embeds: [embed], components: [row] });
+    verifyAndHealMessageImages(postMsg);
 
     // Standardized Shop Admin Log
     if (item.item_type === 'loot_box' || item.loot_box_id) {
@@ -4680,6 +4681,7 @@ export async function handleShopPostUpdate(interaction) {
 
     // Edit message live
     await message.edit({ embeds: [embed], components: [row] });
+    verifyAndHealMessageImages(message);
 
     // Log & Cleanup
     if (item.item_type === 'loot_box' || item.loot_box_id) {
