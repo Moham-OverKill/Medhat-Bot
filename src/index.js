@@ -1,3 +1,4 @@
+import './utils/suppress-warnings.js';
 import 'dotenv/config';
 import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options } from 'discord.js';
 import { createServer } from 'http';
