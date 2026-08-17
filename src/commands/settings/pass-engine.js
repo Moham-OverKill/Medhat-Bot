@@ -264,10 +264,8 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       }
     }
 
-    // After all rewards are dispatched, perform role alignment
-    if (claimedLevels.length > 0) {
-      await alignMemberLevelRole(guildId, userId, currentLevel, client);
-    }
+    // Continuous self-healing: ensure member holds ONLY their highest earned level role
+    await alignMemberLevelRole(guildId, userId, currentLevel, client);
 
     if (claimedLevels.length > 0 && client) {
       await sendLevelUpNotification(client, guildId, userId, username, claimedLevels, config);
