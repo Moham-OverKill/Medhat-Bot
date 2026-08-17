@@ -14,7 +14,7 @@ import {
     InteractionType
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -840,7 +840,8 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     let backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
 
     if (currentFolder === 'standalone') {
-        folderItems = tradableItems.filter(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const rawItems = tradableItems.filter(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
         backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
@@ -852,7 +853,8 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
         backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
     } else {
         const catId = typeof currentFolder === 'number' ? currentFolder : parseInt(currentFolder, 10);
-        folderItems = tradableItems.filter(i => i.category_id === catId && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const rawItems = tradableItems.filter(i => i.category_id === catId && i.item_type !== 'loot_box' && !i.loot_box_id);
+        folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
         const categories = await getShopCategories(setup.guildId);
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
         groupPrefix = '🏷️';
@@ -879,7 +881,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
             return {
                 label: `${row.name}${qtyLabel}`,
                 value: row.id.toString(),
-                emoji: parseSelectEmoji(groupPrefix) || '🏷️'
+                emoji: (currentFolder === 'loot_boxes') ? (parseSelectEmoji(groupPrefix) || '🎁') : getItemRarityEmoji(row)
             };
         }
     });

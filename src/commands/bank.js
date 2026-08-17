@@ -17,7 +17,7 @@ import { handleInteractionError } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import {
   getShopCategories,
@@ -302,7 +302,8 @@ export async function handleShopCategorySelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = parseInt(interaction.values[0]);
-    const items = await getShopItems(interaction.guildId, categoryId);
+    const rawItems = await getShopItems(interaction.guildId, categoryId);
+    const items = await sortItemsByRolePosition(rawItems, interaction.guild);
 
     if (items.length === 0) {
       return interaction.editReply({ files: [], content: 'This category is empty.' });
@@ -328,7 +329,7 @@ export async function handleShopCategorySelect(interaction) {
       .addOptions(items.slice(0, 25).map(i => ({
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 100) : `Unnamed Item #${i.id}`,
         value: i.id.toString(),
-        emoji: '🏷️',
+        emoji: getItemRarityEmoji(i),
         description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} coins`
       })));
 
