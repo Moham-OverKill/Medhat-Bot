@@ -1227,11 +1227,31 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
   const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
 
-  const { getTotalXpForLevel, dispatchLevelReward } = await import('./pass-engine.js');
+  const { getTotalXpForLevel } = await import('./pass-engine.js');
   const pool = getPool();
 
+  const totalMembers = userAssignments.size;
   let syncCount = 0;
   const guild = interaction.guild;
+
+  // Show immediate initial Loading Screen
+  const loadingEmbed = new EmbedBuilder()
+    .setColor(0xFEE75C)
+    .setTitle('⏳ Importing Levels...')
+    .setDescription(
+      `• Progress: **0 / ${totalMembers.toLocaleString()}** members (0%)\n` +
+      '• Writing records and aligning roles in the database. Please wait...'
+    );
+
+  const disabledRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('pass_import_busy')
+      .setLabel('Syncing...')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true)
+  );
+
+  await interaction.editReply({ embeds: [loadingEmbed], components: [disabledRow] }).catch(() => {});
 
   // 0. Auto-create/update all mapped levels and their reward roles in battlepass_config
   for (const [roleId, level] of mappings.entries()) {
@@ -1251,23 +1271,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   );
   const allConfiguredRoleIds = configuredRolesRes.rows.map(r => r.reward_role_id);
 
-  // Fetch all configured level rows for this guild
-  const configuredLevelsRes = await pool.query(
-    `SELECT bc.level, bc.reward_coins, bc.reward_role_id,
-            bc.reward_item_id, bc.reward_chest_id,
-            si.name as item_name, si.role_id as item_role_id,
-            lb.name as chest_name
-     FROM battlepass_config bc
-     LEFT JOIN shop_items si ON bc.reward_item_id = si.id
-     LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id
-     WHERE bc.guild_id = $1
-     ORDER BY bc.level ASC`,
-    [guildId]
-  );
-  const configuredLevelsMap = new Map();
-  for (const row of configuredLevelsRes.rows) {
-    configuredLevelsMap.set(row.level, row);
-  }
+  let lastProgressUpdate = Date.now();
 
   for (const [userId, assignedLevel] of userAssignments.entries()) {
     try {
@@ -1319,6 +1323,22 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
       }
 
       syncCount++;
+
+      // Update progress screen periodically (every 2.5s or at 1000 intervals) to respect Discord edit rate limits
+      const now = Date.now();
+      if (now - lastProgressUpdate > 2500 || syncCount % 1000 === 0) {
+        lastProgressUpdate = now;
+        const percent = Math.min(99, Math.round((syncCount / totalMembers) * 100));
+        const progressEmbed = new EmbedBuilder()
+          .setColor(0xFEE75C)
+          .setTitle('⏳ Importing Levels...')
+          .setDescription(
+            `• Progress: **${syncCount.toLocaleString()} / ${totalMembers.toLocaleString()}** members (${percent}%)\n` +
+            '• Writing records and aligning roles in the database. Please wait...'
+          );
+        interaction.editReply({ embeds: [progressEmbed], components: [disabledRow] }).catch(() => {});
+      }
+
     } catch (err) {
       sysLog('Import Sync Error', { guild: guildId, user: userId, detail: String(err.message || err) });
     }
@@ -1346,7 +1366,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   const embed = new EmbedBuilder()
     .setColor(0x57F287)
     .setTitle('✅ Import Complete')
-    .setDescription(`Successfully synced **${syncCount} member${syncCount === 1 ? '' : 's'}**.`);
+    .setDescription(`Successfully synced **${syncCount.toLocaleString()} member${syncCount === 1 ? '' : 's'}**.`);
 
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -1356,7 +1376,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ embeds: [embed], components: [backRow] });
+  await interaction.editReply({ embeds: [embed], components: [backRow] }).catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
