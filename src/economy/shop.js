@@ -2126,3 +2126,55 @@ export async function purgeUserInventory(userId, guildId, member = null) {
     return 0;
   }
 }
+
+/**
+ * Check if equipping an item will conflict with another running temporary item timer
+ * in the same Single (Swap) category.
+ *
+ * @param {string} userId
+ * @param {string} guildId
+ * @param {string|number} inventoryId
+ * @returns {Promise<boolean>}
+ */
+export async function checkSingleCategoryActiveTimerConflict(userId, guildId, inventoryId) {
+  if (!inventoryId || String(inventoryId).startsWith('admin_')) return false;
+
+  try {
+    const res = await query(
+      `SELECT i.is_active, s.category_id, sc.category_type
+       FROM user_inventory i
+       JOIN shop_items s ON i.shop_item_id = s.id
+       LEFT JOIN shop_categories sc ON s.category_id = sc.id
+       WHERE i.id = $1 AND i.user_id = $2`,
+      [inventoryId, userId]
+    );
+
+    if (res.rows.length === 0) return false;
+    const target = res.rows[0];
+
+    // If already active, the user is unequipping -> no warning needed
+    if (target.is_active) return false;
+
+    // Only applies to Single (Swap) categories (category_type = 1)
+    if (!target.category_id || target.category_type !== 1) return false;
+
+    // Check if there is another temporary item in the same category with an active running timer
+    const activeTimerRes = await query(
+      `SELECT i.id
+       FROM user_inventory i
+       JOIN shop_items s ON i.shop_item_id = s.id
+       WHERE i.user_id = $1 
+         AND i.guild_id = $2
+         AND s.category_id = $3
+         AND i.id != $4
+         AND i.expires_at IS NOT NULL
+         AND i.expires_at > NOW()`,
+      [userId, guildId, target.category_id, inventoryId]
+    );
+
+    return activeTimerRes.rows.length > 0;
+  } catch (error) {
+    sysError('Check Single Category Timer Conflict Error', error, { user: userId, guild: guildId, inventoryId });
+    return false;
+  }
+}
