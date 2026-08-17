@@ -1180,6 +1180,7 @@ export async function handleShopPostStart(interaction) {
   
   let itemOptions = [];
   let placeholder = '📦 Select Item/Pack (Required)';
+  let itemSelect = null;
 
   if (!state.isEditing) {
     if (state.postStep === 0) {
@@ -1411,8 +1412,8 @@ export async function handleShopPostStart(interaction) {
 
   const components = [];
   if (!state.isEditing) {
-    components.push(new ActionRowBuilder().addComponents(itemSelect));
-    components.push(new ActionRowBuilder().addComponents(channelSelect));
+    if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
+    if (channelSelect) components.push(new ActionRowBuilder().addComponents(channelSelect));
   }
   components.push(new ActionRowBuilder().addComponents(userSelect));
   components.push(configRow);
