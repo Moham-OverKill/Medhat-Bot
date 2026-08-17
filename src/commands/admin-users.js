@@ -120,8 +120,8 @@ export async function showUserDashboard(interaction, targetUserId) {
             const totalXp = parseInt(actRes.rows[0]?.battlepass_xp || 0, 10);
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(guildId) || {};
-            const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
-            const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+            const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
+            const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
             const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
             const calc = calculateLevelFromXp(totalXp, baseXp, incrementXp);
             userLevel = calc.level;
@@ -392,8 +392,8 @@ export async function handleLevelAction(interaction, targetUserId) {
     const totalXp = parseInt(actRes.rows[0]?.battlepass_xp || 0, 10);
     const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(interaction.guildId) || {};
-    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
+    const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
     const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
     const { level: userLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
@@ -430,8 +430,8 @@ export async function handleLevelModal(interaction) {
     try {
         const { getGuildConfig } = await import('../storage/config.js');
         const config = await getGuildConfig(guildId) || {};
-        const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 20, 10);
-        const incrementXp = parseInt(config.battlepass_xp_increment ?? 10, 10);
+        const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
+        const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
         const { getTotalXpForLevel } = await import('./settings/pass-engine.js');
         const targetXp = getTotalXpForLevel(newLevel, baseXp, incrementXp);
 
