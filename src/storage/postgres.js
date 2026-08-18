@@ -872,6 +872,12 @@ async function createTables() {
     `).catch(() => {});
 
     await pool.query(`DELETE FROM user_inventory WHERE shop_item_id IS NULL AND source = 'BATTLEPASS'`).catch(() => {});
+    // Purge any orphaned user_inventory ghost rows whose shop_item_id no longer exists
+    await pool.query(`
+      DELETE FROM user_inventory 
+      WHERE (shop_item_id IS NULL OR shop_item_id NOT IN (SELECT id FROM shop_items))
+        AND (role_id NOT LIKE 'CHEST_%' OR role_id IS NULL);
+    `).catch(() => {});
 
     // User DM Notification Settings (Server-Specific, Opt-in)
     await pool.query(`
@@ -947,12 +953,6 @@ async function cleanupOldData() {
 
     if (activityResult.rowCount > 0) {
       sysLog('Maintenance Cleanup', { detail: `Purged ${activityResult.rowCount} inactive records` });
-    }
-
-    // Clean abandoned draft shop items older than 30 minutes
-    const draftResult = await pool.query(`DELETE FROM shop_items WHERE is_active = false AND created_at < NOW() - INTERVAL '30 minutes'`);
-    if (draftResult.rowCount > 0) {
-      sysLog('Maintenance Cleanup', { detail: `Purged ${draftResult.rowCount} abandoned draft shop items` });
     }
 
   } catch (error) {
