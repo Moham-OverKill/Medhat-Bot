@@ -783,11 +783,13 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     const lootBoxCatName = await getLootBoxCategoryName(setup.guildId);
     const lootBoxEmoji = await getLootBoxCategoryEmoji(setup.guildId);
 
+    const isChest = (i) => Boolean(i.item_type === 'loot_box' || i.loot_box_id || (typeof i.role_id === 'string' && i.role_id.startsWith('CHEST_')));
+
     // LEVEL 1: ROOT FOLDERS MENU
     if (currentFolder === null) {
-        const hasCategorized = tradableItems.some(i => i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
-        const hasUncategorized = tradableItems.some(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
-        const hasLootBoxes = tradableItems.some(i => i.item_type === 'loot_box' || i.loot_box_id || (i.source || '').toUpperCase() === 'LOOT_BOX');
+        const hasCategorized = tradableItems.some(i => i.category_id && !isChest(i));
+        const hasUncategorized = tradableItems.some(i => !i.category_id && !isChest(i));
+        const hasLootBoxes = tradableItems.some(i => isChest(i));
 
         const folderOptions = [];
         if (hasCategorized) folderOptions.push({ label: 'Categorized Items', value: `trade_folder_${isGive ? 'give' : 'req'}_categorized`, emoji: '📂' });
@@ -809,7 +811,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     // LEVEL 2: CATEGORIZED FOLDERS LIST
     if (currentFolder === 'categorized') {
         const categories = await getShopCategories(setup.guildId);
-        const validCatIds = new Set(tradableItems.filter(i => i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id).map(i => i.category_id));
+        const validCatIds = new Set(tradableItems.filter(i => i.category_id && !isChest(i)).map(i => i.category_id));
         const availableCats = categories.filter(c => validCatIds.has(c.id));
 
         if (availableCats.length === 0) {
@@ -840,20 +842,20 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     let backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
 
     if (currentFolder === 'standalone') {
-        const rawItems = tradableItems.filter(i => !i.category_id && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const rawItems = tradableItems.filter(i => !i.category_id && !isChest(i));
         folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
         backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
     } else if (currentFolder === 'loot_boxes') {
-        folderItems = tradableItems.filter(i => i.item_type === 'loot_box' || i.loot_box_id || (i.source || '').toUpperCase() === 'LOOT_BOX');
+        folderItems = tradableItems.filter(i => isChest(i));
         folderItems.sort((a, b) => (parseInt(a.loot_box_id) || a.id) - (parseInt(b.loot_box_id) || b.id));
         groupName = lootBoxCatName;
         groupPrefix = lootBoxEmoji;
         backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
     } else {
         const catId = typeof currentFolder === 'number' ? currentFolder : parseInt(currentFolder, 10);
-        const rawItems = tradableItems.filter(i => i.category_id === catId && i.item_type !== 'loot_box' && !i.loot_box_id);
+        const rawItems = tradableItems.filter(i => i.category_id === catId && !isChest(i));
         folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
         const categories = await getShopCategories(setup.guildId);
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
