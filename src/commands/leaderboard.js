@@ -108,23 +108,24 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
     // Safety check: slice to 50 just in case query returned more
     const slicedData = data.slice(0, 50);
     const guild = await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) return slicedData.map(d => ({ ...d, displayName: 'Unknown' }));
+    if (!guild) return slicedData.map(d => ({ ...d, displayName: d.username || 'Unknown' }));
+
+    // Warm up member cache in bulk
+    await guild.members.fetch().catch(() => null);
 
     const enriched = await Promise.all(slicedData.map(async (item) => {
         const uid = item[userIdKey] || item.userId;
-        let name = 'Unknown';
+        let name = item.username || 'Unknown';
         try {
-            // Try fetching member to get nickname/display name
-            const member = await guild.members.fetch(uid);
-            name = member.displayName;
-        } catch {
-            // Fallback to fetch user to get username
-            try {
-                const user = await client.users.fetch(uid);
-                name = user.username;
-            } catch {
-                name = 'Unknown User';
+            const member = guild.members.cache.get(uid) || await guild.members.fetch(uid).catch(() => null);
+            if (member) {
+                name = member.displayName;
+            } else {
+                const user = await client.users.fetch(uid).catch(() => null);
+                name = user?.username || item.username || 'Unknown User';
             }
+        } catch {
+            name = item.username || 'Unknown User';
         }
         // Sanitize name: collapse multiple spaces into one and trim
         const sanitizedName = name.replace(/\s\s+/g, ' ').trim();
