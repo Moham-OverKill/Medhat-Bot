@@ -732,7 +732,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
 
         tradableItems = allItems.filter(i => {
            const source = (i.purchase_source || i.source || '').toUpperCase();
-           if (source !== 'SHOP' && source !== 'LOOT_BOX' && i.item_type !== 'loot_box') return false; 
+           if (source === 'SYNC' || source === 'ADMIN') return false; 
            if (i.item_type === 'pack') return false; 
            if (i.is_tradable === false) return false; // Filter out Locked items
            const rawQty = parseInt(i.quantity) || 1;
@@ -762,7 +762,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
 
         tradableItems = allItems.filter(i => {
             const source = (i.purchase_source || i.source || '').toUpperCase();
-            if (source !== 'SHOP' && source !== 'LOOT_BOX' && i.item_type !== 'loot_box') return false;
+            if (source === 'SYNC' || source === 'ADMIN') return false;
             if (i.item_type === 'pack') return false;
             if (i.is_tradable === false) return false;
             const rawQty = parseInt(i.quantity) || 1;
@@ -918,7 +918,7 @@ export async function handleTradeModal(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
 
         const result = await query(
-            `SELECT i.id, i.shop_item_id, i.source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable 
+            `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id 
              FROM user_inventory i
              JOIN shop_items s ON i.shop_item_id = s.id 
              WHERE i.id = $1 AND i.guild_id = $2 AND i.user_id = $3`,
@@ -1027,7 +1027,7 @@ export async function handleTradeSelect(interaction) {
     const itemOwnerId = isGive ? interaction.user.id : setup.targetId;
 
     const result = await query(
-        `SELECT i.id, i.shop_item_id, i.source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable 
+        `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id 
          FROM user_inventory i
          JOIN shop_items s ON i.shop_item_id = s.id 
          WHERE i.id = $1 AND i.guild_id = $2 AND i.user_id = $3`,
@@ -1041,7 +1041,8 @@ export async function handleTradeSelect(interaction) {
 
     const item = result.rows[0];
 
-    if (item.source !== 'SHOP' && item.source !== 'LOOT_BOX') {
+    const source = (item.purchase_source || item.source || '').toUpperCase();
+    if (source === 'SYNC' || source === 'ADMIN') {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.followUp({ content: '❌ You cannot trade items granted by admins (Soulbound).', flags: MessageFlags.Ephemeral });
     }
@@ -1115,13 +1116,15 @@ async function finalizeTradePosting(interaction, setup) {
         // Verify no soulbound items snuck into the setup state
         for (const item of setup.senderItems) {
             const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
-            if ((item.source !== 'SHOP' && item.source !== 'LOOT_BOX') || isTemp) {
+            const source = (item.purchase_source || item.source || '').toUpperCase();
+            if (source === 'SYNC' || source === 'ADMIN' || isTemp) {
                 return interaction.followUp({ content: `❌ Restricted item detected in offer: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
         for (const item of setup.targetItems) {
             const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
-            if ((item.source !== 'SHOP' && item.source !== 'LOOT_BOX') || isTemp) {
+            const source = (item.purchase_source || item.source || '').toUpperCase();
+            if (source === 'SYNC' || source === 'ADMIN' || isTemp) {
                 return interaction.followUp({ content: `❌ Restricted item detected in request: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
@@ -1637,7 +1640,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const rowRes = await client.query(
                     `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
-                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND (i.source = 'SHOP' OR i.source = 'LOOT_BOX')
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source != 'SYNC' AND i.source != 'ADMIN'
                      FOR UPDATE`,
                     [offer.id, trade.sender_id, trade.guild_id]
                 );
@@ -1665,7 +1668,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     );
                 } else {
                     await client.query(
-                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, $5, false, 'SHOP')`,
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source, purchase_source) VALUES ($1, $2, $3, $4, $5, false, 'TRADE', 'trade')`,
                         [trade.target_id, trade.guild_id, row.shop_item_id, row.role_id || '', tradedQty]
                     );
                 }
@@ -1677,7 +1680,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const rowRes = await client.query(
                     `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
-                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND (i.source = 'SHOP' OR i.source = 'LOOT_BOX')
+                     WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source != 'SYNC' AND i.source != 'ADMIN'
                      FOR UPDATE`,
                     [offer.id, trade.target_id, trade.guild_id]
                 );
@@ -1705,7 +1708,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     );
                 } else {
                     await client.query(
-                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source) VALUES ($1, $2, $3, $4, $5, false, 'SHOP')`,
+                        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source, purchase_source) VALUES ($1, $2, $3, $4, $5, false, 'TRADE', 'trade')`,
                         [trade.sender_id, trade.guild_id, row.shop_item_id, row.role_id || '', tradedQty]
                     );
                 }
