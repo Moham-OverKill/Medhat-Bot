@@ -2875,7 +2875,7 @@ export async function handleDeleteCategoryConfirm(interaction) {
       'shop', 
       'red', 
       'Category Deleted', 
-      `Admin **${getUserLogName(interaction.member)}** deleted category **'${categoryName}'**.\n• **Status:** Removed successfully.\n• **Items Affected:** **${detachResult.count}** items were made standalone.`
+      `Admin ${getUserLogName(interaction.member)} deleted category **'${categoryName}'**.\n• **Status:** Removed successfully.\n• **Items Affected:** **${detachResult.count}** items were made standalone.`
     );
 
     // Step 3: Fetch remaining categories

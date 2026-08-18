@@ -1711,7 +1711,7 @@ export async function handleInventoryAction(interaction) {
         });
 
         sendLog(interaction.guild, 'inventory', 'orange', '\uD83D\uDDD1\uFE0F Item Dropped',
-          `**${getUserLogName(interaction.member)}** dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
+          `${getUserLogName(interaction.member)} dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
       }
       return;
     }
@@ -1904,7 +1904,7 @@ export async function handleItemClaim(interaction) {
       }
 
       // 3. Log Audit
-      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Picked Up', `**${getUserLogName(interaction.member)}** picked up **${claimLabel}**.\nDrop ID: \`${dropId}\``);
+      sendLog(interaction.guild, 'inventory', 'green', '🎁 Item Picked Up', `${getUserLogName(interaction.member)} picked up **${claimLabel}**.\nDrop ID: \`${dropId}\``);
     }
   } catch (error) {
     const errorMsgStr = error.message || '';
@@ -2174,7 +2174,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     sysLog('Item Dropped (Modal)', { user: interaction.user.id, guild: interaction.guildId, detail: `Item: ${droppedLabel} | DropID: ${res.dropId}` });
 
     sendLog(interaction.guild, 'inventory', 'orange', '🗑️ Item Dropped',
-      `**${getUserLogName(interaction.member)}** dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
+      `${getUserLogName(interaction.member)} dropped **${droppedLabel}** in <#${interaction.channelId}>.\nDrop ID: \`${res.dropId}\``);
 
     // Update current inventory message directly (in place)
     return handleInventoryItemSelect(interaction);

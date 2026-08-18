@@ -256,15 +256,15 @@ export async function handleBalanceModal(interaction) {
         
         if (delta > 0) {
             sendLog(interaction.guild, 'economy', 'green', '💰 Balance Adjusted',
-                `**Target:** \`${targetLogName}\`\n` +
+                `**Target:** ${targetLogName}\n` +
                 `**Addition:** \`+${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
-                `**Admin:** \`${adminLogName}\` (via User Settings)`
+                `**Admin:** ${adminLogName} (via User Settings)`
             );
         } else {
             sendLog(interaction.guild, 'audit', 'red', '⚖️ Balance Adjusted',
-                `**Target:** \`${targetLogName}\`\n` +
+                `**Target:** ${targetLogName}\n` +
                 `**Reduction:** \`${delta.toLocaleString()}\` ${COIN_EMOJI}\n` +
-                `**Admin:** \`${adminLogName}\` (via User Settings)`
+                `**Admin:** ${adminLogName} (via User Settings)`
             );
         }
 
@@ -358,9 +358,9 @@ export async function handleStreakModal(interaction) {
         const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
 
         sendLog(interaction.guild, 'audit', 'orange', '🔥 Streak Adjusted',
-            `**Target:** \`${targetLogName}\`\n` +
+            `**Target:** ${targetLogName}\n` +
             `**Streak Changed:** \`${oldStreak}\` ➜ \`${newStreak}\`\n` +
-            `**Admin:** \`${adminLogName}\` (via User Settings)`
+            `**Admin:** ${adminLogName} (via User Settings)`
         );
 
         await showUserDashboard(interaction, targetUserId);
@@ -461,9 +461,9 @@ export async function handleLevelModal(interaction) {
         const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
 
         sendLog(interaction.guild, 'audit', 'blue', '⭐ Level Adjusted',
-            `**Target:** \`${targetLogName}\`\n` +
+            `**Target:** ${targetLogName}\n` +
             `**Level Changed To:** **Level ${newLevel}** (${targetXp.toLocaleString()} XP)\n` +
-            `**Admin:** \`${adminLogName}\` (via User Settings)`
+            `**Admin:** ${adminLogName} (via User Settings)`
         );
 
         await showUserDashboard(interaction, targetUserId);
@@ -721,14 +721,14 @@ export async function handleAdminSetQuantity(interaction) {
 
             sysLog('Admin Item Revoked', { user: interaction.user.id, guild: guildId, detail: `Set ${item.name} quantity to 0 for ${targetUserId}` });
             sendLog(interaction.guild, 'inventory', 'red', '🗑️ Item Revoked (Admin)',
-                `**${getUserLogName(interaction.member)}** set **${item.name}** quantity to 0 (revoked ${oldQty} copy/copies) for <@${targetUserId}>.`);
+                `${getUserLogName(interaction.member)} set **${item.name}** quantity to 0 (revoked ${oldQty} copy/copies) for <@${targetUserId}>.`);
         } else {
             // Update quantity
             await client.query('UPDATE user_inventory SET quantity = $1 WHERE id = $2', [newQty, invId]);
 
             sysLog('Admin Item Quantity Set', { user: interaction.user.id, guild: guildId, detail: `Changed ${item.name} quantity from ${oldQty} to ${newQty} for ${targetUserId}` });
             sendLog(interaction.guild, 'inventory', 'blue', '⚙️ Item Quantity Updated (Admin)',
-                `**${getUserLogName(interaction.member)}** changed **${item.name}** quantity from ${oldQty} to **${newQty}** for <@${targetUserId}>.`);
+                `${getUserLogName(interaction.member)} changed **${item.name}** quantity from ${oldQty} to **${newQty}** for <@${targetUserId}>.`);
         }
 
         await client.query('COMMIT');
@@ -817,9 +817,9 @@ export async function handleRevokeItem(interaction, targetUserId, invId, categor
         const itemLabel = itemQty > 1 ? `${itemQty}x ${item.name}` : item.name;
 
         sendLog(interaction.guild, 'inventory', 'crimson', '🗑️ Item Revoked',
-            `**Target:** \`${targetLogName}\`\n` +
+            `**Target:** ${targetLogName}\n` +
             `**Item:** \`${itemLabel}\`\n` +
-            `**Admin:** \`${adminLogName}\`\n` +
+            `**Admin:** ${adminLogName}\n` +
             `**Action:** Admin Force Revoke`
         );
 
