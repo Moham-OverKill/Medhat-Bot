@@ -312,6 +312,11 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
   const users = [];
 
   try {
+    if (guildObj) {
+      // Warm up member cache in ONE bulk fetch to prevent sequential API rate limits
+      await guildObj.members.fetch().catch(() => null);
+    }
+
     const fetchLimit = guildObj ? Math.max(limit * 3, 20) : limit;
     const result = await pool.query(
       `SELECT 
@@ -333,10 +338,13 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
       if (users.length >= limit) break;
 
       if (guildObj) {
-        // Verify user is still a member of the Discord server
-        const member = await guildObj.members.fetch(row.user_id).catch(() => null);
+        // Fast in-memory lookup from warm cache
+        let member = guildObj.members.cache.get(row.user_id);
         if (!member) {
-          // User left the server — zero out activity points so they don't clog leaderboard slots, but preserve battlepass_xp
+          member = await guildObj.members.fetch(row.user_id).catch(() => null);
+        }
+        if (!member) {
+          // User left the server — zero out daily activity points so they don't clog leaderboard slots, but preserve battlepass_xp
           await pool.query('UPDATE user_activity SET message_count = 0, voice_minutes = 0 WHERE guild_id = $1 AND user_id = $2', [guildId, row.user_id]).catch(() => {});
           continue;
         }
