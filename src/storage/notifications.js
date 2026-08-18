@@ -69,7 +69,7 @@ export async function toggleUserNotificationSetting(guildId, userId, key) {
       `INSERT INTO user_notification_settings (guild_id, user_id, ${key}, updated_at)
        VALUES ($1, $2, TRUE, NOW())
        ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET ${key} = NOT user_notification_settings.${key}, updated_at = NOW()
+       DO UPDATE SET ${key} = NOT COALESCE(user_notification_settings.${key}, FALSE), updated_at = NOW()
        RETURNING notif_level_up, notif_daily_claim, notif_trades, notif_mvp_win, notif_quests_refresh`,
       [guildId, userId]
     );
