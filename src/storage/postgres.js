@@ -949,6 +949,12 @@ async function cleanupOldData() {
       sysLog('Maintenance Cleanup', { detail: `Purged ${activityResult.rowCount} inactive records` });
     }
 
+    // Clean abandoned draft shop items older than 30 minutes
+    const draftResult = await pool.query(`DELETE FROM shop_items WHERE is_active = false AND created_at < NOW() - INTERVAL '30 minutes'`);
+    if (draftResult.rowCount > 0) {
+      sysLog('Maintenance Cleanup', { detail: `Purged ${draftResult.rowCount} abandoned draft shop items` });
+    }
+
   } catch (error) {
     sysError('Maintenance Cleanup Failed', error);
   }
