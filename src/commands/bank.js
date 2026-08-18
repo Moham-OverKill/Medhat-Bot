@@ -1309,7 +1309,9 @@ export async function handleInventoryItemSelect(interaction) {
     }
 
     const isUntradable = item.is_tradable === false;
-    const cannotSell = isAdminGranted || isTemp || isUntradable;
+    const rawQty = parseInt(item.quantity) || 1;
+    const availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
+    const cannotSell = isAdminGranted || isUntradable || availableToDrop <= 0;
     const cannotToggle = isAdminGranted;
 
     if (item.expires_at) {

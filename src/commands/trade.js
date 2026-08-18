@@ -1113,18 +1113,20 @@ async function finalizeTradePosting(interaction, setup) {
         expiryDate.setMinutes(expiryDate.getMinutes() + 5);
 
         // Layer 3: Pre-Post Verification (The Double Check)
-        // Verify no soulbound items snuck into the setup state
+        // Verify no soulbound, locked, or active running items snuck into the setup state
         for (const item of setup.senderItems) {
-            const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
+            const isActiveRunning = (item.expires_at !== null) || item.is_active === true;
+            const isLocked = item.is_tradable === false;
             const source = (item.purchase_source || item.source || '').toUpperCase();
-            if (source === 'SYNC' || source === 'ADMIN' || isTemp) {
+            if (source === 'SYNC' || source === 'ADMIN' || isLocked || isActiveRunning) {
                 return interaction.followUp({ content: `❌ Restricted item detected in offer: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
         for (const item of setup.targetItems) {
-            const isTemp = (item.expires_at !== null) || (item.duration_seconds && item.duration_seconds > 0) || (item.duration_hours && item.duration_hours > 0);
+            const isActiveRunning = (item.expires_at !== null) || item.is_active === true;
+            const isLocked = item.is_tradable === false;
             const source = (item.purchase_source || item.source || '').toUpperCase();
-            if (source === 'SYNC' || source === 'ADMIN' || isTemp) {
+            if (source === 'SYNC' || source === 'ADMIN' || isLocked || isActiveRunning) {
                 return interaction.followUp({ content: `❌ Restricted item detected in request: **${item.name}**. Please reset and try again.`, flags: MessageFlags.Ephemeral });
             }
         }
@@ -1658,7 +1660,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 }
 
                 const targetCheck = await client.query(
-                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 LIMIT 1 FOR UPDATE`,
+                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 AND expires_at IS NULL LIMIT 1 FOR UPDATE`,
                     [trade.target_id, row.shop_item_id, trade.guild_id]
                 );
                 if (targetCheck.rows.length > 0) {
@@ -1698,7 +1700,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 }
 
                 const senderCheck = await client.query(
-                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 LIMIT 1 FOR UPDATE`,
+                    `SELECT id FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3 AND expires_at IS NULL LIMIT 1 FOR UPDATE`,
                     [trade.sender_id, row.shop_item_id, trade.guild_id]
                 );
                 if (senderCheck.rows.length > 0) {
