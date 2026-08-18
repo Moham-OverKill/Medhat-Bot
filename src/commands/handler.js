@@ -1,4 +1,4 @@
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { handleSettingsCommand } from './settings.js';
 import { handleBankCommand } from './bank.js';
 import { handleInventoryCommand } from './inventory.js';
@@ -9,7 +9,7 @@ import { handleHelpCommand } from './help.js';
 import { handleVoteCommand } from './vote.js';
 import { handleLevelCommand } from './pass.js';
 import { handleNotificationsCommand } from './notifications.js';
-import { sysLog } from '../utils/logger.js';
+import { sysLog, sysError } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
@@ -19,6 +19,26 @@ export async function handleSlashCommand(interaction) {
     guild: interaction.guild,
     detail: `Name: /${commandName}`
   });
+
+  // Top-Level Admin Slash Command Security Gate
+  const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors'];
+  if (adminCommands.includes(commandName)) {
+    const isAdmin = Boolean(
+      interaction.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+    );
+    if (!isAdmin) {
+      sysError('Security Violation: Unauthorized Admin Slash Command Blocked', new Error('Non-admin executed admin command'), {
+        user: interaction.user?.id,
+        guild: interaction.guildId,
+        detail: `Command: /${commandName}`
+      });
+      return interaction.reply({
+        content: '⛔ **Access Denied**: Administrator permission required. You cannot use admin commands.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+  }
 
   switch (commandName) {
     case 'help':
