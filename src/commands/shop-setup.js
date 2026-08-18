@@ -196,6 +196,12 @@ export async function handleShopSetup(interaction) {
 export async function handleShopAdminAdd(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
+  // Prune any stale uncommitted drafts for this guild
+  await query(
+    `DELETE FROM shop_items WHERE guild_id = $1 AND is_active = false AND created_at < NOW() - INTERVAL '10 minutes'`,
+    [interaction.guildId]
+  ).catch(() => {});
+
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
     .setTitle('➕ Add Content')
