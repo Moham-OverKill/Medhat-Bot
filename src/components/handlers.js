@@ -182,8 +182,9 @@ export function setupComponentHandlers(client) {
 
         if (isAdminInteraction) {
           const isAdmin = Boolean(
-            interaction.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
-            interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+            interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+            (typeof interaction.member?.permissions?.has === 'function' && interaction.member.permissions.has(PermissionFlagsBits.Administrator)) ||
+            (interaction.member?.permissions && typeof interaction.member.permissions.has !== 'function' && (BigInt(interaction.member.permissions) & 8n) === 8n)
           );
 
           if (!isAdmin) {
@@ -362,7 +363,7 @@ export function setupComponentHandlers(client) {
         else await handleEditCategorySelect(interaction);
       } else if (customId.startsWith('shop_assign_cat_select_')) {
         await handleManageItemCategorySelect(interaction);
-      } else if (customId.startsWith('shop_new_cat_select_') || customId.startsWith('shop_new_rarity_select_') || customId.startsWith('shop_new_tradable_select_')) {
+      } else if (customId === 'shop_new_cat_select' || customId === 'shop_new_rarity_select' || customId === 'shop_new_tradable_select' || customId.startsWith('shop_new_cat_select_') || customId.startsWith('shop_new_rarity_select_') || customId.startsWith('shop_new_tradable_select_')) {
         await handleNewItemAttrSelect(interaction);
       } else if (customId.startsWith('shop_edit_rarity_select_')) {
         await handleEditItemRaritySelect(interaction);
@@ -447,9 +448,9 @@ export function setupComponentHandlers(client) {
       // Shop Setup Button Routing
       else if (customId === 'shop_admin_add' || customId === 'shop_setup_add') {
         await handleShopAdminAdd(interaction);
-      } else if (customId.startsWith('shop_new_save_')) {
+      } else if (customId === 'shop_new_save' || customId.startsWith('shop_new_save_')) {
         await handleNewItemSave(interaction);
-      } else if (customId.startsWith('shop_new_cancel_')) {
+      } else if (customId === 'shop_new_cancel' || customId.startsWith('shop_new_cancel_')) {
         await handleNewItemCancel(interaction);
       } else if (customId === 'shop_admin_edit' || customId === 'shop_setup_edit') {
         await handleShopAdminEdit(interaction);

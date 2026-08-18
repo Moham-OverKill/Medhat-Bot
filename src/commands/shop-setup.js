@@ -61,9 +61,9 @@ const pendingPosts = new Map();
 // (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
-// Temporary storage for new-item attribute selection (itemId -> { categoryId, rarity, is_tradable })
-// State is held in memory until the admin clicks Save on the Item Created panel.
-const pendingItemAttrs = new Map();
+// Temporary in-memory draft storage for new item creation (User ID -> draft item object)
+// No DB records are created until Save is clicked.
+const pendingNewItems = new Map();
 
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
@@ -195,12 +195,6 @@ export async function handleShopSetup(interaction) {
 
 export async function handleShopAdminAdd(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  // Prune any stale uncommitted drafts for this guild
-  await query(
-    `DELETE FROM shop_items WHERE guild_id = $1 AND is_active = false AND created_at < NOW() - INTERVAL '10 minutes'`,
-    [interaction.guildId]
-  ).catch(() => {});
 
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
@@ -674,11 +668,18 @@ export async function handleItemModalSubmit(interaction) {
           sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during add' });
         }
 
-        const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl, 'common', true, false);
-        
-        if (!item) {
-          throw new Error('Database failed to return created item record.');
-        }
+        // Store in-memory draft (No DB write until Save is clicked)
+        pendingNewItems.set(interaction.user.id, {
+          name,
+          roleId,
+          itemImageUrl,
+          durationSeconds,
+          requiredItems,
+          reqValidation,
+          categoryId: null,
+          rarity: 'common',
+          is_tradable: true
+        });
 
         // Format Item Created embed description
         const roleMention = roleId ? `<@&${roleId}>` : '_None_';
@@ -693,9 +694,6 @@ export async function handleItemModalSubmit(interaction) {
         if (reqValidation.hasMvp) {
           descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
         }
-
-        // Initialise pending attrs state for this new item (nothing is active or live until Save is clicked)
-        pendingItemAttrs.set(String(item.id), { categoryId: null, rarity: 'common', is_tradable: true });
 
         const categories = await getShopCategories(interaction.guildId);
         const catOptions = [
@@ -712,19 +710,18 @@ export async function handleItemModalSubmit(interaction) {
           .setTitle('Item Created')
           .setDescription(descLines.join('\n'));
 
-        const img = getItemImage(item);
-        if (img) confirmEmbed.setThumbnail(img);
+        if (itemImageUrl) confirmEmbed.setThumbnail(itemImageUrl);
 
         const rowCat = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_cat_select_${item.id}`)
+            .setCustomId(`shop_new_cat_select`)
             .setPlaceholder('Category')
             .addOptions(catOptions)
         );
 
         const rowRarity = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_rarity_select_${item.id}`)
+            .setCustomId(`shop_new_rarity_select`)
             .setPlaceholder('Rarity')
             .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === 'common' })))
         );
@@ -733,19 +730,19 @@ export async function handleItemModalSubmit(interaction) {
         const tradableOpts = getTradableOptions(lootBoxCatName);
         const rowTradable = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_tradable_select_${item.id}`)
+            .setCustomId(`shop_new_tradable_select`)
             .setPlaceholder('Status')
             .addOptions(tradableOpts.map(o => ({ ...o, default: o.value === 'tradable' })))
         );
 
         const rowActions = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId(`shop_new_cancel_${item.id}`)
+            .setCustomId(`shop_new_cancel`)
             .setLabel('Cancel')
             .setEmoji('✖️')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
-            .setCustomId(`shop_new_save_${item.id}`)
+            .setCustomId(`shop_new_save`)
             .setLabel('Save')
             .setEmoji('💾')
             .setStyle(ButtonStyle.Success)
@@ -945,86 +942,89 @@ export function getTradableOptions(lootBoxName = 'loot boxes') {
 
 /**
  * Handles select menu changes on the Item Created panel.
- * Updates the in-memory pendingItemAttrs state and re-renders the panel.
+ * Updates the in-memory pendingNewItems state and re-renders the panel.
  * Nothing is written to the DB here.
  */
 export async function handleNewItemAttrSelect(interaction) {
   await interaction.deferUpdate();
   const cid = interaction.customId;
-  const itemId = cid.split('_').pop();
   const value = interaction.values[0];
 
-  const item = await getShopItem(itemId, interaction.guildId);
-  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
-
-  // Retrieve or create pending state
-  const state = pendingItemAttrs.get(String(itemId)) || { categoryId: null, rarity: 'common', is_tradable: true };
-
-  if (cid.startsWith('shop_new_cat_select_')) {
-    state.categoryId = value === 'null' ? null : value;
-  } else if (cid.startsWith('shop_new_rarity_select_')) {
-    state.rarity = value;
-  } else if (cid.startsWith('shop_new_tradable_select_')) {
-    state.is_tradable = value === 'tradable';
+  const draft = pendingNewItems.get(interaction.user.id);
+  if (!draft) {
+    return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
   }
-  pendingItemAttrs.set(String(itemId), state);
+
+  if (cid === 'shop_new_cat_select') {
+    draft.categoryId = value === 'null' ? null : value;
+  } else if (cid === 'shop_new_rarity_select') {
+    draft.rarity = value;
+  } else if (cid === 'shop_new_tradable_select') {
+    draft.is_tradable = value === 'tradable';
+  }
+  pendingNewItems.set(interaction.user.id, draft);
 
   // Re-render the panel with updated default selections
   const categories = await getShopCategories(interaction.guildId);
   const catOptions = [
-    { label: 'No Category', value: 'null', emoji: '🏷️', default: state.categoryId === null },
+    { label: 'No Category', value: 'null', emoji: '🏷️', default: draft.categoryId === null },
     ...categories.slice(0, 24).map(c => ({
       label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
       value: c.id.toString(),
       emoji: '📂',
-      default: String(c.id) === String(state.categoryId)
+      default: String(c.id) === String(draft.categoryId)
     }))
   ];
 
-  const img = getItemImage(item);
-  const roleMention = item.role_id ? `<@&${item.role_id}>` : '_None_';
+  const roleMention = draft.roleId ? `<@&${draft.roleId}>` : '_None_';
   const descLines = [
-    `**Name:** ${item.name}`,
+    `**Name:** ${draft.name}`,
     `**Role:** ${roleMention}`
   ];
+  if (draft.reqValidation?.hasBooster) {
+    descLines.push(`🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`);
+  }
+  if (draft.reqValidation?.hasMvp) {
+    descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
+  }
 
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
     .setTitle('Item Created')
     .setDescription(descLines.join('\n'));
-  if (img) embed.setThumbnail(img);
+  if (draft.itemImageUrl) embed.setThumbnail(draft.itemImageUrl);
 
   const rowCat = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_cat_select_${itemId}`)
+      .setCustomId(`shop_new_cat_select`)
       .setPlaceholder('Category')
       .addOptions(catOptions)
   );
 
   const rowRarity = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_rarity_select_${itemId}`)
+      .setCustomId(`shop_new_rarity_select`)
       .setPlaceholder('Rarity')
-      .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === state.rarity })))
+      .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === draft.rarity })))
   );
 
   const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
   const tradableOpts = getTradableOptions(lootBoxCatName);
   const rowTradable = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_tradable_select_${itemId}`)
+      .setCustomId(`shop_new_tradable_select`)
       .setPlaceholder('Status')
-      .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === state.is_tradable })))
+      .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === draft.is_tradable })))
   );
 
   const rowActions = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`shop_new_cancel_${itemId}`)
+      .setCustomId(`shop_new_cancel`)
       .setLabel('Cancel')
       .setEmoji('✖️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId(`shop_new_save_${itemId}`)
+      .setCustomId(`shop_new_save`)
       .setLabel('Save')
       .setEmoji('💾')
       .setStyle(ButtonStyle.Success)
@@ -1040,41 +1040,56 @@ export async function handleNewItemAttrSelect(interaction) {
 
 /**
  * Handles Cancel button on Item Created panel.
- * Cleans up the uncommitted draft item from the database.
+ * Discards in-memory draft.
  */
 export async function handleNewItemCancel(interaction) {
   await interaction.deferUpdate();
-  const itemId = interaction.customId.slice('shop_new_cancel_'.length);
-  pendingItemAttrs.delete(String(itemId));
-  await deleteShopItem(itemId, interaction.guildId).catch(() => {});
+  pendingNewItems.delete(interaction.user.id);
   await handleShopAdminAdd(interaction);
 }
 
 /**
  * Handles the Save button on the Item Created panel.
- * Persists category, rarity, and is_tradable to the DB, and activates the item.
+ * Inserts the finalized item into DB and triggers logging.
  */
 export async function handleNewItemSave(interaction) {
   await interaction.deferUpdate();
-  const itemId = interaction.customId.slice('shop_new_save_'.length);
+  const draft = pendingNewItems.get(interaction.user.id);
+  if (!draft) {
+    return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
+  }
+  pendingNewItems.delete(interaction.user.id);
 
-  const state = pendingItemAttrs.get(String(itemId)) || { categoryId: null, rarity: 'common', is_tradable: true };
-  pendingItemAttrs.delete(String(itemId));
+  const uniqueCheck = await validateRoleUniqueness(interaction.guildId, draft.roleId);
+  if (!uniqueCheck.valid) {
+    return interaction.followUp({ 
+      content: `❌ Role already linked to **${uniqueCheck.existingItem?.name || draft.roleId}**.`, 
+      flags: MessageFlags.Ephemeral 
+    });
+  }
 
-  const item = await getShopItem(itemId, interaction.guildId);
-  if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+  const catId = (draft.categoryId !== null && draft.categoryId !== 'null') ? parseInt(draft.categoryId) : null;
 
-  const catId = (state.categoryId !== null && state.categoryId !== 'null') ? parseInt(state.categoryId) : null;
+  const item = await addShopItem(
+    interaction.guildId,
+    catId,
+    draft.roleId,
+    draft.name,
+    '',
+    null,
+    draft.durationSeconds,
+    null,
+    'role',
+    [],
+    draft.requiredItems,
+    draft.itemImageUrl,
+    draft.rarity,
+    draft.is_tradable,
+    true
+  );
 
-  await updateShopItem(itemId, {
-    category_id: catId,
-    rarity: state.rarity,
-    is_tradable: state.is_tradable,
-    is_active: true
-  }, interaction.guildId);
-
-  const singularTradable = state.is_tradable ? 'Unlocked' : 'Locked';
-  const singularRarity = (state.rarity || 'common').charAt(0).toUpperCase() + (state.rarity || 'common').slice(1);
+  const singularTradable = draft.is_tradable ? 'Unlocked' : 'Locked';
+  const singularRarity = (draft.rarity || 'common').charAt(0).toUpperCase() + (draft.rarity || 'common').slice(1);
   sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin <@${interaction.user.id}> created item **${item.name}** (Rarity: ${singularRarity}, Status: ${singularTradable})`);
 
   if (catId) {

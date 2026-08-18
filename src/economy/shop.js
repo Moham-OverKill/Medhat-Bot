@@ -1549,13 +1549,21 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
         AND si.guild_id = ui.guild_id
     `, [userId, guildId]).catch(() => {});
 
+    // Purge ghost/orphaned user_inventory rows whose shop_item_id no longer exists
+    await query(`
+      DELETE FROM user_inventory
+      WHERE user_id = $1 AND guild_id = $2
+        AND (shop_item_id IS NULL OR shop_item_id NOT IN (SELECT id FROM shop_items WHERE guild_id = $2))
+        AND (role_id NOT LIKE 'CHEST_%' OR role_id IS NULL)
+    `, [userId, guildId]).catch(() => {});
+
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
     await purgeUserInventory(userId, guildId, member);
 
     const inventory = await query(
       `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity, si.loot_box_id
        FROM user_inventory ui
-       LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+       INNER JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
       [userId, guildId]
     );
@@ -1678,7 +1686,7 @@ export async function getSynthesizedInventory(userId, guildId, member) {
   const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
 
   // 2. Fetch Shop Items to check for live Role-based items (Admin Granted)
-  const allShopItems = await getShopItems(guildId, null, 'name', true);
+  const allShopItems = await getShopItems(guildId, null, 'name', false);
   const adminItems = [];
 
   for (const shopItem of allShopItems) {

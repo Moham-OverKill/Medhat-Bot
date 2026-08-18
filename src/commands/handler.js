@@ -24,8 +24,9 @@ export async function handleSlashCommand(interaction) {
   const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors'];
   if (adminCommands.includes(commandName)) {
     const isAdmin = Boolean(
-      interaction.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
-      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+      (typeof interaction.member?.permissions?.has === 'function' && interaction.member.permissions.has(PermissionFlagsBits.Administrator)) ||
+      (interaction.member?.permissions && typeof interaction.member.permissions.has !== 'function' && (BigInt(interaction.member.permissions) & 8n) === 8n)
     );
     if (!isAdmin) {
       sysError('Security Violation: Unauthorized Admin Slash Command Blocked', new Error('Non-admin executed admin command'), {
