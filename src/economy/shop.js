@@ -1549,6 +1549,20 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
         AND si.guild_id = ui.guild_id
     `, [userId, guildId]).catch(() => {});
 
+    // Self-heal active temporary items missing timers
+    await query(`
+      UPDATE user_inventory ui
+      SET expires_at = NOW() + (
+          (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) || ' seconds'
+        )::INTERVAL
+      FROM shop_items si
+      WHERE ui.user_id = $1 AND ui.guild_id = $2
+        AND ui.shop_item_id = si.id
+        AND ui.is_active = true
+        AND ui.expires_at IS NULL
+        AND (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) > 0
+    `, [userId, guildId]).catch(() => {});
+
     // Purge ghost/orphaned user_inventory rows whose shop_item_id no longer exists
     await query(`
       DELETE FROM user_inventory
