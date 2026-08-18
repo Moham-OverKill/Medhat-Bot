@@ -871,7 +871,6 @@ async function createTables() {
         AND si.guild_id = ui.guild_id;
     `).catch(() => {});
 
-    await pool.query(`DELETE FROM user_inventory WHERE shop_item_id IS NULL AND source = 'BATTLEPASS'`).catch(() => {});
     // Purge any orphaned user_inventory ghost rows whose shop_item_id no longer exists
     await pool.query(`
       DELETE FROM user_inventory 

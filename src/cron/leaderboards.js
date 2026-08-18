@@ -141,10 +141,8 @@ async function runHourlyRefresh(client, isStartup = false) {
                     await resetGuildActivity(guildId);
                     
                     // Track reset persistently
-                    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
-                    const fresh = await getGuildConfig(guildId) || config;
-                    fresh.last_mvp_reset = todayStr;
-                    await setGuildConfig(guildId, fresh);
+                    const { setGuildConfig } = await import('../storage/config.js');
+                    await setGuildConfig(guildId, { last_mvp_reset: todayStr });
 
                     sysLog('Activity Reset Performed', { guild: guildId, detail: isMidnight ? 'Midnight Reset' : 'Catch-up Reset' });
                 }
