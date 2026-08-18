@@ -317,7 +317,7 @@ export async function getItemUsageCount(itemId) {
 /**
  * Add a new item to the shop
  */
-export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null, rarity = 'common', isTradable = true) {
+export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null, rarity = 'common', isTradable = true, isActive = true) {
   try {
     // Map itemType to is_pack
     const isPack = itemType === 'pack';
@@ -326,9 +326,9 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
 
     const result = await query(
       `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url, rarity, is_tradable)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
-      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), defaultImageUrl || null, rarity, isTradable]
+      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), isActive, defaultImageUrl || null, rarity, isTradable]
     );
 
     return result.rows[0];

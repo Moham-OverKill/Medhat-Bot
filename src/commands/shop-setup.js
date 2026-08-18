@@ -668,7 +668,7 @@ export async function handleItemModalSubmit(interaction) {
           sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during add' });
         }
 
-        const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl);
+        const item = await addShopItem(interaction.guildId, null, roleId, name, '', null, durationSeconds, null, 'role', [], requiredItems, itemImageUrl, 'common', true, false);
         
         if (!item) {
           throw new Error('Database failed to return created item record.');
@@ -688,9 +688,7 @@ export async function handleItemModalSubmit(interaction) {
           descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
         }
 
-        sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin **<@${interaction.user.id}>** created item **${name}** (Price: Unset — must be set at post time)`);
-
-        // Initialise pending attrs state for this new item (nothing is saved until Save is clicked)
+        // Initialise pending attrs state for this new item (nothing is active or live until Save is clicked)
         pendingItemAttrs.set(String(item.id), { categoryId: null, rarity: 'common', is_tradable: true });
 
         const categories = await getShopCategories(interaction.guildId);
@@ -736,9 +734,9 @@ export async function handleItemModalSubmit(interaction) {
 
         const rowActions = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId('shop_admin_add')
-            .setLabel('Back')
-            .setEmoji('⬅️')
+            .setCustomId(`shop_new_cancel_${item.id}`)
+            .setLabel('Cancel')
+            .setEmoji('✖️')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId(`shop_new_save_${item.id}`)
@@ -1015,9 +1013,9 @@ export async function handleNewItemAttrSelect(interaction) {
 
   const rowActions = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('shop_admin_add')
-      .setLabel('Back')
-      .setEmoji('⬅️')
+      .setCustomId(`shop_new_cancel_${itemId}`)
+      .setLabel('Cancel')
+      .setEmoji('✖️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`shop_new_save_${itemId}`)
@@ -1035,8 +1033,20 @@ export async function handleNewItemAttrSelect(interaction) {
 }
 
 /**
+ * Handles Cancel button on Item Created panel.
+ * Cleans up the uncommitted draft item from the database.
+ */
+export async function handleNewItemCancel(interaction) {
+  await interaction.deferUpdate();
+  const itemId = interaction.customId.slice('shop_new_cancel_'.length);
+  pendingItemAttrs.delete(String(itemId));
+  await deleteShopItem(itemId, interaction.guildId).catch(() => {});
+  await handleShopAdminAdd(interaction);
+}
+
+/**
  * Handles the Save button on the Item Created panel.
- * Persists category, rarity, and is_tradable to the DB.
+ * Persists category, rarity, and is_tradable to the DB, and activates the item.
  */
 export async function handleNewItemSave(interaction) {
   await interaction.deferUpdate();
@@ -1053,12 +1063,17 @@ export async function handleNewItemSave(interaction) {
   await updateShopItem(itemId, {
     category_id: catId,
     rarity: state.rarity,
-    is_tradable: state.is_tradable
+    is_tradable: state.is_tradable,
+    is_active: true
   }, interaction.guildId);
+
+  const singularTradable = state.is_tradable ? 'Unlocked' : 'Locked';
+  const singularRarity = (state.rarity || 'common').charAt(0).toUpperCase() + (state.rarity || 'common').slice(1);
+  sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin <@${interaction.user.id}> created item **${item.name}** (Rarity: ${singularRarity}, Status: ${singularTradable})`);
 
   if (catId) {
     const catName = (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [catId, interaction.guildId])).rows[0]?.name ?? catId;
-    sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin **<@${interaction.user.id}>** assigned item **${item.name}** to category **${catName}**.`);
+    sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin <@${interaction.user.id}> assigned item **${item.name}** to category **${catName}**.`);
   }
 
   await handleShopAdminAdd(interaction);
