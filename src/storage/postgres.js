@@ -941,6 +941,7 @@ async function cleanupOldData() {
       DELETE FROM user_activity 
       WHERE message_count = 0 
         AND voice_minutes = 0 
+        AND (battlepass_xp = 0 OR battlepass_xp IS NULL)
         AND last_active < $1
     `, [thirtyDaysAgo]);
 
