@@ -1283,6 +1283,21 @@ export async function handleInventoryItemSelect(interaction) {
       (item.duration_seconds && item.duration_seconds > 0) ||
       (item.duration_hours && item.duration_hours > 0));
 
+    const durationSeconds = parseInt(item.duration_seconds, 10) || ((parseInt(item.duration_hours, 10) || 0) * 3600);
+    let durationStr = null;
+    if (durationSeconds > 0) {
+      const days = Math.floor(durationSeconds / 86400);
+      const hours = Math.floor((durationSeconds % 86400) / 3600);
+      const minutes = Math.floor((durationSeconds % 3600) / 60);
+      const seconds = durationSeconds % 60;
+      const parts = [];
+      if (days > 0) parts.push(`${days}d`);
+      if (hours > 0) parts.push(`${hours}h`);
+      if (minutes > 0) parts.push(`${minutes}m`);
+      if (seconds > 0 && parts.length === 0) parts.push(`${seconds}s`);
+      durationStr = parts.join(' ');
+    }
+
     const RARITY_DISPLAY_MAP = {
       common: '\u26AA Common',
       uncommon: '\uD83D\uDFE2 Uncommon',
@@ -1295,12 +1310,15 @@ export async function handleInventoryItemSelect(interaction) {
     let desc = `**Role:** ${validFirstRole}`;
     desc += `\n**Quantity:** ${displayQty}`;
     desc += `\n**Rarity:** ${rarityText}`;
+    if (isTemp && durationStr) {
+      desc += `\n**Duration:** ⏱️ ${durationStr}`;
+    }
 
     if (isAdminGranted) {
       desc += `\n**Status:** \uD83D\uDEE1\uFE0F Admin Granted`;
     } else if (isTemp) {
       if (!item.expires_at) {
-        desc += `\n**Status:** \u231B Ready to Activate`;
+        desc += `\n**Status:** \u23F3 Inactive (Ready to Activate)`;
       } else {
         desc += `\n**Status:** ${item.is_active ? '\u2705 Active' : '\u23F8\uFE0F Inactive (Counting)'}`;
       }
