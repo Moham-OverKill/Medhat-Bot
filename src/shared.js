@@ -100,7 +100,10 @@ export function getUserDisplayName(memberOrWinner, fallback = null) {
 export function getUserLogName(memberOrUser) {
     if (!memberOrUser) return 'Unknown User';
     const user = memberOrUser.user || memberOrUser;
-    return `@${user.username}`;
+    if (user.id) return `<@${user.id}>`;
+    if (memberOrUser.userId) return `<@${memberOrUser.userId}>`;
+    if (typeof memberOrUser === 'string' && /^\d{17,20}$/.test(memberOrUser.trim())) return `<@${memberOrUser.trim()}>`;
+    return user.username ? `<@${user.id || user.username}>` : 'Unknown User';
 }
 
 /**

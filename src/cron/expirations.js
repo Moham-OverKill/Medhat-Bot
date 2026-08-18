@@ -93,13 +93,12 @@ export async function processGlobalExpiredItems(client) {
 
       if (guild) {
         const remainingNotice = currentQty > 1 ? ` (1 copy consumed, ${currentQty - 1} remaining in inventory)` : '';
-        const userLabel = member ? `**${member.displayName} (${member.user.username})**` : `<@${item.user_id}>`;
         sendLog(
           guild,
           'inventory',
           'red',
           '⏳ Item Expired',
-          `${userLabel}'s consumable item **${itemName}** has expired${remainingNotice}.`
+          `<@${item.user_id}>'s consumable item **${itemName}** has expired${remainingNotice}.`
         );
       }
     }

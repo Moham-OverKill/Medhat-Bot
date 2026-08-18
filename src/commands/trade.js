@@ -1853,20 +1853,20 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             const requestText = `${Number(trade.target_coins) > 0 ? `**${Number(trade.target_coins).toLocaleString()}** ${COIN_EMOJI}` : ''}${tItemNames ? (Number(trade.target_coins) > 0 ? ' and ' : '') + `**${tItemNames}**` : ''}` || 'Nothing';
 
             let impactDetails = `**Financial Impact:**\n` +
-              `• **${senderUsername}:** \`${initialSenderBal.toLocaleString()}\` ➡️ \`${finalSenderBal.toLocaleString()}\` ${COIN_EMOJI}`;
+              `• ${senderUsername}: \`${initialSenderBal.toLocaleString()}\` ➡️ \`${finalSenderBal.toLocaleString()}\` ${COIN_EMOJI}`;
             
             if (sOutcome && sOutcome.fee > 0) {
                 impactDetails += ` (Incl. \`${sOutcome.fee.toLocaleString()}\` Tax)`;
             }
 
-            impactDetails += `\n• **${targetUsername}:** \`${initialTargetBal.toLocaleString()}\` ➡️ \`${finalTargetBal.toLocaleString()}\` ${COIN_EMOJI}`;
+            impactDetails += `\n• ${targetUsername}: \`${initialTargetBal.toLocaleString()}\` ➡️ \`${finalTargetBal.toLocaleString()}\` ${COIN_EMOJI}`;
             
             if (tOutcome && tOutcome.fee > 0) {
                 impactDetails += ` (Incl. \`${tOutcome.fee.toLocaleString()}\` Tax)`;
             }
 
             sendLog(interaction.guild, 'inventory', 'purple', '🤝 P2P Trade Completed', 
-              `**Participants:** \`${senderUsername}\` 🤝 \`${targetUsername}\`\n\n` +
+              `**Participants:** ${senderUsername} 🤝 ${targetUsername}\n\n` +
               `**${senderUsername} Gave:** ${offerText}\n` +
               `**${targetUsername} Gave:** ${requestText}\n\n` +
               impactDetails
