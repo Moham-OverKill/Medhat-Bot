@@ -1943,7 +1943,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
         await client.query('ROLLBACK');
         return {
           success: false,
-          error: `You already have an active copy of **${item.name}** running. You cannot activate multiple copies simultaneously.`
+          error: `You already have an active copy of **${item.name}** running.`
         };
       }
 
