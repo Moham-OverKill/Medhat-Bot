@@ -230,10 +230,22 @@ export async function handleLeaderboardRefresh(interaction) {
     try {
         // Send immediate ephemeral feedback so admin knows it's happening
         await interaction.reply({ 
-            content: '🔄 **Force Refresh Triggered.** Updating all leaderboard channels...', 
+            content: '🔄 **Force Refresh Triggered.** Updating all leaderboard channels and synchronizing live roles...', 
             flags: MessageFlags.Ephemeral 
         });
 
+        // 1. Synchronize MVP roles in Discord immediately without paying extra coins
+        const { runKingOfHillCycle } = await import('../../mvp/kingOfHill.js');
+        await runKingOfHillCycle(interaction.client, interaction.guildId, { payCoins: false }).catch(err => {
+            sysError('KotH Role Sync Error on Refresh', err, { guild: interaction.guildId });
+        });
+
+        // 2. Synchronize Richest & Streak roles in Discord
+        const { applyRichestRole, applyStreakRole } = await import('../../mvp/role-assignment.js');
+        await applyRichestRole(interaction.client, interaction.guildId).catch(() => {});
+        await applyStreakRole(interaction.client, interaction.guildId).catch(() => {});
+
+        // 3. Update all leaderboard channel embeds
         const { updateLeaderboards } = await import('../leaderboard.js');
         await updateLeaderboards(interaction.client, interaction.guildId, null, []);
         
@@ -241,12 +253,12 @@ export async function handleLeaderboardRefresh(interaction) {
         const logName = getUserLogName(interaction);
         sendLog(interaction.guild, 'audit', 'blue', '🔄 Leaderboards Refreshed', 
             `**Admin:** \`${logName}\`\n` +
-            `**Action:** Manually forced a refresh of all leaderboard channels.`
+            `**Action:** Manually forced a refresh of all leaderboard channels and synchronized roles.`
         );
 
         // Final notification
         return interaction.followUp({ 
-            content: '✅ All leaderboard channels have been successfully updated.', 
+            content: '✅ All leaderboard channels and live roles have been successfully updated.', 
             flags: MessageFlags.Ephemeral 
         });
     } catch (error) {
