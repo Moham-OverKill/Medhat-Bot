@@ -113,7 +113,7 @@ async function runHourlyRefresh(client, isStartup = false) {
     for (const guildId of guildIds) {
         await runInGuildContext(guildId, async () => {
             try {
-                await runKingOfHillCycle(client, guildId);
+                await runKingOfHillCycle(client, guildId, { payCoins: !isStartup });
             } catch (err) {
                 sysError('KotH Cycle Error', err, { guild: guildId });
             }
