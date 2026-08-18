@@ -1,4 +1,4 @@
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { handleSettingsComponent } from '../commands/settings.js';
 import { handleMvpComponent } from '../commands/mvp.js';
 import { handleRewardsComponent, handleRewardsModal } from '../commands/rewards.js';
@@ -166,30 +166,42 @@ export function setupComponentHandlers(client) {
           detail: `CustomID: ${interaction.customId}`
         });
       }
-      // --- SECURITY GUARDRAIL ---
+      // --- SECURITY GUARDRAIL: CONTINUOUS ADMIN VERIFICATION ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const adminPrefixes = [
           'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_', 'organize_',
-          'shop_admin_', 'shop_setup_', 'shop_pack_', 'shop_add_', 'shop_edit_',
-          'shop_delete_', 'shop_post_', 'shop_cat_', 'shop_assign_', 'shop_select_cat_delete',
-          'shop_select_item_delete', 'mass_', 'quests_', 'admin_user_', 'lb_',
-          'role_rewards_', 'shop_lb_',
-          // Previously unguarded admin routes — patched in security audit
-          'shop_item_edit', 'shop_pack_manage', 'shop_pack_edit', 'shop_cat_manage',
-          'shop_item_manage_tiers', 'shop_manage_tiers', 'shop_tier_add', 'shop_cat_settings',
-          'shop_select_pack_edit', 'shop_select_cat_edit', 'shop_select_pack_delete'
+          'shop_', 'mass_', 'quests_', 'admin_user_', 'lb_', 'role_rewards_', 'pass_'
         ];
 
+        // Public shop buy modal is the only shop_ prefix intended for regular players
+        const isPublicShopModal = interaction.customId.startsWith('shop_buy_qty_modal_');
+
         // Check if interaction ID starts with any admin prefix
-        const isAdminInteraction = adminPrefixes.some(prefix => interaction.customId.startsWith(prefix));
+        const isAdminInteraction = !isPublicShopModal && adminPrefixes.some(prefix => interaction.customId.startsWith(prefix));
 
         if (isAdminInteraction) {
-          // Need to check permissions
-          // Note: permissions are on interaction.member for guild interactions
-          if (!interaction.member?.permissions.has('Administrator')) {
-            const reply = { content: '⛔ This button is for Admins only.', flags: 64 }; // 64 = Ephemeral
-            if (interaction.deferred || interaction.replied) await interaction.followUp(reply);
-            else await interaction.reply(reply);
+          const isAdmin = Boolean(
+            interaction.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+            interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+          );
+
+          if (!isAdmin) {
+            sysError('Security Violation: Unauthorized Admin Interaction Blocked', new Error('Non-admin attempted admin action'), {
+              user: interaction.user?.id,
+              guild: interaction.guildId,
+              detail: `CustomID: ${interaction.customId}`
+            });
+
+            const reply = {
+              content: '⛔ **Access Denied**: Administrator permission required. You cannot interact with server control settings.',
+              flags: MessageFlags.Ephemeral
+            };
+
+            if (interaction.deferred || interaction.replied) {
+              await interaction.followUp(reply).catch(() => {});
+            } else {
+              await interaction.reply(reply).catch(() => {});
+            }
             return;
           }
         }
