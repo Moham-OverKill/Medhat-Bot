@@ -85,6 +85,7 @@ import {
   handleRevokeItemConfirm,
   handleNewItemAttrSelect,
   handleNewItemSave,
+  handleNewItemCancel,
   handleEditItemRaritySelect,
   handleEditItemTradableSelect,
   handleLootBoxesPage,
@@ -448,6 +449,8 @@ export function setupComponentHandlers(client) {
         await handleShopAdminAdd(interaction);
       } else if (customId.startsWith('shop_new_save_')) {
         await handleNewItemSave(interaction);
+      } else if (customId.startsWith('shop_new_cancel_')) {
+        await handleNewItemCancel(interaction);
       } else if (customId === 'shop_admin_edit' || customId === 'shop_setup_edit') {
         await handleShopAdminEdit(interaction);
       } else if (customId === 'shop_admin_delete' || customId === 'shop_setup_delete') {
