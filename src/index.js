@@ -570,15 +570,13 @@ if (!process.env.DISCORD_TOKEN) {
   process.exit(1);
 }
 
-// Guild leave handler - cleanup config and timers
+// Guild leave handler - cancel timers only, preserve configuration permanently
 client.on('guildDelete', async (guild) => {
   return runInGuildContext(guild.id, async () => {
     try {
       const { cancelMvpTimer } = await import('./mvp/award.js');
-      const { deleteGuildConfig } = await import('./storage/config.js');
       cancelMvpTimer(guild.id);
-      await deleteGuildConfig(guild.id);
-      sysLog('Guild Left', { guild: guild.id, detail: 'Cleaned up data and timers' });
+      sysLog('Guild Left', { guild: guild.id, detail: 'Canceled timers (configuration preserved)' });
     } catch (error) {
       sysError('Guild Leave Cleanup Failed', error, { guild: guild.id });
     }
