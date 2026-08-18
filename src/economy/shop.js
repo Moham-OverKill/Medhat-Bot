@@ -1503,7 +1503,7 @@ export async function getUserInventory(userId, guildId) {
     // Use INNER JOIN to only return items that still exist in shop_items
     // This prevents "ghost" items from deleted shop entries
     const result = await query(
-      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price, s.is_tradable, s.rarity, s.loot_box_id
+      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price, s.is_tradable, s.rarity, s.loot_box_id, s.duration_hours, s.duration_seconds
        FROM user_inventory i
        INNER JOIN shop_items s ON i.shop_item_id = s.id
        WHERE i.user_id = $1 AND i.guild_id = $2
@@ -1561,7 +1561,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     await purgeUserInventory(userId, guildId, member);
 
     const inventory = await query(
-      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity, si.loot_box_id
+      `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity, si.loot_box_id, si.duration_hours, si.duration_seconds
        FROM user_inventory ui
        INNER JOIN shop_items si ON ui.shop_item_id = si.id
        WHERE ui.user_id = $1 AND ui.guild_id = $2`,
@@ -1901,7 +1901,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     // Get item details including source and category type
     const result = await client.query(
-      `SELECT i.*, s.role_id as source_roles, s.category_id, s.name, s.item_type, s.required_items, sc.category_type
+      `SELECT i.*, s.role_id as source_roles, s.category_id, s.name, s.item_type, s.required_items, s.duration_hours, s.duration_seconds, sc.category_type
        FROM user_inventory i
        JOIN shop_items s ON i.shop_item_id = s.id
        LEFT JOIN shop_categories sc ON s.category_id = sc.id
@@ -1932,8 +1932,8 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     // ========== CONSUMABLE TIMER LOGIC ==========
     // Check if this is a temporary item
-    const durationSeconds = item.duration_seconds;
-    const isTemp = !!durationSeconds && durationSeconds > 0;
+    const durationSeconds = parseInt(item.duration_seconds, 10) || ((parseInt(item.duration_hours, 10) || 0) * 3600);
+    const isTemp = Boolean(item.expires_at || (durationSeconds && durationSeconds > 0));
 
     if (newStatus && isTemp) {
       // Trying to ACTIVATE a temporary item
