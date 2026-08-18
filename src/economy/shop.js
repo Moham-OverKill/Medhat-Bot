@@ -1503,7 +1503,7 @@ export async function getUserInventory(userId, guildId) {
     // Use INNER JOIN to only return items that still exist in shop_items
     // This prevents "ghost" items from deleted shop entries
     const result = await query(
-      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price, s.is_tradable, s.rarity
+      `SELECT i.*, s.name, s.description, s.item_type, s.is_pack, s.role_id, s.category_id, s.price, s.is_tradable, s.rarity, s.loot_box_id
        FROM user_inventory i
        INNER JOIN shop_items s ON i.shop_item_id = s.id
        WHERE i.user_id = $1 AND i.guild_id = $2
