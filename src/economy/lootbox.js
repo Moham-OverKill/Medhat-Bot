@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import { getPool, query } from '../storage/postgres.js';
 import { getGuildConfig } from '../storage/config.js';
 import { sysLog, sysError } from '../utils/logger.js';
@@ -565,10 +566,11 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
     // 5. Roll Items (Prize Count dictates exact number of items awarded)
     if (itemsEnabled && totalItemWeight > 0 && maxPrizes > 0 && hasAvailableItemsForActiveTiers) {
-      const prizeCount = Math.floor(Math.random() * (maxPrizes - minPrizes + 1)) + minPrizes;
+      const prizeCount = (maxPrizes === minPrizes) ? minPrizes : randomInt(minPrizes, maxPrizes + 1);
 
       for (let p = 0; p < prizeCount; p++) {
-        const roll = Math.random() * totalItemWeight;
+        // High-precision 6-digit cryptographic roll against total item weight
+        const roll = (randomInt(0, 1000000) / 1000000) * totalItemWeight;
         let acc = 0;
         let selectedTier = itemTiers[0]?.tier || 'common';
 
@@ -601,7 +603,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
         // If valid items exist at or below rolled tier, award one
         if (candidates.length > 0) {
-          const wonItem = candidates[Math.floor(Math.random() * candidates.length)];
+          const wonItem = candidates[randomInt(0, candidates.length)];
 
           if (wonItemsCountMap.has(wonItem.id)) {
             wonItemsCountMap.get(wonItem.id).count++;
@@ -653,9 +655,9 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
     // 6. Roll Coins (Independent percentage chance and range)
     if (coinsEnabled && chanceCoins > 0) {
-      const coinRoll = Math.random() * 100;
+      const coinRoll = (randomInt(0, 1000000) / 1000000) * 100;
       if (coinRoll <= chanceCoins) {
-        const coinAmt = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
+        const coinAmt = (maxCoins === minCoins) ? minCoins : randomInt(minCoins, maxCoins + 1);
         totalCoinsAwarded += coinAmt;
         awardedPrizes.push({
           type: 'coins',
