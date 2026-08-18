@@ -1309,10 +1309,14 @@ export async function handleInventoryItemSelect(interaction) {
     const validFirstRole = (firstRoleId && /^\d{17,20}$/.test(firstRoleId)) ? `<@&${firstRoleId}>` : item.name;
     let desc = `**Role:** ${validFirstRole}`;
     desc += `\n**Quantity:** ${displayQty}`;
-    desc += `\n**Rarity:** ${rarityText}`;
-    if (isTemp && durationStr) {
-      desc += `\n**Duration:** ⏱️ ${durationStr}`;
+    if (isTemp) {
+      if (item.expires_at) {
+        desc += `\n**Expires:** \u23F3 <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
+      } else if (durationStr) {
+        desc += `\n**Duration:** \u23F1\uFE0F ${durationStr}`;
+      }
     }
+    desc += `\n**Rarity:** ${rarityText}`;
 
     if (isAdminGranted) {
       desc += `\n**Status:** \uD83D\uDEE1\uFE0F Admin Granted`;
@@ -1331,10 +1335,6 @@ export async function handleInventoryItemSelect(interaction) {
     const availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
     const cannotSell = isAdminGranted || isUntradable || availableToDrop <= 0;
     const cannotToggle = isAdminGranted;
-
-    if (item.expires_at) {
-      desc += `\n\u23F3 **Expires:** <t:${Math.floor(new Date(item.expires_at).getTime() / 1000)}:R>`;
-    }
 
     // Embed Title without pagination number
     const embed = new EmbedBuilder()
