@@ -31,7 +31,8 @@ function acquireKothLock(guildId) {
  * @param {Client} client - Discord.js client
  * @param {string} guildId
  */
-export async function runKingOfHillCycle(client, guildId) {
+export async function runKingOfHillCycle(client, guildId, options = {}) {
+  const { payCoins = true } = options;
   const lock = acquireKothLock(guildId);
   if (!lock) {
     sysLog('KotH Cycle Skipped', { guild: guildId, detail: 'Already in progress for this guild' });
@@ -182,7 +183,7 @@ export async function runKingOfHillCycle(client, guildId) {
         }
 
         // Pay coins to ALL winners (with a 50-minute cooldown to prevent double payouts on bot restarts)
-        if (rewardAmount > 0) {
+        if (payCoins && rewardAmount > 0) {
           const checkPayout = await query(
             `SELECT created_at FROM transactions 
              WHERE user_id = $1 AND guild_id = $2 AND type = 'mvp_reward' 
