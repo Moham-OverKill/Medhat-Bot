@@ -47,6 +47,7 @@ import {
   deleteLootBox,
   toggleLootBoxFeature,
   getLootBoxCategoryName,
+  getLootBoxCategoryEmoji
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
