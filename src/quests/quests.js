@@ -313,10 +313,8 @@ async function triggerQuestLog(guildId, userId, quest) {
         if (client) {
             const guild = client.guilds.cache.get(guildId);
             if (guild) {
-                 const user = await client.users.fetch(userId).catch(()=>null);
-                 const tag = user ? user.tag : userId;
                  sendLog(guild, 'economy', 'green', '🎯 Quest Completed', 
-                    `**User:** \`${tag}\`\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` ${COIN_EMOJI}`);
+                    `**User:** <@${userId}>\n**Quest:** ${formatCompactQuest(quest)}\n**Reward:** \`${quest.reward_coins}\` ${COIN_EMOJI}`);
             }
         }
     } catch {}

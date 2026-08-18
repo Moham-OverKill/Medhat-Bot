@@ -669,7 +669,7 @@ export async function runDependencySweep(userId, guildId, member, client = null)
     // 3. Log Results
     if (unequippedNames.length > 0) {
       sendLog(member.guild, 'inventory', 'orange', '⛓️ Dependency Cascade', 
-        `**${member.user.username}** had items unequipped because requirements were no longer met:\n` +
+        `<@${member.user.id}> had items unequipped because requirements were no longer met:\n` +
         `• Items: ${unequippedNames.map(n => `**${n}**`).join(', ')}`
       );
     }
@@ -1004,7 +1004,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       if (currentBalance < totalCost) {
         await client.query('ROLLBACK');
         sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Insufficient funds (Bal: ${currentBalance}, Req: ${totalCost})` });
-        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `**${getUserLogName(member)}** tried to buy **${qty > 1 ? `${qty}x ` : ''}${item.name}** but has insufficient funds.\n• Required: **${totalCost.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
+        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `${getUserLogName(member)} tried to buy **${qty > 1 ? `${qty}x ` : ''}${item.name}** but has insufficient funds.\n• Required: **${totalCost.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
         return { success: false, error: 'Insufficient balance' };
       }
     }
@@ -1233,7 +1233,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
     // 1. Buyer Log [Discord]
     sendLog(member.guild, 'shop', 'green', '🛒 Item Purchased', 
-      `**User:** \`${buyerLogName}\`\n` +
+      `**User:** ${buyerLogName}\n` +
       `**Item:** \`${itemLabel}\`${lockedTag ? ` \`${lockedTag.trim()}\`` : ''}\n` +
       `**Price:** \`${totalCost.toLocaleString()}\` ${COIN_EMOJI}\n` +
       `**Balance:** \`${buyerBefore.toLocaleString()}\` ➡️ \`${buyerAfter.toLocaleString()}\``
@@ -1246,7 +1246,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       const sellerAfter = sellerBefore + payoutAmount;
 
       sendLog(member.guild, 'shop', 'green', '💰 Item Sold (Payout)', 
-        `**User:** \`${sellerLogName}\`\n` +
+        `**User:** ${sellerLogName}\n` +
         `**Item:** \`${itemLabel}\` (Sold)\n` +
         `**Payout:** \`${payoutAmount.toLocaleString()}\` ${COIN_EMOJI}\n` +
         `**Balance:** \`${sellerBefore.toLocaleString()}\` ➡️ \`${sellerAfter.toLocaleString()}\``
@@ -2066,8 +2066,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     // God-Mode System Log (Audit)
     sysLog(`Item ${action}`, { user: userId, guild: guildId, detail: `Item: ${item.name} | InventoryID: ${inventoryId}` });
     
-    const logName = `${member.displayName} (${member.user.username})`;
-    sendLog(member.guild, 'inventory', 'blue', `🎒 Item ${action}`, `**${logName}** ${action.toLowerCase()} **${item.name}**.`);
+    sendLog(member.guild, 'inventory', 'blue', `🎒 Item ${action}`, `<@${userId}> ${action.toLowerCase()} **${item.name}**.`);
 
     return { success: true, is_active: newStatus, name: item.name, action: newStatus ? 'activated' : 'deactivated' };
 
@@ -2151,7 +2150,7 @@ export async function purgeUserInventory(userId, guildId, member = null) {
           'inventory', 
           'red', 
           '⏳ Item Expired', 
-          `**${member?.user?.username || userId}**'s consumable item **${itemName}** has expired${remainingNotice}.`
+          `<@${userId}>'s consumable item **${itemName}** has expired${remainingNotice}.`
         );
       } catch (e) {
         // Silently fail if sendLog execution fails

@@ -975,7 +975,7 @@ export async function awardMvp(client, guildId, options = {}) {
         sysError('MVP Winner DM Failed', dmErr, { guild: guildId });
       }
 
-      const winnerLogList = resultMembers.map(m => `\`${getUserLogName(m)}\``).join(', ');
+      const winnerLogList = resultMembers.map(m => getUserLogName(m)).join(', ');
       const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
 
       sendLog(guild, 'economy', 'gold', '⭐ MVP Awarded', 
