@@ -56,7 +56,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     embed.setDescription(desc);
   } else {
-    embed.setTitle('Rewards');
+    embed.setTitle('🎉 Claimed Rewards:');
 
     let desc = '';
 
@@ -79,10 +79,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
       if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
 
-      const claimedBody = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
-      desc = `**Claimed**\n\n${claimedBody}`;
+      desc = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
     } else {
-      desc = '**Claimed**\n\n_You have not claimed any level rewards yet._';
+      desc = '_You have not claimed any level rewards yet._';
     }
 
     if (data.nextReward) {
