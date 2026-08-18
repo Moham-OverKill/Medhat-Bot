@@ -1929,10 +1929,50 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
 
     if (newStatus && isTemp) {
       // Trying to ACTIVATE a temporary item
+      // ANTI-STACKING CHECK: User cannot activate multiple copies of the same temporary item concurrently
+      const activeRunningRes = await client.query(
+        `SELECT id, expires_at FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+           AND id != $4
+           AND expires_at IS NOT NULL
+           AND expires_at > NOW()`,
+        [userId, guildId, item.shop_item_id, inventoryId]
+      );
+
+      if (activeRunningRes.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return {
+          success: false,
+          error: `You already have an active copy of **${item.name}** running. You cannot activate multiple copies simultaneously.`
+        };
+      }
+
       if (!item.expires_at) {
         // FIRST ACTIVATION: Start the timer now
         const expiresAt = new Date(Date.now() + durationSeconds * 1000);
-        await client.query('UPDATE user_inventory SET expires_at = $1 WHERE id = $2', [expiresAt, inventoryId]);
+        const currentQty = parseInt(item.quantity) || 1;
+
+        if (currentQty > 1) {
+          // Split active copy from the unactivated stack
+          await client.query(
+            `UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`,
+            [inventoryId]
+          );
+
+          const newActiveRes = await client.query(
+            `INSERT INTO user_inventory (
+               user_id, guild_id, shop_item_id, role_id, expires_at,
+               purchase_source, is_active, source, quantity
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, true, $7, 1)
+             RETURNING id`,
+            [userId, guildId, item.shop_item_id, item.role_id, expiresAt, item.purchase_source || 'shop', item.source || 'SHOP']
+          );
+          inventoryId = newActiveRes.rows[0].id;
+        } else {
+          await client.query('UPDATE user_inventory SET expires_at = $1, is_active = true WHERE id = $2', [expiresAt, inventoryId]);
+        }
+
         sysLog('Timer Started', { user: userId, guild: guildId, detail: `Consumable: ${item.name} | Duration: ${durationSeconds}s` });
       } else {
         // RE-ACTIVATION (Timer already running)
@@ -1956,9 +1996,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
           await client.query('COMMIT');
           return { 
             success: false, 
-            error: currentQty > 1 
-              ? `This consumable item expired. 1 copy was consumed (${currentQty - 1} remaining in inventory).` 
-              : 'This item has expired and has been removed.' 
+            error: 'This temporary item has expired and has been removed.' 
           };
         }
       }

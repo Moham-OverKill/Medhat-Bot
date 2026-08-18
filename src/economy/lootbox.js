@@ -630,7 +630,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
         const existingInv = await client.query(
           `SELECT id, quantity, is_active FROM user_inventory 
-           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL`,
           [userId, guildId, wonItem.id]
         );
 
