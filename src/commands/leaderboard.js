@@ -405,9 +405,13 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
 
     if (type === 'daily_coins') {
         const { getTopActiveUsers } = await import('../activity/tracker.js');
-        const rawData = await getTopActiveUsers(guildId, 50);
+        const rawData = await getTopActiveUsers(guildId, 50, guild);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-        embed = buildDailyActivityEmbed(enrichedData, [], true); // True for Live Progress preview
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guildId);
+        const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
+        const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
+        embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true); // True for Live Progress preview
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -535,9 +539,13 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             if (t.type === 'daily_coins') {
                 // FORCE LIVE CONTENT: We ignore historical snapshots to keep it "Today's Race" 24/7
                 const { getTopActiveUsers } = await import('../activity/tracker.js');
-                const rawData = await getTopActiveUsers(guildId, 50);
+                const rawData = await getTopActiveUsers(guildId, 50, guild);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                embed = buildDailyActivityEmbed(enrichedData, mvpRecipients, true, nextRefreshTimestamp); 
+                const { getGuildConfig } = await import('../storage/config.js');
+                const guildConfig = await getGuildConfig(guildId);
+                const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
+                const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
+                embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true, nextRefreshTimestamp); 
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -593,12 +601,15 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     if (!channel) return null;
 
     let embed;
-    if (type === 'activity') {
-        // Fetch YESTERDAY's MVP results from DB
-        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-        const cycleData = await getLastMvpCycleResults(guildId, 50);
-        const enrichedData = await enrichUserData(client, guildId, cycleData.results, 'userId');
-        embed = buildDailyActivityEmbed(enrichedData, []);
+    if (type === 'activity' || type === 'daily_coins') {
+        const { getTopActiveUsers } = await import('../activity/tracker.js');
+        const rawData = await getTopActiveUsers(guildId, 50, guild);
+        const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guildId);
+        const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
+        const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
+        embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true);
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -643,12 +654,16 @@ async function handleSetup(interaction) {
             level_message_id: null
         };
 
-        // Post initial embeds with historical data
-        // Daily - Fetch yesterday's MVP results
-        const { getLastMvpCycleResults } = await import('../storage/mvpHistory.js');
-        const cycleData = await getLastMvpCycleResults(guildId, 50);
-        const enrichedActivity = await enrichUserData(interaction.client, guildId, cycleData.results, 'userId');
-        const dailyEmbed = buildDailyActivityEmbed(enrichedActivity, []);
+        // Post initial embeds with live data
+        // Daily - Live Top Active Users
+        const { getTopActiveUsers } = await import('../activity/tracker.js');
+        const rawActivity = await getTopActiveUsers(guildId, 50, interaction.guild);
+        const enrichedActivity = await enrichUserData(interaction.client, guildId, rawActivity, 'userId');
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guildId);
+        const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
+        const liveMvpRecipients = rawActivity.slice(0, winnersCount).map(u => u.userId);
+        const dailyEmbed = buildDailyActivityEmbed(enrichedActivity, liveMvpRecipients, true);
         const dailyMsg = await dailyChannel.send({ embeds: [dailyEmbed] });
         config.daily_message_id = dailyMsg.id;
 

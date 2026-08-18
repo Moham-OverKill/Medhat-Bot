@@ -104,9 +104,9 @@ export async function runKingOfHillCycle(client, guildId) {
     let membersWithRole = [];
     if (mvpRole) {
       try {
-        // Fetch everyone who currently has the role in Discord (live check)
-        const fetchedMembers = await guildObj.members.fetch({ role: mvpRole.id, force: true }).catch(() => new Map());
-        membersWithRole = Array.from(fetchedMembers.values());
+        await guildObj.members.fetch().catch(() => null);
+        const roleHolders = mvpRole.members || guildObj.members.cache.filter(m => m.roles.cache.has(mvpRole.id));
+        membersWithRole = Array.from(roleHolders.values());
       } catch (e) {
         sysLog('KotH Role Fetch Failed', { guild: guildId, detail: e.message });
       }
