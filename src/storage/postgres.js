@@ -871,6 +871,19 @@ async function createTables() {
         AND si.guild_id = ui.guild_id;
     `).catch(() => {});
 
+    // Self-healing migration: Start missing expiration timers for currently active temporary items
+    await pool.query(`
+      UPDATE user_inventory ui
+      SET expires_at = NOW() + (
+          (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) || ' seconds'
+        )::INTERVAL
+      FROM shop_items si
+      WHERE ui.shop_item_id = si.id
+        AND ui.is_active = true
+        AND ui.expires_at IS NULL
+        AND (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) > 0;
+    `).catch(() => {});
+
     // Purge any orphaned user_inventory ghost rows whose shop_item_id no longer exists
     await pool.query(`
       DELETE FROM user_inventory 
