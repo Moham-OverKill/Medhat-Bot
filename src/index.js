@@ -15,6 +15,7 @@ import { scheduleCairoMidnightReset } from './mvp/award.js';
 import { seedMvpCacheFromDb } from './mvp/mvpCache.js';
 import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
+import { startExpirationScheduler } from './cron/expirations.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
 import { sendLog } from './utils/logger.js';
@@ -318,6 +319,7 @@ client.once(Events.ClientReady, async () => {
     // Start background jobs
     startQuestScheduler(client);
     startLeaderboardScheduler(client); // Also runs KotH every hour
+    startExpirationScheduler(client);
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
