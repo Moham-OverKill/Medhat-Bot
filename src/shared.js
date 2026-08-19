@@ -405,28 +405,94 @@ export const RARITY_COLORS = {
 };
 
 /**
- * Safely format an emoji for Discord Select Menu options
+ * Resolves an emoji string or ID into a safe format for Discord Buttons and Select Menus.
+ * Validates custom emojis against the bot's accessible emoji cache to prevent COMPONENT_INVALID_EMOJI crashes.
  * @param {string|Object} emojiInput
- * @returns {string|Object|undefined}
+ * @param {Object} [clientOrGuild] - Discord Client or Guild instance
+ * @param {string} [fallback] - Safe fallback emoji (default: '🎁')
+ * @returns {string|Object|undefined} Safe emoji for components
  */
-export function parseSelectEmoji(emojiInput) {
-  if (!emojiInput) return undefined;
-  if (typeof emojiInput === 'object') return emojiInput;
-  const str = String(emojiInput).trim();
-  if (!str) return undefined;
-
-  const customMatch = str.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
-  if (customMatch) {
-    return {
-      animated: customMatch[1] === 'a',
-      name: customMatch[2],
-      id: customMatch[3]
-    };
+export function resolveComponentEmoji(emojiInput, clientOrGuild = null, fallback = '🎁') {
+  if (!emojiInput) return fallback;
+  if (typeof emojiInput === 'object') {
+    if (emojiInput.id) {
+      const client = clientOrGuild?.client || clientOrGuild;
+      const exists = client?.emojis?.cache?.has(emojiInput.id) || clientOrGuild?.emojis?.cache?.has(emojiInput.id);
+      if (client && !exists) return fallback;
+    }
+    return emojiInput;
   }
 
+  const str = String(emojiInput).trim();
+  if (!str) return fallback;
+
+  // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
+  const customMatch = str.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+  if (customMatch) {
+    const id = customMatch[3];
+    const name = customMatch[2];
+    const animated = customMatch[1] === 'a';
+    const client = clientOrGuild?.client || clientOrGuild;
+    if (client) {
+      const found = client.emojis?.cache?.get(id) || clientOrGuild?.emojis?.cache?.get(id);
+      if (!found) return fallback;
+      return { id: found.id, name: found.name, animated: found.animated };
+    }
+    return { id, name, animated };
+  }
+
+  // 2. Pure Snowflake ID: 123456789012345678
   if (/^\d{17,20}$/.test(str)) {
+    const client = clientOrGuild?.client || clientOrGuild;
+    if (client) {
+      const found = client.emojis?.cache?.get(str) || clientOrGuild?.emojis?.cache?.get(str);
+      if (found) {
+        return { id: found.id, name: found.name, animated: found.animated };
+      }
+      return fallback;
+    }
+    return fallback;
+  }
+
+  // 3. Standard Unicode Emoji
+  const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
+  if (emojiRegex.test(str)) {
     return str;
   }
 
-  return str;
+  return fallback;
+}
+
+/**
+ * Safely format an emoji for Discord Select Menu options
+ * @param {string|Object} emojiInput
+ * @param {Object} [clientOrGuild]
+ * @param {string} [fallback]
+ * @returns {string|Object|undefined}
+ */
+export function parseSelectEmoji(emojiInput, clientOrGuild = null, fallback = '🎁') {
+  return resolveComponentEmoji(emojiInput, clientOrGuild, fallback);
+}
+
+/**
+ * Safely set an emoji on a ButtonBuilder without risking interaction crashes.
+ * @param {ButtonBuilder} button
+ * @param {string|Object} emojiInput
+ * @param {Object} [clientOrGuild]
+ * @param {string} [fallback]
+ * @returns {ButtonBuilder}
+ */
+export function safeSetButtonEmoji(button, emojiInput, clientOrGuild = null, fallback = null) {
+  if (!button || !emojiInput) return button;
+  try {
+    const resolved = resolveComponentEmoji(emojiInput, clientOrGuild, fallback);
+    if (resolved) {
+      button.setEmoji(resolved);
+    }
+  } catch (_) {
+    if (fallback) {
+      try { button.setEmoji(fallback); } catch (__) {}
+    }
+  }
+  return button;
 }

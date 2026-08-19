@@ -17,7 +17,7 @@ import { handleInteractionError } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import {
@@ -863,7 +863,9 @@ export async function handleInventoryButton(interaction) {
           .setCustomId(btn.id)
           .setLabel(btn.label)
           .setStyle(ButtonStyle.Secondary);
-        if (btn.emoji) b.setEmoji(btn.emoji);
+        if (btn.emoji) {
+          safeSetButtonEmoji(b, btn.emoji, interaction.guild, '🎁');
+        }
         row.addComponents(b);
       });
       rows.push(row);
@@ -993,7 +995,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
             label: `${baseName} (x${itemQty})`,
             value: `${i.id}_${idx}`,
             description: 'Unopened Loot Box',
-            emoji: lootBoxEmoji
+            emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
           };
         }
 

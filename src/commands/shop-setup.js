@@ -4932,8 +4932,6 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
     // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
     const customMatch = rawEmoji.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
     if (customMatch) {
-      const isAnimated = Boolean(customMatch[1]);
-      const name = customMatch[2];
       const id = customMatch[3];
       const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
       if (found) {
@@ -4944,7 +4942,10 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
         if (fetched) {
           resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
         } else {
-          resolvedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
+          return interaction.followUp({
+            content: `❌ **Unreachable Custom Emoji**: The bot cannot access emoji ID \`${id}\`. Custom emojis used on buttons must come from this server or a server where the bot is present. Please upload the emoji to this Discord server or use a standard emoji (e.g. 🎁, 📦, 💎).`,
+            flags: MessageFlags.Ephemeral
+          });
         }
       }
     } else if (/^\d{17,20}$/.test(rawEmoji)) {
@@ -4957,6 +4958,11 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
                         await interaction.client?.emojis.fetch(rawEmoji).catch(() => null);
         if (fetched) {
           resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+        } else {
+          return interaction.followUp({
+            content: `❌ **Unreachable Custom Emoji**: The bot cannot access emoji ID \`${rawEmoji}\`. Please upload the emoji to this Discord server or use a standard emoji (e.g. 🎁, 📦, 💎).`,
+            flags: MessageFlags.Ephemeral
+          });
         }
       }
     } else {
@@ -4969,7 +4975,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
 
     if (!resolvedEmoji) {
       return interaction.followUp({
-        content: `❌ **Invalid Emoji**: Could not validate \`${rawEmoji}\`. Please enter a standard emoji (e.g. 🎁, 📦, 💎) or a valid custom emoji / emoji ID available to this bot.`,
+        content: `❌ **Invalid Emoji**: Could not validate \`${rawEmoji}\`. Please enter a standard emoji (e.g. 🎁, 📦, 💎) or a valid custom emoji uploaded to this server.`,
         flags: MessageFlags.Ephemeral
       });
     }
