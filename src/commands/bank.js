@@ -1211,18 +1211,33 @@ export async function handleInventoryItemSelect(interaction) {
         embed.setThumbnail(boxImg);
       }
 
-      const row1 = new ActionRowBuilder();
-      if (!isInterfaceChannel) {
-        row1.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
-            .setLabel('Drop')
-            .setEmoji('🗑️')
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(item.is_tradable === false)
-        );
-      }
-      row1.addComponents(
+      const selectOptions = items.slice(0, 25).map((i, idx) => {
+        const itemQty = parseInt(i.quantity) || 1;
+        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+        return {
+          label: `${baseName} (x${itemQty})`,
+          value: `${i.id}_${idx}`,
+          emoji: '🎁',
+          default: String(i.id) === String(item.id)
+        };
+      });
+
+      const itemSelect = new StringSelectMenuBuilder()
+        .setCustomId('bank_inv_item_select_lootboxes')
+        .setPlaceholder('Select a Loot Box to Manage')
+        .addOptions(selectOptions);
+
+      // ROW 1: Select Menu
+      const row1 = new ActionRowBuilder().addComponents(itemSelect);
+
+      // ROW 2: Actions [🗑️ Drop] [🔓 Open]
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
+          .setLabel('Drop')
+          .setEmoji('🗑️')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(item.is_tradable === false || isInterfaceChannel),
         new ButtonBuilder()
           .setCustomId(`bank_inv_open_${item.id}_lootboxes_${currentIndex}`)
           .setLabel('Open')
@@ -1230,36 +1245,20 @@ export async function handleInventoryItemSelect(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-      const selectOptions = [
-        {
-          label: 'Back',
-          value: 'back_to_inventory',
-          emoji: '⬅️'
-        },
-        ...items.slice(0, 24).map((i, idx) => {
-          const itemQty = parseInt(i.quantity) || 1;
-          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
-          return {
-            label: `${baseName} (x${itemQty})`,
-            value: `${i.id}_${idx}`,
-            emoji: '🎁',
-            default: String(i.id) === String(item.id)
-          };
-        })
-      ];
-
-      const itemSelect = new StringSelectMenuBuilder()
-        .setCustomId('bank_inv_item_select_lootboxes')
-        .setPlaceholder('Select a Loot Box to Manage')
-        .addOptions(selectOptions);
-
-      const row2 = new ActionRowBuilder().addComponents(itemSelect);
+      // ROW 3: Dedicated Back Button
+      const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('bank_inventory')
+          .setLabel('Back')
+          .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary)
+      );
 
       return await interaction.editReply({
         content: null,
         embeds: [embed],
         files: [],
-        components: [row1, row2]
+        components: [row1, row2, row3]
       });
     }
 
@@ -1349,20 +1348,46 @@ export async function handleInventoryItemSelect(interaction) {
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
-    // ROW 1: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate]
-    const row1 = new ActionRowBuilder();
+    // ROW 1: Item Selection Dropdown List (Pure items, up to 25)
+    const selectOptions = items.slice(0, 25).map((i, idx) => {
+      const isItemTemp = !!(i.expires_at ||
+        (i.duration_seconds && i.duration_seconds > 0) ||
+        (i.duration_hours && i.duration_hours > 0));
+      const isAdminIdentified = i.source === 'SYNC';
 
-    // [🗑️ Drop] (Hidden in interface channel)
-    if (!isInterfaceChannel) {
-      row1.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`bank_inv_drop_${item.id}_${catIdStr}_${currentIndex}`)
-          .setLabel('Drop')
-          .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(cannotSell)
-      );
-    }
+      let statusEmoji = '⬜';
+      let statusText = 'Unknown';
+
+      if (isAdminIdentified) {
+        statusEmoji = '🛡️';
+        statusText = 'Admin Granted';
+      } else if (isItemTemp) {
+        statusEmoji = i.is_active ? '✅' : '⬜';
+        statusText = i.is_active ? 'Active' : 'Inactive';
+      } else {
+        statusEmoji = i.is_active ? '✅' : '⬜';
+        statusText = i.is_active ? 'Equipped' : 'Unequipped';
+      }
+
+      const itemQty = parseInt(i.quantity) || 1;
+      const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
+      const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+
+      return {
+        label: `${baseName}${qtyBadge}`,
+        value: `${i.id}_${idx}`,
+        description: statusText,
+        emoji: statusEmoji,
+        default: String(i.id) === String(item.id)
+      };
+    });
+
+    const itemSelect = new StringSelectMenuBuilder()
+      .setCustomId(`bank_inv_item_select_${catIdStr}`)
+      .setPlaceholder('Select an Item to Manage')
+      .addOptions(selectOptions);
+
+    const row1 = new ActionRowBuilder().addComponents(itemSelect);
 
     // Dynamic button based on item type and state
     let toggleLabel = 'Equip';
@@ -1381,7 +1406,14 @@ export async function handleInventoryItemSelect(interaction) {
       toggleEmoji = item.is_active ? '⏸️' : '✅';
     }
 
-    row1.addComponents(
+    // ROW 2: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate/Deactivate]
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`bank_inv_drop_${item.id}_${catIdStr}_${currentIndex}`)
+        .setLabel('Drop')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(cannotSell || isInterfaceChannel),
       new ButtonBuilder()
         .setCustomId(`bank_inv_equip_${item.id}_${catIdStr}_${currentIndex}`)
         .setLabel(toggleLabel)
@@ -1390,59 +1422,20 @@ export async function handleInventoryItemSelect(interaction) {
         .setDisabled(cannotToggle)
     );
 
-    // ROW 2: Item Selection Dropdown List (Includes Back as Option 0)
-    const selectOptions = [
-      {
-        label: 'Back',
-        value: 'back_to_inventory',
-        emoji: '⬅️'
-      },
-      ...items.slice(0, 24).map((i, idx) => {
-        const isItemTemp = !!(i.expires_at ||
-          (i.duration_seconds && i.duration_seconds > 0) ||
-          (i.duration_hours && i.duration_hours > 0));
-        const isAdminIdentified = i.source === 'SYNC';
-
-        let statusEmoji = '⬜';
-        let statusText = 'Unknown';
-
-        if (isAdminIdentified) {
-          statusEmoji = '🛡️';
-          statusText = 'Admin Granted';
-        } else if (isItemTemp) {
-          statusEmoji = i.is_active ? '✅' : '⬜';
-          statusText = i.is_active ? 'Active' : 'Inactive';
-        } else {
-          statusEmoji = i.is_active ? '✅' : '⬜';
-          statusText = i.is_active ? 'Equipped' : 'Unequipped';
-        }
-
-        const itemQty = parseInt(i.quantity) || 1;
-        const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
-        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
-
-        return {
-          label: `${baseName}${qtyBadge}`,
-          value: `${i.id}_${idx}`,
-          description: statusText,
-          emoji: statusEmoji,
-          default: String(i.id) === String(item.id)
-        };
-      })
-    ];
-
-    const itemSelect = new StringSelectMenuBuilder()
-      .setCustomId(`bank_inv_item_select_${catIdStr}`)
-      .setPlaceholder('Select an Item to Manage')
-      .addOptions(selectOptions);
-
-    const row2 = new ActionRowBuilder().addComponents(itemSelect);
+    // ROW 3: Dedicated Back Button
+    const row3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('bank_inventory')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
     await interaction.editReply({
       content: null,
       embeds: [embed],
       files: [],
-      components: [row1, row2]
+      components: [row1, row2, row3]
     });
 
   } catch (error) {
