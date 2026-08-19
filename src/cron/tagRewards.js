@@ -81,7 +81,7 @@ export async function runTagRewardsCycle(client, guildId) {
         }
 
         // Payout the coins
-        const result = await updateBalance(member.id, guildId, rewardAmount, 'tag_reward', 'Using Server Tag');
+        const result = await updateBalance(member.id, guildId, rewardAmount, 'tag_reward', 'Server Tag Reward');
         if (result.success) {
           paidUsersCount++;
         }
