@@ -4899,9 +4899,9 @@ export async function handleLootBoxRenameCatStart(interaction) {
     .setLabel('Category Emoji')
     .setStyle(TextInputStyle.Short)
     .setValue(currentEmoji || '🎁')
-    .setPlaceholder('e.g. 🎁, 📦, 💎, 🏆')
+    .setPlaceholder('e.g. 🎁, 📦, 💎 or :custom_emoji: / emoji ID')
     .setRequired(false)
-    .setMaxLength(32);
+    .setMaxLength(100);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(catInput),
@@ -4927,11 +4927,16 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
       });
     }
 
+    // Refresh guild emojis cache
+    await interaction.guild?.emojis.fetch().catch(() => null);
+
     let resolvedEmoji = null;
 
-    // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
-    const customMatch = rawEmoji.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+    // 1. Formatted Custom Emoji: <:name:id> or <a:name:id> (with optional trailing >)
+    const customMatch = rawEmoji.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>?$/);
     if (customMatch) {
+      const isAnimated = customMatch[1] === 'a';
+      const name = customMatch[2];
       const id = customMatch[3];
       const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
       if (found) {
@@ -4942,10 +4947,7 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
         if (fetched) {
           resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
         } else {
-          return interaction.followUp({
-            content: `❌ **Unreachable Custom Emoji**: The bot cannot access emoji ID \`${id}\`. Custom emojis used on buttons must come from this server or a server where the bot is present. Please upload the emoji to this Discord server or use a standard emoji (e.g. 🎁, 📦, 💎).`,
-            flags: MessageFlags.Ephemeral
-          });
+          resolvedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
         }
       }
     } else if (/^\d{17,20}$/.test(rawEmoji)) {
@@ -4960,15 +4962,25 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
           resolvedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
         } else {
           return interaction.followUp({
-            content: `❌ **Unreachable Custom Emoji**: The bot cannot access emoji ID \`${rawEmoji}\`. Please upload the emoji to this Discord server or use a standard emoji (e.g. 🎁, 📦, 💎).`,
+            content: `❌ **Unreachable Custom Emoji**: The bot cannot find emoji ID \`${rawEmoji}\`. Please upload the emoji to this Discord server or use a standard emoji (e.g. 🎁, 📦, 💎).`,
             flags: MessageFlags.Ephemeral
           });
         }
       }
-    } else {
-      // 3. Unicode Emoji
+    } else if (/^:?[a-zA-Z0-9_]{2,32}:?$/.test(rawEmoji)) {
+      // 3. Emoji Name lookup (e.g. :minecraftchest: or minecraftchest)
+      const cleanName = rawEmoji.replace(/:/g, '').toLowerCase();
+      const found = interaction.guild?.emojis.cache.find(e => e.name.toLowerCase() === cleanName) ||
+                    interaction.client?.emojis.cache.find(e => e.name.toLowerCase() === cleanName);
+      if (found) {
+        resolvedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+      }
+    }
+
+    // 4. Standard Unicode Emoji
+    if (!resolvedEmoji) {
       const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
-      if (emojiRegex.test(rawEmoji) && rawEmoji.length <= 16) {
+      if (emojiRegex.test(rawEmoji)) {
         resolvedEmoji = rawEmoji;
       }
     }
