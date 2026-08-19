@@ -427,29 +427,23 @@ export function resolveComponentEmoji(emojiInput, clientOrGuild = null, fallback
   if (!str) return fallback;
 
   // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
-  const customMatch = str.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+  const customMatch = str.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>?$/);
   if (customMatch) {
     const id = customMatch[3];
     const name = customMatch[2];
     const animated = customMatch[1] === 'a';
-    const client = clientOrGuild?.client || clientOrGuild;
-    if (client) {
-      const found = client.emojis?.cache?.get(id) || clientOrGuild?.emojis?.cache?.get(id);
-      if (!found) return fallback;
-      return { id: found.id, name: found.name, animated: found.animated };
+    const found = clientOrGuild?.emojis?.cache?.get(id) || clientOrGuild?.client?.emojis?.cache?.get(id);
+    if (found) {
+      return { id: found.id, name: found.name, animated: Boolean(found.animated) };
     }
     return { id, name, animated };
   }
 
   // 2. Pure Snowflake ID: 123456789012345678
   if (/^\d{17,20}$/.test(str)) {
-    const client = clientOrGuild?.client || clientOrGuild;
-    if (client) {
-      const found = client.emojis?.cache?.get(str) || clientOrGuild?.emojis?.cache?.get(str);
-      if (found) {
-        return { id: found.id, name: found.name, animated: found.animated };
-      }
-      return fallback;
+    const found = clientOrGuild?.emojis?.cache?.get(str) || clientOrGuild?.client?.emojis?.cache?.get(str);
+    if (found) {
+      return { id: found.id, name: found.name, animated: Boolean(found.animated) };
     }
     return fallback;
   }
