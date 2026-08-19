@@ -412,7 +412,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       await client2.query(
         `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
          SELECT $1, $2, $3, balance, 'battlepass_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-        [userId, guildId, coins, `Battlepass Level ${levelRow.level} reward`, `bp_lvl_${levelRow.level}`]
+        [userId, guildId, coins, `Level ${levelRow.level} Reward`, `bp_lvl_${levelRow.level}`]
       );
     }
 

@@ -1993,10 +1993,21 @@ export async function handleBankHistory(interaction) {
 
       // Format IDs to mentions if they look like User IDs (17-19 digits) and aren't already mentioned
       // Added digit boundaries (?<!\d) and (?!\d) to prevent suffix-matching bugs
-      let desc = tx.description.replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
-      // Normalize legacy MVP text to generic form
-      desc = desc.replace(/Won MVP of the Day/gi, 'Won the MVP award')
-        .replace(/MVP of the Day reward/gi, 'Won the MVP award');
+      let desc = (tx.description || '').replace(/(?<!<@)(?<!<@&)(?<!\d)(\d{17,19})(?!\d)(?!>)/g, '<@$1>');
+      
+      // Standardize display labels across legacy and current transactions
+      desc = desc
+        .replace(/Completed quest/gi, 'Completed Quest')
+        .replace(/Battlepass Level (\d+) reward/gi, 'Level $1 Reward')
+        .replace(/^Purchased:\s*/gi, 'Purchased ')
+        .replace(/^Daily reward.*$/gi, 'Daily Reward')
+        .replace(/^Using Server Tag$/gi, 'Server Tag Reward')
+        .replace(/Won MVP of the Day|MVP of the Day reward|Won the MVP award|Current MVP!/gi, 'MVP Reward')
+        .replace(/Voted for the bot on Top\.gg/gi, 'Voted on Top.gg')
+        .replace(/P2P Trade to/gi, 'Transfer to')
+        .replace(/P2P Trade from/gi, 'Transfer from')
+        .replace(/Trade taxes/gi, 'Trade Fee');
+
       return `\`${date}\` ${amountDisplay} | ${desc}`;
     });
     const embed = new EmbedBuilder().setColor(0x808080).setTitle('📜 Recent History').setDescription(lines.join('\n')).setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });

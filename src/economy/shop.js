@@ -1152,7 +1152,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       await client.query(
         `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
          VALUES ($1, $2, $3, $4, 'purchase', $5, $6)`,
-        [userId, guildId, -totalCost, newBalance, `Purchased: ${itemLabel}`, itemId.toString()]
+        [userId, guildId, -totalCost, newBalance, `Purchased ${itemLabel}`, itemId.toString()]
       );
     } else {
       const balResult = await client.query(
