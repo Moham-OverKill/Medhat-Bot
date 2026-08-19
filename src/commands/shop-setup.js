@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -172,11 +172,15 @@ export async function handleShopSetup(interaction) {
           .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId('shop_lb_home')
-          .setLabel(lootBoxCatName.slice(0, 50))
-          .setEmoji(lootBoxEmoji)
-          .setStyle(ButtonStyle.Secondary),
+        safeSetButtonEmoji(
+          new ButtonBuilder()
+            .setCustomId('shop_lb_home')
+            .setLabel(lootBoxCatName.slice(0, 50))
+            .setStyle(ButtonStyle.Secondary),
+          lootBoxEmoji,
+          interaction.guild,
+          '🎁'
+        ),
         new ButtonBuilder()
           .setCustomId('shop_admin_post')
           .setLabel('Post')
@@ -331,10 +335,6 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
 
     const components = [];
 
-    // Helper for select menu option emoji
-    const emojiMatch = lootBoxEmoji ? lootBoxEmoji.match(/:(\d+)>$/) : null;
-    const selectOptEmoji = emojiMatch ? emojiMatch[1] : lootBoxEmoji;
-
     // 1. Dropdown select menu directly in the main menu
     if (lootBoxes.length > 0) {
       const select = new StringSelectMenuBuilder()
@@ -343,7 +343,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .addOptions(lootBoxes.slice(0, 25).map(b => ({
           label: (b.name || `Unnamed Box #${b.id}`).slice(0, 80),
           value: `lb_${b.id}`,
-          emoji: selectOptEmoji
+          emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
         })));
       components.push(new ActionRowBuilder().addComponents(select));
     } else {
@@ -5111,11 +5111,15 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
         .setLabel('Prizes')
         .setEmoji('💎')
         .setStyle(itemsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`shop_lb_toggle_coins_${boxId}`)
-        .setLabel('Coins')
-        .setEmoji(serverCoinEmoji)
-        .setStyle(coinsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
+      safeSetButtonEmoji(
+        new ButtonBuilder()
+          .setCustomId(`shop_lb_toggle_coins_${boxId}`)
+          .setLabel('Coins')
+          .setStyle(coinsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
+        serverCoinEmoji,
+        interaction.guild,
+        '🪙'
+      )
     );
     components.push(toggleRow);
 

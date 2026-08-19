@@ -137,6 +137,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   const levels = await getConfiguredLevels(guildId);
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.battlepass_enabled === true;
+  const coinEmoji = COIN_EMOJI.forGuild(guildId);
   const lootBoxCatName = await getLootBoxCategoryName(guildId);
   const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
   const selectChestEmoji = lootBoxEmoji || '🎁';
