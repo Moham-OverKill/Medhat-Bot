@@ -18,10 +18,9 @@ import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { startExpirationScheduler } from './cron/expirations.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
-import { sendLog } from './utils/logger.js';
-import { logSystemEvent, sysLog, sysError } from './utils/logger.js';
+import { sendLog, logSystemEvent, sysLog, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
-import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
+import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep, healAllActiveTemporaryItemsOnStartup } from './economy/shop.js';
 import { initializeTradeJanitor } from './commands/trade.js';
 import { healTruncatedCategoryEmojis } from './economy/lootbox.js';
 import pkg from '../package.json' with { type: 'json' };
@@ -316,6 +315,7 @@ client.once(Events.ClientReady, async () => {
     await seedMvpCacheFromDb();
     await initializeTradeJanitor(client);
     await healTruncatedCategoryEmojis(client);
+    await healAllActiveTemporaryItemsOnStartup();
     sysLog('Task Started', { detail: 'MVP Cache Seeded from DB' });
 
     // Start background jobs

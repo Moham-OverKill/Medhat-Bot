@@ -2237,3 +2237,30 @@ export async function checkSingleCategoryActiveTimerConflict(userId, guildId, in
     return false;
   }
 }
+
+/**
+ * Self-heals all active temporary items across all users and guilds on bot startup.
+ * Automatically initializes their timer based on duration if they are equipped without an expiration date.
+ */
+export async function healAllActiveTemporaryItemsOnStartup() {
+  try {
+    const res = await query(`
+      UPDATE user_inventory ui
+      SET expires_at = NOW() + (
+          (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) || ' seconds'
+        )::INTERVAL
+      FROM shop_items si
+      WHERE ui.shop_item_id = si.id
+        AND ui.is_active = true
+        AND ui.expires_at IS NULL
+        AND (COALESCE(si.duration_seconds, 0) + (COALESCE(si.duration_hours, 0) * 3600)) > 0
+    `);
+    if (res?.rowCount > 0) {
+      sysLog('Auto-Healed Active Temporary Items On Startup', {
+        healedCount: res.rowCount
+      });
+    }
+  } catch (err) {
+    sysError('Failed to auto-heal active temporary items on startup', err);
+  }
+}
