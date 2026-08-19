@@ -131,10 +131,18 @@ export function safeTruncate(text, limit) {
  * Falls back to name sort for non-role items
  */
 export async function sortItemsByRolePosition(items, guild) {
-  if (!guild || !items) return items || [];
+  if (!guild || !items || items.length === 0) return items || [];
   
-  // Fetch all roles from cache
-  const roleCache = guild.roles.cache;
+  // Fetch fresh role collection from Discord API to guarantee accurate, live positions
+  let roleCache = guild.roles?.cache;
+  try {
+    const fetched = await guild.roles.fetch();
+    if (fetched) roleCache = fetched;
+  } catch (_) {
+    roleCache = guild.roles?.cache;
+  }
+
+  if (!roleCache) return items;
 
   // Map items with their role position
   const itemsWithPosition = items.map(item => {
