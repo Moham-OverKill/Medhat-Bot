@@ -26,9 +26,56 @@ export async function getLootBoxCategoryEmoji(guildId) {
   try {
     const config = await getGuildConfig(guildId);
     const customEmoji = config?.loot_box_category_emoji?.trim();
-    return customEmoji && customEmoji.length > 0 ? customEmoji : '🎁';
+    if (!customEmoji || customEmoji.length === 0) return '🎁';
+
+    // If truncated or malformed <:name:123
+    if (customEmoji.startsWith('<') && !customEmoji.endsWith('>')) {
+      return '🎁';
+    }
+    return customEmoji;
   } catch {
     return '🎁';
+  }
+}
+
+/**
+ * Auto-heals truncated or malformed category emojis in guild configs on startup.
+ * Looks up the matching emoji from the guild/client cache and restores the full snowflake ID and format.
+ * @param {import('discord.js').Client} client
+ */
+export async function healTruncatedCategoryEmojis(client) {
+  if (!client) return;
+  try {
+    const res = await query('SELECT guild_id, config FROM guild_config');
+    for (const row of res.rows) {
+      const guildId = row.guild_id;
+      const config = row.config || {};
+      const emoji = config.loot_box_category_emoji;
+      if (emoji && typeof emoji === 'string' && emoji.startsWith('<') && (!emoji.endsWith('>') || emoji.length < 20)) {
+        const match = emoji.match(/^<(a)?:([a-zA-Z0-9_]+)/);
+        if (match) {
+          const name = match[2];
+          const guild = client.guilds.cache.get(guildId);
+          if (guild) {
+            await guild.emojis.fetch().catch(() => null);
+          }
+          const found = guild?.emojis?.cache?.find(e => e.name.toLowerCase() === name.toLowerCase()) ||
+                        client.emojis?.cache?.find(e => e.name.toLowerCase() === name.toLowerCase());
+          if (found) {
+            const healed = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+            config.loot_box_category_emoji = healed;
+            await setGuildConfig(guildId, config);
+            sysLog('Auto-Healed Truncated Category Emoji', {
+              guild: guildId,
+              from: emoji,
+              to: healed
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    sysError('Failed to auto-heal category emojis', err);
   }
 }
 

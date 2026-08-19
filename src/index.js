@@ -23,6 +23,7 @@ import { logSystemEvent, sysLog, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep } from './economy/shop.js';
 import { initializeTradeJanitor } from './commands/trade.js';
+import { healTruncatedCategoryEmojis } from './economy/lootbox.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -314,6 +315,7 @@ client.once(Events.ClientReady, async () => {
     // Seed the in-memory MVP cache from the database (restores active MVP state after reboot)
     await seedMvpCacheFromDb();
     await initializeTradeJanitor(client);
+    await healTruncatedCategoryEmojis(client);
     sysLog('Task Started', { detail: 'MVP Cache Seeded from DB' });
 
     // Start background jobs
