@@ -29,7 +29,8 @@ const CAT_STATUSES = [
   "XX Servers | Watching birds through window...",
   "XX Servers | Loaf mode activated!",
   "XX Servers | Purring like an engine!",
-  "XX Servers | Demanding attention!!"
+  "XX Servers | Demanding attention!!",
+  "XX Servers | Judging your life choices..."
 ];
 
 /**
