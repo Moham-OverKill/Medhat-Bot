@@ -1568,20 +1568,20 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 // 1. Insert Trade Tax FIRST (lower ID -> appears below trade line in DESC history)
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
-                     SELECT $1, $2, $3, balance + $5, 'fee', 'Trade taxes', $4 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+                     SELECT $1, $2, $3, balance + $5, 'fee', 'Trade Fee', $4 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
                     [giverId, trade.guild_id, -finalFee, tradeId, amount]
                 );
                 // 2. Insert Principal Trade SECOND (higher ID -> appears on top line in DESC history)
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
                      SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-                    [giverId, trade.guild_id, -amount, `P2P Trade to ${rName}`, tradeId]
+                    [giverId, trade.guild_id, -amount, `Transfer to ${rName}`, tradeId]
                 );
             } else {
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
                      SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-                    [giverId, trade.guild_id, -finalSenderDeduction, `P2P Trade to ${rName}`, tradeId]
+                    [giverId, trade.guild_id, -finalSenderDeduction, `Transfer to ${rName}`, tradeId]
                 );
             }
 
@@ -1597,20 +1597,20 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 // 1. Insert Trade Tax FIRST (lower ID -> appears below trade line in DESC history)
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
-                     SELECT $1, $2, $3, balance - $5, 'fee', 'Trade taxes', $4 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+                     SELECT $1, $2, $3, balance - $5, 'fee', 'Trade Fee', $4 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
                     [receiverId, trade.guild_id, -finalFee, tradeId, amount]
                 );
                 // 2. Insert Principal Trade SECOND (higher ID -> appears on top line in DESC history)
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
                      SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-                    [receiverId, trade.guild_id, amount, `P2P Trade from ${gName}`, tradeId]
+                    [receiverId, trade.guild_id, amount, `Transfer from ${gName}`, tradeId]
                 );
             } else {
                 await client.query(
                     `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
                      SELECT $1, $2, $3, balance, 'trade', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-                    [receiverId, trade.guild_id, finalRecipientIntake, `P2P Trade from ${gName}`, tradeId]
+                    [receiverId, trade.guild_id, finalRecipientIntake, `Transfer from ${gName}`, tradeId]
                 );
             }
 

@@ -211,7 +211,7 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
         guildId,
         totalReward,
         newBalance,
-        `Daily reward (Streak: ${newStreak})${boostBonus > 0 ? ` [Boost +${boostBonus}]` : ''}`
+        'Daily Reward'
       ]
     );
 

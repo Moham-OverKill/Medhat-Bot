@@ -202,7 +202,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
           if (alreadyPaid) {
             sysLog('KotH Payout Skipped', { guild: guildId, user: userId, detail: 'Already paid within the last 50 minutes' });
           } else {
-            const result = await updateBalance(userId, guildId, rewardAmount, 'mvp_reward', 'Current MVP!');
+            const result = await updateBalance(userId, guildId, rewardAmount, 'mvp_reward', 'MVP Reward');
             if (result?.success) {
               paid.push(userId);
             } else {
