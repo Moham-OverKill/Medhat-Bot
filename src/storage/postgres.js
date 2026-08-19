@@ -602,6 +602,22 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_quest_progress_lookup ON quest_progress(guild_id, user_id, quest_id, quest_date);
     `);
 
+    // Table for tracking individual quest reaction events (for accurate decrements and anti-exploit)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quest_reaction_events (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        quest_id INTEGER NOT NULL,
+        quest_date DATE NOT NULL,
+        message_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(guild_id, user_id, quest_id, quest_date, message_id, emoji)
+      );
+      CREATE INDEX IF NOT EXISTS idx_quest_reaction_events_lookup ON quest_reaction_events(guild_id, user_id, quest_id, quest_date);
+    `);
+
 
     // --- COLORS MODULE TABLES (Migrated from SQLite) ---
 
