@@ -33,14 +33,30 @@ const CAT_STATUSES = [
   "XX Servers | Judging your life choices..."
 ];
 
+let lastStatusIndex = -1;
+
 /**
- * Updates the bot's rich presence with a random cat status
+ * Updates the bot's rich presence with a random cat status (never repeating the previous hour)
  * @param {import('discord.js').Client} client 
  */
 export function updateBotPresence(client) {
   let statusText = `${client.guilds.cache.size} Servers`;
   try {
-    const rawStatus = CAT_STATUSES[Math.floor(Math.random() * CAT_STATUSES.length)];
+    // Exclude the immediately previous status to guarantee non-repeating rotation
+    const availableIndices = [];
+    for (let i = 0; i < CAT_STATUSES.length; i++) {
+      if (i !== lastStatusIndex) {
+        availableIndices.push(i);
+      }
+    }
+
+    const selectedIndex = availableIndices.length > 0
+      ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
+      : 0;
+
+    lastStatusIndex = selectedIndex;
+
+    const rawStatus = CAT_STATUSES[selectedIndex];
     statusText = rawStatus.replace('XX', client.guilds.cache.size);
 
     // Dynamic ActivityType: Prefer Custom, fallback to Playing
