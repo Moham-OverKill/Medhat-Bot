@@ -26,7 +26,7 @@ export async function getLootBoxCategoryEmoji(guildId) {
   try {
     const config = await getGuildConfig(guildId);
     const customEmoji = config?.loot_box_category_emoji?.trim();
-    return customEmoji && customEmoji.length > 0 ? customEmoji.slice(0, 32) : '🎁';
+    return customEmoji && customEmoji.length > 0 ? customEmoji : '🎁';
   } catch {
     return '🎁';
   }

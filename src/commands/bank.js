@@ -1173,6 +1173,7 @@ export async function handleInventoryItemSelect(interaction) {
 
       const config = await getGuildConfig(interaction.guildId);
       const serverCoinEmoji = config?.coin_emoji || COIN_EMOJI || '🪙';
+      const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
       const sections = [];
       sections.push(`**Quantity:** \`x${displayQty}\``);
@@ -1219,7 +1220,7 @@ export async function handleInventoryItemSelect(interaction) {
         return {
           label: `${baseName} (x${itemQty})`,
           value: `${i.id}_${idx}`,
-          emoji: '🎁',
+          emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁'),
           default: String(i.id) === String(item.id)
         };
       });
