@@ -18,7 +18,13 @@ const CAT_STATUSES = [
   "XX Servers | Catching red dots!",
   "XX Servers | Zzz . . .",
   "XX Servers | Unrolling toilet paper",
-  "XX Servers | Scratching new sofa"
+  "XX Servers | Scratching new sofa",
+  "XX Servers | Knocking cups off tables",
+  "XX Servers | Walking across keyboards",
+  "XX Servers | Staring at empty corners",
+  "XX Servers | Hissing at the vacuum cleaner",
+  "XX Servers | Sitting in a cardboard box",
+  "XX Servers | Plotting world domination"
 ];
 
 /**
