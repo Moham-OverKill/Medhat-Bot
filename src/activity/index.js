@@ -584,13 +584,14 @@ export async function checkReactionQuest(reaction, user) {
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
 
-    try {
-        const { incrementProgressAndPayout } = await import('../quests/quests.js');
-        const result = await incrementProgressAndPayout(guildId, userId, quest);
-        
-        const context = inPostChannel ? 'Original Post' : 'Message';
-        sysLog('Quest Progress Captured', { user: userId, guild: guildId, detail: `Source: Reaction | Context: ${context} | QuestID: ${quest.id}` });
+    const emojiKey = reaction.emoji?.id || reaction.emoji?.name || 'unknown';
+    const messageId = reaction.message?.id;
+    if (!messageId) continue;
 
+    try {
+        const { recordReactionAndIncrement } = await import('../quests/quests.js');
+        const result = await recordReactionAndIncrement(guildId, userId, quest, messageId, emojiKey);
+        
         if (result.completed) {
           if (!completedQuestsCache.has(guildId)) completedQuestsCache.set(guildId, new Map());
           const map = completedQuestsCache.get(guildId);
@@ -599,6 +600,90 @@ export async function checkReactionQuest(reaction, user) {
         }
     } catch (e) {
         sysError('Quest Progress Update Failed', e, { user: userId, guild: guildId, detail: `Source: Reaction | QuestID: ${quest.id}` });
+    }
+  }
+}
+
+/**
+ * Check reaction removal for quest decrement (with anti-exploit locks).
+ */
+export async function checkReactionRemoveQuest(reaction, user) {
+  if (!user || user.bot) return;
+
+  const guildId = reaction.message?.guildId;
+  if (!guildId) return;
+
+  let quests = activeQuestsCache.get(guildId);
+  if (quests === undefined) {
+    if (syncingGuilds.has(guildId)) return;
+    syncingGuilds.add(guildId);
+    try {
+        await syncQuestChannelCache(guildId);
+    } finally {
+        syncingGuilds.delete(guildId);
+    }
+    quests = activeQuestsCache.get(guildId);
+  }
+
+  if (!quests || quests.length === 0) return;
+
+  const channelId = reaction.message.channelId;
+  let parentId = reaction.message.channel?.parentId;
+  
+  if (!parentId && reaction.message.guild) {
+    const cached = reaction.message.guild.channels.cache.get(channelId);
+    if (cached?.parentId) parentId = cached.parentId;
+    else {
+      try {
+        const fetchedChannel = await reaction.message.client.channels.fetch(channelId).catch(() => null);
+        if (fetchedChannel?.parentId) parentId = fetchedChannel.parentId;
+      } catch (e) {}
+    }
+  }
+
+  const userId = user.id;
+
+  // ── Dual-Logic: Determine if this reaction was on the Original Post ─────────
+  let inPostChannel = false;
+  let isOriginalPost = false;
+  
+  try {
+    const reactChannel = reaction.message.channel;
+    inPostChannel = await isPostChannel(reactChannel);
+    const isThread = reactChannel.isThread?.() || false;
+    isOriginalPost = inPostChannel
+      ? (isThread && (
+          reaction.message.id === reactChannel.id ||
+          (reactChannel.starterMessageId && reaction.message.id === reactChannel.starterMessageId) ||
+          (!reaction.message.reference && reactChannel.ownerId === reaction.message.author?.id)
+        ))
+      : true; // Normal channels: any message qualifies
+  } catch (err) {
+    sysError('Reaction Remove Parse Error (Quest Engine)', err, { user: userId, guild: guildId });
+    return; // Fast fail
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  for (const quest of quests) {
+    if (quest.action_type !== 'react_images') continue;
+    if (quest.channel_id !== channelId && quest.channel_id !== parentId) continue;
+
+    // POST CHANNEL: Only reactions on the Original Post count
+    if (inPostChannel && !isOriginalPost) continue;
+    
+    const guildCompletions = completedQuestsCache.get(guildId);
+    // Rule 2: If quest already completed/claimed, lock it permanently (do NOT decrement)
+    if (guildCompletions?.get(quest.id)?.has(userId)) continue;
+
+    const emojiKey = reaction.emoji?.id || reaction.emoji?.name || 'unknown';
+    const messageId = reaction.message?.id;
+    if (!messageId) continue;
+
+    try {
+        const { removeReactionAndDecrement } = await import('../quests/quests.js');
+        await removeReactionAndDecrement(guildId, userId, quest, messageId, emojiKey);
+    } catch (e) {
+        sysError('Quest Progress Decrement Failed', e, { user: userId, guild: guildId, detail: `Source: Reaction Remove | QuestID: ${quest.id}` });
     }
   }
 }
