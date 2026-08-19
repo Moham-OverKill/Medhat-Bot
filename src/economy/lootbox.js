@@ -46,7 +46,7 @@ export async function getLootBoxCategoryEmoji(guildId) {
 export async function healTruncatedCategoryEmojis(client) {
   if (!client) return;
   try {
-    const res = await query('SELECT guild_id, config FROM guild_config');
+    const res = await query('SELECT guild_id, config FROM guild_configs');
     for (const row of res.rows) {
       const guildId = row.guild_id;
       const config = row.config || {};
