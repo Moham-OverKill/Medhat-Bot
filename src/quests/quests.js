@@ -163,6 +163,10 @@ export async function resetGuildQuestProgress(guildId) {
       'DELETE FROM quest_progress WHERE guild_id = $1 AND quest_date < $2',
       [guildId, date]
     );
+    await pool.query(
+      'DELETE FROM quest_reaction_events WHERE guild_id = $1 AND quest_date < $2',
+      [guildId, date]
+    ).catch(() => {});
     return true;
   } catch (error) {
     sysError('Quest Progress Reset Failed', error, { guild: guildId });
@@ -318,6 +322,241 @@ async function triggerQuestLog(guildId, userId, quest) {
             }
         }
     } catch {}
+}
+
+/**
+ * Record a tracked quest reaction and increment progress atomically.
+ * Ensures duplicate reactions on the same message do not double-increment,
+ * and tracks individual reactions so only valid ones can be decremented later.
+ */
+export async function recordReactionAndIncrement(guildId, userId, quest, messageId, emojiKey) {
+  const pool = getPool();
+  const client = await pool.connect();
+  const date = getTodayCairo();
+  
+  const requiredCount = parseInt(quest.required_count, 10) || 1;
+  const reward = parseInt(quest.reward_coins, 10) || 0;
+
+  if (requiredCount <= 0 || !messageId || !emojiKey) {
+    client.release();
+    return { progress: 0, completed: false, justCompleted: false };
+  }
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Lock and Check current progress (FOR UPDATE prevents race conditions)
+    const res = await client.query(
+      `SELECT progress, completed, is_claimed FROM quest_progress 
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 FOR UPDATE`,
+      [guildId, userId, quest.id, date]
+    );
+
+    let currentProgress = 0;
+    let alreadyCompleted = false;
+    let alreadyClaimed = false;
+
+    if (res.rows.length > 0) {
+      currentProgress = parseInt(res.rows[0].progress, 10) || 0;
+      alreadyCompleted = Boolean(res.rows[0].completed);
+      alreadyClaimed = Boolean(res.rows[0].is_claimed);
+    }
+
+    // Rule 2: Completed quests are permanently locked for the active cycle
+    if (alreadyCompleted || alreadyClaimed) {
+      await client.query('ROLLBACK');
+      client.release();
+      return { progress: currentProgress, completed: true, justCompleted: false, alreadyCompleted: true };
+    }
+
+    // 2. Anti-duplication: Check if this specific reaction was already tracked
+    const existingReaction = await client.query(
+      `SELECT 1 FROM quest_reaction_events
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 AND message_id = $5 AND emoji = $6`,
+      [guildId, userId, quest.id, date, messageId, emojiKey]
+    );
+
+    if (existingReaction.rows.length > 0) {
+      // Reaction already counted toward this quest today
+      await client.query('ROLLBACK');
+      client.release();
+      return { progress: currentProgress, completed: false, justCompleted: false, alreadyTracked: true };
+    }
+
+    // 3. Record reaction event in ledger
+    await client.query(
+      `INSERT INTO quest_reaction_events (guild_id, user_id, quest_id, quest_date, message_id, emoji)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (guild_id, user_id, quest_id, quest_date, message_id, emoji) DO NOTHING`,
+      [guildId, userId, quest.id, date, messageId, emojiKey]
+    );
+
+    const newProgress = currentProgress + 1;
+    const justCompleted = newProgress >= requiredCount;
+
+    // 4. Update quest_progress
+    await client.query(
+      `INSERT INTO quest_progress (guild_id, user_id, quest_id, quest_date, progress, completed, active_tracking, is_claimed, completed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE, $6, CASE WHEN $6 THEN NOW() ELSE NULL END)
+       ON CONFLICT (guild_id, user_id, quest_id, quest_date)
+       DO UPDATE SET 
+         progress = $5,
+         completed = $6,
+         is_claimed = $6,
+         completed_at = CASE WHEN NOT quest_progress.completed AND $6 THEN NOW() ELSE quest_progress.completed_at END`,
+      [guildId, userId, quest.id, date, newProgress, justCompleted]
+    );
+
+    // 5. ATOMIC PAYOUT: If just completed, give the reward NOW inside the transaction
+    if (justCompleted && reward > 0) {
+      await client.query(
+        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+         VALUES ($1, $2, $3, $3)
+         ON CONFLICT (user_id, guild_id) DO UPDATE
+         SET balance = user_balances.balance + $3, total_earned = user_balances.total_earned + $3, updated_at = NOW()`,
+        [userId, guildId, reward]
+      );
+
+      await client.query(
+        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+         SELECT $1, $2, $3, balance, 'quest_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+        [userId, guildId, reward, 'Completed quest', quest.id]
+      );
+      
+      sysLog('Quest Atomic Payout', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Amount: ${reward}` });
+    }
+
+    await client.query('COMMIT');
+    client.release();
+
+    sysLog('Quest Progress Captured', { 
+      user: userId, 
+      guild: guildId, 
+      detail: `Quest: ${quest.id} | Progress: ${currentProgress} -> ${newProgress} (Goal: ${requiredCount})${justCompleted ? ' | COMPLETE' : ''}` 
+    });
+
+    if (justCompleted) {
+      triggerQuestLog(guildId, userId, quest).catch(() => {});
+      Promise.all([
+        import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
+        import('./index.js').then(m => m.client || null).catch(() => null)
+      ])
+        .then(([cfg, discordClient]) => {
+          const questXp = Math.max(0, parseInt(cfg?.battlepass_quest_xp ?? 150, 10));
+          if (questXp <= 0) return;
+          return import('../commands/settings/pass-engine.js')
+            .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, null, questXp, discordClient));
+        })
+        .catch(() => {});
+    }
+
+    return { progress: newProgress, completed: justCompleted, justCompleted };
+  } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch {}
+      client.release();
+    }
+    sysError('Quest Reaction Increment Failed', error, { 
+      user: userId, 
+      guild: guildId, 
+      detail: `QuestID: ${quest.id}` 
+    });
+    return { progress: 0, completed: false, justCompleted: false };
+  }
+}
+
+/**
+ * Remove a tracked quest reaction and decrement progress atomically.
+ * Follows strict anti-exploit rules:
+ * - Completed quests are locked (no decrement).
+ * - Only reactions that were tracked during the active cycle can be decremented.
+ * - Floor protection ensures progress never drops below 0.
+ */
+export async function removeReactionAndDecrement(guildId, userId, quest, messageId, emojiKey) {
+  const pool = getPool();
+  const client = await pool.connect();
+  const date = getTodayCairo();
+
+  if (!messageId || !emojiKey) {
+    client.release();
+    return { decremented: false };
+  }
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Lock and Check current progress
+    const res = await client.query(
+      `SELECT progress, completed, is_claimed FROM quest_progress 
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 FOR UPDATE`,
+      [guildId, userId, quest.id, date]
+    );
+
+    if (res.rows.length === 0) {
+      // No progress row exists yet
+      await client.query('ROLLBACK');
+      client.release();
+      return { decremented: false, wasTracked: false };
+    }
+
+    const currentProgress = parseInt(res.rows[0].progress, 10) || 0;
+    const alreadyCompleted = Boolean(res.rows[0].completed);
+    const alreadyClaimed = Boolean(res.rows[0].is_claimed);
+
+    // Rule 2: Anti-Exploit - If quest is already completed or claimed, lock it permanently
+    if (alreadyCompleted || alreadyClaimed) {
+      await client.query('ROLLBACK');
+      client.release();
+      return { decremented: false, locked: true, progress: currentProgress, completed: true };
+    }
+
+    // 2. Rule 1: Relevance Check - Only decrement if this reaction was actively tracked
+    const delResult = await client.query(
+      `DELETE FROM quest_reaction_events 
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 AND message_id = $5 AND emoji = $6
+       RETURNING id`,
+      [guildId, userId, quest.id, date, messageId, emojiKey]
+    );
+
+    if (delResult.rows.length === 0) {
+      // Removed reaction was not counted toward this quest -> do nothing
+      await client.query('ROLLBACK');
+      client.release();
+      return { decremented: false, wasTracked: false, progress: currentProgress };
+    }
+
+    // 3. Rule 1: Floor Protection - Never drop below 0
+    const newProgress = Math.max(0, currentProgress - 1);
+
+    await client.query(
+      `UPDATE quest_progress 
+       SET progress = $1 
+       WHERE guild_id = $2 AND user_id = $3 AND quest_id = $4 AND quest_date = $5`,
+      [newProgress, guildId, userId, quest.id, date]
+    );
+
+    await client.query('COMMIT');
+    client.release();
+
+    sysLog('Quest Progress Decremented', {
+      user: userId,
+      guild: guildId,
+      detail: `Source: Reaction Remove | Quest: ${quest.id} | Progress: ${currentProgress} -> ${newProgress}`
+    });
+
+    return { decremented: true, progress: newProgress, completed: false };
+  } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch {}
+      client.release();
+    }
+    sysError('Quest Reaction Decrement Failed', error, {
+      user: userId,
+      guild: guildId,
+      detail: `QuestID: ${quest.id}`
+    });
+    return { decremented: false };
+  }
 }
 
 /**

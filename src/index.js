@@ -435,6 +435,43 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   });
 });
 
+// Handle reaction removal for quest decrement (Optimized Watch-mode)
+client.on(Events.MessageReactionRemove, async (reaction, user) => {
+  const guildId = reaction.message?.guildId;
+  return runInGuildContext(guildId, async () => {
+    try {
+      if (user.bot) return;
+
+      const channelId = reaction.message.channelId;
+      if (!guildId || !channelId) return;
+
+      let parentId = reaction.message.channel?.parentId;
+      if (!parentId && reaction.message.guild) {
+          const cached = reaction.message.guild.channels.cache.get(channelId);
+          if (cached?.parentId) {
+              parentId = cached.parentId;
+          } else {
+              try {
+                const fetched = await client.channels.fetch(channelId).catch(() => null);
+                if (fetched?.parentId) parentId = fetched.parentId;
+              } catch (err) {}
+          }
+      }
+
+      const { isQuestChannel } = await import('./activity/index.js');
+      if (!await isQuestChannel(guildId, channelId, parentId)) return;
+
+      if (reaction.partial) await reaction.fetch().catch(() => null);
+      if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
+
+      const { checkReactionRemoveQuest } = await import('./activity/index.js');
+      await checkReactionRemoveQuest(reaction, user);
+    } catch (error) {
+      sysError('Reaction Remove Quest Failure', error, { guild: reaction.message?.guildId, user: user?.id });
+    }
+  });
+});
+
 // ============================================
 // REAL-TIME GHOST MANAGEMENT (MAINTENANCE)
 // ============================================
