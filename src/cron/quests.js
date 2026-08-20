@@ -1,34 +1,35 @@
+import cron from 'node-cron';
 import { loadGuildConfigs, setGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { getQuests, resetGuildQuestProgress } from '../quests/quests.js';
 import { syncQuestChannelCache } from '../activity/index.js';
-import { getCairoHour } from '../utils/time.js';
+import { getCairoHour, getTodayCairo } from '../utils/time.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
 export function startQuestScheduler(client) {
-  // Check every minute
-  setInterval(() => {
-    checkQuests(client);
-  }, 60000);
-  
-  // also run on startup after a small delay
+  // Reliable node-cron running at minute 0 of every hour in Africa/Cairo timezone
+  cron.schedule('0 * * * *', () => {
+    checkQuests(client, false);
+  }, {
+    scheduled: true,
+    timezone: "Africa/Cairo"
+  });
+
+  // Run on startup after a brief delay to catch up if a rotation window was missed
   setTimeout(() => {
     checkQuests(client, true);
-  }, 10000);
+  }, 5000);
+
+  sysLog('Infrastructure Audit', { detail: 'Hourly Quest Scheduler initialized (Timezone: Africa/Cairo)' });
 }
 
 /**
  * Scheduled task to rotate quests for all guilds independently
  */
 async function checkQuests(client, forceCheck = false) {
-  const now = new Date();
-  
-  // Normal scheduled run triggers precisely at min 0 in Cairo
-  // Note: we check minutes locally but refresh logic is gated by hours
-  if (!forceCheck && now.getMinutes() !== 0) return;
-
   const configs = await loadGuildConfigs();
   const currentCairoHour = getCairoHour();
+  const todayCairo = getTodayCairo();
 
   // We track completion per guild+hour to ensure reliability in large clusters
   if (!checkQuests.lastRunMap) checkQuests.lastRunMap = new Map();
@@ -37,12 +38,14 @@ async function checkQuests(client, forceCheck = false) {
 
   for (const guildId in configs) {
     const config = configs[guildId];
-    if (!config.quests_enabled) continue;
+    const questsEnabled = config.quests_enabled ?? config.missions_enabled ?? false;
+    if (!questsEnabled) continue;
     
-    const guildHourKey = `${guildId}:${currentCairoHour}`;
+    const guildHourKey = `${guildId}:${todayCairo}:${currentCairoHour}`;
     if (!forceCheck && checkQuests.lastRunMap.get(guildHourKey)) continue;
 
     const refreshes = config.quests_refreshes_per_day || 1;
+    const targetAmount = parseInt(config.quests_per_refresh) || 1;
     let shouldRefresh = false;
 
     // Strict independent schedule check
@@ -50,10 +53,16 @@ async function checkQuests(client, forceCheck = false) {
     else if (refreshes === 2 && [0, 12].includes(currentCairoHour)) shouldRefresh = true;
     else if (refreshes === 1 && currentCairoHour === 0) shouldRefresh = true;
 
-    // Force check (startup) only populates if empty
+    // Force check (startup): rotate if missing, if count mismatch, or if overdue for today
     if (forceCheck) {
-       if (!config.active_quest_ids || config.active_quest_ids.length === 0) shouldRefresh = true;
-       else shouldRefresh = false;
+       const activeIds = config.active_quest_ids || [];
+       if (activeIds.length === 0 || activeIds.length !== targetAmount) {
+         shouldRefresh = true;
+       } else if (!config.last_quest_rotated_date || config.last_quest_rotated_date !== todayCairo) {
+         shouldRefresh = true;
+       } else {
+         shouldRefresh = false;
+       }
     }
 
     if (!shouldRefresh) continue;
@@ -190,6 +199,16 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
             weightedPool.push({ quest: q, weight, cumulativeWeight: totalWeight });
         }
         
+        // If all available quests have weight 0, give them equal weight to pick uniformly
+        if (totalWeight === 0 && weightedPool.length > 0) {
+            totalWeight = 0;
+            for (let i = 0; i < weightedPool.length; i++) {
+                weightedPool[i].weight = 100;
+                totalWeight += 100;
+                weightedPool[i].cumulativeWeight = totalWeight;
+            }
+        }
+
         let randomNum = Math.random() * totalWeight;
         let pickedQuest = null;
         let pickedIndex = -1;
@@ -224,6 +243,9 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
     config.last_quest_ids = lastIds;
     config.active_quest_ids = selectedIds;
     config.current_quest_cycle = currentCycle;
+    config.last_quest_rotated_date = getTodayCairo();
+    config.last_quest_rotated_hour = getCairoHour();
+    config.last_quest_rotated_at = new Date().toISOString();
 
     // Snapshot Architecture: Capture full objects to freeze the cycle
     const selectedQuests = allQuests.filter(q => selectedIds.includes(q.id));
