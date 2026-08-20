@@ -1658,7 +1658,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 if (currentQty - tradedQty <= 0) {
                     await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
                 } else {
-                    await client.query('UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2', [tradedQty, row.id]);
+                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, row.id]);
                 }
 
                 const targetCheck = await client.query(
@@ -1698,7 +1698,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 if (currentQty - tradedQty <= 0) {
                     await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
                 } else {
-                    await client.query('UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2', [tradedQty, row.id]);
+                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, row.id]);
                 }
 
                 const senderCheck = await client.query(

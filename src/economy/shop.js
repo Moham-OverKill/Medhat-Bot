@@ -1511,7 +1511,35 @@ export async function getUserInventory(userId, guildId) {
       [userId, guildId]
     );
 
-    return result.rows;
+    const consolidated = [];
+    const permanentMap = new Map();
+
+    for (const row of result.rows) {
+      if (row.expires_at !== null || !row.shop_item_id) {
+        consolidated.push({
+          ...row,
+          quantity: Math.max(1, parseInt(row.quantity, 10) || 1)
+        });
+        continue;
+      }
+      const key = `${row.shop_item_id}`;
+      if (!permanentMap.has(key)) {
+        const itemObj = {
+          ...row,
+          quantity: Math.max(1, parseInt(row.quantity, 10) || 1)
+        };
+        permanentMap.set(key, itemObj);
+        consolidated.push(itemObj);
+      } else {
+        const primary = permanentMap.get(key);
+        primary.quantity += Math.max(1, parseInt(row.quantity, 10) || 1);
+        if (!primary.is_active && row.is_active) {
+          primary.is_active = true;
+        }
+      }
+    }
+
+    return consolidated;
   } catch (error) {
     logSystemError(`Failed to get user inventory for user ${userId} in guild ${guildId}: ${sanitizeError(error)}`);
     return [];
@@ -1614,39 +1642,6 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
 
     // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
     await runDependencySweep(userId, guildId, freshMember);
-
-    // Sync any missing claimed level rewards (items or chests)
-    try {
-      const claimedChests = await query(
-        `SELECT upc.level_claimed, bc.reward_chest_id, si.id AS shop_item_id, si.role_id
-         FROM user_pass_claims upc
-         JOIN battlepass_config bc ON bc.guild_id = upc.guild_id AND bc.level = upc.level_claimed
-         JOIN shop_items si ON si.loot_box_id = bc.reward_chest_id AND si.guild_id = upc.guild_id
-         WHERE upc.user_id = $1 AND upc.guild_id = $2 AND bc.reward_chest_id IS NOT NULL`,
-        [userId, guildId]
-      );
-
-      for (const chest of claimedChests.rows) {
-        const exists = await query(
-          `SELECT id, quantity FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
-          [userId, guildId, chest.shop_item_id]
-        );
-        if (exists.rows.length === 0) {
-          await query(
-            `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
-            [userId, guildId, chest.shop_item_id, chest.role_id]
-          );
-          // If another level chest had absorbed its quantity from an earlier null merge, decrement it
-          await query(
-            `UPDATE user_inventory
-             SET quantity = quantity - 1
-             WHERE user_id = $1 AND guild_id = $2 AND source = 'LEVEL' AND quantity > 1 AND shop_item_id != $3`,
-            [userId, guildId, chest.shop_item_id]
-          );
-        }
-      }
-    } catch {}
 
     // Auto-consolidate any duplicate permanent item rows for the user
     const permanentItemMap = new Map();
