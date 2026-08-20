@@ -230,6 +230,19 @@ export async function handleQuestsScheduleUpdate(interaction) {
     }
 
     await setGuildConfig(guildId, config);
+
+    // If quests are enabled and current active count does not match perRefresh, rotate immediately
+    const questsEnabled = config.quests_enabled ?? config.missions_enabled ?? false;
+    if (questsEnabled && quests.length > 0) {
+      const activeCount = (config.active_quest_ids || []).length;
+      const targetCount = config.quests_per_refresh || 1;
+      if (activeCount !== targetCount) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        const { getPool } = await import('../storage/postgres.js');
+        await rotateGuildQuests(guildId, config, getPool(), interaction.client, { skipNotifications: true });
+      }
+    }
+
     const { syncQuestChannelCache } = await import('../activity/index.js');
     await syncQuestChannelCache(guildId);
     await showQuestsSchedule(interaction);
