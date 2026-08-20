@@ -3,11 +3,25 @@ import { sanitizeError, runInGuildContext } from '../shared.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
 // ============================================
-// TEXT CHAT: ANTI-SPAM CONFIGURATION
+// TEXT CHAT: ANTI-SPAM & LENGTH SCALING CONFIGURATION
 // ============================================
-const MESSAGE_COOLDOWN_MS = 10000; // 10 seconds between valid messages
+const MESSAGE_COOLDOWN_MS = 5000; // 5 seconds between valid messages
 const MIN_MESSAGE_LENGTH = 5; // Minimum 5 characters
 const COMMAND_PREFIXES = ['/', '!', '?', '.', '-', '$', '>']; // Ignore commands
+
+/**
+ * Calculate points / XP based on message length and substance
+ * - 5 to 24 chars (or attachment): 1 point
+ * - 25 to 59 chars: 2 points
+ * - 60+ chars: 3 points
+ */
+export function calculateMessagePoints(content = '', hasAttachments = false) {
+  const len = (content || '').trim().length;
+  if (len >= 60) return 3;
+  if (len >= 25) return 2;
+  if (len >= MIN_MESSAGE_LENGTH || hasAttachments) return 1;
+  return 0;
+}
 
 // In-memory cache for cooldowns (Key: `${guildId}:${userId}`, Value: timestamp)
 const userMessageCooldownCache = new Map();
@@ -233,9 +247,9 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     } catch {}
   }
 
-  // 2. Minimum length OR valid attachment
-  const hasContent = content.length >= MIN_MESSAGE_LENGTH || hasAttachments;
-  if (!hasContent) return false;
+  // 2. Minimum length OR valid attachment & calculate length-based points
+  const pointsEarned = calculateMessagePoints(content, hasAttachments);
+  if (pointsEarned <= 0) return false;
 
   // 3. Command prefix check (only if text content exists)
   if (content.length > 0) {
@@ -243,7 +257,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     if (COMMAND_PREFIXES.includes(firstChar)) return false;
   }
 
-  // 4. Cooldown check (10s per user)
+  // 4. Cooldown check (5s per user)
   const lastMsgTime = userMessageCooldownCache.get(userKey);
   if (lastMsgTime && (now - lastMsgTime) < MESSAGE_COOLDOWN_MS) return false;
 
@@ -266,10 +280,10 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 
   userMessageCooldownCache.set(userKey, now);
 
-  // 6. Buffer into pending batch
+  // 6. Buffer into pending batch (scaled by length points)
   const existingBatch = pendingMessageBatch.get(userKey);
   if (existingBatch) {
-    existingBatch.count += 1;
+    existingBatch.count += pointsEarned;
     existingBatch.lastTime = now;
     existingBatch.username = username;
   } else {
@@ -277,7 +291,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       guildId,
       userId,
       username,
-      count: 1,
+      count: pointsEarned,
       lastTime: now
     });
   }
@@ -287,14 +301,15 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
     flushMessageBatch().catch(() => {});
   }
 
-  // 7. Battlepass XP hook — reads msg XP rate from guild config (default: 1)
+  // 7. Battlepass XP hook — reads msg XP rate from guild config (default: 1) and scales by pointsEarned
   import('../storage/config.js')
     .then(({ getGuildConfig }) => getGuildConfig(guildId))
     .then(cfg => {
       const msgXp = Math.max(0, parseInt(cfg?.battlepass_msg_xp ?? 1, 10));
       if (msgXp <= 0) return;
+      const totalMsgXp = pointsEarned * msgXp;
       return import('../commands/settings/pass-engine.js')
-        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, msgXp, null));
+        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalMsgXp, null));
     })
     .catch(err => {
       import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Msg XP Hook Error', err));
@@ -502,7 +517,7 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
   try {
     const pool = getPool();
     const result = await pool.query(
-      `SELECT voice_valid_start, voice_seconds_accumulated 
+      `SELECT voice_valid_start 
        FROM user_activity 
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
@@ -514,23 +529,19 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
     const validStart = row.voice_valid_start ? parseInt(row.voice_valid_start) : null;
     if (!validStart || validStart <= 0) return;
 
-    let buffer = parseInt(row.voice_seconds_accumulated || 0);
     const elapsedMs = now - validStart;
     const elapsedSeconds = Math.floor(elapsedMs / 1000);
-    buffer += elapsedSeconds;
+    const pointsToAward = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
 
-    const pointsToAward = Math.floor(buffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
-    const remainingBuffer = buffer % VOICE_POINTS_THRESHOLD_SECONDS;
-
-    // ATOMIC UPDATE: Consume valid time and increment points in one step
+    // ATOMIC UPDATE: Award any completed full minutes, wipe uncompleted seconds to 0, and clear voice_valid_start
     await pool.query(
       `UPDATE user_activity 
        SET voice_valid_start = NULL,
-           voice_seconds_accumulated = $3,
-           voice_minutes = voice_minutes + $4,
-           last_active = $5
+           voice_seconds_accumulated = 0,
+           voice_minutes = voice_minutes + $3,
+           last_active = $4
        WHERE guild_id = $1 AND user_id = $2`,
-      [guildId, userId, remainingBuffer, pointsToAward, new Date(now)]
+      [guildId, userId, pointsToAward, new Date(now)]
     );
 
     // Battlepass XP hook for voice points — reads voice XP rate from guild config (default: 1)
@@ -648,25 +659,24 @@ export async function voicePointsTick(client) {
         }
 
         // ========== VALIDATION PASSED - AWARD POINTS ==========
-        const buffer = parseInt(row.voice_seconds_accumulated || 0);
         const elapsedMs = now - validStart;
         const elapsedSeconds = Math.floor(elapsedMs / 1000);
-        const totalBuffer = buffer + elapsedSeconds;
 
-        if (totalBuffer >= VOICE_POINTS_THRESHOLD_SECONDS) {
-          const pointsToAward = Math.floor(totalBuffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
-          const remainingBuffer = totalBuffer % VOICE_POINTS_THRESHOLD_SECONDS;
+        if (elapsedSeconds >= VOICE_POINTS_THRESHOLD_SECONDS) {
+          const completedMinutes = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS);
+          const pointsToAward = completedMinutes * VOICE_POINTS_REWARD;
+          const newValidStart = validStart + (completedMinutes * VOICE_POINTS_THRESHOLD_SECONDS * 1000);
 
-          // ATOMIC UPDATE: Consume valid time and increment points in one step
+          // ATOMIC UPDATE: Consume completed minutes and advance voice_valid_start seamlessly
           // We use a WHERE clause on voice_valid_start to ensure we only update if it hasn't changed
           const updateResult = await pool.query(
             `UPDATE user_activity 
              SET voice_valid_start = $3,
-                 voice_seconds_accumulated = $4,
-                 voice_minutes = voice_minutes + $5,
-                 last_active = $6
-             WHERE guild_id = $1 AND user_id = $2 AND voice_valid_start = $7`,
-            [row.guild_id, row.user_id, now, remainingBuffer, pointsToAward, new Date(now), row.voice_valid_start]
+                 voice_seconds_accumulated = 0,
+                 voice_minutes = voice_minutes + $4,
+                 last_active = $5
+             WHERE guild_id = $1 AND user_id = $2 AND voice_valid_start = $6`,
+            [row.guild_id, row.user_id, newValidStart, pointsToAward, new Date(now), row.voice_valid_start]
           );
 
           if (updateResult.rowCount === 0) {
@@ -739,7 +749,7 @@ export async function flushAllVoiceTime(guildId) {
 
   try {
     const result = await pool.query(
-      `SELECT user_id, username, voice_valid_start, voice_seconds_accumulated 
+      `SELECT user_id, username, voice_valid_start 
        FROM user_activity 
        WHERE guild_id = $1 AND voice_valid_start IS NOT NULL`,
       [guildId]
@@ -749,22 +759,18 @@ export async function flushAllVoiceTime(guildId) {
       const validStart = parseInt(row.voice_valid_start);
       if (!validStart || validStart <= 0) continue;
 
-      let buffer = parseInt(row.voice_seconds_accumulated || 0);
       const elapsedMs = now - validStart;
       const elapsedSeconds = Math.floor(elapsedMs / 1000);
-      buffer += elapsedSeconds;
+      const pointsToAward = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
 
-      const pointsToAward = Math.floor(buffer / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
-      const remainingBuffer = buffer % VOICE_POINTS_THRESHOLD_SECONDS;
-
-      // ATOMIC UPDATE: Consume valid time and increment points in one step
+      // ATOMIC UPDATE: Consume valid time, reset buffer to 0, and clear voice_valid_start
       await pool.query(
         `UPDATE user_activity 
          SET voice_valid_start = NULL,
-             voice_seconds_accumulated = $3,
-             voice_minutes = voice_minutes + $4
+             voice_seconds_accumulated = 0,
+             voice_minutes = voice_minutes + $3
          WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, row.user_id, remainingBuffer, pointsToAward]
+        [guildId, row.user_id, pointsToAward]
       );
     }
   } catch (error) {
