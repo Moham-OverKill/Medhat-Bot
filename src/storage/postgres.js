@@ -1015,14 +1015,25 @@ export async function closeDatabase() {
 }
 
 /**
- * Execute a query with error handling
+ * Execute a query with error handling and automatic retry on transient connection resets
  */
-export async function query(text, params) {
+export async function query(text, params, retryCount = 0) {
   try {
     const result = await pool.query(text, params);
     databaseConnected = true;
     return result;
   } catch (error) {
+    const isTransient = error.code === 'ECONNRESET' ||
+                        error.code === '57P01' ||
+                        error.message?.includes('Connection terminated unexpectedly') ||
+                        error.message?.includes('read ECONNRESET');
+
+    if (isTransient && retryCount < 2) {
+      sysLog('Database Link Restoring', { detail: `Retrying query after transient disconnect (Attempt ${retryCount + 1})` });
+      await new Promise(res => setTimeout(res, 800));
+      return query(text, params, retryCount + 1);
+    }
+
     sysError('Database Query Error', error, { detail: text.substring(0, 100) });
     throw error;
   }
