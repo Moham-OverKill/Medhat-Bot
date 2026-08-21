@@ -1185,11 +1185,11 @@ export async function handleInventoryItemSelect(interaction) {
         // 1. Rarity (First)
         if (itemsEnabled) {
           const rarityLines = [
-            `⚪ **Common**: \`${masterBox.chance_common}%\``,
-            `🟢 **Uncommon**: \`${masterBox.chance_uncommon}%\``,
-            `🔵 **Rare**: \`${masterBox.chance_rare}%\``,
-            `🟣 **Epic**: \`${masterBox.chance_epic}%\``,
-            `🟡 **Legendary**: \`${masterBox.chance_legendary}%\``
+            `<:Common:1540250894308868116> **Common**: \`${masterBox.chance_common}%\``,
+            `<:Uncommon:1540250893017161738> **Uncommon**: \`${masterBox.chance_uncommon}%\``,
+            `<:Rare:1540250891419123784> **Rare**: \`${masterBox.chance_rare}%\``,
+            `<:Epic:1540250890143928400> **Epic**: \`${masterBox.chance_epic}%\``,
+            `<:Legendary:1540250888700952596> **Legendary**: \`${masterBox.chance_legendary}%\``
           ].join('\n');
           sections.push(rarityLines);
         }
@@ -1301,13 +1301,13 @@ export async function handleInventoryItemSelect(interaction) {
     }
 
     const RARITY_DISPLAY_MAP = {
-      common: '\u26AA Common',
-      uncommon: '\uD83D\uDFE2 Uncommon',
-      rare: '\uD83D\uDD35 Rare',
-      epic: '\uD83D\uDFE3 Epic',
-      legendary: '\uD83D\uDFE1 Legendary'
+      common: '<:Common:1540250894308868116> Common',
+      uncommon: '<:Uncommon:1540250893017161738> Uncommon',
+      rare: '<:Rare:1540250891419123784> Rare',
+      epic: '<:Epic:1540250890143928400> Epic',
+      legendary: '<:Legendary:1540250888700952596> Legendary'
     };
-    const rarityText = RARITY_DISPLAY_MAP[item.rarity] || '⚪ Common';
+    const rarityText = RARITY_DISPLAY_MAP[item.rarity] || '<:Common:1540250894308868116> Common';
     const validFirstRole = (firstRoleId && /^\d{17,20}$/.test(firstRoleId)) ? `<@&${firstRoleId}>` : item.name;
     let desc = `**Role:** ${validFirstRole}`;
     desc += `\n**Quantity:** ${displayQty}`;
@@ -1505,7 +1505,7 @@ export async function handleInventoryAction(interaction) {
       }
 
       for (const itemEntry of itemCounts.values()) {
-        const rarityBadge = RARITY_EMOJIS[(itemEntry.rarity || 'common').toLowerCase()] || '⚪';
+        const rarityBadge = RARITY_EMOJIS[(itemEntry.rarity || 'common').toLowerCase()] || '<:Common:1540250894308868116>';
         const qtyBadge = itemEntry.count > 1 ? ` x${itemEntry.count}` : '';
         const hasRole = itemEntry.roleId && /^\d{17,20}$/.test(itemEntry.roleId);
         const itemDisplay = hasRole ? `<@&${itemEntry.roleId}>` : `**${itemEntry.itemName}**`;

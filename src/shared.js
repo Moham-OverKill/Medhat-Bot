@@ -370,11 +370,11 @@ export async function executeWithRetry(promiseFactory, { label, timeoutMs = 1500
  * Item Rarity Definitions
  */
 export const RARITY_EMOJIS = {
-  common: '⚪',
-  uncommon: '🟢',
-  rare: '🔵',
-  epic: '🟣',
-  legendary: '🟡'
+  common: '<:Common:1540250894308868116>',
+  uncommon: '<:Uncommon:1540250893017161738>',
+  rare: '<:Rare:1540250891419123784>',
+  epic: '<:Epic:1540250890143928400>',
+  legendary: '<:Legendary:1540250888700952596>'
 };
 
 /**
@@ -389,11 +389,11 @@ export function getItemRarityEmoji(item) {
 }
 
 export const RARITY_DISPLAY = {
-  common: '⚪ Common',
-  uncommon: '🟢 Uncommon',
-  rare: '🔵 Rare',
-  epic: '🟣 Epic',
-  legendary: '🟡 Legendary'
+  common: '<:Common:1540250894308868116> Common',
+  uncommon: '<:Uncommon:1540250893017161738> Uncommon',
+  rare: '<:Rare:1540250891419123784> Rare',
+  epic: '<:Epic:1540250890143928400> Epic',
+  legendary: '<:Legendary:1540250888700952596> Legendary'
 };
 
 export const RARITY_COLORS = {
