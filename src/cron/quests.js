@@ -143,7 +143,7 @@ async function checkQuests(client, forceCheck = false) {
 }
 
 /**
- * Shuffles and selects a new batch of quests for a specific guild
+ * Shuffles and selects a new batch of quests for a specific guild with guaranteed anti-repeat deck cycling
  */
 export async function rotateGuildQuests(guildId, config, pool, client = null, options = {}) {
     const { skipNotifications = false } = options;
@@ -153,6 +153,7 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
     if (allQuests.length === 0) {
         config.active_quest_ids = [];
         config.active_quest_snapshot = null;
+        config.quest_history_ids = [];
         await setGuildConfig(guildId, config);
         await syncQuestChannelCache(guildId);
         return false;
@@ -161,76 +162,62 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
     // Increment or initialize cycle
     const currentCycle = (config.current_quest_cycle || 0) + 1;
     
-    // Build weighted items remaining
-    let availableQuests = [...allQuests];
-    const lastIds = config.active_quest_ids || [];
+    // Guaranteed Anti-Repeat Deck Shuffle Algorithm
+    const validQuestMap = new Map(allQuests.map(q => [Number(q.id), q]));
     
-    // Count how many of the currently existing quests were active in the previous cycle
-    const existingLastActiveCount = allQuests.filter(q => lastIds.includes(q.id)).length;
-    
-    // Strict exclusion: if the pool is large enough, filter out the quests that were active in the previous cycle
-    const canStrictlyAvoid = (allQuests.length - existingLastActiveCount) >= amount;
-    if (canStrictlyAvoid) {
-        availableQuests = availableQuests.filter(q => !lastIds.includes(q.id));
+    // Clean history of any deleted quest IDs
+    let historyIds = (config.quest_history_ids || [])
+      .map(Number)
+      .filter(id => validQuestMap.has(id));
+      
+    const currentActiveIds = (config.active_quest_ids || [])
+      .map(Number)
+      .filter(id => validQuestMap.has(id));
+
+    // Ensure currently active quests are registered in history
+    for (const id of currentActiveIds) {
+      if (!historyIds.includes(id)) {
+        historyIds.push(id);
+      }
     }
-    
-    let selectedIds = [];
-    
-    // Pick required amount of quests (or as many as we have available)
-    for (let c = 0; c < Math.min(amount, allQuests.length); c++) {
-        let totalWeight = 0;
-        const weightedPool = [];
 
-        for (const q of availableQuests) {
-            let weight = 100; // Default max priority
-            
-            if (q.last_active_at === null || q.last_active_at === undefined) {
-                weight = 150; // Brand New priority override
-            } else {
-                const distance = currentCycle - q.last_active_at;
-                if (distance <= 1) weight = 0;      // Exclude immediately active quests
-                else if (distance === 2) weight = 5;  // 5% relative weight (extremely low)
-                else if (distance === 3) weight = 15; // 15% relative weight (low)
-                else if (distance === 4) weight = 45; // 45% relative weight (medium)
-                else weight = 100;                    // Used 5+ cycles ago (Max)
-            }
-            
-            totalWeight += weight;
-            weightedPool.push({ quest: q, weight, cumulativeWeight: totalWeight });
-        }
-        
-        // If all available quests have weight 0, give them equal weight to pick uniformly
-        if (totalWeight === 0 && weightedPool.length > 0) {
-            totalWeight = 0;
-            for (let i = 0; i < weightedPool.length; i++) {
-                weightedPool[i].weight = 100;
-                totalWeight += 100;
-                weightedPool[i].cumulativeWeight = totalWeight;
-            }
-        }
+    // Candidate quests are those NOT in recent history
+    let unplayedQuests = allQuests.filter(q => !historyIds.includes(Number(q.id)));
 
-        let randomNum = Math.random() * totalWeight;
-        let pickedQuest = null;
-        let pickedIndex = -1;
-        
-        for (let i = 0; i < weightedPool.length; i++) {
-            if (randomNum <= weightedPool[i].cumulativeWeight) {
-                pickedQuest = weightedPool[i].quest;
-                pickedIndex = i;
-                break;
-            }
-        }
-        
-        // Failsafe condition (mathematically shouldn't be needed)
-        if (!pickedQuest && weightedPool.length > 0) {
-             pickedQuest = weightedPool[weightedPool.length - 1].quest;
-             pickedIndex = weightedPool.length - 1;
-        }
+    // If remaining unplayed quests are fewer than 'amount', the deck cycle has been completed!
+    // Start a new cycle while strictly excluding currently active quests so they don't repeat immediately
+    if (unplayedQuests.length < amount) {
+      // Keep only currently active IDs in history to prevent back-to-back repeats
+      historyIds = historyIds.filter(id => currentActiveIds.includes(id));
+      unplayedQuests = allQuests.filter(q => !historyIds.includes(Number(q.id)));
 
-        if (pickedQuest) {
-            selectedIds.push(pickedQuest.id);
-            availableQuests.splice(pickedIndex, 1);
-        }
+      // If pool size itself is smaller than or equal to amount, allow all quests
+      if (unplayedQuests.length === 0) {
+        unplayedQuests = [...allQuests];
+        historyIds = [];
+      }
+    }
+
+    // Fisher-Yates shuffle of the unplayed candidate pool
+    for (let i = unplayedQuests.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [unplayedQuests[i], unplayedQuests[j]] = [unplayedQuests[j], unplayedQuests[i]];
+    }
+
+    // Pick required amount from the unplayed pool
+    const pickedQuests = unplayedQuests.slice(0, Math.min(amount, allQuests.length));
+    const selectedIds = pickedQuests.map(q => Number(q.id));
+
+    // Record newly selected IDs into history
+    for (const id of selectedIds) {
+      if (!historyIds.includes(id)) {
+        historyIds.push(id);
+      }
+    }
+
+    // If history now contains all quests in the pool, reset it to just the current selection
+    if (historyIds.length >= allQuests.length) {
+      historyIds = [...selectedIds];
     }
 
     // Final shuffle of the selected batch for UI variety
@@ -240,15 +227,16 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
     }
 
     // Atomic Update to Guild Configuration
-    config.last_quest_ids = lastIds;
+    config.last_quest_ids = currentActiveIds;
     config.active_quest_ids = selectedIds;
+    config.quest_history_ids = historyIds;
     config.current_quest_cycle = currentCycle;
     config.last_quest_rotated_date = getTodayCairo();
     config.last_quest_rotated_hour = getCairoHour();
     config.last_quest_rotated_at = new Date().toISOString();
 
     // Snapshot Architecture: Capture full objects to freeze the cycle
-    const selectedQuests = allQuests.filter(q => selectedIds.includes(q.id));
+    const selectedQuests = allQuests.filter(q => selectedIds.includes(Number(q.id)));
     config.active_quest_snapshot = selectedQuests;
 
     await setGuildConfig(guildId, config);
