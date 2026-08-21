@@ -131,9 +131,12 @@ export function buildHubButtons(client) {
   return [row1, row2];
 }
 
+// Mutex lock to prevent concurrent duplicate hub message updates
+const hubUpdateLocks = new Set();
+
 /**
  * Publish or update the public Hub message in the designated channel
- * Self-healing: if the previous message was deleted, it only sends a new one if allowCreate is true.
+ * Edits existing message in-place to prevent duplicate messages and channel jumps.
  * @param {import('discord.js').Client} client 
  * @param {string} guildId 
  * @param {{ allowCreate?: boolean }} [options]
@@ -141,6 +144,11 @@ export function buildHubButtons(client) {
  */
 export async function publishOrUpdateHub(client, guildId, options = {}) {
   const { allowCreate = false } = options;
+
+  if (hubUpdateLocks.has(guildId)) {
+    return false; // Prevent concurrent duplicate runs
+  }
+  hubUpdateLocks.add(guildId);
 
   try {
     const config = await getGuildConfig(guildId) || {};
@@ -172,21 +180,28 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       files: [attachment]
     };
 
-    // 1. Delete known old message if it exists
+    // 1. If an existing message exists, edit it in-place
     const oldMsgId = config.interface_message_id;
     if (oldMsgId) {
       const oldMessage = await channel.messages.fetch(oldMsgId).catch(() => null);
       if (oldMessage) {
-        await oldMessage.delete().catch(() => {});
+        await oldMessage.edit(payload).catch(() => null);
+        sysLog('Hub Message Updated In-Place', { guild: guildId, channel: channelId, messageId: oldMsgId });
+        return true;
       }
     }
 
-    // 2. Scan recent messages in the channel to remove any duplicate or orphaned hub messages
+    // 2. If message doesn't exist and allowCreate is not allowed, do nothing
+    if (!allowCreate) {
+      return false;
+    }
+
+    // 3. Clean up any orphaned hub messages from the channel before creating a new one
     try {
       const recentMessages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
       if (recentMessages) {
         for (const msg of recentMessages.values()) {
-          if (msg.author.id === client.user.id && msg.id !== oldMsgId) {
+          if (msg.author.id === client.user.id) {
             const hasHubButtons = msg.components?.some(row =>
               row.components?.some(btn => btn.customId?.startsWith('hub_btn_'))
             );
@@ -200,7 +215,7 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       // Non-blocking cleanup
     }
 
-    // 3. Send fresh new message (guarantees zero "(edited)" tag)
+    // 4. Send new message
     const newMessage = await channel.send(payload).catch((err) => {
       sysError('Hub Message Send Failed', err, { guild: guildId, channel: channelId });
       return null;
@@ -217,6 +232,8 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
   } catch (error) {
     sysError('Hub Publish/Update Error', error, { guild: guildId });
     return false;
+  } finally {
+    hubUpdateLocks.delete(guildId);
   }
 }
 
