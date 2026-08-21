@@ -629,7 +629,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
-                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '🟢' : '⚪') : (i.is_active ? '✅' : '⬜')));
+                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜'));
                     let statusText = isLootBox ? 'Unopened Loot Box' : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
                     const itemQty = parseInt(i.quantity) || 1;
                     const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
