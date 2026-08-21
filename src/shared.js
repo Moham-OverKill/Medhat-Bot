@@ -203,10 +203,11 @@ export function formatInventoryItemLine(item) {
     statusEmoji = item.is_active ? '✅' : '⬜';
   }
 
+  const rarityEmoji = getItemRarityEmoji(item);
   const qty = parseInt(item.quantity) || 1;
   const qtyBadge = !isAdminIdentified ? ` \`x${qty}\`` : '';
 
-  return `${statusEmoji} ${nameDisplay}${qtyBadge}`;
+  return `${statusEmoji} ${rarityEmoji} ${nameDisplay}${qtyBadge}`;
 }
 
 /**

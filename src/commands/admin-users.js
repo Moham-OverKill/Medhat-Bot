@@ -506,8 +506,8 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
         const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`🎒 Managing Inventory: ${targetMember.displayName}`, 256))
-            .setColor(0x2ECC71)
+            .setTitle(safeTruncate(`🎒 Inventory: ${targetMember.displayName}`, 256))
+            .setColor('#3498DB')
             .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
 
         const categoryCounts = {};
@@ -521,7 +521,8 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             }
         }
 
-        const validCategories = categories.filter(c => categoryCounts[c.id] > 0);
+        const validCategoryIds = Object.keys(categoryCounts).map(Number);
+        const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
         const buttons = validCategories.map(c => 
             new ButtonBuilder()
                 .setCustomId(`admin_user_icat_${targetUserId}_${c.id}`)
@@ -542,13 +543,13 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
             const lootBoxCatName = await getLootBoxCategoryName(guildId);
             const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-            buttons.push(
-                new ButtonBuilder()
-                    .setCustomId(`admin_user_icat_${targetUserId}_lootboxes`)
-                    .setLabel(lootBoxCatName)
-                    .setEmoji(lootBoxEmoji)
-                    .setStyle(ButtonStyle.Secondary)
-            );
+            const lbBtn = new ButtonBuilder()
+                .setCustomId(`admin_user_icat_${targetUserId}_lootboxes`)
+                .setLabel(lootBoxCatName)
+                .setStyle(ButtonStyle.Secondary);
+            const { safeSetButtonEmoji } = await import('../shared.js');
+            safeSetButtonEmoji(lbBtn, lootBoxEmoji, interaction.guild, '🎁');
+            buttons.push(lbBtn);
         }
 
         const backRow = new ActionRowBuilder().addComponents(
@@ -573,6 +574,10 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         // Show items in specific category or loot boxes
         let items;
         let catName;
+        const lootBoxCatEmoji = await (async () => {
+            const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+            return getLootBoxCategoryEmoji(guildId);
+        })();
 
         if (isLootBox) {
             items = lootBoxItems;
@@ -589,20 +594,32 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             ? items.map(i => {
                 const qty = parseInt(i.quantity) || 1;
                 const baseName = (i.name && i.name.trim().length > 0) ? i.name : `Loot Box #${i.id}`;
-                return `• 🎁 **${baseName}** (x${qty})`;
+                return `• ${lootBoxCatEmoji} **${baseName}** \`(x${qty})\``;
               })
             : items.map(i => formatInventoryItemLine(i));
 
+        const pageSize = 20;
+        const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+        const currentPage = Math.max(1, Math.min(page, totalPages));
+        const startIndex = (currentPage - 1) * pageSize;
+        const pagedLines = listLines.slice(startIndex, startIndex + pageSize);
+        const remainingCount = items.length - (startIndex + pagedLines.length);
+
+        let desc = pagedLines.join('\n');
+        if (remainingCount > 0) {
+            desc += `\n...and ${remainingCount} more`;
+        }
+
         const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`📂 ${catName}: ${targetMember.displayName}`, 256))
-            .setColor(0x2ECC71)
-            .setDescription(listLines.length > 0 ? listLines.slice(0, 20).join('\n') + (listLines.length > 20 ? `\n...and ${listLines.length - 20} more` : '') : 'No items found in this category.');
+            .setTitle(safeTruncate(`📂 Category: ${catName}${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''} • ${targetMember.displayName}`, 256))
+            .setColor('#2ECC71')
+            .setDescription(desc || '*No items in this category.*');
 
         const rows = [];
         if (items.length > 0) {
             const { selectMenu } = buildPaginatedSelectMenu({
                 items,
-                page,
+                page: currentPage,
                 customId: `admin_user_isel_${targetUserId}_${categoryId}`,
                 placeholder: isLootBox ? 'Select a Loot Box to Manage' : 'Select an Item to Manage',
                 pageNavPrefix: 'admin_page_',
@@ -612,7 +629,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
-                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '✅' : '⬜') : (i.is_active ? '✅' : '⬜')));
+                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (isTemp ? (i.is_active ? '🟢' : '⚪') : (i.is_active ? '✅' : '⬜')));
                     let statusText = isLootBox ? 'Unopened Loot Box' : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
                     const itemQty = parseInt(i.quantity) || 1;
                     const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
