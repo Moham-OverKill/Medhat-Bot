@@ -197,8 +197,6 @@ export function formatInventoryItemLine(item) {
   let statusEmoji = '⬜';
   if (isAdminIdentified) {
     statusEmoji = '🛡️';
-  } else if (isTemp) {
-    statusEmoji = item.is_active ? '🟢' : '⚪';
   } else {
     statusEmoji = item.is_active ? '✅' : '⬜';
   }
