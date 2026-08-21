@@ -182,11 +182,11 @@ async function renderMassPanel(interaction, userId) {
 
     // Row 3: Rarity Select
     const rarityOptions = [
-        { label: 'Common',    value: 'common',    emoji: '<:Common:1540250894308868116>' },
-        { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540250893017161738>' },
-        { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540250891419123784>' },
-        { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540250890143928400>' },
-        { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540250888700952596>' }
+        { label: 'Common',    value: 'common',    emoji: '<:Common:1540257440971366400>' },
+        { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540257439629312010>' },
+        { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540257438274428928>' },
+        { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540257436890566666>' },
+        { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540257435560841236>' }
     ];
     const { rarity: currentRarity, is_tradable: currentTradable } = state;
     const raritySelect = new StringSelectMenuBuilder()
