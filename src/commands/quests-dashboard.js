@@ -198,7 +198,12 @@ export async function showQuestsSchedule(interaction) {
         .setCustomId('quests_dashboard')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('quests_force_rotate')
+        .setLabel('Rotate Now')
+        .setEmoji('🔄')
+        .setStyle(ButtonStyle.Primary)
     );
 
     await interaction.editReply({ files: [], embeds: [embed],
@@ -728,6 +733,12 @@ export async function handleQuestsComponent(interaction) {
     } else if (customId === 'quests_add_action') {
       await handleAddActionSelect(interaction);
     } else if (customId === 'quests_schedule_view') {
+      await showQuestsSchedule(interaction);
+    } else if (customId === 'quests_force_rotate') {
+      const config = await getGuildConfig(interaction.guildId) || {};
+      const { rotateGuildQuests } = await import('../cron/quests.js');
+      const { getPool } = await import('../storage/postgres.js');
+      await rotateGuildQuests(interaction.guildId, config, getPool(), interaction.client, { skipNotifications: true });
       await showQuestsSchedule(interaction);
     } else if (customId === 'quests_setting_per_refresh' || customId === 'quests_setting_refreshes') {
       await handleQuestsScheduleUpdate(interaction);

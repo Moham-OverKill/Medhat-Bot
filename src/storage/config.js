@@ -29,6 +29,10 @@ const CONFIG_SCHEMA = {
   active_quest_snapshot: { type: 'object', required: false }, // Frozen quest objects for the current cycle
   current_quest_cycle: { type: 'number', min: 0, required: false }, // Monotonic cycle counter
   last_quest_ids: { type: 'object', required: false }, // Previous cycle's IDs
+  quest_history_ids: { type: 'object', required: false }, // LRU history of recently played quests
+  last_quest_rotated_date: { type: 'string', required: false }, // YYYY-MM-DD
+  last_quest_rotated_hour: { type: 'number', min: 0, max: 23, required: false }, // 0-23
+  last_quest_rotated_at: { type: 'string', required: false }, // ISO timestamp
   // Legacy Missions module (for migration)
   missions_enabled: { type: 'boolean', required: false },
   missions_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
