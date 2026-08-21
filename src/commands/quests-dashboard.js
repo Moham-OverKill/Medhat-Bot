@@ -698,7 +698,7 @@ export async function handleToggleQuests(interaction) {
         const { rotateGuildQuests } = await import('../cron/quests.js');
         const { getPool } = await import('../storage/postgres.js');
         // rotateGuildQuests saves the new snapshot and calls syncQuestChannelCache internally
-        await rotateGuildQuests(guildId, config, getPool(), interaction.client);
+        await rotateGuildQuests(guildId, config, getPool(), interaction.client, { skipNotifications: true });
       } else {
         // No quests in pool – still sync so cache is clean
         const { syncQuestChannelCache } = await import('../activity/index.js');
