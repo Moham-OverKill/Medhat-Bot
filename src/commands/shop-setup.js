@@ -925,11 +925,11 @@ export async function handleAssignCategorySelect(interaction) {
 // ============================================================
 
 const RARITY_OPTIONS = [
-  { label: 'Common',    value: 'common',    emoji: '<:Common:1540250894308868116>' },
-  { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540250893017161738>' },
-  { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540250891419123784>' },
-  { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540250890143928400>' },
-  { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540250888700952596>' }
+  { label: 'Common',    value: 'common',    emoji: '<:Common:1540257440971366400>' },
+  { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540257439629312010>' },
+  { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540257438274428928>' },
+  { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540257436890566666>' },
+  { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540257435560841236>' }
 ];
 
 export function getTradableOptions(lootBoxName = 'loot boxes') {
@@ -5036,11 +5036,11 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     // 1. Rarity (First)
     if (itemsEnabled) {
       const rarityLines = [
-        `<:Common:1540250894308868116> **Common**: \`${box.chance_common}%\``,
-        `<:Uncommon:1540250893017161738> **Uncommon**: \`${box.chance_uncommon}%\``,
-        `<:Rare:1540250891419123784> **Rare**: \`${box.chance_rare}%\``,
-        `<:Epic:1540250890143928400> **Epic**: \`${box.chance_epic}%\``,
-        `<:Legendary:1540250888700952596> **Legendary**: \`${box.chance_legendary}%\``
+        `<:Common:1540257440971366400> **Common**: \`${box.chance_common}%\``,
+        `<:Uncommon:1540257439629312010> **Uncommon**: \`${box.chance_uncommon}%\``,
+        `<:Rare:1540257438274428928> **Rare**: \`${box.chance_rare}%\``,
+        `<:Epic:1540257436890566666> **Epic**: \`${box.chance_epic}%\``,
+        `<:Legendary:1540257435560841236> **Legendary**: \`${box.chance_legendary}%\``
       ].join('\n');
       sections.push(rarityLines);
     }
@@ -5353,11 +5353,11 @@ export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
       'blue',
       `🎲 ${singularName} Rarity Rates Updated`,
       `Admin **<@${interaction.user.id}>** updated rarity drop rates for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
-      `• <:Common:1540250894308868116> Common: **${chanceCommon}%**\n` +
-      `• <:Uncommon:1540250893017161738> Uncommon: **${chanceUncommon}%**\n` +
-      `• <:Rare:1540250891419123784> Rare: **${chanceRare}%**\n` +
-      `• <:Epic:1540250890143928400> Epic: **${chanceEpic}%**\n` +
-      `• <:Legendary:1540250888700952596> Legendary: **${chanceLegendary}%**`
+      `• <:Common:1540257440971366400> Common: **${chanceCommon}%**\n` +
+      `• <:Uncommon:1540257439629312010> Uncommon: **${chanceUncommon}%**\n` +
+      `• <:Rare:1540257438274428928> Rare: **${chanceRare}%**\n` +
+      `• <:Epic:1540257436890566666> Epic: **${chanceEpic}%**\n` +
+      `• <:Legendary:1540257435560841236> Legendary: **${chanceLegendary}%**`
     );
 
     await showLootBoxEditorPanel(interaction, boxId);

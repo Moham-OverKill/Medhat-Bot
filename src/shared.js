@@ -370,11 +370,11 @@ export async function executeWithRetry(promiseFactory, { label, timeoutMs = 1500
  * Item Rarity Definitions
  */
 export const RARITY_EMOJIS = {
-  common: '<:Common:1540250894308868116>',
-  uncommon: '<:Uncommon:1540250893017161738>',
-  rare: '<:Rare:1540250891419123784>',
-  epic: '<:Epic:1540250890143928400>',
-  legendary: '<:Legendary:1540250888700952596>'
+  common: '<:Common:1540257440971366400>',
+  uncommon: '<:Uncommon:1540257439629312010>',
+  rare: '<:Rare:1540257438274428928>',
+  epic: '<:Epic:1540257436890566666>',
+  legendary: '<:Legendary:1540257435560841236>'
 };
 
 /**
@@ -389,11 +389,11 @@ export function getItemRarityEmoji(item) {
 }
 
 export const RARITY_DISPLAY = {
-  common: '<:Common:1540250894308868116> Common',
-  uncommon: '<:Uncommon:1540250893017161738> Uncommon',
-  rare: '<:Rare:1540250891419123784> Rare',
-  epic: '<:Epic:1540250890143928400> Epic',
-  legendary: '<:Legendary:1540250888700952596> Legendary'
+  common: '<:Common:1540257440971366400> Common',
+  uncommon: '<:Uncommon:1540257439629312010> Uncommon',
+  rare: '<:Rare:1540257438274428928> Rare',
+  epic: '<:Epic:1540257436890566666> Epic',
+  legendary: '<:Legendary:1540257435560841236> Legendary'
 };
 
 export const RARITY_COLORS = {
@@ -415,11 +415,6 @@ export const RARITY_COLORS = {
 export function resolveComponentEmoji(emojiInput, clientOrGuild = null, fallback = '🎁') {
   if (!emojiInput) return fallback;
   if (typeof emojiInput === 'object') {
-    if (emojiInput.id) {
-      const client = clientOrGuild?.client || clientOrGuild;
-      const exists = client?.emojis?.cache?.has(emojiInput.id) || clientOrGuild?.emojis?.cache?.has(emojiInput.id);
-      if (client && !exists) return fallback;
-    }
     return emojiInput;
   }
 
