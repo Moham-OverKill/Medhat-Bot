@@ -1512,10 +1512,10 @@ export async function getUserInventory(userId, guildId) {
     );
 
     const consolidated = [];
-    const permanentMap = new Map();
+    const itemMap = new Map();
 
     for (const row of result.rows) {
-      if (row.expires_at !== null || !row.shop_item_id) {
+      if (!row.shop_item_id) {
         consolidated.push({
           ...row,
           quantity: Math.max(1, parseInt(row.quantity, 10) || 1)
@@ -1523,17 +1523,24 @@ export async function getUserInventory(userId, guildId) {
         continue;
       }
       const key = `${row.shop_item_id}`;
-      if (!permanentMap.has(key)) {
+      const rowQty = Math.max(1, parseInt(row.quantity, 10) || 1);
+
+      if (!itemMap.has(key)) {
         const itemObj = {
           ...row,
-          quantity: Math.max(1, parseInt(row.quantity, 10) || 1)
+          quantity: rowQty
         };
-        permanentMap.set(key, itemObj);
+        itemMap.set(key, itemObj);
         consolidated.push(itemObj);
       } else {
-        const primary = permanentMap.get(key);
-        primary.quantity += Math.max(1, parseInt(row.quantity, 10) || 1);
-        if (!primary.is_active && row.is_active) {
+        const primary = itemMap.get(key);
+        primary.quantity += rowQty;
+        // Prioritize active running timer row as the primary representation
+        if (!primary.expires_at && row.expires_at) {
+          primary.id = row.id;
+          primary.expires_at = row.expires_at;
+          primary.is_active = row.is_active;
+        } else if (!primary.is_active && row.is_active) {
           primary.is_active = true;
         }
       }
@@ -1643,20 +1650,17 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
     await runDependencySweep(userId, guildId, freshMember);
 
-    // Auto-consolidate any duplicate permanent item rows for the user
+    // Auto-consolidate any duplicate permanent/unactivated item rows for the user in DB
     const permanentItemMap = new Map();
     const rowsToDelete = [];
-    const consolidatedRows = [];
 
     for (const row of inventory.rows) {
       if (row.expires_at !== null || !row.shop_item_id) {
-        consolidatedRows.push(row);
         continue;
       }
       const key = `${row.shop_item_id}`;
       if (!permanentItemMap.has(key)) {
         permanentItemMap.set(key, row);
-        consolidatedRows.push(row);
       } else {
         const primaryRow = permanentItemMap.get(key);
         primaryRow.quantity = (parseInt(primaryRow.quantity) || 1) + (parseInt(row.quantity) || 1);
@@ -1673,6 +1677,45 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       }
       for (const primaryRow of permanentItemMap.values()) {
         await query(`UPDATE user_inventory SET quantity = $1, is_active = $2 WHERE id = $3`, [primaryRow.quantity, primaryRow.is_active, primaryRow.id]);
+      }
+    }
+
+    // Build final consolidated array for view layer (unified single entry per shop_item_id)
+    const consolidatedMap = new Map();
+    const consolidatedRows = [];
+
+    for (const row of inventory.rows) {
+      if (rowsToDelete.includes(row.id)) continue;
+
+      if (!row.shop_item_id) {
+        consolidatedRows.push({
+          ...row,
+          quantity: Math.max(1, parseInt(row.quantity, 10) || 1)
+        });
+        continue;
+      }
+
+      const key = `${row.shop_item_id}`;
+      const rowQty = Math.max(1, parseInt(row.quantity, 10) || 1);
+
+      if (!consolidatedMap.has(key)) {
+        const itemObj = {
+          ...row,
+          quantity: rowQty
+        };
+        consolidatedMap.set(key, itemObj);
+        consolidatedRows.push(itemObj);
+      } else {
+        const primary = consolidatedMap.get(key);
+        primary.quantity += rowQty;
+        // Prioritize active running timer row as primary representation
+        if (!primary.expires_at && row.expires_at) {
+          primary.id = row.id;
+          primary.expires_at = row.expires_at;
+          primary.is_active = row.is_active;
+        } else if (!primary.is_active && row.is_active) {
+          primary.is_active = true;
+        }
       }
     }
 
