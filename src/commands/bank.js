@@ -1324,7 +1324,7 @@ export async function handleInventoryItemSelect(interaction) {
       desc += `\n**Status:** \uD83D\uDEE1\uFE0F Admin Granted`;
     } else if (isTemp) {
       if (!item.expires_at) {
-        desc += `\n**Status:** \u23F3 Inactive (Ready to Activate)`;
+        desc += `\n**Status:** \u23F3 Inactive`;
       } else {
         desc += `\n**Status:** ${item.is_active ? '\u2705 Active' : '\u23F8\uFE0F Inactive (Counting)'}`;
       }
