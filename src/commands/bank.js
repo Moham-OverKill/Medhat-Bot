@@ -1732,6 +1732,28 @@ export async function handleInventoryAction(interaction) {
 
     // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
+      // 1. Anti-Stacking Check: Block activating multiple copies of the same temporary item
+      const sameItemRunning = await query(
+        `SELECT s.name FROM user_inventory i
+         JOIN shop_items s ON i.shop_item_id = s.id
+         WHERE i.user_id = $1 AND i.guild_id = $2
+           AND i.shop_item_id = (SELECT shop_item_id FROM user_inventory WHERE id = $3)
+           AND i.id != $3
+           AND i.expires_at IS NOT NULL
+           AND i.expires_at > NOW()
+         LIMIT 1`,
+        [interaction.user.id, interaction.guildId, invId]
+      );
+
+      if (sameItemRunning.rows.length > 0) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        return interaction.followUp({
+          content: `❌ You already have an active copy of **${sameItemRunning.rows[0].name}** running. You cannot activate another copy until the current timer expires.`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      // 2. Check for category timer conflict (different item in Single/Swap category)
       const hasConflict = await checkSingleCategoryActiveTimerConflict(interaction.user.id, interaction.guildId, invId);
 
       if (hasConflict) {
