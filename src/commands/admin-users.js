@@ -1070,12 +1070,26 @@ export async function handleAdminUserComponent(interaction) {
             }
             case 'anticheat': {
                 const subAction = parts[3];
-                if (!subAction) {
-                    await showAntiCheatDashboard(interaction);
-                } else if (subAction === 'age') {
-                    await handleToggleAntiCheat(interaction, 'age');
-                } else if (subAction === 'join') {
-                    await handleToggleAntiCheat(interaction, 'join');
+                const subSubAction = parts[4];
+
+                if (!subAction || subAction === 'hub') {
+                    await showAntiCheatHub(interaction);
+                } else if (subAction === 'alt') {
+                    if (!subSubAction) {
+                        await showAltFarmingDashboard(interaction);
+                    } else if (subSubAction === 'age') {
+                        await handleToggleAltFarmingGate(interaction, 'age');
+                    } else if (subSubAction === 'join') {
+                        await handleToggleAltFarmingGate(interaction, 'join');
+                    } else if (subSubAction === 'back') {
+                        await showAntiCheatHub(interaction);
+                    }
+                } else if (subAction === 'voice') {
+                    if (subSubAction === 'back') {
+                        await showAntiCheatHub(interaction);
+                    } else {
+                        await showVoiceAfkDashboard(interaction);
+                    }
                 } else if (subAction === 'back') {
                     await showUserSelector(interaction);
                 }
@@ -1089,19 +1103,55 @@ export async function handleAdminUserComponent(interaction) {
 }
 
 /**
- * Show the anti-cheat settings dashboard
+ * Show the main Anti-Cheat navigation hub
  */
-export async function showAntiCheatDashboard(interaction) {
+export async function showAntiCheatHub(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🛡️ Anti-Cheat')
+        .setDescription('Configure anti-cheat protections and farming gates.')
+        .setColor(0x3498DB);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_alt')
+            .setLabel('Alt Farming')
+            .setEmoji('👥')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice')
+            .setLabel('Voice AFK')
+            .setEmoji('🎙️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_back')
+            .setLabel('Back')
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
+ * Show the Alt Farming anti-cheat dashboard
+ */
+export async function showAltFarmingDashboard(interaction) {
     const { getGuildConfig } = await import('../storage/config.js');
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
     
-    // Default to false (Disabled) as per user request
     const ageGate = config.anti_cheat_account_age_gate ?? false;
     const joinGate = config.anti_cheat_join_date_gate ?? false;
     
     const embed = new EmbedBuilder()
-        .setTitle('🛡️ Anti-Cheat')
+        .setTitle('👥 Alt Farming')
         .addFields(
             {
                 name: '📅 Account Age Gate',
@@ -1118,7 +1168,7 @@ export async function showAntiCheatDashboard(interaction) {
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_age')
+            .setCustomId('admin_user_anticheat_alt_age')
             .setLabel(`Account Age Gate: ${ageGate ? 'ON' : 'OFF'}`)
             .setEmoji(ageGate ? '🟢' : '🔴')
             .setStyle(ageGate ? ButtonStyle.Success : ButtonStyle.Danger)
@@ -1126,7 +1176,7 @@ export async function showAntiCheatDashboard(interaction) {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_join')
+            .setCustomId('admin_user_anticheat_alt_join')
             .setLabel(`Join Date Gate: ${joinGate ? 'ON' : 'OFF'}`)
             .setEmoji(joinGate ? '🟢' : '🔴')
             .setStyle(joinGate ? ButtonStyle.Success : ButtonStyle.Danger)
@@ -1134,7 +1184,7 @@ export async function showAntiCheatDashboard(interaction) {
 
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_back')
+            .setCustomId('admin_user_anticheat_alt_back')
             .setLabel('Back')
             .setEmoji('◀️')
             .setStyle(ButtonStyle.Secondary)
@@ -1148,9 +1198,33 @@ export async function showAntiCheatDashboard(interaction) {
 }
 
 /**
- * Handle toggle action for anti-cheat gates
+ * Show the Voice AFK dashboard (UI placeholder)
  */
-export async function handleToggleAntiCheat(interaction, gateType) {
+export async function showVoiceAfkDashboard(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🎙️ Voice AFK')
+        .setDescription('Configure Voice AFK detection settings and anti-farming rules.')
+        .setColor(0x3498DB);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice_back')
+            .setLabel('Back')
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1]
+    });
+}
+
+/**
+ * Handle toggle action for Alt Farming gates
+ */
+export async function handleToggleAltFarmingGate(interaction, gateType) {
     const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
     const { invalidateConfigCache } = await import('../activity/index.js');
     const guildId = interaction.guildId;
@@ -1167,6 +1241,10 @@ export async function handleToggleAntiCheat(interaction, gateType) {
     await setGuildConfig(guildId, config);
     invalidateConfigCache(guildId);
     
-    await showAntiCheatDashboard(interaction);
+    await showAltFarmingDashboard(interaction);
 }
+
+// Backward compatibility alias
+export const showAntiCheatDashboard = showAntiCheatHub;
+export const handleToggleAntiCheat = handleToggleAltFarmingGate;
 
