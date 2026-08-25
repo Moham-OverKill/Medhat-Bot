@@ -34,16 +34,16 @@ export async function handleHelpSelect(interaction) {
     const selectedTopic = interaction.values[0];
 
     const topicTitles = {
-      help_admin_colors: 'Making a colors reaction list - 🎨',
-      help_admin_shop: 'Adding Items to the Shop - 🛒',
-      help_admin_coins: 'Managing Coins and Income - 🪙',
-      help_admin_users: 'Managing users - 👥',
-      help_admin_customizing: 'Customizing the bot - ⚙️',
-      help_admin_leaderboards: 'Setting Top Roles and Leaderboards - 🏆',
-      help_admin_quests: 'Setting Quest - 📜',
-      help_user_coins: 'Getting Coins - 💰',
-      help_user_inventory: 'Using Inventory - 🎒',
-      help_user_trading: 'Trading with others - 🔄'
+      help_admin_colors: 'Making a colors reaction list',
+      help_admin_shop: 'Adding Items to the Shop',
+      help_admin_coins: 'Managing Coins and Income',
+      help_admin_users: 'Managing users',
+      help_admin_customizing: 'Customizing the bot',
+      help_admin_leaderboards: 'Setting Top Roles and Leaderboards',
+      help_admin_quests: 'Setting Quest',
+      help_user_coins: 'Getting Coins',
+      help_user_inventory: 'Using Inventory',
+      help_user_trading: 'Trading with others'
     };
 
     const title = topicTitles[selectedTopic] || 'Help Topic';
@@ -106,16 +106,16 @@ export async function handleHelpStepNavigation(interaction) {
     const topicKey = parts.slice(2).join('_');
 
     const topicTitles = {
-      help_admin_colors: 'Making a colors reaction list - 🎨',
-      help_admin_shop: 'Adding Items to the Shop - 🛒',
-      help_admin_coins: 'Managing Coins and Income - 🪙',
-      help_admin_users: 'Managing users - 👥',
-      help_admin_customizing: 'Customizing the bot - ⚙️',
-      help_admin_leaderboards: 'Setting Top Roles and Leaderboards - 🏆',
-      help_admin_quests: 'Setting Quest - 📜',
-      help_user_coins: 'Getting Coins - 💰',
-      help_user_inventory: 'Using Inventory - 🎒',
-      help_user_trading: 'Trading with others - 🔄'
+      help_admin_colors: 'Making a colors reaction list',
+      help_admin_shop: 'Adding Items to the Shop',
+      help_admin_coins: 'Managing Coins and Income',
+      help_admin_users: 'Managing users',
+      help_admin_customizing: 'Customizing the bot',
+      help_admin_leaderboards: 'Setting Top Roles and Leaderboards',
+      help_admin_quests: 'Setting Quest',
+      help_user_coins: 'Getting Coins',
+      help_user_inventory: 'Using Inventory',
+      help_user_trading: 'Trading with others'
     };
 
     const title = topicTitles[topicKey] || 'Help Topic';

@@ -56,7 +56,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     embed.setDescription(desc);
   } else {
-    embed.setTitle('Claimed Rewards - 🎉');
+    embed.setTitle('Claimed Rewards');
 
     let desc = '';
 

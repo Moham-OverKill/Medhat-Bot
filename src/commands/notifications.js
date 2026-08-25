@@ -45,7 +45,7 @@ export function buildNotificationsPayload(guild, settings) {
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(`DM Notifications - 🔔`)
+    .setTitle('DM Notifications')
     .setDescription(desc)
     .setColor(0x5865F2);
 

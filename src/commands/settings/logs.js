@@ -28,7 +28,7 @@ export async function handleLogsSettings(interaction) {
     };
 
     const embed = new EmbedBuilder()
-        .setTitle('Logs Configuration - 📜')
+        .setTitle('Logs Configuration')
         .setDescription('Configure where the bot logs all server events. You can assign different channels for each category.')
         .addFields(
             { name: '📈 Economy', value: getChannelInfo(config.log_eco_channel_id), inline: true },
@@ -138,7 +138,7 @@ export async function handleLogCategorySelect(interaction) {
     if (targetChannel) {
         const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
         const confirmEmbed = new EmbedBuilder()
-            .setTitle('Logging System Updated - 🛡️')
+            .setTitle('Logging System Updated')
             .setDescription(`Admin **${logName}** has assigned this channel for **${categoryLabel}** logs.`)
             .setColor(0x2ECC71)
             .setFooter({ text: `${guildName} • ${new Date().toLocaleString()}` });

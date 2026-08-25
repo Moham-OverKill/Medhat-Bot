@@ -194,7 +194,7 @@ export async function showColorPanel(interaction, type = 'normal') {
     .filter(c => c.role)
     .sort((a, b) => b.role.position - a.role.position);
 
-  const titlePrefix = isBoosterTab ? 'Booster Colors - ⭐' : 'Normal Colors - 🎨';
+  const titlePrefix = isBoosterTab ? 'Booster Colors' : 'Normal Colors';
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
   const embed = new EmbedBuilder()

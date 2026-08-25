@@ -133,7 +133,7 @@ function buildBankUI(userData, member) {
 
   const embed = new EmbedBuilder()
     .setColor(0xFFD700) // Gold
-    .setTitle('Bank - 🏛️')
+    .setTitle('Bank')
     .setDescription(`Welcome to your personal bank account, <@${member.id}>!`)
     .setThumbnail(getCoinThumbnailUrl())
     .addFields(
@@ -313,7 +313,7 @@ export async function handleShopCategorySelect(interaction) {
 
     // Build embed listing items
     const embed = new EmbedBuilder()
-      .setTitle('Items in Category - 🏪')
+      .setTitle('Items in Category')
       .setColor('#9B59B6');
 
     let desc = '';
@@ -800,7 +800,7 @@ export async function handleInventoryButton(interaction) {
 
     // 5. Build Embed
     const embed = new EmbedBuilder()
-      .setTitle('Inventory - 🎒')
+      .setTitle('Inventory')
       .setColor('#3498DB')
       .setDescription(
         `${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`
@@ -976,7 +976,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
     }
 
     const embed = new EmbedBuilder()
-      .setTitle(`Category: ${categoryName}${totalPages > 1 ? ` (Page ${targetPage}/${totalPages})` : ''} - 📂`)
+      .setTitle(`Category: ${categoryName}${totalPages > 1 ? ` (Page ${targetPage}/${totalPages})` : ''}`)
       .setColor('#2ECC71')
       .setDescription(desc);
 
@@ -1528,7 +1528,7 @@ export async function handleInventoryAction(interaction) {
         : `*You opened your last ${boxName}.*`;
 
       const resultEmbed = new EmbedBuilder()
-        .setTitle(`${boxName} Opened! - ${lootBoxEmoji}`)
+        .setTitle(`${boxName} Opened!`)
         .setColor('#F1C40F')
         .setDescription(`${rewardsText}\n\n${remainingText}`);
 
@@ -1688,7 +1688,7 @@ export async function handleInventoryAction(interaction) {
         const roleMention = (res.item.role_id && /^\d{17,20}$/.test(res.item.role_id)) ? ` <@&${res.item.role_id}>` : '';
 
         const publicEmbed = new EmbedBuilder()
-          .setTitle('Item Dropped! - 📦')
+          .setTitle('Item Dropped!')
           .setColor('#F1C40F')
           .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
           .setTimestamp();
@@ -2002,7 +2002,7 @@ export async function handleBankHistory(interaction) {
     );
 
     if (result.rowCount === 0) {
-      const emptyEmbed = new EmbedBuilder().setColor(0x808080).setTitle('Recent History - 📜').setDescription('No transactions found.').setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
+      const emptyEmbed = new EmbedBuilder().setColor(0x808080).setTitle('Recent History').setDescription('No transactions found.').setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
       await interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [navRow, backRow] });
       return;
     }
@@ -2035,7 +2035,7 @@ export async function handleBankHistory(interaction) {
 
       return `\`${date}\` ${amountDisplay} | ${desc}`;
     });
-    const embed = new EmbedBuilder().setColor(0x808080).setTitle('Recent History - 📜').setDescription(lines.join('\n')).setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
+    const embed = new EmbedBuilder().setColor(0x808080).setTitle('Recent History').setDescription(lines.join('\n')).setFooter({ text: `Page ${page + 1}/${MAX_PAGE + 1}` });
     await interaction.editReply({ files: [], content: null, embeds: [embed], components: [navRow, backRow] });
   } catch (error) {
     sysError('History interaction failure', error, { user: interaction.user.id, guild: interaction.guildId });
@@ -2198,7 +2198,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     const roleMention = (res.item.role_id && /^\d{17,20}$/.test(res.item.role_id)) ? ` <@&${res.item.role_id}>` : '';
 
     const publicEmbed = new EmbedBuilder()
-      .setTitle('Item Dropped! - 📦')
+      .setTitle('Item Dropped!')
       .setColor('#F1C40F')
       .setDescription(`${interaction.user} dropped **${droppedLabel}**${roleMention}!`)
       .setTimestamp();
