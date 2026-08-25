@@ -50,7 +50,7 @@ async function renderPanel(interaction, activeFilter = null) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('🧹 Organize — Channel Filters')
+        .setTitle('Organize — Channel Filters - 🧹')
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 

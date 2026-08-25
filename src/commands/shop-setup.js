@@ -137,7 +137,7 @@ export async function handleShopSetup(interaction) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle('🏪 Shop Configuration')
+      .setTitle('Shop Configuration - 🛒')
       .setDescription('Manage categories and items in your server shop.')
       .addFields(
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
@@ -202,7 +202,7 @@ export async function handleShopAdminAdd(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor('#2ECC71')
-    .setTitle('➕ Add Content')
+    .setTitle('Add Content - ➕')
     .setDescription('Select what you want to add:');
 
   const actionRow = new ActionRowBuilder()
@@ -240,7 +240,7 @@ export async function handleShopAdminEdit(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor('#3498DB')
-    .setTitle('✏️ Edit Content')
+    .setTitle('Edit Content - ✏️')
     .setDescription('What would you like to edit?');
 
   const actionRow = new ActionRowBuilder()
@@ -278,7 +278,7 @@ export async function handleShopAdminDelete(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor('#E74C3C')
-    .setTitle('🗑️ Delete Content')
+    .setTitle('Delete Content - 🗑️')
     .setDescription('What would you like to delete?');
 
   const actionRow = new ActionRowBuilder()
@@ -330,7 +330,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle(`${lootBoxEmoji} ${lootBoxCatName} Management`)
+      .setTitle(`${lootBoxCatName} Management - ${lootBoxEmoji}`)
       .setDescription(desc);
 
     const components = [];
@@ -1164,7 +1164,7 @@ export async function handleShopPostStart(interaction) {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(state.isEditing ? '📢 Edit Shop Post' : '📢 Post an Item/Pack To The Shop!')
+    .setTitle(state.isEditing ? 'Edit Shop Post - 📢' : 'Post an Item/Pack To The Shop! - 📢')
     .setColor(0x9B59B6);
 
   // Show item image as small thumbnail preview in the staging embed
@@ -2074,7 +2074,7 @@ export async function handleManageTiers(interaction) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle(`📶 Tiers for ${item.name}`)
+      .setTitle(`Tiers for ${item.name} - 📶`)
       .setDescription(tiers.length === 0 ? 'No tiers configured.' : 'Current Tiers:')
       .setColor('#F1C40F');
 
@@ -2386,7 +2386,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     const embed = new EmbedBuilder()
       .setColor('#3498DB')
-      .setTitle('📂 Category Management')
+      .setTitle('Category Management - 📂')
       .setDescription('**Select a category to manage:**');
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -2427,7 +2427,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
     const typeLabel = category.category_type === 1 ? 'Single (Swap)' : 'Multi (Stack)';
 
     const embed = new EmbedBuilder()
-      .setTitle(`📂 Category: ${category.name}`)
+      .setTitle(`Category: ${category.name} - 📂`)
       .setDescription(`Manage items and settings for this category.\n\n**Type:** \`${typeLabel}\`\n**Items:** \`${count}\``)
       .setColor('#9B59B6');
 
@@ -2868,7 +2868,7 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
 
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
-      .setTitle('🗑️ Delete Category')
+      .setTitle('Delete Category - 🗑️')
       .setDescription('**Select a category to delete:**');
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -3318,7 +3318,7 @@ export async function handleRevokeItemStart(interaction) {
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
     const embed = new EmbedBuilder()
-      .setTitle('⚠️ Confirm Revoke')
+      .setTitle('Confirm Revoke - ⚠️')
       .setDescription(
         `You are about to revoke all owned copies of **${item.name}**.\n\n` +
         `**This will:**\n` +
@@ -3571,7 +3571,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
     let embed;
     if (view === 'details') {
       embed = new EmbedBuilder()
-        .setTitle(`⚙️ Edit Item: ${item.name}`)
+        .setTitle(`Edit Item: ${item.name} - ⚙️`)
         .setDescription(
           `Role: ${roleMention}\nDuration: \`\`${durationDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
         )
@@ -3583,7 +3583,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
         : '*No users on this page.*';
 
       embed = new EmbedBuilder()
-        .setTitle(`👥 Users: ${item.name}`)
+        .setTitle(`Users: ${item.name} - 👥`)
         .setDescription(`Owned: \`\`${ownedCount}\`\`  •  Equipped: \`\`${equippedCount}\`\`\n\n${userLines}`)
         .setFooter({ text: `Page ${page} / ${totalPages}` })
         .setColor('#3498DB');
@@ -3946,7 +3946,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle(`📦 Edit Pack: ${item.name}`)
+      .setTitle(`Edit Pack: ${item.name} - 📦`)
       .setDescription(`**Contents:** ${contentsDisplay}`)
       .setColor('#8E44AD'); // Purple for packs
 
@@ -4374,7 +4374,7 @@ export async function handleShopPostGate(interaction) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle('📢 Shop Posting Options')
+      .setTitle('Shop Posting Options - 📢')
       .setDescription('Choose to publish a new shop item or edit an existing post.');
 
     const row = new ActionRowBuilder()
@@ -5724,7 +5724,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
 
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
-      .setTitle(`🗑️ Delete ${singularName}: ${box.name}`)
+      .setTitle(`Delete ${singularName}: ${box.name} - 🗑️`)
       .setDescription(
         `⚠️ **Warning**: Deleting this ${singularName.toLowerCase()} will:\n` +
         `• Remove this ${singularName.toLowerCase()} from the shop\n` +

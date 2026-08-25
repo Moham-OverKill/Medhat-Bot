@@ -75,7 +75,7 @@ function buildRoleRewardPanel(type, config) {
     const enabled   = isRichest ? config.richest_role_enabled : config.streak_role_enabled;
     const winners   = isRichest ? config.richest_role_winners : config.streak_role_winners;
 
-    const title         = isRichest ? '💰 Richest Configuration' : '🔥 Streaks Configuration';
+    const title         = isRichest ? 'Richest Configuration - 💰' : 'Streaks Configuration - 🔥';
     const roleSelectId  = isRichest ? 'role_rewards_richest_role'    : 'role_rewards_streaks_role';
     const winnersId     = isRichest ? 'role_rewards_richest_winners'  : 'role_rewards_streaks_winners';
     const toggleId      = isRichest ? 'role_rewards_richest_toggle'   : 'role_rewards_streaks_toggle';
@@ -166,7 +166,7 @@ export async function showRoleRewardsMenu(interaction) {
     const streakStatus  = config.streak_role_enabled  ? '🟢' : '🔴';
 
     const embed = new EmbedBuilder()
-        .setTitle('🎭 Role Rewards')
+        .setTitle('Role Rewards - 🎭')
         .setDescription(
             `Configure automated roles awarded to top members each hour.\n\n` +
             `${mvpStatus} **MVP** — Daily activity champions\n` +
