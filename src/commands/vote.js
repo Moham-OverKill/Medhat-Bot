@@ -26,7 +26,7 @@ export async function handleVoteCommand(interaction) {
     : `Vote for Medhat on [top.gg](https://top.gg/bot/${interaction.client.user.id})`;
 
   const embed = new EmbedBuilder()
-    .setTitle('Support Medhat! - 🗳️')
+    .setTitle('Support Medhat!')
     .setDescription(desc)
     .setColor('#F1C40F');
 

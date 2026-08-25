@@ -99,7 +99,7 @@ export async function renderQuests(interaction, page = 0) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle(`${totalQuests === 1 ? 'Quest' : 'Quests'} Progress (${completedCount} / ${totalQuests}) - 🎯`)
+      .setTitle(`${totalQuests === 1 ? 'Quest' : 'Quests'} Progress (${completedCount} / ${totalQuests})`)
       .setColor('#F1C40F')
       .setDescription(questEntries.join('\n\n'));
       

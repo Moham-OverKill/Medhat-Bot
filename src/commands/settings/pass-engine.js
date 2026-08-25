@@ -599,7 +599,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
         else if (r.type === 'chest') rewards.push(`${lootBoxEmoji} **${qStr}${r.name}**`);
       }
 
-      title = `⭐ Level Up! (Level ${single.level})`;
+      title = `Level Up! (Level ${single.level})`;
       if (rewards.length > 0) {
         description = `Congratulations <@${userId}>! You reached **Level ${single.level}**.\n\n**Rewards Unlocked:**\n• ${rewards.join('\n• ')}`;
       } else {
@@ -607,7 +607,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       }
     } else if (claimedLevels.length <= 15) {
       const highestLevel = Math.max(...claimedLevels.map(c => c.level));
-      title = `⭐ Level Up! (Level ${highestLevel})`;
+      title = `Level Up! (Level ${highestLevel})`;
 
       const rewardLines = [];
       for (const c of claimedLevels) {
@@ -632,7 +632,7 @@ async function sendLevelUpNotification(client, guildId, userId, username, claime
       // Bulk unlock (e.g. 16 to 200 levels claimed in one go)
       const highestLevel = Math.max(...claimedLevels.map(c => c.level));
       const lowestLevel = Math.min(...claimedLevels.map(c => c.level));
-      title = `⭐ Bulk Rewards Unlocked! (Levels ${lowestLevel} - ${highestLevel})`;
+      title = `Bulk Rewards Unlocked! (Levels ${lowestLevel} - ${highestLevel})`;
 
       const totalCoins = claimedLevels.reduce((sum, c) => sum + (c.coins || 0), 0);
       const itemsMap = new Map();

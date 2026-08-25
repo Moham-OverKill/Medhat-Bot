@@ -8,7 +8,7 @@ import { sysLog, sysError } from './logger.js';
 export function createErrorEmbed(title, description) {
   return new EmbedBuilder()
     .setColor(0xFF0000)
-    .setTitle(`❌ ${title}`)
+    .setTitle(`${title}`)
     .setDescription(description);
 }
 
@@ -18,7 +18,7 @@ export function createErrorEmbed(title, description) {
 export function createSuccessEmbed(title, description) {
   return new EmbedBuilder()
     .setColor(0x00FF00)
-    .setTitle(`✅ ${title}`)
+    .setTitle(`${title}`)
     .setDescription(description);
 }
 
@@ -163,7 +163,7 @@ export async function handleInteractionError(interaction, error, context = 'Acti
   const targetRole = options.targetRole;
 
   if (isPermissionError) {
-    embed.setTitle('❌ Missing Permissions');
+    embed.setTitle('Missing Permissions');
 
     let channelDiag = null;
     if (targetChannel) {
@@ -187,7 +187,7 @@ export async function handleInteractionError(interaction, error, context = 'Acti
     }
   } else {
     // Non-permission operational error
-    embed.setTitle('❌ Action Execution Failed');
+    embed.setTitle('Action Execution Failed');
     embed.addFields(
       { name: '📍 Action', value: `\`${context}\``, inline: false },
       { name: '🔍 Error Details', value: `\`\`\`${sanitizeError(rawErrorMessage).slice(0, 500)}\`\`\``, inline: false },

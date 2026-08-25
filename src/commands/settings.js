@@ -64,7 +64,7 @@ export async function handleSettingsCommand(interaction) {
  */
 export async function showMainMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('Control Panel - ⚙️')
+        .setTitle('Control Panel')
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
@@ -122,7 +122,7 @@ export async function showMainMenu(interaction) {
  */
 export async function showCoinsSubMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle(`Coins Management - ${COIN_EMOJI}`)
+        .setTitle('Coins Management')
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 
@@ -177,7 +177,7 @@ export async function showCoinsSubMenu(interaction) {
  */
 export async function showOtherSubMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('Other Settings - ⚙️')
+        .setTitle('Other Settings')
         .setDescription('Configure additional server utilities.')
         .setColor(0x2F3136);
 
