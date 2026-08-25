@@ -9,10 +9,15 @@ import { handleHelpCommand } from './help.js';
 import { handleVoteCommand } from './vote.js';
 import { handleLevelCommand } from './pass.js';
 import { handleNotificationsCommand } from './notifications.js';
+import { getGuildConfig } from '../storage/config.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
+
+  if (interaction.guildId) {
+    await getGuildConfig(interaction.guildId).catch(() => {});
+  }
 
   sysLog('Command Executed', {
     user: interaction.user,

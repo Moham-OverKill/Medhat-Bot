@@ -128,6 +128,7 @@ import {
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
+import { getGuildConfig } from '../storage/config.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
@@ -141,6 +142,9 @@ export function setupComponentHandlers(client) {
 
   client.on('interactionCreate', async (interaction) => {
     return runInGuildContext(interaction.guildId, async () => {
+      if (interaction.guildId) {
+        await getGuildConfig(interaction.guildId).catch(() => {});
+      }
       // --- 0. INTERACTION WATCHDOG ---
     // Log a warning if any interaction takes > 2.5s to acknowledge.
     const watchdog = setTimeout(() => {
