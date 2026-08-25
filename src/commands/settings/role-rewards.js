@@ -8,7 +8,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
-import { isValidSnowflake } from '../../shared.js';
+import { isValidSnowflake, COIN_EMOJI } from '../../shared.js';
 import { sendLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError, diagnoseRolePermissions } from '../../utils/errors.js';
 
@@ -75,7 +75,7 @@ function buildRoleRewardPanel(type, config) {
     const enabled   = isRichest ? config.richest_role_enabled : config.streak_role_enabled;
     const winners   = isRichest ? config.richest_role_winners : config.streak_role_winners;
 
-    const title         = isRichest ? 'Richest Configuration - 💰' : 'Streaks Configuration - 🔥';
+    const title         = isRichest ? `Richest Configuration - ${COIN_EMOJI}` : 'Streaks Configuration - 🔥';
     const roleSelectId  = isRichest ? 'role_rewards_richest_role'    : 'role_rewards_streaks_role';
     const winnersId     = isRichest ? 'role_rewards_richest_winners'  : 'role_rewards_streaks_winners';
     const toggleId      = isRichest ? 'role_rewards_richest_toggle'   : 'role_rewards_streaks_toggle';
