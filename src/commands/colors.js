@@ -194,11 +194,11 @@ export async function showColorPanel(interaction, type = 'normal') {
     .filter(c => c.role)
     .sort((a, b) => b.role.position - a.role.position);
 
-  const titlePrefix = isBoosterTab ? '⭐ Booster' : '🎨 Normal';
+  const titlePrefix = isBoosterTab ? 'Booster Colors - ⭐' : 'Normal Colors - 🎨';
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
   const embed = new EmbedBuilder()
-    .setTitle(`${titlePrefix} Colors`) // Removed (X configured)
+    .setTitle(titlePrefix)
     .setDescription(sortedColors.length > 0 
       ? sortedColors.map((c, i) => `**${i + 1} |** <@&${c.roleId}>`).join('\n')
       : '_No colors configured yet._')

@@ -1154,7 +1154,7 @@ async function finalizeTradePosting(interaction, setup) {
 
         // 2. Build Public Embed
         const embed = new EmbedBuilder()
-            .setTitle('🤝 Trade Offer')
+            .setTitle('Trade Offer - 🤝')
             .addFields(
                 {
                     name: `📤 ${getUserDisplayName(await interaction.guild.members.fetch(setup.senderId))} Offers`,
@@ -1211,7 +1211,7 @@ async function finalizeTradePosting(interaction, setup) {
                         const senderMember = await interaction.guild.members.fetch(setup.senderId).catch(() => null);
                         const senderName = senderMember ? getUserDisplayName(senderMember) : 'A user';
                         const dmEmbed = new EmbedBuilder()
-                            .setTitle('🤝 New Trade Offer')
+                            .setTitle('New Trade Offer - 🤝')
                             .setDescription(`**${senderName}** has sent you a trade offer!\n\n[Click here to view the trade](${publicMsg.url})`)
                             .setColor(0xF1C40F)
                             .setFooter({
