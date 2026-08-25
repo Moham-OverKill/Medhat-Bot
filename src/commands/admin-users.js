@@ -1107,7 +1107,7 @@ export async function handleAdminUserComponent(interaction) {
  */
 export async function showAntiCheatHub(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('🛡️ Anti-Cheat')
+        .setTitle('Anti-Cheat - 🛡️')
         .setDescription('Configure anti-cheat protections and farming gates.')
         .setColor(0x3498DB);
 
@@ -1150,20 +1150,17 @@ export async function showAltFarmingDashboard(interaction) {
     const ageGate = config.anti_cheat_account_age_gate ?? false;
     const joinGate = config.anti_cheat_join_date_gate ?? false;
     
+    const desc = [
+        '📅 **Account Age Gate**',
+        'Requires a (30-day) old Discord account to trade.',
+        '',
+        '⏳ **Join Date Gate**',
+        'Requires (7-days) of server membership to trade.'
+    ].join('\n');
+
     const embed = new EmbedBuilder()
-        .setTitle('👥 Alt Farming')
-        .addFields(
-            {
-                name: '📅 Account Age Gate',
-                value: 'Requires a (30-day) old Discord account to trade.',
-                inline: false
-            },
-            {
-                name: '⏳ Join Date Gate',
-                value: 'Requires (7-days) of server membership to trade.',
-                inline: false
-            }
-        )
+        .setTitle('Alt Farming - 👥')
+        .setDescription(desc)
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(
@@ -1202,7 +1199,7 @@ export async function showAltFarmingDashboard(interaction) {
  */
 export async function showVoiceAfkDashboard(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('🎙️ Voice AFK')
+        .setTitle('Voice AFK - 🎙️')
         .setDescription('Configure Voice AFK detection settings and anti-farming rules.')
         .setColor(0x3498DB);
 
