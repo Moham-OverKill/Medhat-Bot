@@ -33,7 +33,7 @@ import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { COIN_EMOJI, getUserLogName } from '../shared.js';
+import { COIN_EMOJI, getUserLogName, resolveComponentEmoji } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -83,7 +83,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_coins')
             .setLabel('Coins')
-            .setEmoji('🪙')
+            .setEmoji(resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙'))
             .setStyle(ButtonStyle.Secondary)
     );
 
