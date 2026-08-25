@@ -229,7 +229,7 @@ export async function showSetupPanel(interaction, config) {
   const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
   const embed = new EmbedBuilder()
-    .setTitle('MVP Configuration - ⭐')
+    .setTitle('MVP Configuration')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
     .addFields(
       { name: `${statusEmoji} Status`, value: statusText, inline: true },
@@ -587,7 +587,7 @@ async function showStatsLeaderboard(interaction, config) {
   const guild = await getGuildActivity(guildId);
 
   const embed = new EmbedBuilder()
-    .setTitle('Progress - 📊')
+    .setTitle('Progress')
     .setColor(0x0099FF);
 
   if (guild.users.size === 0) {

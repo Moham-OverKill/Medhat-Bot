@@ -51,7 +51,7 @@ async function getRewardsPayload(guildId) {
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
-    .setTitle(`Daily Configuration - ${COIN_EMOJI}`)
+    .setTitle('Daily Configuration')
     .setColor('#F1C40F')
     .addFields(
       { name: 'Base Daily', value: baseText, inline: true },

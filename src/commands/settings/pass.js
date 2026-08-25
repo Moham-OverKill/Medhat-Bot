@@ -181,7 +181,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   // ── SELECTED LEVEL EDITOR ──────────────────────────────────────────────
   if (selectedLevel !== null && !isEnabled) {
     const levelData = await getConfiguredLevel(guildId, selectedLevel);
-    embed.setTitle('Level ' + selectedLevel + ' - ⭐');
+    embed.setTitle('Level ' + selectedLevel);
 
     const coinsText = levelData && levelData.reward_coins > 0
       ? (coinEmoji + ' **' + Number(levelData.reward_coins).toLocaleString() + '**')
@@ -417,7 +417,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   }
 
   // ── ROOT DASHBOARD ─────────────────────────────────────────────────────
-  embed.setTitle('Levels Configuration - ⭐');
+  embed.setTitle('Levels Configuration');
 
   if (totalLevels === 0) {
     embed.setDescription('No levels configured yet.');
@@ -500,7 +500,7 @@ async function getBoostsDashboardPayload(guildId, page = 0) {
 
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
-    .setTitle('XP Boosts - 🚀');
+    .setTitle('XP Boosts');
 
   if (boosters.length === 0) {
     embed.setDescription('No XP boosts configured.\n\nAdd a role boost below. Members with boosted roles earn bonus XP on all activity.');
@@ -598,7 +598,7 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_toggle_start_pg_', ''), 10) || 0;
 
       const embed = new EmbedBuilder()
-        .setTitle('Start Level Progression? - ⚠️')
+        .setTitle('Start Level Progression?')
         .setColor(0xFEE75C)
         .setDescription(
           'Please make sure your levels and rewards are fully configured before starting.\n\n' +
@@ -1081,7 +1081,7 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_import_start_pg_', ''), 10) || 0;
 
       const embed = new EmbedBuilder()
-        .setTitle('Import Levels - 📥')
+        .setTitle('Import Levels')
         .setColor(0xED4245)
         .setDescription(
           '**Before Importing:**\n' +
@@ -1229,7 +1229,7 @@ async function renderImportMappingPanel(interaction, guildId, flowKey, page) {
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setTitle('Import Levels — Role Mapping - 📥');
+    .setTitle('Import Levels — Role Mapping');
 
   const sortedMappings = [...mappings.entries()].sort((a, b) => Number(a[1]) - Number(b[1]));
   const lines = sortedMappings.map(([roleId, level]) => `• <@&${roleId}> → **Level ${level}**`);
@@ -1314,7 +1314,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
 
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
-    .setTitle('Import Preview — Confirm - 📥')
+    .setTitle('Import Preview — Confirm')
     .setDescription(
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
@@ -1356,7 +1356,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   // Show immediate initial Loading Screen
   const loadingEmbed = new EmbedBuilder()
     .setColor(0xFEE75C)
-    .setTitle('Importing Levels... - ⏳')
+    .setTitle('Importing Levels...')
     .setDescription(
       `• Progress: **0 / ${totalMembers.toLocaleString()}** members (0%)\n` +
       '• Writing records and aligning roles in the database. Please wait...'
@@ -1450,7 +1450,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
         const percent = Math.min(99, Math.round((syncCount / totalMembers) * 100));
         const progressEmbed = new EmbedBuilder()
           .setColor(0xFEE75C)
-          .setTitle('Importing Levels... - ⏳')
+          .setTitle('Importing Levels...')
           .setDescription(
             `• Progress: **${syncCount.toLocaleString()} / ${totalMembers.toLocaleString()}** members (${percent}%)\n` +
             '• Writing records and aligning roles in the database. Please wait...'
@@ -1484,7 +1484,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
 
   const embed = new EmbedBuilder()
     .setColor(0x57F287)
-    .setTitle('Import Complete - ✅')
+    .setTitle('Import Complete')
     .setDescription(`Successfully synced **${syncCount.toLocaleString()} member${syncCount === 1 ? '' : 's'}**.`);
 
   const backRow = new ActionRowBuilder().addComponents(

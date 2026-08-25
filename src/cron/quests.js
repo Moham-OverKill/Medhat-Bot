@@ -128,7 +128,7 @@ async function checkQuests(client, forceCheck = false) {
             : guildNames.map(name => `**${name}**`).join(', ');
 
           const embed = new EmbedBuilder()
-            .setTitle('New Quests Available! - 🎯')
+            .setTitle('New Quests Available!')
             .setDescription(`Server quests have rotated in ${rotationTargetText}!\nType \`/quest\` in servers to view and complete new tasks.`)
             .setColor(0x2ECC71);
 
@@ -278,7 +278,7 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
           if (validUserIds.length > 0) {
             const { EmbedBuilder } = await import('discord.js');
             const embed = new EmbedBuilder()
-              .setTitle('New Quests Available! - 🎯')
+              .setTitle('New Quests Available!')
               .setDescription(`Server quests have rotated in **${guild.name}**!\nType \`/quest\` in servers to view and complete new tasks.`)
               .setColor(0x2ECC71);
 

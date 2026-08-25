@@ -219,7 +219,7 @@ function buildLeaderboardTable(data, valueKey, unitLabel, mvpRecipients = [], us
  */
 export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive = false, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
-        .setTitle('MVP Champions - 🏆')
+        .setTitle('MVP Champions')
         .setColor(0xFFD700); // Always Gold for the Champions brand
 
     let description;
@@ -242,7 +242,7 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive
  */
 export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
-        .setTitle(`Richest Members - ${COIN_EMOJI}`)
+        .setTitle('Richest Members')
         .setColor(0x2ECC71); // Emerald Green
 
     let description;
@@ -265,7 +265,7 @@ export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
  */
 export function buildStreakEmbed(streakData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
-        .setTitle('Longest Streaks - 🔥')
+        .setTitle('Longest Streaks')
         .setColor(0xFF4500); // Fire Orange
 
     let description;
@@ -338,7 +338,7 @@ export async function getTopStreakUsers(guildId, limit = 50) {
  */
 export function buildLevelEmbed(levelData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
-        .setTitle('Highest Levels - ⭐')
+        .setTitle('Highest Levels')
         .setColor(0x5865F2); // Blurple / Indigo
 
     let description;
@@ -708,7 +708,7 @@ async function handleSetup(interaction) {
         descLines.push('', '📅 Leaderboards refresh daily at **00:00 Cairo time** and hourly.');
 
         const successEmbed = new EmbedBuilder()
-            .setTitle('Leaderboards Configured - ✅')
+            .setTitle('Leaderboards Configured')
             .setColor(0x00FF00)
             .setDescription(descLines.join('\n'));
 
@@ -735,7 +735,7 @@ async function handleStatus(interaction) {
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('Leaderboard Configuration - 📊')
+            .setTitle('Leaderboard Configuration')
             .setColor(0x0099FF)
             .addFields(
                 { name: 'Daily Activity', value: config.daily_channel_id ? `<#${config.daily_channel_id}>` : '*Not Set*', inline: true },

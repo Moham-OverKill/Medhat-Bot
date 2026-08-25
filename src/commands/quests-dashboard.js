@@ -66,7 +66,7 @@ export async function showQuestsDashboard(interaction) {
         }).join('\n');
 
     const embed = new EmbedBuilder()
-      .setTitle('Quests Control Panel - 🎯')
+      .setTitle('Quests Control Panel')
       .setColor(enabled ? '#2ECC71' : '#95A5A6')
       .setDescription(
         `**Status:** ${enabled ? '✅ Enabled' : '❌ Disabled'}\n\n${questListText}`
@@ -165,7 +165,7 @@ export async function showQuestsSchedule(interaction) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('Quest Rotation Schedule - 📅')
+      .setTitle('Quest Rotation Schedule')
       .setDescription(`Current Pool: **${totalQuests} quest(s)** available.`)
       .setColor('#3498DB');
 
@@ -281,7 +281,7 @@ export async function showQuestDetail(interaction, questId) {
     );
 
     const embed = new EmbedBuilder()
-      .setTitle('Quest Details - 🎯')
+      .setTitle('Quest Details')
       .setColor('#3498DB')
       .addFields(fields);
 
@@ -321,7 +321,7 @@ export async function handleAddQuestStart(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
     const embed = new EmbedBuilder()
-      .setTitle('Add to Pool — Step 1 - ➕')
+      .setTitle('Add to Pool — Step 1')
       .setDescription('Select the **target channel** for this quest.')
       .setColor('#2ECC71');
 
@@ -388,7 +388,7 @@ export async function handleAddChannelSelect(interaction) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('Add to Pool — Step 2 - ➕')
+      .setTitle('Add to Pool — Step 2')
       .setDescription(`Channel: <#${channelId}> (${channelType})\n\nSelect the **action type** for this quest.`)
       .setColor('#2ECC71');
 

@@ -78,7 +78,7 @@ export async function buildHubEmbed(guild, config = null) {
   const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
 
   const embed = new EmbedBuilder()
-    .setTitle('INTERFACE - 🖥️')
+    .setTitle('INTERFACE')
     .setColor(0x000000)
     .setImage('attachment://interface.png')
     .addFields({
@@ -270,7 +270,7 @@ export async function showInterfaceSettings(interaction, configOverride = null) 
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('Interface Configuration - 🖥️')
+    .setTitle('Interface Configuration')
     .setDescription(desc)
     .setColor(0x5865F2);
 
