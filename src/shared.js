@@ -254,7 +254,7 @@ export function registerEmojiResolver(resolver) {
   emojiResolver = resolver;
 }
 
-export const DEFAULT_COIN_EMOJI = '<:OK_COIN:1490666813501997076>';
+export const DEFAULT_COIN_EMOJI = '🪙';
 
 class DynamicCoinEmoji {
   /**
