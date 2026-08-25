@@ -83,7 +83,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_coins')
             .setLabel('Coins')
-            .setEmoji(`${COIN_EMOJI}`)
+            .setEmoji('🪙')
             .setStyle(ButtonStyle.Secondary)
     );
 
