@@ -22,7 +22,7 @@ import { handleInteractionError } from '../utils/errors.js';
  */
 export async function showUserSelector(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('👥 User Management')
+        .setTitle('User Management - 👥')
         .setDescription('Select a user to manage their balance or inventory')
         .setColor(0x2F3136);
 
@@ -135,7 +135,7 @@ export async function showUserDashboard(interaction, targetUserId) {
         sysLog('Interaction Audit', { user: interaction.user.id, guild: guildId, detail: `Building management UI for ${targetUserId}` });
 
         const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`⚙️ Managing: ${displayName}`, 256))
+            .setTitle(safeTruncate(`Managing: ${displayName} - ⚙️`, 256))
             .setDescription(`Balance: **${balance.toLocaleString()}** ${COIN_EMOJI} ｜ Streak: **${streak}** 🔥 ｜ Level: **${userLevel}** ⭐ ｜ Items: **${itemCount}** 📦`)
             .setColor(0x5865F2);
 
@@ -506,7 +506,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
         const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`🎒 Inventory: ${targetMember.displayName}`, 256))
+            .setTitle(safeTruncate(`Inventory: ${targetMember.displayName} - 🎒`, 256))
             .setColor('#3498DB')
             .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
 
@@ -611,7 +611,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         }
 
         const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`📂 Category: ${catName}${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''} • ${targetMember.displayName}`, 256))
+            .setTitle(safeTruncate(`Category: ${catName}${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''} • ${targetMember.displayName} - 📂`, 256))
             .setColor('#2ECC71')
             .setDescription(desc || '*No items in this category.*');
 
@@ -883,7 +883,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
     const displayName = targetMember ? targetMember.displayName : targetUserId;
 
     const embed = new EmbedBuilder()
-        .setTitle(safeTruncate(`📜 History: ${displayName}`, 256))
+        .setTitle(safeTruncate(`History: ${displayName} - 📜`, 256))
         .setColor(0x808080)
         .setFooter({ text: `Page ${page + 1}` });
 

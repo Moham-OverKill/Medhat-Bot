@@ -961,7 +961,7 @@ export async function awardMvp(client, guildId, options = {}) {
           const userSettings = await getUserNotificationSettings(guildId, member.id);
           if (userSettings.notif_mvp_win) {
             const mvpEmbed = new EmbedBuilder()
-              .setTitle('🏆 Daily MVP Winner!')
+              .setTitle('Daily MVP Winner! - 🏆')
               .setDescription(`Congratulations! You have been selected as a **Daily MVP** in **${guild.name}**!\n\n**Reward:** **${Number(rewardAmount).toLocaleString()}** ${coinEmoji}`)
               .setColor(0xF1C40F)
               .setFooter({
@@ -1146,7 +1146,7 @@ export async function scheduleCairoMidnightReset(client) {
       const userIds = await getAllUniqueUsersForNotification(NOTIFICATION_KEYS.DAILY_CLAIM);
       if (userIds.length > 0) {
         const dmEmbed = new EmbedBuilder()
-          .setTitle('💰 Daily Reward Available!')
+          .setTitle('Daily Reward Available! - 💰')
           .setDescription('Your daily claim is now ready!\nClaim it in servers to keep your streak.')
           .setColor(0xF1C40F);
 

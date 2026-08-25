@@ -44,7 +44,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('📊 Leaderboard Configuration')
+            .setTitle('Leaderboard Configuration - 📊')
             .setDescription(desc)
             .setColor(selectedId ? 0xF1C40F : 0x3498DB); // Sync with Logs color (Yellow if selected, Blue if home)
 
