@@ -122,7 +122,7 @@ export async function showMainMenu(interaction) {
  */
 export async function showCoinsSubMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('Coins Management - 🪙')
+        .setTitle(`Coins Management - ${COIN_EMOJI}`)
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 

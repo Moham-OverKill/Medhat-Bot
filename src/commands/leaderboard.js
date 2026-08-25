@@ -6,7 +6,7 @@ import {
     ChannelType
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
 import { sendLog, sysError } from '../utils/logger.js';
 
 // Define the /leaderboard command
@@ -242,7 +242,7 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive
  */
 export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
     const embed = new EmbedBuilder()
-        .setTitle('Richest Members - 💰')
+        .setTitle(`Richest Members - ${COIN_EMOJI}`)
         .setColor(0x2ECC71); // Emerald Green
 
     let description;
