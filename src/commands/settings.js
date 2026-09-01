@@ -424,6 +424,7 @@ export async function handleSettingsComponent(interaction) {
 
             // --- 1. Emoji Status & Parsing ---
             let emojiStatus = 'Default ⏪';
+            let emojiReason = null;
             let formattedEmoji = null;
 
             if (coinEmoji && coinEmoji.trim()) {
@@ -476,7 +477,8 @@ export async function handleSettingsComponent(interaction) {
                         formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
                         emojiStatus = 'Updated ✅';
                     } else {
-                        emojiStatus = `Failed ❌ (Custom emoji ":${cleanName}:" not found in server)`;
+                        emojiStatus = 'Failed ❌';
+                        emojiReason = `Could not find emoji ":${cleanName}:" in this server.`;
                     }
                 }
                 // Case D: Standard Unicode Emoji (e.g. 🪙, 💰, 💎, 🔥)
@@ -486,7 +488,8 @@ export async function handleSettingsComponent(interaction) {
                         formattedEmoji = input;
                         emojiStatus = 'Updated ✅';
                     } else {
-                        emojiStatus = 'Failed ❌ (Invalid format. Provide a standard emoji like 🪙, <:name:id>, or an Emoji ID)';
+                        emojiStatus = 'Failed ❌';
+                        emojiReason = 'Could not recognize that emoji.';
                     }
                 }
             }
@@ -496,6 +499,7 @@ export async function handleSettingsComponent(interaction) {
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
             const newNickname = botName && botName.trim() ? botName.trim() : null;
             let nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
+            let nicknameReason = null;
 
             const promises = [];
 
@@ -505,7 +509,8 @@ export async function handleSettingsComponent(interaction) {
 
                 if (nickChanged) {
                     if (newNickname !== null && newNickname.length > 32) {
-                        nicknameStatus = 'Failed ❌ (Nickname exceeds 32 characters)';
+                        nicknameStatus = 'Failed ❌';
+                        nicknameReason = 'Nickname cannot be longer than 32 letters.';
                     } else {
                         promises.push(
                             botMember.setNickname(newNickname)
@@ -513,10 +518,11 @@ export async function handleSettingsComponent(interaction) {
                                     nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
                                 })
                                 .catch((err) => {
-                                    if (err.code === 50013) {
-                                        nicknameStatus = 'Failed ❌ (Bot missing "Change Nickname" permission)';
+                                    nicknameStatus = 'Failed ❌';
+                                    if (err.code === 50013 || err.message?.toLowerCase().includes('permission')) {
+                                        nicknameReason = 'Bot is missing permission to change its nickname.';
                                     } else {
-                                        nicknameStatus = `Failed ❌ (${err.message || 'Discord error'})`;
+                                        nicknameReason = 'Could not update nickname.';
                                     }
                                     sysError('Failed to update bot server nickname', err);
                                 })
@@ -524,12 +530,14 @@ export async function handleSettingsComponent(interaction) {
                     }
                 }
             } else {
-                nicknameStatus = 'Failed ❌ (Could not find bot member in server)';
+                nicknameStatus = 'Failed ❌';
+                nicknameReason = 'Could not find bot member in server.';
             }
 
             // --- 3. Avatar Status & Update ---
             const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
             let avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+            let avatarReason = null;
 
             if (botMember) {
                 const hasServerAvatar = botMember.avatar !== null;
@@ -539,7 +547,8 @@ export async function handleSettingsComponent(interaction) {
 
                 if (avatarChanged) {
                     if (newAvatar !== null && !newAvatar.startsWith('http://') && !newAvatar.startsWith('https://') && !newAvatar.startsWith('data:image/')) {
-                        avatarStatus = 'Failed ❌ (Invalid URL. Must start with http:// or https://)';
+                        avatarStatus = 'Failed ❌';
+                        avatarReason = 'The image link is invalid. Use a direct image URL.';
                     } else {
                         promises.push((async () => {
                             try {
@@ -565,10 +574,20 @@ export async function handleSettingsComponent(interaction) {
                                 await interaction.guild.members.editMe({ avatar: avatarBuffer });
                                 avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
                             } catch (err) {
-                                if (err.code === 50013 || err.message?.includes('feature') || err.message?.includes('tier')) {
-                                    avatarStatus = 'Failed ❌ (Server must be Boost Level 2 to set bot server avatar)';
+                                avatarStatus = 'Failed ❌';
+                                const msg = String(err?.message || '');
+                                if (msg.includes('AVATAR_RATE_LIMIT') || msg.toLowerCase().includes('too fast')) {
+                                    avatarReason = 'You are changing the avatar too fast, try again later.';
+                                } else if (err.code === 50013 || msg.includes('feature') || msg.includes('tier') || msg.includes('COMMUNITY')) {
+                                    avatarReason = 'Server must be Boost Level 2 to change bot avatar.';
+                                } else if (msg.includes('HTTP download') || msg.includes('Could not download')) {
+                                    avatarReason = 'Could not download image from that link.';
+                                } else if (msg.includes('not an image') || msg.includes('not a valid image')) {
+                                    avatarReason = 'The link does not point to a valid image.';
+                                } else if (msg.includes('10MB') || msg.includes('too large')) {
+                                    avatarReason = 'Image file is too large (must be under 10MB).';
                                 } else {
-                                    avatarStatus = `Failed ❌ (${err.message || 'Discord error'})`;
+                                    avatarReason = 'Could not update avatar.';
                                 }
                                 sysError('Failed to update bot server avatar', err);
                             }
@@ -576,7 +595,8 @@ export async function handleSettingsComponent(interaction) {
                     }
                 }
             } else {
-                avatarStatus = 'Failed ❌ (Could not find bot member in server)';
+                avatarStatus = 'Failed ❌';
+                avatarReason = 'Could not find bot member in server.';
             }
 
             // Wait for Discord API updates to settle
@@ -607,21 +627,30 @@ export async function handleSettingsComponent(interaction) {
                 sysError('Failed to save customization config', err);
             });
 
+            // Helper to format each field with clean line separation
+            const formatField = (name, status, reason) => {
+                if (reason) {
+                    return `${name}: ${status}\n↳ *${reason}*`;
+                }
+                return `${name}: ${status}`;
+            };
+
             // --- 5. Audit Logging ---
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             sendLog(interaction.guild, 'audit', 'cyan', 'Bot Customized',
-                `**Admin:** \`${logName}\`\n` +
-                `**Nickname:** ${nicknameStatus}\n` +
-                `**Avatar:** ${avatarStatus}\n` +
-                `**Emoji:** ${emojiStatus}`
+                `**Admin:** \`${logName}\`\n\n` +
+                formatField('**Nickname**', nicknameStatus, nicknameReason) + '\n\n' +
+                formatField('**Avatar**', avatarStatus, avatarReason) + '\n\n' +
+                formatField('**Emoji**', emojiStatus, emojiReason)
             );
 
             // --- 6. Send Response ---
-            const responseContent = 
-                `Nickname: ${nicknameStatus}\n` +
-                `Avatar: ${avatarStatus}\n` +
-                `Emoji: ${emojiStatus}`;
+            const responseContent = [
+                formatField('Nickname', nicknameStatus, nicknameReason),
+                formatField('Avatar', avatarStatus, avatarReason),
+                formatField('Emoji', emojiStatus, emojiReason)
+            ].join('\n\n');
 
             await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
             return;
