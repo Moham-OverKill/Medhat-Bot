@@ -50,6 +50,9 @@ async function loadGuildFilters(guildId) {
       media_only: new Set(Array.isArray(filters.media_only) ? filters.media_only : []),
       cmd_only: new Set(Array.isArray(filters.cmd_only) ? filters.cmd_only : []),
       auto_react: new Set(Array.isArray(filters.auto_react) ? filters.auto_react : []),
+      auto_react_emojis: Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0
+        ? filters.auto_react_emojis
+        : ['👍', '❤️', '😂', '😭'],
       fix_embeds: !!filters.fix_embeds,
       cachedAt: Date.now()
     };
@@ -371,9 +374,13 @@ export async function processAutoReact(message) {
 
   // Match current channel ID, parent ID (for threads & voice text channels)
   if (cached.auto_react.has(channelId) || (parentId && cached.auto_react.has(parentId))) {
-    const emojis = ['👍', '❤️', '😂', '😭'];
+    const emojis = Array.isArray(cached.auto_react_emojis) && cached.auto_react_emojis.length > 0
+      ? cached.auto_react_emojis
+      : ['👍', '❤️', '😂', '😭'];
     for (const emoji of emojis) {
-      await message.react(emoji).catch(() => {});
+      const customMatch = typeof emoji === 'string' && emoji.match(/^<a?:[a-zA-Z0-9_]+:(\d{17,20})>$/);
+      const reactTarget = customMatch ? customMatch[1] : emoji;
+      await message.react(reactTarget).catch(() => {});
     }
   }
 }

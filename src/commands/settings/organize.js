@@ -6,7 +6,10 @@ import {
     ChannelSelectMenuBuilder,
     ChannelType,
     PermissionsBitField,
-    MessageFlags
+    MessageFlags,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sendLog, sysLog, sysError } from '../../utils/logger.js';
@@ -21,6 +24,44 @@ const FILTER_TYPES = {
     cmd_only: { label: 'CMD Only', emoji: '🤖' },
     auto_react: { label: 'Auto React', emoji: '🎭' }
 };
+
+const DEFAULT_REACTIONS = ['👍', '❤️', '😂', '😭'];
+
+/**
+ * Helper to parse ordered reaction emojis from text input.
+ * Supports Unicode emojis, <:name:id>, <a:name:id>, snowflake IDs, and :name: lookups.
+ */
+export function parseReactionEmojis(input, guild = null, client = null) {
+    if (!input || !input.trim()) return [...DEFAULT_REACTIONS];
+
+    const tokenRegex = /(<a?:[a-zA-Z0-9_]+:\d{17,20}>)|(\b\d{17,20}\b)|(:[a-zA-Z0-9_]+:)|(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic}|\uFE0F|\p{Emoji_Modifier})*)/gu;
+
+    const results = [];
+    let match;
+    while ((match = tokenRegex.exec(input)) !== null) {
+        const [full, customFormatted, snowflake, colonName, unicode] = match;
+        if (customFormatted) {
+            results.push(customFormatted);
+        } else if (snowflake) {
+            const found = guild?.emojis?.cache?.get(snowflake) || client?.emojis?.cache?.get(snowflake);
+            if (found) {
+                results.push(`<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`);
+            } else {
+                results.push(`<:custom:${snowflake}>`);
+            }
+        } else if (colonName) {
+            const name = colonName.replace(/:/g, '').toLowerCase();
+            const found = guild?.emojis?.cache?.find(e => e.name.toLowerCase() === name) || client?.emojis?.cache?.find(e => e.name.toLowerCase() === name);
+            if (found) {
+                results.push(`<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`);
+            }
+        } else if (unicode) {
+            results.push(unicode);
+        }
+    }
+
+    return results.length > 0 ? results.slice(0, 20) : [...DEFAULT_REACTIONS];
+}
 
 /**
  * Fetch current filter config from DB
@@ -38,6 +79,9 @@ async function getFilters(guildId) {
 async function renderPanel(interaction, activeFilter = null) {
     const guildId = interaction.guildId;
     const filters = await getFilters(guildId);
+    const autoReactEmojis = Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0
+        ? filters.auto_react_emojis
+        : DEFAULT_REACTIONS;
 
     // Build summary lines for the embed
     const summaryLines = [];
@@ -46,7 +90,11 @@ async function renderPanel(interaction, activeFilter = null) {
         const channelMentions = channels.length > 0
             ? channels.map(id => `<#${id}>`).join(', ')
             : '_None_';
-        summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
+        if (key === 'auto_react') {
+            summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}\n↳ *Reactions:* ${autoReactEmojis.join(' ')}`);
+        } else {
+            summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
+        }
     }
 
     const embed = new EmbedBuilder()
@@ -54,7 +102,42 @@ async function renderPanel(interaction, activeFilter = null) {
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 
-    // Row 1: Links Only, Media Only, Socials Only
+    const components = [];
+
+    // Row 1: Channel select menu (when a filter tab is active)
+    if (activeFilter && FILTER_TYPES[activeFilter]) {
+        const meta = FILTER_TYPES[activeFilter];
+        const channelSelect = new ChannelSelectMenuBuilder()
+            .setCustomId(`organize_select_${activeFilter}`)
+            .setPlaceholder(`Toggle a channel for ${meta.label}...`)
+            .setChannelTypes(
+                ChannelType.GuildText,
+                ChannelType.GuildAnnouncement,
+                ChannelType.GuildVoice,
+                ChannelType.PublicThread,
+                ChannelType.PrivateThread
+            );
+        components.push(new ActionRowBuilder().addComponents(channelSelect));
+    }
+
+    // Row 2: Emoji settings for Auto React (when active tab is auto_react)
+    if (activeFilter === 'auto_react') {
+        const emojiRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('organize_set_reactions')
+                .setLabel('Set Reactions')
+                .setEmoji('🎭')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('organize_reset_reactions')
+                .setLabel('Reset Default')
+                .setEmoji('⏪')
+                .setStyle(ButtonStyle.Secondary)
+        );
+        components.push(emojiRow);
+    }
+
+    // Row 3: Filter type buttons (Links Only, Media Only, Socials Only)
     const row1 = new ActionRowBuilder().addComponents(
         ['links_only', 'images_only', 'media_only'].map(key => {
             const meta = FILTER_TYPES[key];
@@ -65,8 +148,9 @@ async function renderPanel(interaction, activeFilter = null) {
                 .setStyle(activeFilter === key ? ButtonStyle.Primary : ButtonStyle.Secondary);
         })
     );
+    components.push(row1);
 
-    // Row 2: Back button, CMD Only, Auto React
+    // Row 4: Control buttons (Back, CMD Only, Auto React)
     const row2Buttons = [
         new ButtonBuilder()
             .setCustomId('settings_other')
@@ -84,31 +168,7 @@ async function renderPanel(interaction, activeFilter = null) {
             .setEmoji(FILTER_TYPES.auto_react.emoji)
             .setStyle(activeFilter === 'auto_react' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ];
-
-    const row2 = new ActionRowBuilder().addComponents(row2Buttons);
-    const components = [];
-
-    // Row 1: Channel select menu (above all buttons, directly below the embed)
-    if (activeFilter && FILTER_TYPES[activeFilter]) {
-        const meta = FILTER_TYPES[activeFilter];
-        const channelSelect = new ChannelSelectMenuBuilder()
-            .setCustomId(`organize_select_${activeFilter}`)
-            .setPlaceholder(`Toggle a channel for ${meta.label}...`)
-            .setChannelTypes(
-                ChannelType.GuildText,
-                ChannelType.GuildAnnouncement,
-                ChannelType.GuildVoice,
-                ChannelType.PublicThread,
-                ChannelType.PrivateThread
-            );
-        components.push(new ActionRowBuilder().addComponents(channelSelect));
-    }
-
-    // Row 2: Category buttons (Links Only, Media Only, Socials Only)
-    components.push(row1);
-
-    // Row 3: Control buttons (Back, CMD Only, Auto React)
-    components.push(row2);
+    components.push(new ActionRowBuilder().addComponents(row2Buttons));
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
@@ -222,11 +282,93 @@ export async function handleOrganizeSettings(interaction) {
 export async function handleOrganizeComponent(interaction) {
     const customId = interaction.customId;
 
-    // Defer update to prevent timeout
+    // 1. Show modal to set custom emojis in order (DO NOT DEFER)
+    if (customId === 'organize_set_reactions') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const autoReactEmojis = Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0
+            ? filters.auto_react_emojis
+            : DEFAULT_REACTIONS;
+
+        const modal = new ModalBuilder()
+            .setCustomId('organize_auto_react_modal')
+            .setTitle('Auto React Emojis');
+
+        const emojiInput = new TextInputBuilder()
+            .setCustomId('organize_auto_react_input')
+            .setLabel('Emojis in Order (space-separated)')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('e.g. 👍 ❤️ 😂 😭 or custom :emojis: / IDs')
+            .setValue(autoReactEmojis.join(' '))
+            .setRequired(false)
+            .setMaxLength(1000);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(emojiInput));
+        return interaction.showModal(modal);
+    }
+
+    // Defer update for buttons/selects/modals
     if (!interaction.deferred && !interaction.replied) {
         if (interaction.isButton() || interaction.isAnySelectMenu()) {
             await interaction.deferUpdate().catch(() => {});
+        } else if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
         }
+    }
+
+    // 2. Handle modal submit
+    if (customId === 'organize_auto_react_modal') {
+        const guildId = interaction.guildId;
+        const rawInput = interaction.fields.getTextInputValue('organize_auto_react_input');
+        const parsedEmojis = parseReactionEmojis(rawInput, interaction.guild, interaction.client);
+
+        const filters = await getFilters(guildId);
+        const updatedFilters = { ...filters, auto_react_emojis: parsedEmojis };
+
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Auto React Emojis Updated',
+            `**Admin:** \`${logName}\`\n` +
+            `**Reactions:** ${parsedEmojis.join(' ')}`
+        );
+
+        sysLog('Auto React Emojis Updated', {
+            user: interaction.user.id,
+            guild: guildId,
+            detail: `Emojis: ${parsedEmojis.join(' ')}`
+        });
+
+        await interaction.followUp({
+            content: `Auto React emojis set to: ${parsedEmojis.join(' ')}`,
+            flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+
+        // Re-render panel
+        return renderPanel(interaction, 'auto_react');
+    }
+
+    // 3. Reset reactions to default
+    if (customId === 'organize_reset_reactions') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const updatedFilters = { ...filters, auto_react_emojis: [...DEFAULT_REACTIONS] };
+
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Auto React Emojis Reset',
+            `**Admin:** \`${logName}\`\n` +
+            `**Reactions:** ${DEFAULT_REACTIONS.join(' ')}`
+        );
+
+        return renderPanel(interaction, 'auto_react');
     }
 
     // Main panel (back from sub-module or initial open)
