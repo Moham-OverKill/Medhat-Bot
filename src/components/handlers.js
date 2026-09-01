@@ -275,6 +275,9 @@ export function setupComponentHandlers(client) {
           await handleTradeFinalConfirmation(interaction);
         } else if (interaction.customId.startsWith('settings_')) {
           await handleSettingsComponent(interaction);
+        } else if (interaction.customId.startsWith('organize_')) {
+          const { handleOrganizeComponent } = await import('../commands/settings/organize.js');
+          await handleOrganizeComponent(interaction);
         } else if (interaction.customId.startsWith('interface_')) {
           const { handleInterfaceModal } = await import('../commands/interface.js');
           await handleInterfaceModal(interaction);
