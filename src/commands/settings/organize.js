@@ -90,11 +90,7 @@ async function renderPanel(interaction, activeFilter = null) {
         const channelMentions = channels.length > 0
             ? channels.map(id => `<#${id}>`).join(', ')
             : '_None_';
-        if (key === 'auto_react') {
-            summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}\n↳ *Reactions:* ${autoReactEmojis.join(' ')}`);
-        } else {
-            summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
-        }
+        summaryLines.push(`${meta.emoji} **${meta.label}:** ${channelMentions}`);
     }
 
     const embed = new EmbedBuilder()
@@ -127,12 +123,7 @@ async function renderPanel(interaction, activeFilter = null) {
                 .setCustomId('organize_set_reactions')
                 .setLabel('Set Reactions')
                 .setEmoji('🎭')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('organize_reset_reactions')
-                .setLabel('Reset Default')
-                .setEmoji('⏪')
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Success)
         );
         components.push(emojiRow);
     }
@@ -296,7 +287,7 @@ export async function handleOrganizeComponent(interaction) {
 
         const emojiInput = new TextInputBuilder()
             .setCustomId('organize_auto_react_input')
-            .setLabel('Emojis in Order (space-separated)')
+            .setLabel('Emojis in Order')
             .setStyle(TextInputStyle.Paragraph)
             .setPlaceholder('e.g. 👍 ❤️ 😂 😭 or custom :emojis: / IDs')
             .setValue(autoReactEmojis.join(' '))
@@ -348,26 +339,6 @@ export async function handleOrganizeComponent(interaction) {
         }).catch(() => {});
 
         // Re-render panel
-        return renderPanel(interaction, 'auto_react');
-    }
-
-    // 3. Reset reactions to default
-    if (customId === 'organize_reset_reactions') {
-        const guildId = interaction.guildId;
-        const filters = await getFilters(guildId);
-        const updatedFilters = { ...filters, auto_react_emojis: [...DEFAULT_REACTIONS] };
-
-        const { setGuildConfig } = await import('../../storage/config.js');
-        await setGuildConfig(guildId, { channel_filters: updatedFilters });
-
-        invalidateFilterCache(guildId);
-
-        const logName = getUserLogName(interaction);
-        sendLog(interaction.guild, 'audit', 'cyan', 'Auto React Emojis Reset',
-            `**Admin:** \`${logName}\`\n` +
-            `**Reactions:** ${DEFAULT_REACTIONS.join(' ')}`
-        );
-
         return renderPanel(interaction, 'auto_react');
     }
 
