@@ -298,13 +298,9 @@ export async function handleOrganizeComponent(interaction) {
         return interaction.showModal(modal);
     }
 
-    // Defer update for buttons/selects/modals
+    // Defer update for buttons, selects, and modals to acknowledge instantly
     if (!interaction.deferred && !interaction.replied) {
-        if (interaction.isButton() || interaction.isAnySelectMenu()) {
-            await interaction.deferUpdate().catch(() => {});
-        } else if (interaction.isModalSubmit && interaction.isModalSubmit()) {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
+        await interaction.deferUpdate().catch(() => {});
     }
 
     // 2. Handle modal submit
@@ -333,12 +329,7 @@ export async function handleOrganizeComponent(interaction) {
             detail: `Emojis: ${parsedEmojis.join(' ')}`
         });
 
-        await interaction.followUp({
-            content: `Auto React emojis set to: ${parsedEmojis.join(' ')}`,
-            flags: MessageFlags.Ephemeral
-        }).catch(() => {});
-
-        // Re-render panel
+        // Re-render panel with updated configuration
         return renderPanel(interaction, 'auto_react');
     }
 
