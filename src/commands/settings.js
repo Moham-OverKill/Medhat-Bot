@@ -422,14 +422,14 @@ export async function handleSettingsComponent(interaction) {
             const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
             const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
 
-            // --- 1. Emoji Status ---
+            // --- 1. Emoji Status & Parsing ---
             let emojiStatus = 'Default ⏪';
             let formattedEmoji = null;
 
             if (coinEmoji && coinEmoji.trim()) {
                 const input = coinEmoji.trim();
 
-                // 1. Formatted Custom Emoji: <:name:id> or <a:name:id>
+                // Case A: Formatted Custom Emoji: <:name:id> or <a:name:id>
                 const customMatch = input.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
                 if (customMatch) {
                     const isAnimated = Boolean(customMatch[1]);
@@ -438,20 +438,19 @@ export async function handleSettingsComponent(interaction) {
                     const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
                     if (found) {
                         formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-                        emojiStatus = 'Updated ✅';
                     } else {
                         const fetched = await interaction.guild?.emojis.fetch(id).catch(() => null) ||
                                         await interaction.client?.emojis.fetch(id).catch(() => null);
                         if (fetched) {
                             formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
-                            emojiStatus = 'Updated ✅';
                         } else {
                             formattedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
-                            emojiStatus = 'Updated ✅';
                         }
                     }
-                } else if (/^\d{17,20}$/.test(input)) {
-                    // 2. Pure Snowflake ID
+                    emojiStatus = 'Updated ✅';
+                }
+                // Case B: Pure Snowflake ID: 17-20 digits
+                else if (/^\d{17,20}$/.test(input)) {
                     const found = interaction.guild?.emojis.cache.get(input) || interaction.client?.emojis.cache.get(input);
                     if (found) {
                         formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
@@ -463,22 +462,36 @@ export async function handleSettingsComponent(interaction) {
                             formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
                             emojiStatus = 'Updated ✅';
                         } else {
-                            emojiStatus = 'Failed ❌';
+                            formattedEmoji = `<:coin:${input}>`;
+                            emojiStatus = 'Updated ✅';
                         }
                     }
-                } else {
-                    // 3. Unicode Emoji
+                }
+                // Case C: Emoji Name: e.g. :coin: or coin
+                else if (/^:?[a-zA-Z0-9_]+:?$/.test(input) && !/^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u.test(input)) {
+                    const cleanName = input.replace(/:/g, '').toLowerCase();
+                    const found = interaction.guild?.emojis.cache.find(e => e.name.toLowerCase() === cleanName) ||
+                                  interaction.client?.emojis.cache.find(e => e.name.toLowerCase() === cleanName);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        emojiStatus = `Failed ❌ (Custom emoji ":${cleanName}:" not found in server)`;
+                    }
+                }
+                // Case D: Standard Unicode Emoji (e.g. 🪙, 💰, 💎, 🔥)
+                else {
                     const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
                     if (emojiRegex.test(input) && input.length <= 16) {
                         formattedEmoji = input;
                         emojiStatus = 'Updated ✅';
                     } else {
-                        emojiStatus = 'Failed ❌';
+                        emojiStatus = 'Failed ❌ (Invalid format. Provide a standard emoji like 🪙, <:name:id>, or an Emoji ID)';
                     }
                 }
             }
 
-            // --- 2. Nickname Status ---
+            // --- 2. Nickname Status & Update ---
             const client = interaction.client;
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
             const newNickname = botName && botName.trim() ? botName.trim() : null;
@@ -491,22 +504,30 @@ export async function handleSettingsComponent(interaction) {
                 const nickChanged = newNickname !== currentNickname;
 
                 if (nickChanged) {
-                    promises.push(
-                        botMember.setNickname(newNickname)
-                            .then(() => {
-                                nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
-                            })
-                            .catch((err) => {
-                                nicknameStatus = 'Failed ❌';
-                                sysError('Failed to update bot server nickname', err);
-                            })
-                    );
+                    if (newNickname !== null && newNickname.length > 32) {
+                        nicknameStatus = 'Failed ❌ (Nickname exceeds 32 characters)';
+                    } else {
+                        promises.push(
+                            botMember.setNickname(newNickname)
+                                .then(() => {
+                                    nicknameStatus = newNickname === null ? 'Default ⏪' : 'Updated ✅';
+                                })
+                                .catch((err) => {
+                                    if (err.code === 50013) {
+                                        nicknameStatus = 'Failed ❌ (Bot missing "Change Nickname" permission)';
+                                    } else {
+                                        nicknameStatus = `Failed ❌ (${err.message || 'Discord error'})`;
+                                    }
+                                    sysError('Failed to update bot server nickname', err);
+                                })
+                        );
+                    }
                 }
             } else {
-                nicknameStatus = 'Failed ❌';
+                nicknameStatus = 'Failed ❌ (Could not find bot member in server)';
             }
 
-            // --- 3. Avatar Status ---
+            // --- 3. Avatar Status & Update ---
             const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
             let avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
 
@@ -517,31 +538,45 @@ export async function handleSettingsComponent(interaction) {
                     : (newAvatar !== null);
 
                 if (avatarChanged) {
-                    promises.push((async () => {
-                        try {
-                            let avatarBuffer = null;
-                            if (newAvatar) {
-                                if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
-                                    const res = await fetch(newAvatar);
-                                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                                    const contentType = res.headers.get('content-type') || 'image/png';
-                                    const arrayBuffer = await res.arrayBuffer();
-                                    const buffer = Buffer.from(arrayBuffer);
-                                    avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
-                                } else {
-                                    avatarBuffer = newAvatar;
+                    if (newAvatar !== null && !newAvatar.startsWith('http://') && !newAvatar.startsWith('https://') && !newAvatar.startsWith('data:image/')) {
+                        avatarStatus = 'Failed ❌ (Invalid URL. Must start with http:// or https://)';
+                    } else {
+                        promises.push((async () => {
+                            try {
+                                let avatarBuffer = null;
+                                if (newAvatar) {
+                                    if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
+                                        const res = await fetch(newAvatar);
+                                        if (!res.ok) throw new Error(`HTTP download failed (${res.status})`);
+                                        const contentType = res.headers.get('content-type') || 'image/png';
+                                        if (!contentType.includes('image') && !contentType.includes('octet-stream')) {
+                                            throw new Error(`URL is not an image (${contentType})`);
+                                        }
+                                        const arrayBuffer = await res.arrayBuffer();
+                                        const buffer = Buffer.from(arrayBuffer);
+                                        if (buffer.length > 10 * 1024 * 1024) {
+                                            throw new Error('Image exceeds 10MB limit');
+                                        }
+                                        avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
+                                    } else {
+                                        avatarBuffer = newAvatar;
+                                    }
                                 }
+                                await interaction.guild.members.editMe({ avatar: avatarBuffer });
+                                avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+                            } catch (err) {
+                                if (err.code === 50013 || err.message?.includes('feature') || err.message?.includes('tier')) {
+                                    avatarStatus = 'Failed ❌ (Server must be Boost Level 2 to set bot server avatar)';
+                                } else {
+                                    avatarStatus = `Failed ❌ (${err.message || 'Discord error'})`;
+                                }
+                                sysError('Failed to update bot server avatar', err);
                             }
-                            await interaction.guild.members.editMe({ avatar: avatarBuffer });
-                            avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
-                        } catch (err) {
-                            avatarStatus = 'Failed ❌';
-                            sysError('Failed to update bot server avatar', err);
-                        }
-                    })());
+                        })());
+                    }
                 }
             } else {
-                avatarStatus = 'Failed ❌';
+                avatarStatus = 'Failed ❌ (Could not find bot member in server)';
             }
 
             // Wait for Discord API updates to settle
@@ -550,21 +585,21 @@ export async function handleSettingsComponent(interaction) {
             }
 
             // --- 4. Save to Database ---
-            if (nicknameStatus === 'Updated ✅') {
+            if (nicknameStatus.startsWith('Updated ✅')) {
                 config.bot_nickname = newNickname;
-            } else if (nicknameStatus === 'Default ⏪') {
+            } else if (nicknameStatus.startsWith('Default ⏪')) {
                 config.bot_nickname = null;
             }
 
-            if (avatarStatus === 'Updated ✅') {
+            if (avatarStatus.startsWith('Updated ✅')) {
                 config.bot_avatar = newAvatar;
-            } else if (avatarStatus === 'Default ⏪') {
+            } else if (avatarStatus.startsWith('Default ⏪')) {
                 config.bot_avatar = null;
             }
 
-            if (emojiStatus === 'Updated ✅') {
+            if (emojiStatus.startsWith('Updated ✅')) {
                 config.coin_emoji = formattedEmoji;
-            } else if (emojiStatus === 'Default ⏪') {
+            } else if (emojiStatus.startsWith('Default ⏪')) {
                 config.coin_emoji = null;
             }
 
@@ -575,7 +610,7 @@ export async function handleSettingsComponent(interaction) {
             // --- 5. Audit Logging ---
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
-            sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Bot Customized',
+            sendLog(interaction.guild, 'audit', 'cyan', 'Bot Customized',
                 `**Admin:** \`${logName}\`\n` +
                 `**Nickname:** ${nicknameStatus}\n` +
                 `**Avatar:** ${avatarStatus}\n` +
