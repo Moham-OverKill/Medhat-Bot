@@ -137,7 +137,7 @@ export async function getAllActiveProgress(guildId, userId, activeQuestIds) {
   const date = getTodayCairo();
   try {
     // Need to generate placeholders dynamically
-    const placeholders = activeQuestIds.map((_, i) => `$${i + 3}`).join(',');
+    const placeholders = activeQuestIds.map((_, i) => `$${i + 4}`).join(',');
     const result = await pool.query(
       `SELECT * FROM quest_progress
        WHERE guild_id = $1 AND user_id = $2 AND quest_date = $3
