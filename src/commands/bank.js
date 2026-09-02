@@ -13,7 +13,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { logServerEvent, sendLog, sysLog, sysError } from '../utils/logger.js';
-import { handleInteractionError } from '../utils/errors.js';
+import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
@@ -1675,6 +1675,18 @@ export async function handleInventoryAction(interaction) {
         await interaction.editReply({ files: [], components: disabledRows }).catch(() => { });
       }
 
+      // Verify bot has permissions to post in channel before deducting item
+      const botMember = interaction.guild?.members?.me;
+      if (botMember && interaction.channel) {
+        const diag = diagnoseChannelPermissions(interaction.channel, botMember);
+        if (!diag.hasAll) {
+          return interaction.editReply({
+            content: `❌ Cannot drop item in this channel: missing ${diag.missing.join(', ')}.`,
+            components: []
+          });
+        }
+      }
+
       // Execute with qty=1 (legacy confirm button path)
       const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member, 1);
 
@@ -2177,6 +2189,18 @@ export async function handleInventoryDropModalSubmit(interaction) {
     // Defer update on original inventory message directly (no new ephemeral message)
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => { });
+    }
+
+    // Verify bot has permissions to post in channel before deducting item
+    const botMember = interaction.guild?.members?.me;
+    if (botMember && interaction.channel) {
+      const diag = diagnoseChannelPermissions(interaction.channel, botMember);
+      if (!diag.hasAll) {
+        return interaction.followUp({
+          content: `❌ Cannot drop item in this channel: missing ${diag.missing.join(', ')}.`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
     }
 
     const res = await dropItem(interaction.user.id, interaction.guildId, invId, interaction.member, qty);
