@@ -221,7 +221,15 @@ keepAliveServer = createServer((req, res) => {
           return;
         }
 
-        const data = JSON.parse(body);
+        let data;
+        try {
+          data = JSON.parse(body);
+        } catch (parseErr) {
+          sysError('Invalid JSON in webhook payload', parseErr);
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('Bad Request: Invalid JSON');
+          return;
+        }
         const isVoteEvent = data.type === 'vote.create' || data.type === 'upvote';
         const userId = data.data?.user?.platform_id || data.data?.user?.id || data.user?.id || data.user;
         const weight = data.data?.weight || 1;

@@ -20,7 +20,7 @@ import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
-import { handleInteractionError } from '../utils/errors.js';
+import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { getCachedGuildConfig } from '../activity/tracker.js';
 
 /**
@@ -1133,7 +1133,20 @@ async function finalizeTradePosting(interaction, setup) {
             }
         }
 
+        // Validate channel permissions before saving to database
+        const botMember = interaction.guild?.members?.me;
+        if (botMember && interaction.channel) {
+            const diag = diagnoseChannelPermissions(interaction.channel, botMember);
+            if (!diag.hasAll) {
+                return interaction.followUp({
+                    content: `❌ I cannot post the trade offer in this channel: missing ${diag.missing.join(', ')}.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+
         // 1. Save to Database
+        let tradeId = null;
         const res = await query(
             `INSERT INTO trades (guild_id, sender_id, target_id, sender_coins, target_coins, sender_items, target_items, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -1150,7 +1163,7 @@ async function finalizeTradePosting(interaction, setup) {
             ]
         );
 
-        const tradeId = res.rows[0].id;
+        tradeId = res.rows[0].id;
 
         // 2. Build Public Embed
         const embed = new EmbedBuilder()
@@ -1283,8 +1296,11 @@ async function finalizeTradePosting(interaction, setup) {
         // 5. Finalize the ephemeral setup UI
         return interaction.editReply({ files: [], content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
     } catch (error) {
+        if (tradeId) {
+            await query('DELETE FROM trades WHERE id = $1', [tradeId]).catch(() => {});
+        }
         sysError('Finalize post error', error, { user: interaction.user.id, guild: interaction.guildId });
-        return interaction.followUp({ content: '❌ Failed to post trade. Check logs.', flags: MessageFlags.Ephemeral });
+        return interaction.followUp({ content: `❌ Failed to post trade: ${error.message || 'Check bot permissions'}`, flags: MessageFlags.Ephemeral });
     }
 }
 
