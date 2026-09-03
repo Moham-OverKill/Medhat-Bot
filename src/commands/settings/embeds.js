@@ -148,10 +148,6 @@ export async function renderEmbedManagePage(interaction, embedId) {
   const emb = result.rows[0];
   const previewEmbed = buildDiscordEmbed(emb);
 
-  if (emb.tracked_channel_id && emb.tracked_message_id) {
-    previewEmbed.setFooter({ text: `Tracked: Channel ID ${emb.tracked_channel_id}` });
-  }
-
   // Strict 4-button row: [ ⬅️ Back ] | [ ✏️ Edit ] | [ 📤 Send ] | [ 🔄 Update ]
   const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -389,16 +385,10 @@ export async function handleEmbedComponent(interaction) {
     return renderEmbedSendPage(interaction, embedId);
   }
 
-  // Update Button -> URL Modal
+  // Update Button -> URL Modal (blank input for any channel link)
   if (customId.startsWith('embed_update_')) {
     const embedId = parseInt(customId.replace('embed_update_', ''), 10);
-    const pool = getPool();
-    const result = await pool.query(
-      `SELECT tracked_channel_id, tracked_message_id FROM server_embeds WHERE id = $1 AND guild_id = $2`,
-      [embedId, interaction.guildId]
-    );
 
-    const emb = result.rows[0];
     const modal = new ModalBuilder()
       .setCustomId(`embed_modal_update_${embedId}`)
       .setTitle('Update Message');
@@ -406,13 +396,9 @@ export async function handleEmbedComponent(interaction) {
     const urlInput = new TextInputBuilder()
       .setCustomId('embed_msg_url')
       .setLabel('Message URL')
-      .setPlaceholder('https://discord.com/channels/.../.../...')
+      .setPlaceholder('https://discord.com/channels/...')
       .setStyle(TextInputStyle.Short)
       .setRequired(true);
-
-    if (emb?.tracked_channel_id && emb?.tracked_message_id) {
-      urlInput.setValue(`https://discord.com/channels/${interaction.guildId}/${emb.tracked_channel_id}/${emb.tracked_message_id}`);
-    }
 
     modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
     return interaction.showModal(modal);
@@ -490,6 +476,14 @@ async function handleEmbedChannelSend(interaction, embedId) {
      WHERE id = $3 AND guild_id = $4`,
     [sentMessage.id, channelId, embedId, interaction.guildId]
   ).catch(err => sysError('Failed to update tracked embed message', err));
+
+  // Record in multi-channel post ledger
+  await pool.query(
+    `INSERT INTO server_embed_posts (message_id, guild_id, embed_id, channel_id)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (message_id) DO NOTHING`,
+    [sentMessage.id, interaction.guildId, embedId, channelId]
+  ).catch(err => sysError('Failed to record server_embed_posts', err));
 
   sysLog('Custom Embed Sent', {
     guild: interaction.guildId,
@@ -583,7 +577,7 @@ export async function handleEmbedModal(interaction) {
     }
   }
 
-  // 3. Update Modal (live edit by message URL)
+  // 3. Update Modal (live edit by message URL with safety guardrails)
   if (customId.startsWith('embed_modal_update_')) {
     await interaction.deferUpdate().catch(() => {});
 
@@ -629,9 +623,58 @@ export async function handleEmbedModal(interaction) {
       return renderEmbedManagePage(interaction, embedId);
     }
 
+    // Guardrail 1: Must be sent by this bot
     if (targetMsg.author.id !== interaction.client.user.id) {
       await interaction.followUp({
         content: '❌ The bot can only edit messages that were sent by this bot.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderEmbedManagePage(interaction, embedId);
+    }
+
+    // Guardrail 2: Must be an embed message
+    if (!targetMsg.embeds || targetMsg.embeds.length === 0) {
+      await interaction.followUp({
+        content: '❌ That message is not an embed message and cannot be edited by the Custom Embed Manager.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderEmbedManagePage(interaction, embedId);
+    }
+
+    // Guardrail 3: Must NOT have interactive components (protects Shop, Hub, Drops, Trade menus)
+    if (targetMsg.components && targetMsg.components.length > 0) {
+      await interaction.followUp({
+        content: '❌ That message is an interactive bot control panel or feature and cannot be modified.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderEmbedManagePage(interaction, embedId);
+    }
+
+    // Guardrail 4: Protect Leaderboard messages
+    const lbCheck = await pool.query(
+      `SELECT 1 FROM leaderboard_config 
+       WHERE guild_id = $1 
+         AND ($2 IN (daily_message_id, coins_message_id, streak_message_id, level_message_id))`,
+      [guildId, urlMessageId]
+    ).catch(() => ({ rows: [] }));
+
+    if (lbCheck.rows.length > 0) {
+      await interaction.followUp({
+        content: '❌ That message is an active Leaderboard message and cannot be modified.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderEmbedManagePage(interaction, embedId);
+    }
+
+    // Guardrail 5: Protect Community Server Hub message
+    const hubCheck = await pool.query(
+      `SELECT 1 FROM guild_configs WHERE guild_id = $1 AND config->>'interface_message_id' = $2`,
+      [guildId, urlMessageId]
+    ).catch(() => ({ rows: [] }));
+
+    if (hubCheck.rows.length > 0) {
+      await interaction.followUp({
+        content: '❌ That message is the Server Hub message and cannot be modified.',
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -658,7 +701,16 @@ export async function handleEmbedModal(interaction) {
       return renderEmbedManagePage(interaction, embedId);
     }
 
-    // Save updated tracking info
+    // Record or update post ledger for multi-channel tracking
+    await pool.query(
+      `INSERT INTO server_embed_posts (message_id, guild_id, embed_id, channel_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (message_id)
+       DO UPDATE SET embed_id = $3, channel_id = $4`,
+      [urlMessageId, guildId, embedId, urlChannelId]
+    ).catch(() => {});
+
+    // Also update last-tracked fields on server_embeds
     await pool.query(
       `UPDATE server_embeds
        SET tracked_channel_id = $1, tracked_message_id = $2, updated_at = NOW()
