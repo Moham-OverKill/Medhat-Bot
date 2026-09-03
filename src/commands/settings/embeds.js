@@ -19,16 +19,37 @@ import { diagnoseChannelPermissions } from '../../utils/errors.js';
 const DEFAULT_EMBED_COLOR = 0x2F3136;
 
 /**
- * Validate HTTP/HTTPS URL
+ * Validate image URL: must be HTTP/HTTPS and either have an image extension or be a known image host
  */
-function isValidHttpUrl(string) {
+function isValidImageUrl(string) {
   if (!string || typeof string !== 'string') return false;
   try {
     const url = new URL(string.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    const pathAndSearch = (url.pathname + url.search).toLowerCase();
+    const hasImageExt = /\.(png|jpe?g|gif|webp|bmp|svg)($|\?)/i.test(pathAndSearch);
+    const isImageHost = /(cdn\.discordapp\.com|media\.discordapp\.net|imgur\.com|tenor\.com|giphy\.com|unsplash\.com|pinimg\.com)/i.test(url.hostname);
+    return hasImageExt || isImageHost;
   } catch (_) {
     return false;
   }
+}
+
+/**
+ * Validate and normalize Hex Color code.
+ * Returns #RRGGBB if valid, null if empty string, false if invalid.
+ */
+function validateHexColor(string) {
+  if (!string || typeof string !== 'string') return null;
+  const trimmed = string.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/);
+  if (!match) return false;
+  let hex = match[1];
+  if (hex.length === 3) {
+    hex = hex.split('').map(c => c + c).join('');
+  }
+  return `#${hex.toUpperCase()}`;
 }
 
 /**
@@ -38,9 +59,13 @@ function buildDiscordEmbed(emb) {
   const embed = new EmbedBuilder();
 
   // Color resolution
-  if (emb.color && /^#?[0-9A-Fa-f]{6}$/.test(emb.color.trim())) {
-    const cleanHex = emb.color.trim().replace('#', '');
-    embed.setColor(parseInt(cleanHex, 16));
+  if (emb.color) {
+    const validHex = validateHexColor(emb.color);
+    if (validHex) {
+      embed.setColor(parseInt(validHex.replace('#', ''), 16));
+    } else {
+      embed.setColor(DEFAULT_EMBED_COLOR);
+    }
   } else {
     embed.setColor(DEFAULT_EMBED_COLOR);
   }
@@ -48,7 +73,7 @@ function buildDiscordEmbed(emb) {
   // Author header
   if (emb.author_name) {
     const authorObj = { name: emb.author_name };
-    if (emb.author_icon_url && isValidHttpUrl(emb.author_icon_url)) {
+    if (emb.author_icon_url && isValidImageUrl(emb.author_icon_url)) {
       authorObj.iconURL = emb.author_icon_url.trim();
     }
     embed.setAuthor(authorObj);
@@ -63,19 +88,19 @@ function buildDiscordEmbed(emb) {
   embed.setDescription(emb.content || '*No content*');
 
   // Top Icon (Thumbnail)
-  if (emb.thumbnail_url && isValidHttpUrl(emb.thumbnail_url)) {
+  if (emb.thumbnail_url && isValidImageUrl(emb.thumbnail_url)) {
     embed.setThumbnail(emb.thumbnail_url.trim());
   }
 
   // Main Image (Banner)
-  if (emb.image_url && isValidHttpUrl(emb.image_url)) {
+  if (emb.image_url && isValidImageUrl(emb.image_url)) {
     embed.setImage(emb.image_url.trim());
   }
 
   // Footer
   if (emb.footer_text) {
     const footerObj = { text: emb.footer_text };
-    if (emb.footer_icon_url && isValidHttpUrl(emb.footer_icon_url)) {
+    if (emb.footer_icon_url && isValidImageUrl(emb.footer_icon_url)) {
       footerObj.iconURL = emb.footer_icon_url.trim();
     }
     embed.setFooter(footerObj);
@@ -665,16 +690,61 @@ export async function handleEmbedModal(interaction) {
 
     const parts = customId.split('_');
     const embedId = parseInt(parts[3], 10);
-    const authorName = interaction.fields.getTextInputValue('embed_author_name')?.trim() || null;
-    const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
-    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || null;
-    const footerText = interaction.fields.getTextInputValue('embed_footer_text')?.trim() || null;
-    const color = interaction.fields.getTextInputValue('embed_color')?.trim() || null;
+    const pool = getPool();
+
+    const curRes = await pool.query(
+      `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      [embedId, guildId]
+    ).catch(() => ({ rows: [] }));
+
+    if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const current = curRes.rows[0];
+
+    const rawAuthorName = interaction.fields.getTextInputValue('embed_author_name')?.trim();
+    const rawTitle = interaction.fields.getTextInputValue('embed_title')?.trim();
+    const rawContent = interaction.fields.getTextInputValue('embed_content')?.trim();
+    const rawFooterText = interaction.fields.getTextInputValue('embed_footer_text')?.trim();
+    const rawColor = interaction.fields.getTextInputValue('embed_color')?.trim();
+
+    const skippedFields = [];
+
+    // Author Name: max 256
+    const authorName = rawAuthorName && rawAuthorName.length > 0 ? rawAuthorName.slice(0, 256) : null;
+
+    // Title: max 256
+    const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
+
+    // Content: required, max 4000. If empty, keep existing content
+    let content = current.content;
+    if (rawContent && rawContent.length > 0) {
+      content = rawContent.slice(0, 4000);
+    } else {
+      skippedFields.push('Content (cannot be empty)');
+    }
+
+    // Footer Text: max 2048
+    const footerText = rawFooterText && rawFooterText.length > 0 ? rawFooterText.slice(0, 2048) : null;
+
+    // Hex Code
+    let color = null;
+    if (rawColor && rawColor.length > 0) {
+      const validated = validateHexColor(rawColor);
+      if (validated === false) {
+        // Invalid hex code: skip and preserve current color
+        color = current.color;
+        skippedFields.push('Hex Code (invalid format)');
+      } else {
+        color = validated;
+      }
+    } else {
+      // User explicitly cleared hex code
+      color = null;
+    }
 
     try {
       await pool.query(
         `UPDATE server_embeds
-         SET author_name = $1, title = $2, content = COALESCE($3, content), footer_text = $4, color = $5, updated_at = NOW()
+         SET author_name = $1, title = $2, content = $3, footer_text = $4, color = $5, updated_at = NOW()
          WHERE id = $6 AND guild_id = $7`,
         [authorName, title, content, footerText, color, embedId, guildId]
       );
@@ -684,6 +754,13 @@ export async function handleEmbedModal(interaction) {
         user: interaction.user.id,
         detail: `ID: ${embedId} | Title: ${title || 'Untitled'}`
       });
+
+      if (skippedFields.length > 0) {
+        await interaction.followUp({
+          content: `⚠️ Skipped invalid input: ${skippedFields.join(', ')}. All other changes were saved.`,
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
 
       return renderEmbedManagePage(interaction, embedId);
     } catch (err) {
@@ -702,10 +779,74 @@ export async function handleEmbedModal(interaction) {
 
     const parts = customId.split('_');
     const embedId = parseInt(parts[3], 10);
-    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
-    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
-    const authorIconUrl = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim() || null;
-    const footerIconUrl = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim() || null;
+    const pool = getPool();
+
+    const curRes = await pool.query(
+      `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      [embedId, guildId]
+    ).catch(() => ({ rows: [] }));
+
+    if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const current = curRes.rows[0];
+
+    const rawAuthorIcon = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim();
+    const rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim();
+    const rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim();
+    const rawFooterIcon = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim();
+
+    const skippedFields = [];
+
+    // 1. Author Icon
+    let authorIconUrl = null;
+    if (rawAuthorIcon && rawAuthorIcon.length > 0) {
+      if (isValidImageUrl(rawAuthorIcon)) {
+        authorIconUrl = rawAuthorIcon;
+      } else {
+        authorIconUrl = current.author_icon_url;
+        skippedFields.push('Author Icon (not a valid image URL)');
+      }
+    } else {
+      authorIconUrl = null;
+    }
+
+    // 2. Thumbnail
+    let thumbnailUrl = null;
+    if (rawThumb && rawThumb.length > 0) {
+      if (isValidImageUrl(rawThumb)) {
+        thumbnailUrl = rawThumb;
+      } else {
+        thumbnailUrl = current.thumbnail_url;
+        skippedFields.push('Thumbnail (not a valid image URL)');
+      }
+    } else {
+      thumbnailUrl = null;
+    }
+
+    // 3. Banner
+    let imageUrl = null;
+    if (rawBanner && rawBanner.length > 0) {
+      if (isValidImageUrl(rawBanner)) {
+        imageUrl = rawBanner;
+      } else {
+        imageUrl = current.image_url;
+        skippedFields.push('Banner (not a valid image URL)');
+      }
+    } else {
+      imageUrl = null;
+    }
+
+    // 4. Footer Icon
+    let footerIconUrl = null;
+    if (rawFooterIcon && rawFooterIcon.length > 0) {
+      if (isValidImageUrl(rawFooterIcon)) {
+        footerIconUrl = rawFooterIcon;
+      } else {
+        footerIconUrl = current.footer_icon_url;
+        skippedFields.push('Footer Icon (not a valid image URL)');
+      }
+    } else {
+      footerIconUrl = null;
+    }
 
     try {
       await pool.query(
@@ -720,6 +861,13 @@ export async function handleEmbedModal(interaction) {
         user: interaction.user.id,
         detail: `ID: ${embedId} images updated`
       });
+
+      if (skippedFields.length > 0) {
+        await interaction.followUp({
+          content: `⚠️ Skipped invalid input: ${skippedFields.join(', ')}. All other changes were saved.`,
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
 
       return renderEmbedManagePage(interaction, embedId);
     } catch (err) {
