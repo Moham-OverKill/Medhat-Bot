@@ -290,6 +290,9 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('pass_')) {
           const { handlePassModal } = await import('../commands/settings/pass.js');
           await handlePassModal(interaction);
+        } else if (interaction.customId.startsWith('embed_modal_')) {
+          const { handleEmbedModal } = await import('../commands/settings/embeds.js');
+          await handleEmbedModal(interaction);
         }
         return;
       }
@@ -311,6 +314,13 @@ export function setupComponentHandlers(client) {
       if (customId.startsWith('level_tab_')) {
         const { handleLevelTabButton } = await import('../commands/pass.js');
         await handleLevelTabButton(interaction);
+        return;
+      }
+
+      // EMBED MANAGER
+      if (customId.startsWith('embed_')) {
+        const { handleEmbedComponent } = await import('../commands/settings/embeds.js');
+        await handleEmbedComponent(interaction);
         return;
       }
 

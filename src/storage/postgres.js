@@ -923,6 +923,21 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
     `);
 
+    // Custom Server Embeds Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_embeds (
+        id SERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        title TEXT,
+        content TEXT,
+        tracked_message_id VARCHAR(32),
+        tracked_channel_id VARCHAR(32),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_embeds_guild ON server_embeds(guild_id);
+    `);
+
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_message_id TEXT`).catch(() => {});
