@@ -62,7 +62,7 @@ export async function handleLogsSettings(interaction) {
         .setChannelTypes(ChannelType.GuildText);
 
     const backButton = new ButtonBuilder()
-        .setCustomId('settings_other')
+        .setCustomId('settings_home')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary);

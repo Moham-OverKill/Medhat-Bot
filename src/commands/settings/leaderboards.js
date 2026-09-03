@@ -93,7 +93,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         } else {
             // Home Panel Navigation
             const backButton = new ButtonBuilder()
-                .setCustomId('settings_other')
+                .setCustomId('settings_home')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary);
