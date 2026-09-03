@@ -297,7 +297,7 @@ export async function handleEmbedComponent(interaction) {
       const titleInput = new TextInputBuilder()
         .setCustomId('embed_title')
         .setLabel('Title')
-        .setPlaceholder('Embed title (plain text)...')
+        .setPlaceholder('The main title of your embed...')
         .setStyle(TextInputStyle.Short)
         .setMaxLength(256)
         .setRequired(false);
@@ -305,7 +305,7 @@ export async function handleEmbedComponent(interaction) {
       const contentInput = new TextInputBuilder()
         .setCustomId('embed_content')
         .setLabel('Content')
-        .setPlaceholder('Embed description / body text...')
+        .setPlaceholder('The main text of your message...')
         .setStyle(TextInputStyle.Paragraph)
         .setMaxLength(4000)
         .setRequired(true);
@@ -362,7 +362,7 @@ export async function handleEmbedComponent(interaction) {
     const authorInput = new TextInputBuilder()
       .setCustomId('embed_author_name')
       .setLabel('Author Name')
-      .setPlaceholder('Top author line / category...')
+      .setPlaceholder('Small text above the title (e.g. Server Rules)...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(256)
       .setRequired(false);
@@ -371,7 +371,7 @@ export async function handleEmbedComponent(interaction) {
     const titleInput = new TextInputBuilder()
       .setCustomId('embed_title')
       .setLabel('Title')
-      .setPlaceholder('Embed title (headline)...')
+      .setPlaceholder('The main title of your embed...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(256)
       .setRequired(false);
@@ -380,7 +380,7 @@ export async function handleEmbedComponent(interaction) {
     const contentInput = new TextInputBuilder()
       .setCustomId('embed_content')
       .setLabel('Content')
-      .setPlaceholder('Main embed description / body text...')
+      .setPlaceholder('The main text of your message...')
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(4000)
       .setRequired(true);
@@ -389,7 +389,7 @@ export async function handleEmbedComponent(interaction) {
     const footerInput = new TextInputBuilder()
       .setCustomId('embed_footer_text')
       .setLabel('Footer Text')
-      .setPlaceholder('Bottom footer note...')
+      .setPlaceholder('Small text at the very bottom...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(2048)
       .setRequired(false);
@@ -398,7 +398,7 @@ export async function handleEmbedComponent(interaction) {
     const colorInput = new TextInputBuilder()
       .setCustomId('embed_color')
       .setLabel('Color (Hex Code)')
-      .setPlaceholder('#2F3136 or #5865F2')
+      .setPlaceholder('Hex color code, like #5865F2...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(7)
       .setRequired(false);
@@ -434,7 +434,7 @@ export async function handleEmbedComponent(interaction) {
     const thumbInput = new TextInputBuilder()
       .setCustomId('embed_thumbnail_url')
       .setLabel('Top Icon URL (Thumbnail)')
-      .setPlaceholder('https://... (small image in top-right)')
+      .setPlaceholder('Image link for the top-right corner...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.thumbnail_url) thumbInput.setValue(emb.thumbnail_url);
@@ -442,7 +442,7 @@ export async function handleEmbedComponent(interaction) {
     const imageInput = new TextInputBuilder()
       .setCustomId('embed_image_url')
       .setLabel('Main Image URL (Banner)')
-      .setPlaceholder('https://... (large banner in body)')
+      .setPlaceholder('Image link for the big banner...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.image_url) imageInput.setValue(emb.image_url);
@@ -450,7 +450,7 @@ export async function handleEmbedComponent(interaction) {
     const authorIconInput = new TextInputBuilder()
       .setCustomId('embed_author_icon_url')
       .setLabel('Author Icon URL')
-      .setPlaceholder('https://... (tiny avatar next to author name)')
+      .setPlaceholder('Small icon link next to author name...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.author_icon_url) authorIconInput.setValue(emb.author_icon_url);
@@ -458,7 +458,7 @@ export async function handleEmbedComponent(interaction) {
     const footerIconInput = new TextInputBuilder()
       .setCustomId('embed_footer_icon_url')
       .setLabel('Footer Icon URL')
-      .setPlaceholder('https://... (tiny icon next to footer text)')
+      .setPlaceholder('Small icon link next to footer text...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.footer_icon_url) footerIconInput.setValue(emb.footer_icon_url);
@@ -493,7 +493,7 @@ export async function handleEmbedComponent(interaction) {
     const urlInput = new TextInputBuilder()
       .setCustomId('embed_msg_url')
       .setLabel('Message URL')
-      .setPlaceholder('https://discord.com/channels/...')
+      .setPlaceholder('Paste the Discord message link here...')
       .setStyle(TextInputStyle.Short)
       .setRequired(true);
 
