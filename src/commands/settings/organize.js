@@ -144,7 +144,7 @@ async function renderPanel(interaction, activeFilter = null) {
     // Row 4: Control buttons (Back, CMD Only, Auto React)
     const row2Buttons = [
         new ButtonBuilder()
-            .setCustomId('settings_other')
+            .setCustomId('settings_home')
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),

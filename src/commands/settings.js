@@ -87,7 +87,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Pass - Users - Other
+    // Row 2: Levels - Users
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_pass')
@@ -98,11 +98,39 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_users')
             .setLabel('Users')
             .setEmoji('👥')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 3: Customize - Organize - Logs
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_customize')
+            .setLabel('Customize')
+            .setEmoji('✨')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_other')
-            .setLabel('Other')
-            .setEmoji('⚙️')
+            .setCustomId('settings_organize')
+            .setLabel('Organize')
+            .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_logs')
+            .setLabel('Logs')
+            .setEmoji('📜')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    // Row 4: Leaderboards - Economy
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_leaderboards')
+            .setLabel('Leaderboards')
+            .setEmoji('📊')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_economy')
+            .setLabel('Economy')
+            .setEmoji('📈')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -113,7 +141,7 @@ export async function showMainMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2, row3, row4]
     });
 }
 
@@ -258,7 +286,10 @@ export async function handleSettingsComponent(interaction) {
 
 
         if (customId === 'settings_other') {
-            await showOtherSubMenu(interaction);
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
+            await showMainMenu(interaction);
             return;
         }
 
