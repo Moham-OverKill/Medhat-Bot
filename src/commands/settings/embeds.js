@@ -597,7 +597,7 @@ export async function handleEmbedModal(interaction) {
 
     if (urlGuildId !== guildId) {
       await interaction.followUp({
-        content: '❌ The provided message link belongs to a different server.',
+        content: '❌ You can only update messages in this server. Message links from other servers are strictly prohibited.',
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -606,9 +606,9 @@ export async function handleEmbedModal(interaction) {
     const channel = interaction.guild.channels.cache.get(urlChannelId)
       || await interaction.guild.channels.fetch(urlChannelId).catch(() => null);
 
-    if (!channel) {
+    if (!channel || channel.guildId !== guildId) {
       await interaction.followUp({
-        content: '❌ Channel not found or bot does not have access to view it.',
+        content: '❌ Channel not found in this server or the bot does not have access to view it.',
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
