@@ -961,6 +961,44 @@ async function createTables() {
       FROM server_embeds
       WHERE tracked_message_id IS NOT NULL AND tracked_channel_id IS NOT NULL
       ON CONFLICT (message_id) DO NOTHING;
+
+      CREATE TABLE IF NOT EXISTS server_embed_groups (
+        id SERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        name TEXT NOT NULL,
+        title TEXT,
+        content TEXT,
+        thumbnail_url TEXT,
+        image_url TEXT,
+        author_name TEXT,
+        author_icon_url TEXT,
+        footer_text TEXT,
+        footer_icon_url TEXT,
+        color VARCHAR(16),
+        tracked_message_id VARCHAR(32),
+        tracked_channel_id VARCHAR(32),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_embed_groups_guild ON server_embed_groups(guild_id);
+
+      CREATE TABLE IF NOT EXISTS server_embed_group_items (
+        group_id INTEGER REFERENCES server_embed_groups(id) ON DELETE CASCADE,
+        embed_id INTEGER REFERENCES server_embeds(id) ON DELETE CASCADE,
+        display_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (group_id, embed_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_embed_group_items_group ON server_embed_group_items(group_id);
+
+      CREATE TABLE IF NOT EXISTS server_embed_group_posts (
+        message_id VARCHAR(32) PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        group_id INTEGER REFERENCES server_embed_groups(id) ON DELETE CASCADE,
+        channel_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_embed_group_posts_guild ON server_embed_group_posts(guild_id);
+      CREATE INDEX IF NOT EXISTS idx_server_embed_group_posts_group ON server_embed_group_posts(group_id);
     `);
 
     // Level Leaderboard migration

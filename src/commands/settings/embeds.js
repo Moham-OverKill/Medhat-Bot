@@ -110,30 +110,41 @@ function buildDiscordEmbed(emb) {
 }
 
 /**
- * Render the Root Embed Menu displaying saved embeds and [ ➕ Create ]
+ * Render the Root Embed Menu displaying saved embeds and saved embed groups
  */
 export async function renderRootEmbedMenu(interaction) {
   const guildId = interaction.guildId;
   const pool = getPool();
 
-  const result = await pool.query(
-    `SELECT id, title, content FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
-    [guildId]
-  ).catch(err => {
-    sysError('Failed to fetch server embeds', err, { guild: guildId });
-    return { rows: [] };
-  });
+  const [embedsResult, groupsResult] = await Promise.all([
+    pool.query(
+      `SELECT id, title, content FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
+      [guildId]
+    ).catch(err => {
+      sysError('Failed to fetch server embeds', err, { guild: guildId });
+      return { rows: [] };
+    }),
+    pool.query(
+      `SELECT id, name, title, content FROM server_embed_groups WHERE guild_id = $1 ORDER BY id ASC`,
+      [guildId]
+    ).catch(err => {
+      sysError('Failed to fetch server embed groups', err, { guild: guildId });
+      return { rows: [] };
+    })
+  ]);
 
-  const embeds = result.rows;
+  const embeds = embedsResult.rows;
+  const groups = groupsResult.rows;
 
   const menuEmbed = new EmbedBuilder()
     .setTitle('Embed Manager')
-    .setDescription('Select an existing embed to manage, or create a new one.')
+    .setDescription('Select an existing embed or group to manage, or create a new one.')
     .setColor(DEFAULT_EMBED_COLOR);
 
-  const selectOptions = [
+  // Menu 1: Individual Embeds
+  const embedOptions = [
     {
-      label: 'Create',
+      label: 'Create Embed',
       value: 'create',
       emoji: '➕',
       description: 'Create a new custom embed'
@@ -143,7 +154,7 @@ export async function renderRootEmbedMenu(interaction) {
   for (const emb of embeds.slice(0, 24)) {
     const label = emb.title ? emb.title.slice(0, 100) : `Embed #${emb.id}`;
     const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
-    selectOptions.push({
+    embedOptions.push({
       label,
       value: String(emb.id),
       emoji: '📰',
@@ -151,12 +162,39 @@ export async function renderRootEmbedMenu(interaction) {
     });
   }
 
-  const selectMenu = new StringSelectMenuBuilder()
+  const embedSelectMenu = new StringSelectMenuBuilder()
     .setCustomId('embed_root_select')
     .setPlaceholder('Select an embed to manage...')
-    .addOptions(selectOptions);
+    .addOptions(embedOptions);
 
-  const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+  // Menu 2: Embed Groups
+  const groupOptions = [
+    {
+      label: 'Create Group',
+      value: 'create_group',
+      emoji: '➕',
+      description: 'Create a new embed group'
+    }
+  ];
+
+  for (const grp of groups.slice(0, 24)) {
+    const label = grp.name ? grp.name.slice(0, 100) : (grp.title ? grp.title.slice(0, 100) : `Group #${grp.id}`);
+    const rawDesc = grp.content ? grp.content.replace(/\n+/g, ' ').slice(0, 95) : 'No description';
+    groupOptions.push({
+      label,
+      value: String(grp.id),
+      emoji: '📁',
+      description: rawDesc
+    });
+  }
+
+  const groupSelectMenu = new StringSelectMenuBuilder()
+    .setCustomId('embed_group_root_select')
+    .setPlaceholder('Select a group to manage...')
+    .addOptions(groupOptions);
+
+  const embedRow = new ActionRowBuilder().addComponents(embedSelectMenu);
+  const groupRow = new ActionRowBuilder().addComponents(groupSelectMenu);
 
   // Back button strictly on the far left
   const navRow = new ActionRowBuilder().addComponents(
@@ -174,7 +212,7 @@ export async function renderRootEmbedMenu(interaction) {
   await interaction[responseMethod]({
     content: '',
     embeds: [menuEmbed],
-    components: [selectRow, navRow]
+    components: [embedRow, groupRow, navRow]
   });
 }
 
@@ -302,6 +340,407 @@ export async function renderEmbedSendPage(interaction, embedId) {
     content: '',
     embeds: [infoEmbed],
     components: [selectRow, navRow]
+  });
+}
+
+/**
+ * Render the Manage Page for an Embed Group
+ * Layout:
+ * Row 1: [ ✏️ Edit Text ] | [ 🖼️ Edit Images ]
+ * Row 2: [ 🔗 Manage Attached Embeds ]
+ * Row 3: [ 🔄 Update ] | [ 📤 Send ]
+ * Row 4: [ ⬅️ Back ]
+ */
+export async function renderGroupManagePage(interaction, groupId) {
+  const guildId = interaction.guildId;
+  const pool = getPool();
+
+  const [groupRes, itemsRes] = await Promise.all([
+    pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ).catch(err => {
+      sysError('Failed to fetch embed group by ID', err, { guild: guildId, id: groupId });
+      return { rows: [] };
+    }),
+    pool.query(
+      `SELECT count(*) as total FROM server_embed_group_items WHERE group_id = $1`,
+      [groupId]
+    ).catch(() => ({ rows: [{ total: 0 }] }))
+  ]);
+
+  if (groupRes.rows.length === 0) {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+    return renderRootEmbedMenu(interaction);
+  }
+
+  const grp = groupRes.rows[0];
+  const previewEmbed = buildDiscordEmbed(grp);
+  const attachedCount = parseInt(itemsRes.rows[0]?.total || 0, 10);
+
+  // Row 1: Edit Text - Edit Images
+  const actionRow1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`embed_group_edit_text_${grp.id}`)
+      .setLabel('Edit Text')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`embed_group_edit_images_${grp.id}`)
+      .setLabel('Edit Images')
+      .setEmoji('🖼️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  // Row 2: Manage Attached Embeds
+  const actionRow2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`embed_group_attach_${grp.id}`)
+      .setLabel(`Manage Attached Embeds (${attachedCount})`)
+      .setEmoji('🔗')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  // Row 3: Update - Send
+  const actionRow3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`embed_group_update_${grp.id}`)
+      .setLabel('Update')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`embed_group_send_${grp.id}`)
+      .setLabel('Send')
+      .setEmoji('📤')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  // Row 4: Back
+  const actionRow4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('embed_back_root')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
+    content: '',
+    embeds: [previewEmbed],
+    components: [actionRow1, actionRow2, actionRow3, actionRow4]
+  });
+}
+
+/**
+ * Render the Attached Embeds Management Page for an Embed Group
+ */
+export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
+  const guildId = interaction.guildId;
+  const pool = getPool();
+
+  const [allEmbedsRes, attachedRes, groupRes] = await Promise.all([
+    pool.query(
+      `SELECT id, title, content FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
+      [guildId]
+    ).catch(err => {
+      sysError('Failed to fetch server embeds for group attach', err, { guild: guildId });
+      return { rows: [] };
+    }),
+    pool.query(
+      `SELECT embed_id FROM server_embed_group_items WHERE group_id = $1 ORDER BY display_order ASC`,
+      [groupId]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT id, name FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ).catch(() => ({ rows: [] }))
+  ]);
+
+  if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+  const grp = groupRes.rows[0];
+
+  const allEmbeds = allEmbedsRes.rows;
+  const attachedIds = new Set(attachedRes.rows.map(r => r.embed_id));
+
+  const infoEmbed = new EmbedBuilder()
+    .setTitle(`Attach Embeds — ${grp.name}`)
+    .setDescription(
+      allEmbeds.length === 0
+        ? 'No individual embeds found in this server. Please create embeds first before attaching them.'
+        : 'Select which embeds should appear in the public dropdown for this group. You can select multiple items.'
+    )
+    .setColor(DEFAULT_EMBED_COLOR);
+
+  const components = [];
+
+  if (allEmbeds.length > 0) {
+    const options = allEmbeds.slice(0, 25).map(emb => {
+      const label = emb.title ? emb.title.slice(0, 100) : `Embed #${emb.id}`;
+      const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
+      return {
+        label,
+        value: String(emb.id),
+        emoji: '📄',
+        description: rawDesc,
+        default: attachedIds.has(emb.id)
+      };
+    });
+
+    const selectMenu = new StringSelectMenuBuilder()
+      .setCustomId(`embed_group_save_attach_${groupId}`)
+      .setPlaceholder('Select embeds to attach (check / uncheck)...')
+      .setMinValues(0)
+      .setMaxValues(Math.min(options.length, 25))
+      .addOptions(options);
+
+    components.push(new ActionRowBuilder().addComponents(selectMenu));
+  }
+
+  // Back button to Group Manage
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`embed_group_manage_${groupId}`)
+        .setLabel('Back to Group')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
+    content: '',
+    embeds: [infoEmbed],
+    components
+  });
+}
+
+/**
+ * Render the Channel Selection view for sending an Embed Group
+ */
+export async function renderGroupSendPage(interaction, groupId) {
+  const guildId = interaction.guildId;
+  const pool = getPool();
+
+  const [groupRes, itemsRes] = await Promise.all([
+    pool.query(
+      `SELECT id, name FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ),
+    pool.query(
+      `SELECT count(*) as total FROM server_embed_group_items WHERE group_id = $1`,
+      [groupId]
+    )
+  ]);
+
+  if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+  const grp = groupRes.rows[0];
+  const attachedCount = parseInt(itemsRes.rows[0]?.total || 0, 10);
+
+  if (attachedCount === 0) {
+    await interaction.followUp?.({
+      content: '❌ You must attach at least one embed to this group before sending it to a public channel.',
+      flags: MessageFlags.Ephemeral
+    }).catch(() => {});
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  const sendEmbed = new EmbedBuilder()
+    .setTitle(`Send Group — ${grp.name}`)
+    .setDescription('Select the target channel where this group embed and public dropdown will be sent.')
+    .setColor(DEFAULT_EMBED_COLOR);
+
+  const channelSelect = new ChannelSelectMenuBuilder()
+    .setCustomId(`embed_group_channel_select_${groupId}`)
+    .setPlaceholder('Select a channel...')
+    .setChannelTypes([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
+
+  const selectRow = new ActionRowBuilder().addComponents(channelSelect);
+  const navRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`embed_group_manage_${groupId}`)
+      .setLabel('Back to Group')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
+    content: '',
+    embeds: [sendEmbed],
+    components: [selectRow, navRow]
+  });
+}
+
+/**
+ * Handle channel selection and dispatch of an Embed Group
+ */
+async function handleGroupChannelSend(interaction, groupId) {
+  await interaction.deferUpdate().catch(() => {});
+
+  const guildId = interaction.guildId;
+  const channelId = interaction.values?.[0];
+  if (!channelId) return renderGroupManagePage(interaction, groupId);
+
+  const guild = interaction.guild;
+  const channel = guild?.channels.cache.get(channelId);
+  if (!channel) {
+    await interaction.followUp({
+      content: '❌ Channel not found or cannot be accessed.',
+      flags: MessageFlags.Ephemeral
+    });
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  const diag = diagnoseChannelPermissions(channel, guild.members.me);
+  if (!diag.canSend || !diag.canEmbed) {
+    await interaction.followUp({
+      content: `❌ Missing required permissions in <#${channelId}>: ${diag.missing.join(', ')}`,
+      flags: MessageFlags.Ephemeral
+    });
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  const pool = getPool();
+  const [groupRes, itemsRes] = await Promise.all([
+    pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ),
+    pool.query(
+      `SELECT se.* FROM server_embeds se
+       JOIN server_embed_group_items segi ON se.id = segi.embed_id
+       WHERE segi.group_id = $1
+       ORDER BY segi.display_order ASC`,
+      [groupId]
+    )
+  ]);
+
+  if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+  const grp = groupRes.rows[0];
+  const items = itemsRes.rows;
+
+  if (items.length === 0) {
+    await interaction.followUp({
+      content: '❌ No embeds are attached to this group. Attach at least one embed before sending.',
+      flags: MessageFlags.Ephemeral
+    });
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  const groupEmbed = buildDiscordEmbed(grp);
+
+  const publicOptions = items.slice(0, 25).map(item => {
+    const label = item.title ? item.title.slice(0, 100) : `Topic #${item.id}`;
+    const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
+    return {
+      label,
+      value: String(item.id),
+      emoji: '📄',
+      description: rawDesc
+    };
+  });
+
+  const publicSelectMenu = new StringSelectMenuBuilder()
+    .setCustomId('embed_public_group_select')
+    .setPlaceholder('📖 Select something to read...')
+    .addOptions(publicOptions);
+
+  const publicRow = new ActionRowBuilder().addComponents(publicSelectMenu);
+
+  try {
+    const sentMsg = await channel.send({
+      embeds: [groupEmbed],
+      components: [publicRow]
+    });
+
+    // Save to server_embed_group_posts
+    await pool.query(
+      `INSERT INTO server_embed_group_posts (message_id, guild_id, group_id, channel_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (message_id) DO NOTHING`,
+      [sentMsg.id, guildId, groupId, channelId]
+    );
+
+    // Update group tracked message
+    await pool.query(
+      `UPDATE server_embed_groups
+       SET tracked_message_id = $1, tracked_channel_id = $2, updated_at = NOW()
+       WHERE id = $3 AND guild_id = $4`,
+      [sentMsg.id, channelId, groupId, guildId]
+    );
+
+    sysLog('Embed Group Sent to Channel', {
+      guild: guildId,
+      user: interaction.user.id,
+      detail: `Group: ${grp.name} | Channel: ${channel.name} | Message ID: ${sentMsg.id}`
+    });
+
+    const jumpUrl = `https://discord.com/channels/${guildId}/${channelId}/${sentMsg.id}`;
+    await interaction.followUp({
+      content: `✅ Embed group **${grp.name}** successfully sent to <#${channelId}>! [Jump to Message](${jumpUrl})`,
+      flags: MessageFlags.Ephemeral
+    });
+
+    return renderGroupManagePage(interaction, groupId);
+  } catch (err) {
+    sysError('Failed to send embed group to channel', err, { guild: guildId, id: groupId, channel: channelId });
+    await interaction.followUp({
+      content: `❌ Failed to send embed group to <#${channelId}>: ${err.message}`,
+      flags: MessageFlags.Ephemeral
+    });
+    return renderGroupManagePage(interaction, groupId);
+  }
+}
+
+/**
+ * Handle public interaction from the group select menu
+ * Strictly delivers the requested embed ephemerally to the clicking user
+ */
+export async function handlePublicGroupSelect(interaction) {
+  const guildId = interaction.guildId;
+  const selectedEmbedId = parseInt(interaction.values?.[0], 10);
+  if (isNaN(selectedEmbedId)) {
+    return interaction.reply({
+      content: '❌ Invalid selection.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+    [selectedEmbedId, guildId]
+  ).catch(err => {
+    sysError('Failed to fetch embed for public group selection', err, { guild: guildId, id: selectedEmbedId });
+    return { rows: [] };
+  });
+
+  if (result.rows.length === 0) {
+    return interaction.reply({
+      content: '❌ This topic is no longer available.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const embedItem = result.rows[0];
+  const responseEmbed = buildDiscordEmbed(embedItem);
+
+  await interaction.reply({
+    embeds: [responseEmbed],
+    flags: MessageFlags.Ephemeral
   });
 }
 
@@ -552,6 +991,306 @@ export async function handleEmbedComponent(interaction) {
   if (customId.startsWith('embed_channel_select_')) {
     const embedId = parseInt(customId.replace('embed_channel_select_', ''), 10);
     return handleEmbedChannelSend(interaction, embedId);
+  }
+
+  // --- EMBED GROUPS COMPONENT ROUTING ---
+
+  // Group Root Select Menu
+  if (customId === 'embed_group_root_select') {
+    const selected = interaction.values?.[0];
+    if (selected === 'create_group') {
+      const modal = new ModalBuilder()
+        .setCustomId(`embed_modal_group_create_${Date.now()}`)
+        .setTitle('Create Embed Group');
+
+      const nameInput = new TextInputBuilder()
+        .setCustomId('embed_group_name')
+        .setLabel('Group Name')
+        .setPlaceholder('Internal identifier (e.g. Rules Hub)...')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(64)
+        .setRequired(true);
+
+      const titleInput = new TextInputBuilder()
+        .setCustomId('embed_title')
+        .setLabel('Title')
+        .setPlaceholder('Title at the top...')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(256)
+        .setRequired(false);
+
+      const contentInput = new TextInputBuilder()
+        .setCustomId('embed_content')
+        .setLabel('Content')
+        .setPlaceholder('Main text in the middle...')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(4000)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(nameInput),
+        new ActionRowBuilder().addComponents(titleInput),
+        new ActionRowBuilder().addComponents(contentInput)
+      );
+
+      return interaction.showModal(modal);
+    }
+
+    const groupId = parseInt(selected, 10);
+    if (isNaN(groupId)) return renderRootEmbedMenu(interaction);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  // Back to Group Manage Page
+  if (customId.startsWith('embed_group_manage_')) {
+    const groupId = parseInt(customId.replace('embed_group_manage_', ''), 10);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  // Group: Edit Text -> Show Modal
+  if (customId.startsWith('embed_group_edit_text_')) {
+    const groupId = parseInt(customId.replace('embed_group_edit_text_', ''), 10);
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, interaction.guildId]
+    );
+
+    if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const grp = result.rows[0];
+
+    const modal = new ModalBuilder()
+      .setCustomId(`embed_modal_group_text_${groupId}_${Date.now()}`)
+      .setTitle('Edit Group Text');
+
+    const nameInput = new TextInputBuilder()
+      .setCustomId('embed_group_name')
+      .setLabel('Group Name')
+      .setPlaceholder('Internal identifier...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(64)
+      .setRequired(true);
+    if (grp.name != null && String(grp.name).trim().length > 0) {
+      nameInput.setValue(String(grp.name).trim());
+    }
+
+    const titleInput = new TextInputBuilder()
+      .setCustomId('embed_title')
+      .setLabel('Title')
+      .setPlaceholder('Title at the top...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(256)
+      .setRequired(false);
+    if (grp.title != null && String(grp.title).trim().length > 0) {
+      titleInput.setValue(String(grp.title).trim());
+    }
+
+    const contentInput = new TextInputBuilder()
+      .setCustomId('embed_content')
+      .setLabel('Content')
+      .setPlaceholder('Main text in the middle...')
+      .setStyle(TextInputStyle.Paragraph)
+      .setMaxLength(4000)
+      .setRequired(true);
+    if (grp.content != null && String(grp.content).trim().length > 0) {
+      contentInput.setValue(String(grp.content).trim());
+    }
+
+    const footerInput = new TextInputBuilder()
+      .setCustomId('embed_footer_text')
+      .setLabel('Footer Text')
+      .setPlaceholder('Text on the bottom-left...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(2048)
+      .setRequired(false);
+    if (grp.footer_text != null && String(grp.footer_text).trim().length > 0) {
+      footerInput.setValue(String(grp.footer_text).trim());
+    }
+
+    const colorInput = new TextInputBuilder()
+      .setCustomId('embed_color')
+      .setLabel('Hex Code')
+      .setPlaceholder('Left border color...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(7)
+      .setRequired(false);
+    if (grp.color != null && String(grp.color).trim().length > 0) {
+      colorInput.setValue(String(grp.color).trim());
+    }
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(nameInput),
+      new ActionRowBuilder().addComponents(titleInput),
+      new ActionRowBuilder().addComponents(contentInput),
+      new ActionRowBuilder().addComponents(footerInput),
+      new ActionRowBuilder().addComponents(colorInput)
+    );
+
+    return interaction.showModal(modal);
+  }
+
+  // Group: Edit Images -> Show Modal
+  if (customId.startsWith('embed_group_edit_images_')) {
+    const groupId = parseInt(customId.replace('embed_group_edit_images_', ''), 10);
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, interaction.guildId]
+    );
+
+    if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const grp = result.rows[0];
+
+    const modal = new ModalBuilder()
+      .setCustomId(`embed_modal_group_images_${groupId}_${Date.now()}`)
+      .setTitle('Edit Group Images');
+
+    // 1. Author Icon
+    const authorIconInput = new TextInputBuilder()
+      .setCustomId('embed_author_icon_url')
+      .setLabel('Author Icon')
+      .setPlaceholder('Icon on the top-left...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (grp.author_icon_url != null && String(grp.author_icon_url).trim().length > 0) {
+      authorIconInput.setValue(String(grp.author_icon_url).trim());
+    }
+
+    // 2. Thumbnail
+    const thumbInput = new TextInputBuilder()
+      .setCustomId('embed_thumbnail_url')
+      .setLabel('Thumbnail')
+      .setPlaceholder('Image on the top-right...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (grp.thumbnail_url != null && String(grp.thumbnail_url).trim().length > 0) {
+      thumbInput.setValue(String(grp.thumbnail_url).trim());
+    }
+
+    // 3. Banner
+    const imageInput = new TextInputBuilder()
+      .setCustomId('embed_image_url')
+      .setLabel('Banner')
+      .setPlaceholder('Big image under the text...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (grp.image_url != null && String(grp.image_url).trim().length > 0) {
+      imageInput.setValue(String(grp.image_url).trim());
+    }
+
+    // 4. Footer Icon
+    const footerIconInput = new TextInputBuilder()
+      .setCustomId('embed_footer_icon_url')
+      .setLabel('Footer Icon')
+      .setPlaceholder('Icon on the bottom-left...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (grp.footer_icon_url != null && String(grp.footer_icon_url).trim().length > 0) {
+      footerIconInput.setValue(String(grp.footer_icon_url).trim());
+    }
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(authorIconInput),
+      new ActionRowBuilder().addComponents(thumbInput),
+      new ActionRowBuilder().addComponents(imageInput),
+      new ActionRowBuilder().addComponents(footerIconInput)
+    );
+
+    return interaction.showModal(modal);
+  }
+
+  // Group: Manage Attached Embeds Button
+  if (customId.startsWith('embed_group_attach_')) {
+    const groupId = parseInt(customId.replace('embed_group_attach_', ''), 10);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+    return renderGroupAttachedEmbedsPage(interaction, groupId);
+  }
+
+  // Group: Save Attached Embeds Selection (Multi-select)
+  if (customId.startsWith('embed_group_save_attach_')) {
+    await interaction.deferUpdate().catch(() => {});
+    const groupId = parseInt(customId.replace('embed_group_save_attach_', ''), 10);
+    const selectedIds = (interaction.values || []).map(v => parseInt(v, 10)).filter(v => !isNaN(v));
+    const pool = getPool();
+
+    try {
+      await pool.query('BEGIN');
+      await pool.query(
+        `DELETE FROM server_embed_group_items WHERE group_id = $1`,
+        [groupId]
+      );
+      for (let i = 0; i < selectedIds.length; i++) {
+        await pool.query(
+          `INSERT INTO server_embed_group_items (group_id, embed_id, display_order)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (group_id, embed_id) DO UPDATE SET display_order = $3`,
+          [groupId, selectedIds[i], i]
+        );
+      }
+      await pool.query('COMMIT');
+
+      sysLog('Embed Group Attachments Updated', {
+        guild: interaction.guildId,
+        user: interaction.user.id,
+        detail: `Group ID: ${groupId} | Attached Count: ${selectedIds.length}`
+      });
+    } catch (err) {
+      await pool.query('ROLLBACK').catch(() => {});
+      sysError('Failed to update group attached embeds', err, { guild: interaction.guildId, id: groupId });
+      await interaction.followUp({
+        content: '❌ Failed to save attached embeds.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    return renderGroupManagePage(interaction, groupId);
+  }
+
+  // Group: Send Button -> Channel Select View
+  if (customId.startsWith('embed_group_send_')) {
+    const groupId = parseInt(customId.replace('embed_group_send_', ''), 10);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+    return renderGroupSendPage(interaction, groupId);
+  }
+
+  // Group: Channel Select Menu for Send
+  if (customId.startsWith('embed_group_channel_select_')) {
+    const groupId = parseInt(customId.replace('embed_group_channel_select_', ''), 10);
+    return handleGroupChannelSend(interaction, groupId);
+  }
+
+  // Group: Update Button -> URL Modal
+  if (customId.startsWith('embed_group_update_')) {
+    const groupId = parseInt(customId.replace('embed_group_update_', ''), 10);
+
+    const modal = new ModalBuilder()
+      .setCustomId(`embed_modal_group_update_${groupId}_${Date.now()}`)
+      .setTitle('Update Group Message');
+
+    const urlInput = new TextInputBuilder()
+      .setCustomId('embed_group_msg_url')
+      .setLabel('Message URL')
+      .setPlaceholder('Paste message link here...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
+    return interaction.showModal(modal);
+  }
+
+  // Group: Public Dropdown Interaction (Ephemeral delivery)
+  if (customId === 'embed_public_group_select') {
+    return handlePublicGroupSelect(interaction);
   }
 }
 
@@ -1035,5 +1774,365 @@ export async function handleEmbedModal(interaction) {
     });
 
     return renderEmbedManagePage(interaction, embedId);
+  }
+
+  // 5. Create Group Modal
+  if (customId.startsWith('embed_modal_group_create')) {
+    await interaction.deferUpdate().catch(() => {});
+
+    const name = interaction.fields.getTextInputValue('embed_group_name')?.trim() || 'Untitled Group';
+    const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
+    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+
+    try {
+      const insertResult = await pool.query(
+        `INSERT INTO server_embed_groups (guild_id, name, title, content, author_name)
+         VALUES ($1, $2, $3, $4, $2)
+         RETURNING id`,
+        [guildId, name, title, content]
+      );
+
+      const newId = insertResult.rows[0].id;
+      sysLog('Embed Group Created', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `ID: ${newId} | Name: ${name}`
+      });
+
+      return renderGroupManagePage(interaction, newId);
+    } catch (err) {
+      sysError('Failed to create embed group', err, { guild: guildId });
+      await interaction.followUp({
+        content: '❌ Failed to save embed group to database.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderRootEmbedMenu(interaction);
+    }
+  }
+
+  // 6. Edit Group Text Modal
+  if (customId.startsWith('embed_modal_group_text_')) {
+    await interaction.deferUpdate().catch(() => {});
+
+    const parts = customId.split('_');
+    const groupId = parseInt(parts[4], 10);
+
+    const curRes = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ).catch(() => ({ rows: [] }));
+
+    if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const current = curRes.rows[0];
+
+    const rawName = interaction.fields.getTextInputValue('embed_group_name')?.trim();
+    const rawTitle = interaction.fields.getTextInputValue('embed_title')?.trim();
+    const rawContent = interaction.fields.getTextInputValue('embed_content')?.trim();
+    const rawFooterText = interaction.fields.getTextInputValue('embed_footer_text')?.trim();
+    const rawColor = interaction.fields.getTextInputValue('embed_color')?.trim();
+
+    const skippedFields = [];
+
+    const name = rawName && rawName.length > 0 ? rawName.slice(0, 64) : current.name;
+    const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
+
+    let content = current.content;
+    if (rawContent && rawContent.length > 0) {
+      content = rawContent.slice(0, 4000);
+    } else {
+      skippedFields.push('Content (cannot be empty)');
+    }
+
+    const footerText = rawFooterText && rawFooterText.length > 0 ? rawFooterText.slice(0, 2048) : null;
+
+    let color = null;
+    if (rawColor && rawColor.length > 0) {
+      const validated = validateHexColor(rawColor);
+      if (validated === false) {
+        color = current.color;
+        skippedFields.push('Hex Code (invalid format)');
+      } else {
+        color = validated;
+      }
+    } else {
+      color = null;
+    }
+
+    try {
+      await pool.query(
+        `UPDATE server_embed_groups
+         SET name = $1, author_name = $1, title = $2, content = $3, footer_text = $4, color = $5, updated_at = NOW()
+         WHERE id = $6 AND guild_id = $7`,
+        [name, title, content, footerText, color, groupId, guildId]
+      );
+
+      sysLog('Embed Group Text Edited', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `ID: ${groupId} | Name: ${name}`
+      });
+
+      if (skippedFields.length > 0) {
+        await interaction.followUp({
+          content: `⚠️ Skipped invalid input: ${skippedFields.join(', ')}. All other changes were saved.`,
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
+
+      return renderGroupManagePage(interaction, groupId);
+    } catch (err) {
+      sysError('Failed to update embed group text', err, { guild: guildId, id: groupId });
+      await interaction.followUp({
+        content: '❌ Failed to update embed group text in database.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+  }
+
+  // 7. Edit Group Images Modal
+  if (customId.startsWith('embed_modal_group_images_')) {
+    await interaction.deferUpdate().catch(() => {});
+
+    const parts = customId.split('_');
+    const groupId = parseInt(parts[4], 10);
+
+    const curRes = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId]
+    ).catch(() => ({ rows: [] }));
+
+    if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const current = curRes.rows[0];
+
+    const rawAuthorIcon = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim();
+    const rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim();
+    const rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim();
+    const rawFooterIcon = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim();
+
+    const skippedFields = [];
+
+    // 1. Author Icon
+    let authorIconUrl = null;
+    if (rawAuthorIcon && rawAuthorIcon.length > 0) {
+      if (isValidImageUrl(rawAuthorIcon)) {
+        authorIconUrl = rawAuthorIcon;
+      } else {
+        authorIconUrl = current.author_icon_url;
+        skippedFields.push('Author Icon (not a valid image URL)');
+      }
+    } else {
+      authorIconUrl = null;
+    }
+
+    // 2. Thumbnail
+    let thumbnailUrl = null;
+    if (rawThumb && rawThumb.length > 0) {
+      if (isValidImageUrl(rawThumb)) {
+        thumbnailUrl = rawThumb;
+      } else {
+        thumbnailUrl = current.thumbnail_url;
+        skippedFields.push('Thumbnail (not a valid image URL)');
+      }
+    } else {
+      thumbnailUrl = null;
+    }
+
+    // 3. Banner
+    let imageUrl = null;
+    if (rawBanner && rawBanner.length > 0) {
+      if (isValidImageUrl(rawBanner)) {
+        imageUrl = rawBanner;
+      } else {
+        imageUrl = current.image_url;
+        skippedFields.push('Banner (not a valid image URL)');
+      }
+    } else {
+      imageUrl = null;
+    }
+
+    // 4. Footer Icon
+    let footerIconUrl = null;
+    if (rawFooterIcon && rawFooterIcon.length > 0) {
+      if (isValidImageUrl(rawFooterIcon)) {
+        footerIconUrl = rawFooterIcon;
+      } else {
+        footerIconUrl = current.footer_icon_url;
+        skippedFields.push('Footer Icon (not a valid image URL)');
+      }
+    } else {
+      footerIconUrl = null;
+    }
+
+    try {
+      await pool.query(
+        `UPDATE server_embed_groups
+         SET thumbnail_url = $1, image_url = $2, author_icon_url = $3, footer_icon_url = $4, updated_at = NOW()
+         WHERE id = $5 AND guild_id = $6`,
+        [thumbnailUrl, imageUrl, authorIconUrl, footerIconUrl, groupId, guildId]
+      );
+
+      sysLog('Embed Group Images Edited', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `ID: ${groupId} images updated`
+      });
+
+      if (skippedFields.length > 0) {
+        await interaction.followUp({
+          content: `⚠️ Skipped invalid input: ${skippedFields.join(', ')}. All other changes were saved.`,
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
+
+      return renderGroupManagePage(interaction, groupId);
+    } catch (err) {
+      sysError('Failed to update embed group images', err, { guild: guildId, id: groupId });
+      await interaction.followUp({
+        content: '❌ Failed to update embed group images in database.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+  }
+
+  // 8. Update Group Modal (live edit by message URL)
+  if (customId.startsWith('embed_modal_group_update_')) {
+    await interaction.deferUpdate().catch(() => {});
+
+    const parts = customId.split('_');
+    const groupId = parseInt(parts[4], 10);
+    const rawUrl = interaction.fields.getTextInputValue('embed_group_msg_url')?.trim() || '';
+
+    const urlMatch = rawUrl.match(/discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/);
+    if (!urlMatch) {
+      await interaction.followUp({
+        content: '❌ Invalid message link. Please copy the full Discord message link (Right click message > Copy Message Link).',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    const [, urlGuildId, urlChannelId, urlMessageId] = urlMatch;
+
+    // Cross-server isolation check
+    if (urlGuildId !== guildId) {
+      await interaction.followUp({
+        content: '❌ You can only update messages in this server. Message links from other servers are strictly prohibited.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    const channel = interaction.guild?.channels.cache.get(urlChannelId);
+    if (!channel) {
+      await interaction.followUp({
+        content: '❌ Target channel could not be found or bot does not have access.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    let targetMessage;
+    try {
+      targetMessage = await channel.messages.fetch(urlMessageId);
+    } catch {
+      await interaction.followUp({
+        content: '❌ Could not fetch target message. Verify the bot has access and the message exists.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    if (targetMessage.author.id !== interaction.client.user.id) {
+      await interaction.followUp({
+        content: '❌ Cannot update this message: it was not authored by this bot.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    const [groupRes, itemsRes] = await Promise.all([
+      pool.query(
+        `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+        [groupId, guildId]
+      ),
+      pool.query(
+        `SELECT se.* FROM server_embeds se
+         JOIN server_embed_group_items segi ON se.id = segi.embed_id
+         WHERE segi.group_id = $1
+         ORDER BY segi.display_order ASC`,
+        [groupId]
+      )
+    ]);
+
+    if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const grp = groupRes.rows[0];
+    const items = itemsRes.rows;
+
+    const groupEmbed = buildDiscordEmbed(grp);
+
+    let components = [];
+    if (items.length > 0) {
+      const publicOptions = items.slice(0, 25).map(item => {
+        const label = item.title ? item.title.slice(0, 100) : `Topic #${item.id}`;
+        const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
+        return {
+          label,
+          value: String(item.id),
+          emoji: '📄',
+          description: rawDesc
+        };
+      });
+
+      const publicSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('embed_public_group_select')
+        .setPlaceholder('📖 Select something to read...')
+        .addOptions(publicOptions);
+
+      components = [new ActionRowBuilder().addComponents(publicSelectMenu)];
+    }
+
+    try {
+      await targetMessage.edit({
+        embeds: [groupEmbed],
+        components
+      });
+
+      // Ensure logged in tracking table
+      await pool.query(
+        `INSERT INTO server_embed_group_posts (message_id, guild_id, group_id, channel_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (message_id) DO UPDATE SET group_id = $3`,
+        [urlMessageId, guildId, groupId, urlChannelId]
+      );
+
+      await pool.query(
+        `UPDATE server_embed_groups
+         SET tracked_message_id = $1, tracked_channel_id = $2, updated_at = NOW()
+         WHERE id = $3 AND guild_id = $4`,
+        [urlMessageId, urlChannelId, groupId, guildId]
+      );
+
+      sysLog('Custom Embed Group Updated Live', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `ID: ${groupId} | Message: ${urlMessageId}`
+      });
+
+      await interaction.followUp({
+        content: `✅ Live group message successfully updated! [Jump to Message](https://discord.com/channels/${guildId}/${urlChannelId}/${urlMessageId})`,
+        flags: MessageFlags.Ephemeral
+      });
+
+      return renderGroupManagePage(interaction, groupId);
+    } catch (err) {
+      sysError('Failed to live update custom embed group message', err, { guild: guildId, id: groupId });
+      await interaction.followUp({
+        content: `❌ Failed to edit target message: ${err.message}`,
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
   }
 }
