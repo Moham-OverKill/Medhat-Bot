@@ -597,7 +597,7 @@ async function handleGroupChannelSend(interaction, groupId) {
   if (!channelId) return renderGroupManagePage(interaction, groupId);
 
   const guild = interaction.guild;
-  const channel = guild?.channels.cache.get(channelId);
+  const channel = guild?.channels.cache.get(channelId) || await guild?.channels.fetch(channelId).catch(() => null);
   if (!channel) {
     await interaction.followUp({
       content: '❌ Channel not found or cannot be accessed.',
@@ -606,8 +606,14 @@ async function handleGroupChannelSend(interaction, groupId) {
     return renderGroupManagePage(interaction, groupId);
   }
 
-  const diag = diagnoseChannelPermissions(channel, guild.members.me);
-  if (!diag.canSend || !diag.canEmbed) {
+  const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  const diag = diagnoseChannelPermissions(channel, botMember, [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.EmbedLinks
+  ]);
+
+  if (!diag.hasAll) {
     await interaction.followUp({
       content: `❌ Missing required permissions in <#${channelId}>: ${diag.missing.join(', ')}`,
       flags: MessageFlags.Ephemeral
