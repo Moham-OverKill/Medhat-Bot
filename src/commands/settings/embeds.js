@@ -121,7 +121,7 @@ export async function renderRootEmbedMenu(interaction) {
     selectOptions.push({
       label,
       value: String(emb.id),
-      emoji: '🖼️',
+      emoji: '📰',
       description: rawDesc
     });
   }
@@ -156,8 +156,9 @@ export async function renderRootEmbedMenu(interaction) {
 /**
  * Render the Manage Page for a specific embed
  * Layout:
- * Row 1: [ ✏️ Edit Text ] | [ 🖼️ Edit Images ] | [ 📤 Send ] | [ 🔄 Update ]
- * Row 2: [ ⬅️ Back ] (Alone in Row 2)
+ * Row 1: [ ✏️ Edit Text ] | [ 🖼️ Edit Images ]
+ * Row 2: [ 🔄 Update ] | [ 📤 Send ]
+ * Row 3: [ ⬅️ Back ]
  */
 export async function renderEmbedManagePage(interaction, embedId) {
   const guildId = interaction.guildId;
@@ -181,7 +182,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
   const emb = result.rows[0];
   const previewEmbed = buildDiscordEmbed(emb);
 
-  // Row 1: Action buttons
+  // Row 1: Edit Text - Edit Images
   const actionRow1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`embed_edit_text_${emb.id}`)
@@ -192,21 +193,25 @@ export async function renderEmbedManagePage(interaction, embedId) {
       .setCustomId(`embed_edit_images_${emb.id}`)
       .setLabel('Edit Images')
       .setEmoji('🖼️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  // Row 2: Update - Send
+  const actionRow2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`embed_update_${emb.id}`)
+      .setLabel('Update')
+      .setEmoji('🔄')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`embed_send_${emb.id}`)
       .setLabel('Send')
       .setEmoji('📤')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`embed_update_${emb.id}`)
-      .setLabel('Update')
-      .setEmoji('🔄')
       .setStyle(ButtonStyle.Secondary)
   );
 
-  // Row 2: Back button alone
-  const actionRow2 = new ActionRowBuilder().addComponents(
+  // Row 3: Back
+  const actionRow3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('embed_back_root')
       .setLabel('Back')
@@ -221,7 +226,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
   await interaction[responseMethod]({
     content: '',
     embeds: [previewEmbed],
-    components: [actionRow1, actionRow2]
+    components: [actionRow1, actionRow2, actionRow3]
   });
 }
 
