@@ -110,6 +110,30 @@ function buildDiscordEmbed(emb) {
 }
 
 /**
+ * Resolves the display name for an embed or embed group.
+ * Priority: Title -> Author Name -> Footer Text -> 'No Title'
+ * Strictly avoids returning 'Embed #id' or 'Group #id'.
+ */
+function getEmbedDisplayName(emb) {
+  if (!emb) return 'No Title';
+  const title = emb.title?.trim();
+  if (title) return title.slice(0, 100);
+
+  const author = emb.author_name?.trim();
+  if (author) return author.slice(0, 100);
+
+  const footer = emb.footer_text?.trim();
+  if (footer) return footer.slice(0, 100);
+
+  const name = emb.name?.trim();
+  if (name && !name.startsWith('Group #') && !name.startsWith('Embed #') && name !== 'Untitled Group') {
+    return name.slice(0, 100);
+  }
+
+  return 'No Title';
+}
+
+/**
  * Render the Root Embed Menu displaying saved embeds and saved embed groups
  */
 export async function renderRootEmbedMenu(interaction) {
@@ -118,14 +142,14 @@ export async function renderRootEmbedMenu(interaction) {
 
   const [embedsResult, groupsResult] = await Promise.all([
     pool.query(
-      `SELECT id, title, content FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
+      `SELECT id, title, content, author_name, footer_text FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
       [guildId]
     ).catch(err => {
       sysError('Failed to fetch server embeds', err, { guild: guildId });
       return { rows: [] };
     }),
     pool.query(
-      `SELECT id, name, title, content FROM server_embed_groups WHERE guild_id = $1 ORDER BY id ASC`,
+      `SELECT id, name, title, content, author_name, footer_text FROM server_embed_groups WHERE guild_id = $1 ORDER BY id ASC`,
       [guildId]
     ).catch(err => {
       sysError('Failed to fetch server embed groups', err, { guild: guildId });
@@ -152,7 +176,7 @@ export async function renderRootEmbedMenu(interaction) {
   ];
 
   for (const emb of embeds.slice(0, 24)) {
-    const label = emb.title ? emb.title.slice(0, 100) : `Embed #${emb.id}`;
+    const label = getEmbedDisplayName(emb);
     const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
     embedOptions.push({
       label,
@@ -178,7 +202,7 @@ export async function renderRootEmbedMenu(interaction) {
   ];
 
   for (const grp of groups.slice(0, 24)) {
-    const label = grp.name ? grp.name.slice(0, 100) : (grp.title ? grp.title.slice(0, 100) : `Group #${grp.id}`);
+    const label = getEmbedDisplayName(grp);
     const rawDesc = grp.content ? grp.content.replace(/\n+/g, ' ').slice(0, 95) : 'No description';
     groupOptions.push({
       label,
@@ -301,7 +325,7 @@ export async function renderEmbedSendPage(interaction, embedId) {
   const pool = getPool();
 
   const result = await pool.query(
-    `SELECT id, title FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+    `SELECT id, title, author_name, footer_text FROM server_embeds WHERE id = $1 AND guild_id = $2`,
     [embedId, guildId]
   );
 
@@ -313,7 +337,7 @@ export async function renderEmbedSendPage(interaction, embedId) {
 
   const infoEmbed = new EmbedBuilder()
     .setTitle('Send Embed')
-    .setDescription(`Choose the text channel where **${emb.title || `Embed #${emb.id}`}** should be posted.`)
+    .setDescription(`Choose the text channel where **${getEmbedDisplayName(emb)}** should be posted.`)
     .setColor(DEFAULT_EMBED_COLOR);
 
   const channelSelect = new ChannelSelectMenuBuilder()
@@ -446,7 +470,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
 
   const [allEmbedsRes, attachedRes, groupRes] = await Promise.all([
     pool.query(
-      `SELECT id, title, content FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
+      `SELECT id, title, content, author_name, footer_text FROM server_embeds WHERE guild_id = $1 ORDER BY id ASC`,
       [guildId]
     ).catch(err => {
       sysError('Failed to fetch server embeds for group attach', err, { guild: guildId });
@@ -457,7 +481,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
       [groupId]
     ).catch(() => ({ rows: [] })),
     pool.query(
-      `SELECT id, name, title FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      `SELECT id, name, title, author_name, footer_text FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
       [groupId, guildId]
     ).catch(() => ({ rows: [] }))
   ]);
@@ -467,7 +491,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
 
   const allEmbeds = allEmbedsRes.rows;
   const attachedIds = new Set(attachedRes.rows.map(r => r.embed_id));
-  const groupDisplayName = grp.title || grp.name || `Group #${grp.id}`;
+  const groupDisplayName = getEmbedDisplayName(grp);
 
   const infoEmbed = new EmbedBuilder()
     .setTitle(`Attach Embeds — ${groupDisplayName}`)
@@ -482,7 +506,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
 
   if (allEmbeds.length > 0) {
     const options = allEmbeds.slice(0, 25).map(emb => {
-      const label = emb.title ? emb.title.slice(0, 100) : `Embed #${emb.id}`;
+      const label = getEmbedDisplayName(emb);
       const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
       return {
         label,
@@ -534,7 +558,7 @@ export async function renderGroupSendPage(interaction, groupId) {
 
   const [groupRes, itemsRes] = await Promise.all([
     pool.query(
-      `SELECT id, name, title FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      `SELECT id, name, title, author_name, footer_text FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
       [groupId, guildId]
     ),
     pool.query(
@@ -546,7 +570,7 @@ export async function renderGroupSendPage(interaction, groupId) {
   if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
   const grp = groupRes.rows[0];
   const attachedCount = parseInt(itemsRes.rows[0]?.total || 0, 10);
-  const groupDisplayName = grp.title || grp.name || `Group #${grp.id}`;
+  const groupDisplayName = getEmbedDisplayName(grp);
 
   if (attachedCount === 0) {
     const errorEmbed = createErrorEmbed(
@@ -667,7 +691,7 @@ async function handleGroupChannelSend(interaction, groupId) {
   const groupEmbed = buildDiscordEmbed(grp);
 
   const publicOptions = items.slice(0, 25).map(item => {
-    const label = item.title ? item.title.slice(0, 100) : `Topic #${item.id}`;
+    const label = getEmbedDisplayName(item);
     const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
     return {
       label,
@@ -2175,7 +2199,7 @@ export async function handleEmbedModal(interaction) {
     let components = [];
     if (items.length > 0) {
       const publicOptions = items.slice(0, 25).map(item => {
-        const label = item.title ? item.title.slice(0, 100) : `Topic #${item.id}`;
+        const label = getEmbedDisplayName(item);
         const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
         return {
           label,
