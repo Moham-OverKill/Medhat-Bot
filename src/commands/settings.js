@@ -112,7 +112,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_embed')
             .setLabel('Embed')
-            .setEmoji('🖼️')
+            .setEmoji('📰')
             .setStyle(ButtonStyle.Secondary)
     );
 
