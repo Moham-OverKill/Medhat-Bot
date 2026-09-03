@@ -111,7 +111,7 @@ function buildDiscordEmbed(emb) {
 
 /**
  * Resolves the display name for an embed or embed group.
- * Priority: Title -> Author Name -> Footer Text -> 'No Title'
+ * Priority: Title -> Author Name -> Footer Text -> Content/Description -> 'No Title'
  * Strictly avoids returning 'Embed #id' or 'Group #id'.
  */
 function getEmbedDisplayName(emb) {
@@ -124,6 +124,9 @@ function getEmbedDisplayName(emb) {
 
   const footer = emb.footer_text?.trim();
   if (footer) return footer.slice(0, 100);
+
+  const content = emb.content?.trim();
+  if (content) return content.replace(/\n+/g, ' ').slice(0, 100);
 
   const name = emb.name?.trim();
   if (name && !name.startsWith('Group #') && !name.startsWith('Embed #') && name !== 'Untitled Group') {
@@ -170,19 +173,16 @@ export async function renderRootEmbedMenu(interaction) {
     {
       label: 'Create Embed',
       value: 'create',
-      emoji: '➕',
-      description: 'Create a new custom embed'
+      emoji: '➕'
     }
   ];
 
   for (const emb of embeds.slice(0, 24)) {
     const label = getEmbedDisplayName(emb);
-    const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
     embedOptions.push({
       label,
       value: String(emb.id),
-      emoji: '📰',
-      description: rawDesc
+      emoji: '📰'
     });
   }
 
@@ -196,19 +196,16 @@ export async function renderRootEmbedMenu(interaction) {
     {
       label: 'Create Group',
       value: 'create_group',
-      emoji: '➕',
-      description: 'Create a new embed group'
+      emoji: '➕'
     }
   ];
 
   for (const grp of groups.slice(0, 24)) {
     const label = getEmbedDisplayName(grp);
-    const rawDesc = grp.content ? grp.content.replace(/\n+/g, ' ').slice(0, 95) : 'No description';
     groupOptions.push({
       label,
       value: String(grp.id),
-      emoji: '📁',
-      description: rawDesc
+      emoji: '📁'
     });
   }
 
@@ -507,12 +504,10 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
   if (allEmbeds.length > 0) {
     const options = allEmbeds.slice(0, 25).map(emb => {
       const label = getEmbedDisplayName(emb);
-      const rawDesc = emb.content ? emb.content.replace(/\n+/g, ' ').slice(0, 95) : 'No content';
       return {
         label,
         value: String(emb.id),
         emoji: '📄',
-        description: rawDesc,
         default: attachedIds.has(emb.id)
       };
     });
@@ -692,12 +687,10 @@ async function handleGroupChannelSend(interaction, groupId) {
 
   const publicOptions = items.slice(0, 25).map(item => {
     const label = getEmbedDisplayName(item);
-    const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
     return {
       label,
       value: String(item.id),
-      emoji: '📄',
-      description: rawDesc
+      emoji: '📄'
     };
   });
 
@@ -2208,12 +2201,10 @@ export async function handleEmbedModal(interaction) {
     if (items.length > 0) {
       const publicOptions = items.slice(0, 25).map(item => {
         const label = getEmbedDisplayName(item);
-        const rawDesc = item.content ? item.content.replace(/\n+/g, ' ').slice(0, 95) : 'Read details';
         return {
           label,
           value: String(item.id),
-          emoji: '📄',
-          description: rawDesc
+          emoji: '📄'
         };
       });
 
