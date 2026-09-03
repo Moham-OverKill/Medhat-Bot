@@ -14,7 +14,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysError, sysLog } from '../../utils/logger.js';
-import { diagnoseChannelPermissions } from '../../utils/errors.js';
+import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
 
 const DEFAULT_EMBED_COLOR = 0x2F3136;
 
@@ -549,8 +549,12 @@ export async function renderGroupSendPage(interaction, groupId) {
   const groupDisplayName = grp.title || grp.name || `Group #${grp.id}`;
 
   if (attachedCount === 0) {
+    const errorEmbed = createErrorEmbed(
+      'No Attached Embeds',
+      'You must attach at least one embed to this group before sending it to a public channel.'
+    );
     await interaction.followUp?.({
-      content: '❌ You must attach at least one embed to this group before sending it to a public channel.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     }).catch(() => {});
     return renderGroupManagePage(interaction, groupId);
@@ -599,8 +603,12 @@ async function handleGroupChannelSend(interaction, groupId) {
   const guild = interaction.guild;
   const channel = guild?.channels.cache.get(channelId) || await guild?.channels.fetch(channelId).catch(() => null);
   if (!channel) {
+    const errorEmbed = createErrorEmbed(
+      'Channel Unavailable',
+      'The selected channel could not be found or the bot lacks access to view it.'
+    );
     await interaction.followUp({
-      content: '❌ Channel not found or cannot be accessed.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
     return renderGroupManagePage(interaction, groupId);
@@ -614,8 +622,12 @@ async function handleGroupChannelSend(interaction, groupId) {
   ]);
 
   if (!diag.hasAll) {
+    const errorEmbed = createErrorEmbed(
+      'Missing Permissions',
+      `${diag.explanation}\n\n${diag.fixInstructions}`
+    );
     await interaction.followUp({
-      content: `❌ Missing required permissions in <#${channelId}>: ${diag.missing.join(', ')}`,
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
     return renderGroupManagePage(interaction, groupId);
@@ -641,8 +653,12 @@ async function handleGroupChannelSend(interaction, groupId) {
   const items = itemsRes.rows;
 
   if (items.length === 0) {
+    const errorEmbed = createErrorEmbed(
+      'No Attached Embeds',
+      'No embeds are attached to this group. Attach at least one embed before sending.'
+    );
     await interaction.followUp({
-      content: '❌ No embeds are attached to this group. Attach at least one embed before sending.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
     return renderGroupManagePage(interaction, groupId);
@@ -698,17 +714,14 @@ async function handleGroupChannelSend(interaction, groupId) {
 
     const jumpUrl = `https://discord.com/channels/${guildId}/${channelId}/${sentMsg.id}`;
     await interaction.followUp({
-      content: `✅ Embed group **${grp.name}** successfully sent to <#${channelId}>! [Jump to Message](${jumpUrl})`,
+      content: `✅ Embed group **${grp.title || grp.name}** successfully sent to <#${channelId}>! [Jump to Message](${jumpUrl})`,
       flags: MessageFlags.Ephemeral
     });
 
     return renderGroupManagePage(interaction, groupId);
   } catch (err) {
     sysError('Failed to send embed group to channel', err, { guild: guildId, id: groupId, channel: channelId });
-    await interaction.followUp({
-      content: `❌ Failed to send embed group to <#${channelId}>: ${err.message}`,
-      flags: MessageFlags.Ephemeral
-    });
+    await handleInteractionError(interaction, err, 'Send Embed Group', { targetChannel: channel });
     return renderGroupManagePage(interaction, groupId);
   }
 }
@@ -1244,8 +1257,12 @@ export async function handleEmbedComponent(interaction) {
     } catch (err) {
       await pool.query('ROLLBACK').catch(() => {});
       sysError('Failed to update group attached embeds', err, { guild: interaction.guildId, id: groupId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to save attached embeds to the database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to save attached embeds.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
     }
@@ -1306,8 +1323,12 @@ async function handleEmbedChannelSend(interaction, embedId) {
   const targetChannel = guild?.channels.cache.get(channelId) || await guild?.channels.fetch(channelId).catch(() => null);
 
   if (!targetChannel) {
+    const errorEmbed = createErrorEmbed(
+      'Channel Unavailable',
+      'The selected channel could not be found or the bot lacks access to view it.'
+    );
     await interaction.followUp({
-      content: '❌ Channel not found or bot lacks access.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
     return renderEmbedManagePage(interaction, embedId);
@@ -1321,8 +1342,12 @@ async function handleEmbedChannelSend(interaction, embedId) {
   ]);
 
   if (!diag.hasAll) {
+    const errorEmbed = createErrorEmbed(
+      'Missing Permissions',
+      `${diag.explanation}\n\n${diag.fixInstructions}`
+    );
     await interaction.followUp({
-      content: `❌ The bot is missing required permissions in <#${channelId}>: ${diag.missing.join(', ')}.`,
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
     return renderEmbedManagePage(interaction, embedId);
@@ -1344,10 +1369,7 @@ async function handleEmbedChannelSend(interaction, embedId) {
     sentMessage = await targetChannel.send({ embeds: [postEmbed] });
   } catch (sendErr) {
     sysError('Embed Send Error', sendErr, { guild: interaction.guildId, channel: channelId });
-    await interaction.followUp({
-      content: `❌ Failed to send embed to <#${channelId}>: ${sendErr.message || 'Check permissions.'}`,
-      flags: MessageFlags.Ephemeral
-    });
+    await handleInteractionError(interaction, sendErr, 'Send Custom Embed', { targetChannel });
     return renderEmbedManagePage(interaction, embedId);
   }
 
@@ -1414,8 +1436,12 @@ export async function handleEmbedModal(interaction) {
       return renderEmbedManagePage(interaction, newId);
     } catch (err) {
       sysError('Failed to create custom embed', err, { guild: guildId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to save custom embed to database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to save embed to database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderRootEmbedMenu(interaction);
@@ -1438,6 +1464,7 @@ export async function handleEmbedModal(interaction) {
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
 
+    // Read all fields submitted
     const rawAuthorName = interaction.fields.getTextInputValue('embed_author_name')?.trim();
     const rawTitle = interaction.fields.getTextInputValue('embed_title')?.trim();
     const rawContent = interaction.fields.getTextInputValue('embed_content')?.trim();
@@ -1452,7 +1479,7 @@ export async function handleEmbedModal(interaction) {
     // Title: max 256
     const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
 
-    // Content: required, max 4000. If empty, keep existing content
+    // Content: required, max 4000. If empty, preserve current content
     let content = current.content;
     if (rawContent && rawContent.length > 0) {
       content = rawContent.slice(0, 4000);
@@ -1503,8 +1530,12 @@ export async function handleEmbedModal(interaction) {
       return renderEmbedManagePage(interaction, embedId);
     } catch (err) {
       sysError('Failed to update custom embed text', err, { guild: guildId, id: embedId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to update embed text in database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to update embed text in database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1610,8 +1641,12 @@ export async function handleEmbedModal(interaction) {
       return renderEmbedManagePage(interaction, embedId);
     } catch (err) {
       sysError('Failed to update custom embed images', err, { guild: guildId, id: embedId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to update embed images in database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to update embed images in database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1628,8 +1663,12 @@ export async function handleEmbedModal(interaction) {
 
     const urlMatch = rawUrl.match(/discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/);
     if (!urlMatch) {
+      const errorEmbed = createErrorEmbed(
+        'Invalid Message Link',
+        'Please copy and paste the full Discord message link (Right click message > Copy Message Link).'
+      );
       await interaction.followUp({
-        content: '❌ Invalid message link. Please copy the full Discord message link (Right click message > Copy Message Link).',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1639,8 +1678,12 @@ export async function handleEmbedModal(interaction) {
 
     // Cross-server isolation check
     if (urlGuildId !== guildId) {
+      const errorEmbed = createErrorEmbed(
+        'Cross-Server Access Prohibited',
+        'You can only update messages within this server. Message links from external servers cannot be modified.'
+      );
       await interaction.followUp({
-        content: '❌ You can only update messages in this server. Message links from other servers are strictly prohibited.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1650,8 +1693,12 @@ export async function handleEmbedModal(interaction) {
       || await interaction.guild.channels.fetch(urlChannelId).catch(() => null);
 
     if (!channel || channel.guildId !== guildId) {
+      const errorEmbed = createErrorEmbed(
+        'Channel Unavailable',
+        'Channel not found in this server or the bot does not have access to view it.'
+      );
       await interaction.followUp({
-        content: '❌ Channel not found in this server or the bot does not have access to view it.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1659,8 +1706,12 @@ export async function handleEmbedModal(interaction) {
 
     const targetMsg = await channel.messages.fetch(urlMessageId).catch(() => null);
     if (!targetMsg) {
+      const errorEmbed = createErrorEmbed(
+        'Message Not Found',
+        'Could not fetch the target message. Ensure the message ID exists and the bot can read message history in that channel.'
+      );
       await interaction.followUp({
-        content: '❌ Message not found. It may have been deleted.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1668,8 +1719,12 @@ export async function handleEmbedModal(interaction) {
 
     // Guardrail 1: Must be sent by this bot
     if (targetMsg.author.id !== interaction.client.user.id) {
+      const errorEmbed = createErrorEmbed(
+        'Author Mismatch',
+        'The bot can only edit messages that were authored by this bot.'
+      );
       await interaction.followUp({
-        content: '❌ The bot can only edit messages that were sent by this bot.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1677,8 +1732,12 @@ export async function handleEmbedModal(interaction) {
 
     // Guardrail 2: Must be an embed message
     if (!targetMsg.embeds || targetMsg.embeds.length === 0) {
+      const errorEmbed = createErrorEmbed(
+        'Invalid Message Format',
+        'That message is not an embed message and cannot be edited by the Custom Embed Manager.'
+      );
       await interaction.followUp({
-        content: '❌ That message is not an embed message and cannot be edited by the Custom Embed Manager.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1686,8 +1745,12 @@ export async function handleEmbedModal(interaction) {
 
     // Guardrail 3: Must NOT have interactive components (protects Shop, Hub, Drops, Trade menus)
     if (targetMsg.components && targetMsg.components.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is an interactive bot control panel or feature and cannot be modified.'
+      );
       await interaction.followUp({
-        content: '❌ That message is an interactive bot control panel or feature and cannot be modified.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1702,8 +1765,12 @@ export async function handleEmbedModal(interaction) {
     ).catch(() => ({ rows: [] }));
 
     if (lbCheck.rows.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is an active Leaderboard message and cannot be modified.'
+      );
       await interaction.followUp({
-        content: '❌ That message is an active Leaderboard message and cannot be modified.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1716,8 +1783,12 @@ export async function handleEmbedModal(interaction) {
     ).catch(() => ({ rows: [] }));
 
     if (hubCheck.rows.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is the Server Hub message and cannot be modified.'
+      );
       await interaction.followUp({
-        content: '❌ That message is the Server Hub message and cannot be modified.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
@@ -1737,10 +1808,7 @@ export async function handleEmbedModal(interaction) {
       await targetMsg.edit({ embeds: [updatedEmbed] });
     } catch (editErr) {
       sysError('Live Embed Edit Failed', editErr, { guild: guildId, messageId: urlMessageId });
-      await interaction.followUp({
-        content: `❌ Failed to edit message: ${editErr.message || 'Unknown error'}`,
-        flags: MessageFlags.Ephemeral
-      });
+      await handleInteractionError(interaction, editErr, 'Live Embed Edit', { targetChannel: channel });
       return renderEmbedManagePage(interaction, embedId);
     }
 
@@ -1801,8 +1869,12 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, newId);
     } catch (err) {
       sysError('Failed to create embed group', err, { guild: guildId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to save embed group to database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to save embed group to database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderRootEmbedMenu(interaction);
@@ -1882,8 +1954,12 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, groupId);
     } catch (err) {
       sysError('Failed to update embed group text', err, { guild: guildId, id: groupId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to update embed group text in database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to update embed group text in database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -1988,8 +2064,12 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, groupId);
     } catch (err) {
       sysError('Failed to update embed group images', err, { guild: guildId, id: groupId });
+      const errorEmbed = createErrorEmbed(
+        'Database Error',
+        'Failed to update embed group images in database. Please try again.'
+      );
       await interaction.followUp({
-        content: '❌ Failed to update embed group images in database.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -2006,8 +2086,12 @@ export async function handleEmbedModal(interaction) {
 
     const urlMatch = rawUrl.match(/discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/);
     if (!urlMatch) {
+      const errorEmbed = createErrorEmbed(
+        'Invalid Message Link',
+        'Please copy and paste the full Discord message link (Right click message > Copy Message Link).'
+      );
       await interaction.followUp({
-        content: '❌ Invalid message link. Please copy the full Discord message link (Right click message > Copy Message Link).',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -2017,8 +2101,12 @@ export async function handleEmbedModal(interaction) {
 
     // Cross-server isolation check
     if (urlGuildId !== guildId) {
+      const errorEmbed = createErrorEmbed(
+        'Cross-Server Access Prohibited',
+        'You can only update messages within this server. Message links from external servers cannot be modified.'
+      );
       await interaction.followUp({
-        content: '❌ You can only update messages in this server. Message links from other servers are strictly prohibited.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -2026,8 +2114,12 @@ export async function handleEmbedModal(interaction) {
 
     const channel = interaction.guild?.channels.cache.get(urlChannelId);
     if (!channel) {
+      const errorEmbed = createErrorEmbed(
+        'Channel Unavailable',
+        'Target channel could not be found or the bot lacks access to view it.'
+      );
       await interaction.followUp({
-        content: '❌ Target channel could not be found or bot does not have access.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -2037,16 +2129,24 @@ export async function handleEmbedModal(interaction) {
     try {
       targetMessage = await channel.messages.fetch(urlMessageId);
     } catch {
+      const errorEmbed = createErrorEmbed(
+        'Message Not Found',
+        'Could not fetch the target message. Verify the bot has access and the message exists.'
+      );
       await interaction.followUp({
-        content: '❌ Could not fetch target message. Verify the bot has access and the message exists.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
     }
 
     if (targetMessage.author.id !== interaction.client.user.id) {
+      const errorEmbed = createErrorEmbed(
+        'Author Mismatch',
+        'Cannot update this message: it was not authored by this bot.'
+      );
       await interaction.followUp({
-        content: '❌ Cannot update this message: it was not authored by this bot.',
+        embeds: [errorEmbed],
         flags: MessageFlags.Ephemeral
       });
       return renderGroupManagePage(interaction, groupId);
@@ -2128,10 +2228,7 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, groupId);
     } catch (err) {
       sysError('Failed to live update custom embed group message', err, { guild: guildId, id: groupId });
-      await interaction.followUp({
-        content: `❌ Failed to edit target message: ${err.message}`,
-        flags: MessageFlags.Ephemeral
-      });
+      await handleInteractionError(interaction, err, 'Live Update Embed Group', { targetChannel: channel });
       return renderGroupManagePage(interaction, groupId);
     }
   }
