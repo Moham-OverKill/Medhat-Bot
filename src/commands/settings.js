@@ -295,25 +295,8 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_embed') {
-            const embedPanel = new EmbedBuilder()
-                .setTitle('Embed')
-                .setDescription('Embed module configuration will be available soon.')
-                .setColor(0x2F3136);
-
-            const backRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('settings_home')
-                    .setLabel('Back')
-                    .setEmoji('⬅️')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-            const responseMethod = interaction.isButton() ? 'update' : 'editReply';
-            await interaction[responseMethod]({
-                content: '',
-                embeds: [embedPanel],
-                components: [backRow]
-            });
+            const { renderRootEmbedMenu } = await import('./settings/embeds.js');
+            await renderRootEmbedMenu(interaction);
             return;
         }
 
