@@ -940,6 +940,22 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_embeds_guild ON server_embeds(guild_id);
       ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
       ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+      CREATE TABLE IF NOT EXISTS server_embed_posts (
+        message_id VARCHAR(32) PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        embed_id INTEGER REFERENCES server_embeds(id) ON DELETE CASCADE,
+        channel_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_embed_posts_guild ON server_embed_posts(guild_id);
+      CREATE INDEX IF NOT EXISTS idx_server_embed_posts_embed ON server_embed_posts(embed_id);
+
+      INSERT INTO server_embed_posts (message_id, guild_id, embed_id, channel_id)
+      SELECT tracked_message_id, guild_id, id, tracked_channel_id
+      FROM server_embeds
+      WHERE tracked_message_id IS NOT NULL AND tracked_channel_id IS NOT NULL
+      ON CONFLICT (message_id) DO NOTHING;
     `);
 
     // Level Leaderboard migration
