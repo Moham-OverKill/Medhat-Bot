@@ -930,12 +930,16 @@ async function createTables() {
         guild_id VARCHAR(32) NOT NULL,
         title TEXT,
         content TEXT,
+        thumbnail_url TEXT,
+        image_url TEXT,
         tracked_message_id VARCHAR(32),
         tracked_channel_id VARCHAR(32),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_server_embeds_guild ON server_embeds(guild_id);
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS image_url TEXT;
     `);
 
     // Level Leaderboard migration

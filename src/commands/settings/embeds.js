@@ -19,6 +19,42 @@ import { diagnoseChannelPermissions } from '../../utils/errors.js';
 const EMBED_COLOR = 0x2F3136;
 
 /**
+ * Validate HTTP/HTTPS URL
+ */
+function isValidHttpUrl(string) {
+  if (!string || typeof string !== 'string') return false;
+  try {
+    const url = new URL(string.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Build a Discord EmbedBuilder from a server_embeds record
+ */
+function buildDiscordEmbed(emb) {
+  const embed = new EmbedBuilder()
+    .setDescription(emb.content || '*No content*')
+    .setColor(EMBED_COLOR);
+
+  if (emb.title) {
+    embed.setTitle(emb.title);
+  }
+
+  if (emb.thumbnail_url && isValidHttpUrl(emb.thumbnail_url)) {
+    embed.setThumbnail(emb.thumbnail_url.trim());
+  }
+
+  if (emb.image_url && isValidHttpUrl(emb.image_url)) {
+    embed.setImage(emb.image_url.trim());
+  }
+
+  return embed;
+}
+
+/**
  * Render the Root Embed Menu displaying saved embeds and [ ➕ Create ]
  */
 export async function renderRootEmbedMenu(interaction) {
@@ -110,11 +146,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
   }
 
   const emb = result.rows[0];
-
-  const previewEmbed = new EmbedBuilder()
-    .setTitle(emb.title || 'Untitled')
-    .setDescription(emb.content || '*No content*')
-    .setColor(EMBED_COLOR);
+  const previewEmbed = buildDiscordEmbed(emb);
 
   if (emb.tracked_channel_id && emb.tracked_message_id) {
     previewEmbed.setFooter({ text: `Tracked: Channel ID ${emb.tracked_channel_id}` });
@@ -235,9 +267,25 @@ export async function handleEmbedComponent(interaction) {
         .setMaxLength(4000)
         .setRequired(true);
 
+      const thumbnailInput = new TextInputBuilder()
+        .setCustomId('embed_thumbnail_url')
+        .setLabel('Top Icon URL')
+        .setPlaceholder('https://... (small icon at top-right)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+
+      const imageInput = new TextInputBuilder()
+        .setCustomId('embed_image_url')
+        .setLabel('Embed Image URL')
+        .setPlaceholder('https://... (large main banner image)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
-        new ActionRowBuilder().addComponents(contentInput)
+        new ActionRowBuilder().addComponents(contentInput),
+        new ActionRowBuilder().addComponents(thumbnailInput),
+        new ActionRowBuilder().addComponents(imageInput)
       );
 
       return interaction.showModal(modal);
@@ -273,7 +321,7 @@ export async function handleEmbedComponent(interaction) {
     const embedId = parseInt(customId.replace('embed_edit_', ''), 10);
     const pool = getPool();
     const result = await pool.query(
-      `SELECT title, content FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      `SELECT title, content, thumbnail_url, image_url FROM server_embeds WHERE id = $1 AND guild_id = $2`,
       [embedId, interaction.guildId]
     );
 
@@ -304,9 +352,29 @@ export async function handleEmbedComponent(interaction) {
 
     if (emb.content) contentInput.setValue(emb.content);
 
+    const thumbnailInput = new TextInputBuilder()
+      .setCustomId('embed_thumbnail_url')
+      .setLabel('Top Icon URL')
+      .setPlaceholder('https://... (small icon at top-right)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+
+    if (emb.thumbnail_url) thumbnailInput.setValue(emb.thumbnail_url);
+
+    const imageInput = new TextInputBuilder()
+      .setCustomId('embed_image_url')
+      .setLabel('Embed Image URL')
+      .setPlaceholder('https://... (large main banner image)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+
+    if (emb.image_url) imageInput.setValue(emb.image_url);
+
     modal.addComponents(
       new ActionRowBuilder().addComponents(titleInput),
-      new ActionRowBuilder().addComponents(contentInput)
+      new ActionRowBuilder().addComponents(contentInput),
+      new ActionRowBuilder().addComponents(thumbnailInput),
+      new ActionRowBuilder().addComponents(imageInput)
     );
 
     return interaction.showModal(modal);
@@ -401,11 +469,7 @@ async function handleEmbedChannelSend(interaction, embedId) {
   if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
   const emb = result.rows[0];
 
-  const postEmbed = new EmbedBuilder()
-    .setDescription(emb.content || '')
-    .setColor(EMBED_COLOR);
-
-  if (emb.title) postEmbed.setTitle(emb.title);
+  const postEmbed = buildDiscordEmbed(emb);
 
   let sentMessage;
   try {
@@ -455,13 +519,15 @@ export async function handleEmbedModal(interaction) {
 
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
     const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
+    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
 
     try {
       const insertResult = await pool.query(
-        `INSERT INTO server_embeds (guild_id, title, content)
-         VALUES ($1, $2, $3)
+        `INSERT INTO server_embeds (guild_id, title, content, thumbnail_url, image_url)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [guildId, title, content]
+        [guildId, title, content, thumbnailUrl, imageUrl]
       );
 
       const newId = insertResult.rows[0].id;
@@ -489,13 +555,15 @@ export async function handleEmbedModal(interaction) {
     const embedId = parseInt(customId.replace('embed_modal_edit_', ''), 10);
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
     const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
+    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
 
     try {
       await pool.query(
         `UPDATE server_embeds
-         SET title = $1, content = $2, updated_at = NOW()
-         WHERE id = $3 AND guild_id = $4`,
-        [title, content, embedId, guildId]
+         SET title = $1, content = $2, thumbnail_url = $3, image_url = $4, updated_at = NOW()
+         WHERE id = $5 AND guild_id = $6`,
+        [title, content, thumbnailUrl, imageUrl, embedId, guildId]
       );
 
       sysLog('Custom Embed Edited', {
@@ -570,18 +638,14 @@ export async function handleEmbedModal(interaction) {
     }
 
     const embRes = await pool.query(
-      `SELECT title, content FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
       [embedId, guildId]
     );
 
     if (embRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const emb = embRes.rows[0];
 
-    const updatedEmbed = new EmbedBuilder()
-      .setDescription(emb.content || '')
-      .setColor(EMBED_COLOR);
-
-    if (emb.title) updatedEmbed.setTitle(emb.title);
+    const updatedEmbed = buildDiscordEmbed(emb);
 
     try {
       await targetMsg.edit({ embeds: [updatedEmbed] });
