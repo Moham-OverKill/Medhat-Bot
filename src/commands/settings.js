@@ -120,7 +120,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 4: Leaderboards - Economy
+    // Row 4: Leaderboards - Economy - Embed
     const row4 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
@@ -131,6 +131,11 @@ export async function showMainMenu(interaction) {
             .setCustomId('settings_economy')
             .setLabel('Economy')
             .setEmoji('📈')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_embed')
+            .setLabel('Embed')
+            .setEmoji('🖼️')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -290,6 +295,29 @@ export async function handleSettingsComponent(interaction) {
                 await interaction.deferUpdate().catch(() => {});
             }
             await showMainMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_embed') {
+            const embedPanel = new EmbedBuilder()
+                .setTitle('Embed')
+                .setDescription('Embed module configuration will be available soon.')
+                .setColor(0x2F3136);
+
+            const backRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('settings_home')
+                    .setLabel('Back')
+                    .setEmoji('⬅️')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+            await interaction[responseMethod]({
+                content: '',
+                embeds: [embedPanel],
+                components: [backRow]
+            });
             return;
         }
 
