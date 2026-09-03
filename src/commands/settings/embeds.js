@@ -758,8 +758,12 @@ export async function handlePublicGroupSelect(interaction) {
   const guildId = interaction.guildId;
   const selectedEmbedId = parseInt(interaction.values?.[0], 10);
   if (isNaN(selectedEmbedId)) {
+    const errorEmbed = createErrorEmbed(
+      'Invalid Selection',
+      'The selected topic is invalid.'
+    );
     return interaction.reply({
-      content: '❌ Invalid selection.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
   }
@@ -774,8 +778,12 @@ export async function handlePublicGroupSelect(interaction) {
   });
 
   if (result.rows.length === 0) {
+    const errorEmbed = createErrorEmbed(
+      'Topic Unavailable',
+      'This topic is no longer available.'
+    );
     return interaction.reply({
-      content: '❌ This topic is no longer available.',
+      embeds: [errorEmbed],
       flags: MessageFlags.Ephemeral
     });
   }
