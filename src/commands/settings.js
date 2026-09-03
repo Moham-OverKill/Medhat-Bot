@@ -68,7 +68,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors - Shop - Coins
+    // Row 1: Colors - Levels - Coins - Shop
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -76,33 +76,29 @@ export async function showMainMenu(interaction) {
             .setEmoji('🎨')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_shop')
-            .setLabel('Shop')
-            .setEmoji('🛒')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_coins')
-            .setLabel('Coins')
-            .setEmoji(resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙'))
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Levels - Users
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
             .setCustomId('settings_pass')
             .setLabel('Levels')
             .setEmoji('⭐')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_users')
-            .setLabel('Users')
-            .setEmoji('👥')
+            .setCustomId('settings_coins')
+            .setLabel('Coins')
+            .setEmoji(resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙'))
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_shop')
+            .setLabel('Shop')
+            .setEmoji('🛒')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Customize - Organize - Logs
-    const row3 = new ActionRowBuilder().addComponents(
+    // Row 2: Users - Customize - Organize - Embed
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_users')
+            .setLabel('Users')
+            .setEmoji('👥')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_customize')
             .setLabel('Customize')
@@ -114,28 +110,28 @@ export async function showMainMenu(interaction) {
             .setEmoji('🧹')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
+            .setCustomId('settings_embed')
+            .setLabel('Embed')
+            .setEmoji('🖼️')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 4: Leaderboards - Economy - Embed
-    const row4 = new ActionRowBuilder().addComponents(
+    // Row 3: Leaderboards - Logs - Economy
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
             .setLabel('Leaderboards')
             .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
+            .setCustomId('settings_logs')
+            .setLabel('Logs')
+            .setEmoji('📜')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
             .setCustomId('settings_economy')
             .setLabel('Economy')
             .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_embed')
-            .setLabel('Embed')
-            .setEmoji('🖼️')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -146,7 +142,7 @@ export async function showMainMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2, row3, row4]
+        components: [row1, row2, row3]
     });
 }
 
