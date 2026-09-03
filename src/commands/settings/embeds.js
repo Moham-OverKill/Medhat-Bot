@@ -397,8 +397,8 @@ export async function handleEmbedComponent(interaction) {
 
     const colorInput = new TextInputBuilder()
       .setCustomId('embed_color')
-      .setLabel('Color (Hex Code)')
-      .setPlaceholder('Left border color (e.g. #5865F2)...')
+      .setLabel('Hex Code')
+      .setPlaceholder('Left border color...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(7)
       .setRequired(false);
@@ -431,42 +431,46 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId(`embed_modal_images_${embedId}`)
       .setTitle('Edit Images');
 
-    const thumbInput = new TextInputBuilder()
-      .setCustomId('embed_thumbnail_url')
-      .setLabel('Top Icon URL (Thumbnail)')
-      .setPlaceholder('Image on the top-right...')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false);
-    if (emb.thumbnail_url) thumbInput.setValue(emb.thumbnail_url);
-
-    const imageInput = new TextInputBuilder()
-      .setCustomId('embed_image_url')
-      .setLabel('Main Image URL (Banner)')
-      .setPlaceholder('Big image under the text...')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false);
-    if (emb.image_url) imageInput.setValue(emb.image_url);
-
+    // 1. Author Icon
     const authorIconInput = new TextInputBuilder()
       .setCustomId('embed_author_icon_url')
-      .setLabel('Author Icon URL')
+      .setLabel('Author Icon')
       .setPlaceholder('Icon on the top-left...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.author_icon_url) authorIconInput.setValue(emb.author_icon_url);
 
+    // 2. Thumbnail
+    const thumbInput = new TextInputBuilder()
+      .setCustomId('embed_thumbnail_url')
+      .setLabel('Thumbnail')
+      .setPlaceholder('Image on the top-right...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (emb.thumbnail_url) thumbInput.setValue(emb.thumbnail_url);
+
+    // 3. Banner
+    const imageInput = new TextInputBuilder()
+      .setCustomId('embed_image_url')
+      .setLabel('Banner')
+      .setPlaceholder('Big image under the text...')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (emb.image_url) imageInput.setValue(emb.image_url);
+
+    // 4. Footer Icon
     const footerIconInput = new TextInputBuilder()
       .setCustomId('embed_footer_icon_url')
-      .setLabel('Footer Icon URL')
+      .setLabel('Footer Icon')
       .setPlaceholder('Icon on the bottom-left...')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
     if (emb.footer_icon_url) footerIconInput.setValue(emb.footer_icon_url);
 
     modal.addComponents(
+      new ActionRowBuilder().addComponents(authorIconInput),
       new ActionRowBuilder().addComponents(thumbInput),
       new ActionRowBuilder().addComponents(imageInput),
-      new ActionRowBuilder().addComponents(authorIconInput),
       new ActionRowBuilder().addComponents(footerIconInput)
     );
 
