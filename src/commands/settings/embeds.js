@@ -679,7 +679,7 @@ async function handleGroupChannelSend(interaction, groupId) {
 
   const publicSelectMenu = new StringSelectMenuBuilder()
     .setCustomId('embed_public_group_select')
-    .setPlaceholder('📖 Select something to read...')
+    .setPlaceholder('Select')
     .addOptions(publicOptions);
 
   const publicRow = new ActionRowBuilder().addComponents(publicSelectMenu);
@@ -2187,7 +2187,7 @@ export async function handleEmbedModal(interaction) {
 
       const publicSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('embed_public_group_select')
-        .setPlaceholder('📖 Select something to read...')
+        .setPlaceholder('Select')
         .addOptions(publicOptions);
 
       components = [new ActionRowBuilder().addComponents(publicSelectMenu)];
