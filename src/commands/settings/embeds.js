@@ -457,7 +457,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
       [groupId]
     ).catch(() => ({ rows: [] })),
     pool.query(
-      `SELECT id, name FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      `SELECT id, name, title FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
       [groupId, guildId]
     ).catch(() => ({ rows: [] }))
   ]);
@@ -467,9 +467,10 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
 
   const allEmbeds = allEmbedsRes.rows;
   const attachedIds = new Set(attachedRes.rows.map(r => r.embed_id));
+  const groupDisplayName = grp.title || grp.name || `Group #${grp.id}`;
 
   const infoEmbed = new EmbedBuilder()
-    .setTitle(`Attach Embeds — ${grp.name}`)
+    .setTitle(`Attach Embeds — ${groupDisplayName}`)
     .setDescription(
       allEmbeds.length === 0
         ? 'No individual embeds found in this server. Please create embeds first before attaching them.'
@@ -533,7 +534,7 @@ export async function renderGroupSendPage(interaction, groupId) {
 
   const [groupRes, itemsRes] = await Promise.all([
     pool.query(
-      `SELECT id, name FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      `SELECT id, name, title FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
       [groupId, guildId]
     ),
     pool.query(
@@ -545,6 +546,7 @@ export async function renderGroupSendPage(interaction, groupId) {
   if (groupRes.rows.length === 0) return renderRootEmbedMenu(interaction);
   const grp = groupRes.rows[0];
   const attachedCount = parseInt(itemsRes.rows[0]?.total || 0, 10);
+  const groupDisplayName = grp.title || grp.name || `Group #${grp.id}`;
 
   if (attachedCount === 0) {
     await interaction.followUp?.({
@@ -555,7 +557,7 @@ export async function renderGroupSendPage(interaction, groupId) {
   }
 
   const sendEmbed = new EmbedBuilder()
-    .setTitle(`Send Group — ${grp.name}`)
+    .setTitle(`Send Group — ${groupDisplayName}`)
     .setDescription('Select the target channel where this group embed and public dropdown will be sent.')
     .setColor(DEFAULT_EMBED_COLOR);
 
@@ -1003,14 +1005,6 @@ export async function handleEmbedComponent(interaction) {
         .setCustomId(`embed_modal_group_create_${Date.now()}`)
         .setTitle('Create Embed Group');
 
-      const nameInput = new TextInputBuilder()
-        .setCustomId('embed_group_name')
-        .setLabel('Group Name')
-        .setPlaceholder('Internal identifier (e.g. Rules Hub)...')
-        .setStyle(TextInputStyle.Short)
-        .setMaxLength(64)
-        .setRequired(true);
-
       const titleInput = new TextInputBuilder()
         .setCustomId('embed_title')
         .setLabel('Title')
@@ -1028,7 +1022,6 @@ export async function handleEmbedComponent(interaction) {
         .setRequired(true);
 
       modal.addComponents(
-        new ActionRowBuilder().addComponents(nameInput),
         new ActionRowBuilder().addComponents(titleInput),
         new ActionRowBuilder().addComponents(contentInput)
       );
@@ -1069,15 +1062,15 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId(`embed_modal_group_text_${groupId}_${Date.now()}`)
       .setTitle('Edit Group Text');
 
-    const nameInput = new TextInputBuilder()
-      .setCustomId('embed_group_name')
-      .setLabel('Group Name')
-      .setPlaceholder('Internal identifier...')
+    const authorInput = new TextInputBuilder()
+      .setCustomId('embed_author_name')
+      .setLabel('Author Name')
+      .setPlaceholder('Text on the top-left...')
       .setStyle(TextInputStyle.Short)
-      .setMaxLength(64)
-      .setRequired(true);
-    if (grp.name != null && String(grp.name).trim().length > 0) {
-      nameInput.setValue(String(grp.name).trim());
+      .setMaxLength(256)
+      .setRequired(false);
+    if (grp.author_name != null && String(grp.author_name).trim().length > 0) {
+      authorInput.setValue(String(grp.author_name).trim());
     }
 
     const titleInput = new TextInputBuilder()
@@ -1125,7 +1118,7 @@ export async function handleEmbedComponent(interaction) {
     }
 
     modal.addComponents(
-      new ActionRowBuilder().addComponents(nameInput),
+      new ActionRowBuilder().addComponents(authorInput),
       new ActionRowBuilder().addComponents(titleInput),
       new ActionRowBuilder().addComponents(contentInput),
       new ActionRowBuilder().addComponents(footerInput),
@@ -1780,14 +1773,14 @@ export async function handleEmbedModal(interaction) {
   if (customId.startsWith('embed_modal_group_create')) {
     await interaction.deferUpdate().catch(() => {});
 
-    const name = interaction.fields.getTextInputValue('embed_group_name')?.trim() || 'Untitled Group';
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
     const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+    const name = title || 'Untitled Group';
 
     try {
       const insertResult = await pool.query(
-        `INSERT INTO server_embed_groups (guild_id, name, title, content, author_name)
-         VALUES ($1, $2, $3, $4, $2)
+        `INSERT INTO server_embed_groups (guild_id, name, title, content)
+         VALUES ($1, $2, $3, $4)
          RETURNING id`,
         [guildId, name, title, content]
       );
@@ -1796,7 +1789,7 @@ export async function handleEmbedModal(interaction) {
       sysLog('Embed Group Created', {
         guild: guildId,
         user: interaction.user.id,
-        detail: `ID: ${newId} | Name: ${name}`
+        detail: `ID: ${newId} | Title: ${title || 'Untitled Group'}`
       });
 
       return renderGroupManagePage(interaction, newId);
@@ -1825,7 +1818,7 @@ export async function handleEmbedModal(interaction) {
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
 
-    const rawName = interaction.fields.getTextInputValue('embed_group_name')?.trim();
+    const rawAuthorName = interaction.fields.getTextInputValue('embed_author_name')?.trim();
     const rawTitle = interaction.fields.getTextInputValue('embed_title')?.trim();
     const rawContent = interaction.fields.getTextInputValue('embed_content')?.trim();
     const rawFooterText = interaction.fields.getTextInputValue('embed_footer_text')?.trim();
@@ -1833,8 +1826,9 @@ export async function handleEmbedModal(interaction) {
 
     const skippedFields = [];
 
-    const name = rawName && rawName.length > 0 ? rawName.slice(0, 64) : current.name;
+    const authorName = rawAuthorName && rawAuthorName.length > 0 ? rawAuthorName.slice(0, 256) : null;
     const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
+    const name = title || current.name || 'Untitled Group';
 
     let content = current.content;
     if (rawContent && rawContent.length > 0) {
@@ -1861,15 +1855,15 @@ export async function handleEmbedModal(interaction) {
     try {
       await pool.query(
         `UPDATE server_embed_groups
-         SET name = $1, author_name = $1, title = $2, content = $3, footer_text = $4, color = $5, updated_at = NOW()
-         WHERE id = $6 AND guild_id = $7`,
-        [name, title, content, footerText, color, groupId, guildId]
+         SET name = $1, title = $2, author_name = $3, content = $4, footer_text = $5, color = $6, updated_at = NOW()
+         WHERE id = $7 AND guild_id = $8`,
+        [name, title, authorName, content, footerText, color, groupId, guildId]
       );
 
       sysLog('Embed Group Text Edited', {
         guild: guildId,
         user: interaction.user.id,
-        detail: `ID: ${groupId} | Name: ${name}`
+        detail: `ID: ${groupId} | Title: ${title || name}`
       });
 
       if (skippedFields.length > 0) {
