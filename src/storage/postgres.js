@@ -940,6 +940,11 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_embeds_guild ON server_embeds(guild_id);
       ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
       ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS image_url TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS author_name TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS author_icon_url TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS footer_text TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS footer_icon_url TEXT;
+      ALTER TABLE server_embeds ADD COLUMN IF NOT EXISTS color VARCHAR(16);
 
       CREATE TABLE IF NOT EXISTS server_embed_posts (
         message_id VARCHAR(32) PRIMARY KEY,

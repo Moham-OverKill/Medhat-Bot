@@ -16,7 +16,7 @@ import { getPool } from '../../storage/postgres.js';
 import { sysError, sysLog } from '../../utils/logger.js';
 import { diagnoseChannelPermissions } from '../../utils/errors.js';
 
-const EMBED_COLOR = 0x2F3136;
+const DEFAULT_EMBED_COLOR = 0x2F3136;
 
 /**
  * Validate HTTP/HTTPS URL
@@ -35,20 +35,50 @@ function isValidHttpUrl(string) {
  * Build a Discord EmbedBuilder from a server_embeds record
  */
 function buildDiscordEmbed(emb) {
-  const embed = new EmbedBuilder()
-    .setDescription(emb.content || '*No content*')
-    .setColor(EMBED_COLOR);
+  const embed = new EmbedBuilder();
 
+  // Color resolution
+  if (emb.color && /^#?[0-9A-Fa-f]{6}$/.test(emb.color.trim())) {
+    const cleanHex = emb.color.trim().replace('#', '');
+    embed.setColor(parseInt(cleanHex, 16));
+  } else {
+    embed.setColor(DEFAULT_EMBED_COLOR);
+  }
+
+  // Author header
+  if (emb.author_name) {
+    const authorObj = { name: emb.author_name };
+    if (emb.author_icon_url && isValidHttpUrl(emb.author_icon_url)) {
+      authorObj.iconURL = emb.author_icon_url.trim();
+    }
+    embed.setAuthor(authorObj);
+  }
+
+  // Title
   if (emb.title) {
     embed.setTitle(emb.title);
   }
 
+  // Content / Description
+  embed.setDescription(emb.content || '*No content*');
+
+  // Top Icon (Thumbnail)
   if (emb.thumbnail_url && isValidHttpUrl(emb.thumbnail_url)) {
     embed.setThumbnail(emb.thumbnail_url.trim());
   }
 
+  // Main Image (Banner)
   if (emb.image_url && isValidHttpUrl(emb.image_url)) {
     embed.setImage(emb.image_url.trim());
+  }
+
+  // Footer
+  if (emb.footer_text) {
+    const footerObj = { text: emb.footer_text };
+    if (emb.footer_icon_url && isValidHttpUrl(emb.footer_icon_url)) {
+      footerObj.iconURL = emb.footer_icon_url.trim();
+    }
+    embed.setFooter(footerObj);
   }
 
   return embed;
@@ -74,7 +104,7 @@ export async function renderRootEmbedMenu(interaction) {
   const menuEmbed = new EmbedBuilder()
     .setTitle('Embed Manager')
     .setDescription('Select an existing embed to manage, or create a new one.')
-    .setColor(EMBED_COLOR);
+    .setColor(DEFAULT_EMBED_COLOR);
 
   const selectOptions = [
     {
@@ -125,6 +155,9 @@ export async function renderRootEmbedMenu(interaction) {
 
 /**
  * Render the Manage Page for a specific embed
+ * Layout:
+ * Row 1: [ ✏️ Edit Text ] | [ 🖼️ Edit Images ] | [ 📤 Send ] | [ 🔄 Update ]
+ * Row 2: [ ⬅️ Back ] (Alone in Row 2)
  */
 export async function renderEmbedManagePage(interaction, embedId) {
   const guildId = interaction.guildId;
@@ -148,17 +181,17 @@ export async function renderEmbedManagePage(interaction, embedId) {
   const emb = result.rows[0];
   const previewEmbed = buildDiscordEmbed(emb);
 
-  // Strict 4-button row: [ ⬅️ Back ] | [ ✏️ Edit ] | [ 📤 Send ] | [ 🔄 Update ]
-  const actionRow = new ActionRowBuilder().addComponents(
+  // Row 1: Action buttons
+  const actionRow1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('embed_back_root')
-      .setLabel('Back')
-      .setEmoji('⬅️')
+      .setCustomId(`embed_edit_text_${emb.id}`)
+      .setLabel('Edit Text')
+      .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId(`embed_edit_${emb.id}`)
-      .setLabel('Edit')
-      .setEmoji('✏️')
+      .setCustomId(`embed_edit_images_${emb.id}`)
+      .setLabel('Edit Images')
+      .setEmoji('🖼️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`embed_send_${emb.id}`)
@@ -172,6 +205,15 @@ export async function renderEmbedManagePage(interaction, embedId) {
       .setStyle(ButtonStyle.Secondary)
   );
 
+  // Row 2: Back button alone
+  const actionRow2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('embed_back_root')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
@@ -179,7 +221,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
   await interaction[responseMethod]({
     content: '',
     embeds: [previewEmbed],
-    components: [actionRow]
+    components: [actionRow1, actionRow2]
   });
 }
 
@@ -204,7 +246,7 @@ export async function renderEmbedSendPage(interaction, embedId) {
   const infoEmbed = new EmbedBuilder()
     .setTitle('Send Embed')
     .setDescription(`Choose the text channel where **${emb.title || `Embed #${emb.id}`}** should be posted.`)
-    .setColor(EMBED_COLOR);
+    .setColor(DEFAULT_EMBED_COLOR);
 
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId(`embed_channel_select_${embedId}`)
@@ -263,25 +305,9 @@ export async function handleEmbedComponent(interaction) {
         .setMaxLength(4000)
         .setRequired(true);
 
-      const thumbnailInput = new TextInputBuilder()
-        .setCustomId('embed_thumbnail_url')
-        .setLabel('Top Icon URL')
-        .setPlaceholder('https://... (small icon at top-right)')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false);
-
-      const imageInput = new TextInputBuilder()
-        .setCustomId('embed_image_url')
-        .setLabel('Embed Image URL')
-        .setPlaceholder('https://... (large main banner image)')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false);
-
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
-        new ActionRowBuilder().addComponents(contentInput),
-        new ActionRowBuilder().addComponents(thumbnailInput),
-        new ActionRowBuilder().addComponents(imageInput)
+        new ActionRowBuilder().addComponents(contentInput)
       );
 
       return interaction.showModal(modal);
@@ -312,12 +338,12 @@ export async function handleEmbedComponent(interaction) {
     return renderEmbedManagePage(interaction, embedId);
   }
 
-  // Edit Button -> Show Modal
-  if (customId.startsWith('embed_edit_')) {
-    const embedId = parseInt(customId.replace('embed_edit_', ''), 10);
+  // Button: Edit Text -> Show Text Modal
+  if (customId.startsWith('embed_edit_text_')) {
+    const embedId = parseInt(customId.replace('embed_edit_text_', ''), 10);
     const pool = getPool();
     const result = await pool.query(
-      `SELECT title, content, thumbnail_url, image_url FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      `SELECT author_name, title, content, footer_text, color FROM server_embeds WHERE id = $1 AND guild_id = $2`,
       [embedId, interaction.guildId]
     );
 
@@ -325,52 +351,118 @@ export async function handleEmbedComponent(interaction) {
     const emb = result.rows[0];
 
     const modal = new ModalBuilder()
-      .setCustomId(`embed_modal_edit_${embedId}`)
-      .setTitle('Edit Embed');
+      .setCustomId(`embed_modal_text_${embedId}`)
+      .setTitle('Edit Text');
+
+    const authorInput = new TextInputBuilder()
+      .setCustomId('embed_author_name')
+      .setLabel('Author Name')
+      .setPlaceholder('Top author line / category...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(256)
+      .setRequired(false);
+    if (emb.author_name) authorInput.setValue(emb.author_name);
 
     const titleInput = new TextInputBuilder()
       .setCustomId('embed_title')
       .setLabel('Title')
-      .setPlaceholder('Embed title (plain text)...')
+      .setPlaceholder('Embed title (headline)...')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(256)
       .setRequired(false);
-
     if (emb.title) titleInput.setValue(emb.title);
 
     const contentInput = new TextInputBuilder()
       .setCustomId('embed_content')
       .setLabel('Content')
-      .setPlaceholder('Embed description / body text...')
+      .setPlaceholder('Main embed description / body text...')
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(4000)
       .setRequired(true);
-
     if (emb.content) contentInput.setValue(emb.content);
 
-    const thumbnailInput = new TextInputBuilder()
+    const footerInput = new TextInputBuilder()
+      .setCustomId('embed_footer_text')
+      .setLabel('Footer Text')
+      .setPlaceholder('Bottom footer note...')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(2048)
+      .setRequired(false);
+    if (emb.footer_text) footerInput.setValue(emb.footer_text);
+
+    const colorInput = new TextInputBuilder()
+      .setCustomId('embed_color')
+      .setLabel('Color (Hex Code)')
+      .setPlaceholder('#2F3136 or #5865F2')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(7)
+      .setRequired(false);
+    if (emb.color) colorInput.setValue(emb.color);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(authorInput),
+      new ActionRowBuilder().addComponents(titleInput),
+      new ActionRowBuilder().addComponents(contentInput),
+      new ActionRowBuilder().addComponents(footerInput),
+      new ActionRowBuilder().addComponents(colorInput)
+    );
+
+    return interaction.showModal(modal);
+  }
+
+  // Button: Edit Images -> Show Images Modal
+  if (customId.startsWith('embed_edit_images_')) {
+    const embedId = parseInt(customId.replace('embed_edit_images_', ''), 10);
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT thumbnail_url, image_url, author_icon_url, footer_icon_url FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      [embedId, interaction.guildId]
+    );
+
+    if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const emb = result.rows[0];
+
+    const modal = new ModalBuilder()
+      .setCustomId(`embed_modal_images_${embedId}`)
+      .setTitle('Edit Images');
+
+    const thumbInput = new TextInputBuilder()
       .setCustomId('embed_thumbnail_url')
-      .setLabel('Top Icon URL')
-      .setPlaceholder('https://... (small icon at top-right)')
+      .setLabel('Top Icon URL (Thumbnail)')
+      .setPlaceholder('https://... (small image in top-right)')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
-
-    if (emb.thumbnail_url) thumbnailInput.setValue(emb.thumbnail_url);
+    if (emb.thumbnail_url) thumbInput.setValue(emb.thumbnail_url);
 
     const imageInput = new TextInputBuilder()
       .setCustomId('embed_image_url')
-      .setLabel('Embed Image URL')
-      .setPlaceholder('https://... (large main banner image)')
+      .setLabel('Main Image URL (Banner)')
+      .setPlaceholder('https://... (large banner in body)')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
-
     if (emb.image_url) imageInput.setValue(emb.image_url);
 
+    const authorIconInput = new TextInputBuilder()
+      .setCustomId('embed_author_icon_url')
+      .setLabel('Author Icon URL')
+      .setPlaceholder('https://... (tiny avatar next to author name)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (emb.author_icon_url) authorIconInput.setValue(emb.author_icon_url);
+
+    const footerIconInput = new TextInputBuilder()
+      .setCustomId('embed_footer_icon_url')
+      .setLabel('Footer Icon URL')
+      .setPlaceholder('https://... (tiny icon next to footer text)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+    if (emb.footer_icon_url) footerIconInput.setValue(emb.footer_icon_url);
+
     modal.addComponents(
-      new ActionRowBuilder().addComponents(titleInput),
-      new ActionRowBuilder().addComponents(contentInput),
-      new ActionRowBuilder().addComponents(thumbnailInput),
-      new ActionRowBuilder().addComponents(imageInput)
+      new ActionRowBuilder().addComponents(thumbInput),
+      new ActionRowBuilder().addComponents(imageInput),
+      new ActionRowBuilder().addComponents(authorIconInput),
+      new ActionRowBuilder().addComponents(footerIconInput)
     );
 
     return interaction.showModal(modal);
@@ -500,7 +592,7 @@ async function handleEmbedChannelSend(interaction, embedId) {
 }
 
 /**
- * Handle Modal Submissions for embeds (create, edit, update)
+ * Handle Modal Submissions for embeds (create, edit text, edit images, update)
  */
 export async function handleEmbedModal(interaction) {
   const customId = interaction.customId;
@@ -513,15 +605,13 @@ export async function handleEmbedModal(interaction) {
 
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
     const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
-    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
-    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
 
     try {
       const insertResult = await pool.query(
-        `INSERT INTO server_embeds (guild_id, title, content, thumbnail_url, image_url)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO server_embeds (guild_id, title, content)
+         VALUES ($1, $2, $3)
          RETURNING id`,
-        [guildId, title, content, thumbnailUrl, imageUrl]
+        [guildId, title, content]
       );
 
       const newId = insertResult.rows[0].id;
@@ -542,25 +632,26 @@ export async function handleEmbedModal(interaction) {
     }
   }
 
-  // 2. Edit Modal
-  if (customId.startsWith('embed_modal_edit_')) {
+  // 2. Edit Text Modal
+  if (customId.startsWith('embed_modal_text_')) {
     await interaction.deferUpdate().catch(() => {});
 
-    const embedId = parseInt(customId.replace('embed_modal_edit_', ''), 10);
+    const embedId = parseInt(customId.replace('embed_modal_text_', ''), 10);
+    const authorName = interaction.fields.getTextInputValue('embed_author_name')?.trim() || null;
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
     const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
-    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
-    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
+    const footerText = interaction.fields.getTextInputValue('embed_footer_text')?.trim() || null;
+    const color = interaction.fields.getTextInputValue('embed_color')?.trim() || null;
 
     try {
       await pool.query(
         `UPDATE server_embeds
-         SET title = $1, content = $2, thumbnail_url = $3, image_url = $4, updated_at = NOW()
-         WHERE id = $5 AND guild_id = $6`,
-        [title, content, thumbnailUrl, imageUrl, embedId, guildId]
+         SET author_name = $1, title = $2, content = $3, footer_text = $4, color = $5, updated_at = NOW()
+         WHERE id = $6 AND guild_id = $7`,
+        [authorName, title, content, footerText, color, embedId, guildId]
       );
 
-      sysLog('Custom Embed Edited', {
+      sysLog('Custom Embed Text Edited', {
         guild: guildId,
         user: interaction.user.id,
         detail: `ID: ${embedId} | Title: ${title || 'Untitled'}`
@@ -568,16 +659,51 @@ export async function handleEmbedModal(interaction) {
 
       return renderEmbedManagePage(interaction, embedId);
     } catch (err) {
-      sysError('Failed to update custom embed', err, { guild: guildId, id: embedId });
+      sysError('Failed to update custom embed text', err, { guild: guildId, id: embedId });
       await interaction.followUp({
-        content: '❌ Failed to update embed in database.',
+        content: '❌ Failed to update embed text in database.',
         flags: MessageFlags.Ephemeral
       });
       return renderEmbedManagePage(interaction, embedId);
     }
   }
 
-  // 3. Update Modal (live edit by message URL with safety guardrails)
+  // 3. Edit Images Modal
+  if (customId.startsWith('embed_modal_images_')) {
+    await interaction.deferUpdate().catch(() => {});
+
+    const embedId = parseInt(customId.replace('embed_modal_images_', ''), 10);
+    const thumbnailUrl = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim() || null;
+    const imageUrl = interaction.fields.getTextInputValue('embed_image_url')?.trim() || null;
+    const authorIconUrl = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim() || null;
+    const footerIconUrl = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim() || null;
+
+    try {
+      await pool.query(
+        `UPDATE server_embeds
+         SET thumbnail_url = $1, image_url = $2, author_icon_url = $3, footer_icon_url = $4, updated_at = NOW()
+         WHERE id = $5 AND guild_id = $6`,
+        [thumbnailUrl, imageUrl, authorIconUrl, footerIconUrl, embedId, guildId]
+      );
+
+      sysLog('Custom Embed Images Edited', {
+        guild: guildId,
+        user: interaction.user.id,
+        detail: `ID: ${embedId} images updated`
+      });
+
+      return renderEmbedManagePage(interaction, embedId);
+    } catch (err) {
+      sysError('Failed to update custom embed images', err, { guild: guildId, id: embedId });
+      await interaction.followUp({
+        content: '❌ Failed to update embed images in database.',
+        flags: MessageFlags.Ephemeral
+      });
+      return renderEmbedManagePage(interaction, embedId);
+    }
+  }
+
+  // 4. Update Modal (live edit by message URL with safety guardrails)
   if (customId.startsWith('embed_modal_update_')) {
     await interaction.deferUpdate().catch(() => {});
 
@@ -595,6 +721,7 @@ export async function handleEmbedModal(interaction) {
 
     const [, urlGuildId, urlChannelId, urlMessageId] = urlMatch;
 
+    // Cross-server isolation check
     if (urlGuildId !== guildId) {
       await interaction.followUp({
         content: '❌ You can only update messages in this server. Message links from other servers are strictly prohibited.',
