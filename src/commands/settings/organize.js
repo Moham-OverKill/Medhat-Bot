@@ -15,6 +15,7 @@ import { getPool } from '../../storage/postgres.js';
 import { sendLog, sysLog, sysError } from '../../utils/logger.js';
 import { getUserLogName } from '../../shared.js';
 import { invalidateFilterCache } from '../../middleware/organize.js';
+import { createErrorEmbed } from '../../utils/errors.js';
 
 // Filter type definitions
 const FILTER_TYPES = {
@@ -103,16 +104,26 @@ async function renderPanel(interaction, activeFilter = null) {
     // Row 1: Channel select menu (when a filter tab is active)
     if (activeFilter && FILTER_TYPES[activeFilter]) {
         const meta = FILTER_TYPES[activeFilter];
+        const channelTypes = [
+            ChannelType.GuildText,
+            ChannelType.GuildAnnouncement,
+            ChannelType.GuildVoice,
+            ChannelType.PublicThread,
+            ChannelType.PrivateThread
+        ];
+
+        // Only allow Forum & Media channels when managing Auto React
+        if (activeFilter === 'auto_react') {
+            channelTypes.push(ChannelType.GuildForum);
+            if (ChannelType.GuildMedia) {
+                channelTypes.push(ChannelType.GuildMedia);
+            }
+        }
+
         const channelSelect = new ChannelSelectMenuBuilder()
             .setCustomId(`organize_select_${activeFilter}`)
             .setPlaceholder(`Toggle a channel for ${meta.label}...`)
-            .setChannelTypes(
-                ChannelType.GuildText,
-                ChannelType.GuildAnnouncement,
-                ChannelType.GuildVoice,
-                ChannelType.PublicThread,
-                ChannelType.PrivateThread
-            );
+            .setChannelTypes(channelTypes);
         components.push(new ActionRowBuilder().addComponents(channelSelect));
     }
 
@@ -187,8 +198,25 @@ async function handleChannelToggle(interaction, filterKey) {
         || await interaction.guild.channels.fetch(channelId).catch(() => null);
 
     if (!channel) {
+        const errorEmbed = createErrorEmbed('Channel Not Found', 'The selected channel could not be found.');
         return interaction.followUp({
-            content: '❌ Channel not found.',
+            embeds: [errorEmbed],
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    const isForumChannel = channel.type === ChannelType.GuildForum ||
+        channel.type === ChannelType.GuildMedia ||
+        channel.type === 15 ||
+        channel.type === 16;
+
+    if (filterKey !== 'auto_react' && isForumChannel) {
+        const errorEmbed = createErrorEmbed(
+            'Invalid Channel Type',
+            'Forum channels can only be configured for the **Auto React** filter.'
+        );
+        return interaction.followUp({
+            embeds: [errorEmbed],
             flags: MessageFlags.Ephemeral
         });
     }
@@ -198,20 +226,32 @@ async function handleChannelToggle(interaction, filterKey) {
         const perms = channel.permissionsFor(botMember);
         if (perms) {
             if (!perms.has(PermissionsBitField.Flags.ViewChannel)) {
+                const errorEmbed = createErrorEmbed(
+                    'Missing Permissions',
+                    'I do not have **View Channel** permission in that channel.'
+                );
                 return interaction.followUp({
-                    content: '❌ I do not have **View Channel** permission in that channel.',
+                    embeds: [errorEmbed],
                     flags: MessageFlags.Ephemeral
                 });
             }
             if (filterKey !== 'auto_react' && !perms.has(PermissionsBitField.Flags.ManageMessages)) {
+                const errorEmbed = createErrorEmbed(
+                    'Missing Permissions',
+                    'I do not have **Manage Messages** permission in that channel. I need it to delete filtered messages.'
+                );
                 return interaction.followUp({
-                    content: '❌ I do not have **Manage Messages** permission in that channel. I need it to delete filtered messages.',
+                    embeds: [errorEmbed],
                     flags: MessageFlags.Ephemeral
                 });
             }
             if (filterKey === 'auto_react' && !perms.has(PermissionsBitField.Flags.AddReactions)) {
+                const errorEmbed = createErrorEmbed(
+                    'Missing Permissions',
+                    'I do not have **Add Reactions** permission in that channel.'
+                );
                 return interaction.followUp({
-                    content: '❌ I do not have **Add Reactions** permission in that channel.',
+                    embeds: [errorEmbed],
                     flags: MessageFlags.Ephemeral
                 });
             }
