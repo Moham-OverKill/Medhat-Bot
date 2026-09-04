@@ -1,4 +1,4 @@
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, ChannelType } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -369,18 +369,57 @@ export async function processAutoReact(message) {
 
   if (!cached || !cached.auto_react || cached.auto_react.size === 0) return;
 
-  const channelId = message.channel.id;
-  const parentId = message.channel.parentId;
+  const channelId = message.channel?.id;
+  const parentId = message.channel?.parentId;
 
-  // Match current channel ID, parent ID (for threads & voice text channels)
-  if (cached.auto_react.has(channelId) || (parentId && cached.auto_react.has(parentId))) {
-    const emojis = Array.isArray(cached.auto_react_emojis) && cached.auto_react_emojis.length > 0
-      ? cached.auto_react_emojis
-      : ['👍', '❤️', '😂', '😭'];
-    for (const emoji of emojis) {
-      const customMatch = typeof emoji === 'string' && emoji.match(/^<a?:[a-zA-Z0-9_]+:(\d{17,20})>$/);
-      const reactTarget = customMatch ? customMatch[1] : emoji;
-      await message.react(reactTarget).catch(() => {});
+  // Match current channel ID, parent ID (for threads & forum posts)
+  const isDirectMatch = cached.auto_react.has(channelId);
+  const isParentMatch = Boolean(parentId && cached.auto_react.has(parentId));
+
+  if (!isDirectMatch && !isParentMatch) return;
+
+  // If the message is inside a thread / forum post
+  const isThread = Boolean(message.channel?.isThread?.());
+  if (isThread) {
+    let parentChannel = message.channel.parent;
+    if (!parentChannel && parentId && message.guild) {
+      parentChannel = message.guild.channels.cache.get(parentId)
+        || await message.guild.channels.fetch(parentId).catch(() => null);
     }
+
+    const isForumOrMedia = Boolean(
+      parentChannel && (
+        parentChannel.type === ChannelType.GuildForum ||
+        parentChannel.type === ChannelType.GuildMedia ||
+        parentChannel.type === 15 ||
+        parentChannel.type === 16
+      )
+    );
+
+    // If parent is a forum/media channel OR configured for auto_react,
+    // ONLY react to the original post (starter message) of the thread.
+    if (isForumOrMedia || isParentMatch) {
+      const isOriginalPost = Boolean(
+        message.id === message.channel.id ||
+        (message.channel.starterMessageId && message.id === message.channel.starterMessageId) ||
+        message.position === 0
+      );
+
+      if (!isOriginalPost) {
+        // Do NOT auto-react to comments/replies inside the forum post
+        return;
+      }
+    }
+  }
+
+  const emojis = Array.isArray(cached.auto_react_emojis) && cached.auto_react_emojis.length > 0
+    ? cached.auto_react_emojis
+    : ['👍', '❤️', '😂', '😭'];
+
+  for (const emoji of emojis) {
+    const customMatch = typeof emoji === 'string' && emoji.match(/^<a?:[a-zA-Z0-9_]+:(\d{17,20})>$/);
+    const reactTarget = customMatch ? customMatch[1] : emoji;
+    if (message.reactions?.cache?.get(reactTarget)?.me) continue;
+    await message.react(reactTarget).catch(() => {});
   }
 }

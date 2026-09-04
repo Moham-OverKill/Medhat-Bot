@@ -47,11 +47,13 @@ export async function initializeActivityTracking(discordClient) {
   // Remove old listeners if they exist (prevents memory leak)
   client.removeListener('messageCreate', handleMessage);
   client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
+  client.removeListener('threadCreate', handleThreadCreate);
 
   // Set up message tracking (with anti-spam)
   client.on('messageCreate', handleMessage);
   client.on('messageUpdate', handleMessageUpdate);
   client.on('messageDelete', handleMessageDelete);
+  client.on('threadCreate', handleThreadCreate);
 
   // Set up voice state tracking (event-based stopwatch)
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
@@ -146,6 +148,7 @@ export async function cleanup() {
     client.removeListener('messageUpdate', handleMessageUpdate);
     client.removeListener('messageDelete', handleMessageDelete);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
+    client.removeListener('threadCreate', handleThreadCreate);
   }
 
   try {
@@ -248,6 +251,24 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
   return runInGuildContext(member.guild.id, async () => {
     await handleVoiceStateChange(member.guild, oldState, newState);
+  });
+}
+
+async function handleThreadCreate(thread) {
+  if (!thread || !thread.guild) return;
+  const parentId = thread.parentId;
+  if (!parentId) return;
+
+  return runInGuildContext(thread.guild.id, async () => {
+    try {
+      const starterMessage = thread.starterMessage || await thread.fetchStarterMessage().catch(() => null);
+      if (starterMessage && !starterMessage.author?.bot) {
+        const { processAutoReact } = await import('../middleware/organize.js');
+        await processAutoReact(starterMessage);
+      }
+    } catch (error) {
+      sysError('Thread Create Auto-React Error', error, { guild: thread.guild.id, thread: thread.id });
+    }
   });
 }
 
