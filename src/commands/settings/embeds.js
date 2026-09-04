@@ -85,7 +85,11 @@ function buildDiscordEmbed(emb) {
   }
 
   // Content / Description
-  embed.setDescription(emb.content || '*No content*');
+  if (emb.content && emb.content.trim().length > 0) {
+    embed.setDescription(emb.content.trim());
+  } else if (!emb.title && !emb.author_name && !emb.image_url && !emb.thumbnail_url && !emb.footer_text) {
+    embed.setDescription('*Empty Embed*');
+  }
 
   // Top Icon (Thumbnail)
   if (emb.thumbnail_url && isValidImageUrl(emb.thumbnail_url)) {
@@ -818,7 +822,7 @@ export async function handleEmbedComponent(interaction) {
         .setPlaceholder('Main text in the middle...')
         .setStyle(TextInputStyle.Paragraph)
         .setMaxLength(4000)
-        .setRequired(true);
+        .setRequired(false);
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
@@ -897,7 +901,7 @@ export async function handleEmbedComponent(interaction) {
       .setPlaceholder('Main text in the middle...')
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(4000)
-      .setRequired(true);
+      .setRequired(false);
     if (emb.content != null && String(emb.content).trim().length > 0) {
       contentInput.setValue(String(emb.content).trim());
     }
@@ -1063,7 +1067,7 @@ export async function handleEmbedComponent(interaction) {
         .setPlaceholder('Main text in the middle...')
         .setStyle(TextInputStyle.Paragraph)
         .setMaxLength(4000)
-        .setRequired(true);
+        .setRequired(false);
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(titleInput),
@@ -1134,7 +1138,7 @@ export async function handleEmbedComponent(interaction) {
       .setPlaceholder('Main text in the middle...')
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(4000)
-      .setRequired(true);
+      .setRequired(false);
     if (grp.content != null && String(grp.content).trim().length > 0) {
       contentInput.setValue(String(grp.content).trim());
     }
@@ -1441,7 +1445,7 @@ export async function handleEmbedModal(interaction) {
     await interaction.deferUpdate().catch(() => {});
 
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
-    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || null;
 
     try {
       const insertResult = await pool.query(
@@ -1504,13 +1508,8 @@ export async function handleEmbedModal(interaction) {
     // Title: max 256
     const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
 
-    // Content: required, max 4000. If empty, preserve current content
-    let content = current.content;
-    if (rawContent && rawContent.length > 0) {
-      content = rawContent.slice(0, 4000);
-    } else {
-      skippedFields.push('Content (cannot be empty)');
-    }
+    // Content: optional, max 4000
+    const content = rawContent && rawContent.length > 0 ? rawContent.slice(0, 4000) : null;
 
     // Footer Text: max 2048
     const footerText = rawFooterText && rawFooterText.length > 0 ? rawFooterText.slice(0, 2048) : null;
@@ -1873,7 +1872,7 @@ export async function handleEmbedModal(interaction) {
     await interaction.deferUpdate().catch(() => {});
 
     const title = interaction.fields.getTextInputValue('embed_title')?.trim() || null;
-    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || '';
+    const content = interaction.fields.getTextInputValue('embed_content')?.trim() || null;
     const name = title || 'Untitled Group';
 
     try {
@@ -1933,12 +1932,7 @@ export async function handleEmbedModal(interaction) {
     const title = rawTitle && rawTitle.length > 0 ? rawTitle.slice(0, 256) : null;
     const name = title || current.name || 'Untitled Group';
 
-    let content = current.content;
-    if (rawContent && rawContent.length > 0) {
-      content = rawContent.slice(0, 4000);
-    } else {
-      skippedFields.push('Content (cannot be empty)');
-    }
+    const content = rawContent && rawContent.length > 0 ? rawContent.slice(0, 4000) : null;
 
     const footerText = rawFooterText && rawFooterText.length > 0 ? rawFooterText.slice(0, 2048) : null;
 
