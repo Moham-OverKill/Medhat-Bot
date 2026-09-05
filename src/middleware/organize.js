@@ -370,7 +370,15 @@ export async function processAutoReact(message) {
   if (!cached || !cached.auto_react || cached.auto_react.size === 0) return;
 
   const channelId = message.channel?.id;
-  const parentId = message.channel?.parentId;
+  let parentId = message.channel?.parentId;
+
+  // Robust parent resolution for threads missing cached parentId
+  if (!parentId && message.channel?.isThread?.()) {
+    try {
+      const fetched = await message.client.channels.fetch(channelId).catch(() => null);
+      if (fetched?.parentId) parentId = fetched.parentId;
+    } catch {}
+  }
 
   // Match current channel ID, parent ID (for threads & forum posts)
   const isDirectMatch = cached.auto_react.has(channelId);
