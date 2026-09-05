@@ -256,12 +256,23 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
 async function handleThreadCreate(thread) {
   if (!thread || !thread.guild) return;
-  const parentId = thread.parentId;
+  let parentId = thread.parentId;
+  if (!parentId) {
+    try {
+      const fetched = await thread.fetch().catch(() => null);
+      if (fetched?.parentId) parentId = fetched.parentId;
+    } catch {}
+  }
   if (!parentId) return;
 
   return runInGuildContext(thread.guild.id, async () => {
     try {
-      const starterMessage = thread.starterMessage || await thread.fetchStarterMessage().catch(() => null);
+      let starterMessage = thread.starterMessage || await thread.fetchStarterMessage().catch(() => null);
+      if (!starterMessage) {
+        // Brief pause if Discord is still indexing the starter message
+        await new Promise(resolve => setTimeout(resolve, 300));
+        starterMessage = await thread.fetchStarterMessage().catch(() => null);
+      }
       if (starterMessage && !starterMessage.author?.bot) {
         const { processAutoReact } = await import('../middleware/organize.js');
         await processAutoReact(starterMessage);

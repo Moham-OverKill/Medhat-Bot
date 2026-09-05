@@ -199,10 +199,11 @@ async function handleChannelToggle(interaction, filterKey) {
 
     if (!channel) {
         const errorEmbed = createErrorEmbed('Channel Not Found', 'The selected channel could not be found.');
-        return interaction.followUp({
+        await interaction.followUp({
             embeds: [errorEmbed],
             flags: MessageFlags.Ephemeral
         });
+        return renderPanel(interaction, filterKey);
     }
 
     const isForumChannel = channel.type === ChannelType.GuildForum ||
@@ -215,10 +216,11 @@ async function handleChannelToggle(interaction, filterKey) {
             'Invalid Channel Type',
             'Forum channels can only be configured for the **Auto React** filter.'
         );
-        return interaction.followUp({
+        await interaction.followUp({
             embeds: [errorEmbed],
             flags: MessageFlags.Ephemeral
         });
+        return renderPanel(interaction, filterKey);
     }
 
     const botMember = interaction.guild.members.me;
@@ -230,30 +232,46 @@ async function handleChannelToggle(interaction, filterKey) {
                     'Missing Permissions',
                     'I do not have **View Channel** permission in that channel.'
                 );
-                return interaction.followUp({
+                await interaction.followUp({
                     embeds: [errorEmbed],
                     flags: MessageFlags.Ephemeral
                 });
+                return renderPanel(interaction, filterKey);
             }
             if (filterKey !== 'auto_react' && !perms.has(PermissionsBitField.Flags.ManageMessages)) {
                 const errorEmbed = createErrorEmbed(
                     'Missing Permissions',
                     'I do not have **Manage Messages** permission in that channel. I need it to delete filtered messages.'
                 );
-                return interaction.followUp({
+                await interaction.followUp({
                     embeds: [errorEmbed],
                     flags: MessageFlags.Ephemeral
                 });
+                return renderPanel(interaction, filterKey);
             }
-            if (filterKey === 'auto_react' && !perms.has(PermissionsBitField.Flags.AddReactions)) {
-                const errorEmbed = createErrorEmbed(
-                    'Missing Permissions',
-                    'I do not have **Add Reactions** permission in that channel.'
-                );
-                return interaction.followUp({
-                    embeds: [errorEmbed],
-                    flags: MessageFlags.Ephemeral
-                });
+            if (filterKey === 'auto_react') {
+                if (!perms.has(PermissionsBitField.Flags.AddReactions)) {
+                    const errorEmbed = createErrorEmbed(
+                        'Missing Permissions',
+                        'I do not have **Add Reactions** permission in that channel.'
+                    );
+                    await interaction.followUp({
+                        embeds: [errorEmbed],
+                        flags: MessageFlags.Ephemeral
+                    });
+                    return renderPanel(interaction, filterKey);
+                }
+                if (!perms.has(PermissionsBitField.Flags.ReadMessageHistory)) {
+                    const errorEmbed = createErrorEmbed(
+                        'Missing Permissions',
+                        'I do not have **Read Message History** permission in that channel. Discord requires this permission to add reactions.'
+                    );
+                    await interaction.followUp({
+                        embeds: [errorEmbed],
+                        flags: MessageFlags.Ephemeral
+                    });
+                    return renderPanel(interaction, filterKey);
+                }
             }
         }
     }
