@@ -227,7 +227,7 @@ export async function addShopCategory(guildId, name, displayOrder = 0, categoryT
 /**
  * Update a shop category
  */
-export async function updateShopCategory(categoryId, updates) {
+export async function updateShopCategory(categoryId, updates, guildId = null) {
   try {
     const allowedFields = ['name', 'display_order', 'category_type'];
     const setClauses = [];
@@ -245,11 +245,18 @@ export async function updateShopCategory(categoryId, updates) {
     if (setClauses.length === 0) return null;
 
     values.push(categoryId);
+    let whereClause = `WHERE id = $${paramIndex}`;
+    if (guildId) {
+      paramIndex++;
+      whereClause += ` AND guild_id = $${paramIndex}`;
+      values.push(String(guildId));
+    }
+
     const result = await query(
-      `UPDATE shop_categories SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE shop_categories SET ${setClauses.join(', ')} ${whereClause} RETURNING *`,
       values
     );
-    return result.rows[0];
+    return result.rows[0] || null;
   } catch (error) {
     logSystemError(`Failed to update shop category: ${sanitizeError(error)}`);
     throw error;
@@ -259,12 +266,15 @@ export async function updateShopCategory(categoryId, updates) {
 /**
  * Detach all items from a category (Make them standalone)
  */
-export async function detachItemsFromCategory(categoryId) {
+export async function detachItemsFromCategory(categoryId, guildId = null) {
   try {
-    const result = await query(
-      'UPDATE shop_items SET category_id = NULL WHERE category_id = $1',
-      [categoryId]
-    );
+    let sql = 'UPDATE shop_items SET category_id = NULL WHERE category_id = $1';
+    const params = [categoryId];
+    if (guildId) {
+      sql += ' AND guild_id = $2';
+      params.push(String(guildId));
+    }
+    const result = await query(sql, params);
     return { success: true, count: result.rowCount };
   } catch (error) {
     logSystemError(`Failed to detach items from category ${categoryId}: ${sanitizeError(error)}`);
@@ -275,9 +285,15 @@ export async function detachItemsFromCategory(categoryId) {
 /**
  * Delete a shop category
  */
-export async function deleteShopCategory(categoryId) {
+export async function deleteShopCategory(categoryId, guildId = null) {
   try {
-    await query('DELETE FROM shop_categories WHERE id = $1', [categoryId]);
+    let sql = 'DELETE FROM shop_categories WHERE id = $1';
+    const params = [categoryId];
+    if (guildId) {
+      sql += ' AND guild_id = $2';
+      params.push(String(guildId));
+    }
+    await query(sql, params);
     return true;
   } catch (error) {
     logSystemError(`Failed to delete shop category: ${sanitizeError(error)}`);
@@ -288,12 +304,15 @@ export async function deleteShopCategory(categoryId) {
 /**
  * Get usage count of an item in Packs
  */
-export async function getItemUsageCount(itemId) {
+export async function getItemUsageCount(itemId, guildId = null) {
   try {
-    // Since we are using a JSON array/string for contents, we need to fetch all packs and check in JS
-    // Postgres JSONB containment (@>) would be better but our schema might be using text or simple JSON
-    // Let's be safe and do it in JS for now as we did for other logic
-    const result = await query("SELECT contents FROM shop_items WHERE item_type = 'pack' OR is_pack = true", []);
+    let sql = "SELECT contents FROM shop_items WHERE (item_type = 'pack' OR is_pack = true)";
+    const params = [];
+    if (guildId) {
+      sql += ' AND guild_id = $1';
+      params.push(String(guildId));
+    }
+    const result = await query(sql, params);
 
     let packCount = 0;
     const idToCheck = parseInt(itemId);
@@ -399,15 +418,15 @@ export async function deleteShopItem(itemId, guildId = null) {
     const numId = parseInt(itemId, 10);
     if (isNaN(numId)) return false;
 
-    if (guildId) {
-      await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
-      await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, String(guildId)]);
-    } else {
-      await query('DELETE FROM user_inventory WHERE shop_item_id = $1', [numId]);
-      await query('DELETE FROM shop_items WHERE id = $1', [numId]);
+    if (!guildId) {
+      sysError('Shop Item Deletion Blocked', 'Refusing to delete shop item without guildId scoping', { detail: `ItemID: ${numId}` });
+      return false;
     }
 
-    sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}` });
+    await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+    await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, String(guildId)]);
+
+    sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}`, guild: String(guildId) });
     return true;
   } catch (error) {
     logSystemError(`Failed to delete shop item: ${sanitizeError(error)}`);

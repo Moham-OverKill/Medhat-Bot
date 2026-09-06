@@ -31,13 +31,15 @@ export async function getQuests(guildId) {
 /**
  * Get a single quest by ID
  */
-export async function getQuest(questId) {
+export async function getQuest(questId, guildId = null) {
   const pool = getPool();
   try {
-    const result = await pool.query(
-      'SELECT * FROM quests WHERE id = $1',
-      [questId]
-    );
+    const queryText = guildId
+      ? 'SELECT * FROM quests WHERE id = $1 AND guild_id = $2'
+      : 'SELECT * FROM quests WHERE id = $1';
+    const params = guildId ? [questId, guildId] : [questId];
+
+    const result = await pool.query(queryText, params);
     return result.rows[0] || null;
   } catch (error) {
     sysError('Quest Fetch Failed', error, { detail: `QuestID: ${questId}` });
@@ -75,15 +77,18 @@ export async function addQuest(guildId, { channelId, channelType, actionType, re
 /**
  * Update a quest's required count, reward, and optional custom title
  */
-export async function updateQuest(questId, { requiredCount, rewardCoins, customTitle }) {
+export async function updateQuest(questId, { requiredCount, rewardCoins, customTitle }, guildId = null) {
   const pool = getPool();
   try {
     const cleanTitle = (customTitle || '').trim() || null;
-    await pool.query(
-      `UPDATE quests SET required_count = $1, reward_coins = $2, custom_title = $3 WHERE id = $4`,
-      [requiredCount, rewardCoins, cleanTitle, questId]
-    );
-    return true;
+    let queryText = 'UPDATE quests SET required_count = $1, reward_coins = $2, custom_title = $3 WHERE id = $4';
+    const params = [requiredCount, rewardCoins, cleanTitle, questId];
+    if (guildId) {
+      queryText += ' AND guild_id = $5';
+      params.push(guildId);
+    }
+    const result = await pool.query(queryText, params);
+    return result.rowCount > 0;
   } catch (error) {
     sysError('Quest Update Failed', error, { detail: `QuestID: ${questId}` });
     return false;
@@ -93,11 +98,17 @@ export async function updateQuest(questId, { requiredCount, rewardCoins, customT
 /**
  * Delete a quest
  */
-export async function deleteQuest(questId) {
+export async function deleteQuest(questId, guildId = null) {
   const pool = getPool();
   try {
-    await pool.query('DELETE FROM quests WHERE id = $1', [questId]);
-    return true;
+    let queryText = 'DELETE FROM quests WHERE id = $1';
+    const params = [questId];
+    if (guildId) {
+      queryText += ' AND guild_id = $2';
+      params.push(guildId);
+    }
+    const result = await pool.query(queryText, params);
+    return result.rowCount > 0;
   } catch (error) {
     sysError('Quest Deletion Failed', error, { detail: `QuestID: ${questId}` });
     return false;

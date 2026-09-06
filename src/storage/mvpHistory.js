@@ -36,16 +36,10 @@ export async function appendAwardRecord(record) {
 }
 
 export async function getRecentAwards(guildId = null, limit = 25) {
+  if (!guildId) return [];
   try {
-    let queryText = 'SELECT * FROM mvp_awards';
-    const params = [];
-
-    if (guildId) {
-      queryText += ' WHERE guild_id = $1';
-      params.push(guildId);
-    }
-
-    queryText += ' ORDER BY awarded_at DESC';
+    let queryText = 'SELECT * FROM mvp_awards WHERE guild_id = $1 ORDER BY awarded_at DESC';
+    const params = [guildId];
 
     if (limit && limit > 0) {
       queryText += ` LIMIT $${params.length + 1}`;

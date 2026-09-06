@@ -264,7 +264,7 @@ export async function showQuestDetail(interaction, questId) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-    const quest = await getQuest(questId);
+    const quest = await getQuest(questId, interaction.guildId);
     if (!quest) {
       await interaction.editReply({ files: [], content: '❌ Quest not found.', embeds: [], components: [] });
       return;
@@ -523,7 +523,7 @@ export async function handleAddQuestModal(interaction) {
 // ============================================
 
 export async function handleEditQuest(interaction, questId) {
-  const quest = await getQuest(questId);
+  const quest = await getQuest(questId, interaction.guildId);
   if (!quest) {
     await interaction.reply({ content: '❌ Quest not found.', flags: MessageFlags.Ephemeral });
     return;
@@ -591,7 +591,7 @@ export async function handleEditQuestModal(interaction) {
       return;
     }
 
-    const success = await updateQuest(questId, { requiredCount, rewardCoins, customTitle });
+    const success = await updateQuest(questId, { requiredCount, rewardCoins, customTitle }, interaction.guildId);
     if (!success) {
       await interaction.followUp({ content: '❌ Failed to update Quest.', flags: MessageFlags.Ephemeral });
       return;
@@ -626,7 +626,7 @@ export async function handleDeleteQuest(interaction, questId) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-    const success = await deleteQuest(questId);
+    const success = await deleteQuest(questId, interaction.guildId);
     if (!success) {
       await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
       return;
