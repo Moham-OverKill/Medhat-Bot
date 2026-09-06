@@ -2131,8 +2131,10 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, groupId);
     }
 
-    const channel = interaction.guild?.channels.cache.get(urlChannelId);
-    if (!channel) {
+    const channel = interaction.guild?.channels.cache.get(urlChannelId)
+      || await interaction.guild?.channels.fetch(urlChannelId).catch(() => null);
+
+    if (!channel || channel.guildId !== guildId) {
       const errorEmbed = createErrorEmbed(
         'Channel Unavailable',
         'Target channel could not be found or the bot lacks access to view it.'
@@ -2159,10 +2161,75 @@ export async function handleEmbedModal(interaction) {
       return renderGroupManagePage(interaction, groupId);
     }
 
+    // Guardrail 1: Must be authored by this bot
     if (targetMessage.author.id !== interaction.client.user.id) {
       const errorEmbed = createErrorEmbed(
         'Author Mismatch',
         'Cannot update this message: it was not authored by this bot.'
+      );
+      await interaction.followUp({
+        embeds: [errorEmbed],
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    // Guardrail 2: Must be an embed message
+    if (!targetMessage.embeds || targetMessage.embeds.length === 0) {
+      const errorEmbed = createErrorEmbed(
+        'Invalid Message Format',
+        'That message is not an embed message and cannot be edited by the Custom Embed Manager.'
+      );
+      await interaction.followUp({
+        embeds: [errorEmbed],
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    // Guardrail 3: Must NOT have interactive components (protects Shop, Hub, Drops, Trade menus)
+    if (targetMessage.components && targetMessage.components.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is an interactive bot control panel or feature and cannot be modified.'
+      );
+      await interaction.followUp({
+        embeds: [errorEmbed],
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    // Guardrail 4: Protect Leaderboard messages
+    const lbCheck = await pool.query(
+      `SELECT 1 FROM leaderboard_config 
+       WHERE guild_id = $1 
+         AND ($2 IN (daily_message_id, coins_message_id, streak_message_id, level_message_id))`,
+      [guildId, urlMessageId]
+    ).catch(() => ({ rows: [] }));
+
+    if (lbCheck.rows.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is an active Leaderboard message and cannot be modified.'
+      );
+      await interaction.followUp({
+        embeds: [errorEmbed],
+        flags: MessageFlags.Ephemeral
+      });
+      return renderGroupManagePage(interaction, groupId);
+    }
+
+    // Guardrail 5: Protect Community Server Hub message
+    const hubCheck = await pool.query(
+      `SELECT 1 FROM guild_configs WHERE guild_id = $1 AND config->>'interface_message_id' = $2`,
+      [guildId, urlMessageId]
+    ).catch(() => ({ rows: [] }));
+
+    if (hubCheck.rows.length > 0) {
+      const errorEmbed = createErrorEmbed(
+        'Protected System Message',
+        'That message is the Server Hub message and cannot be modified.'
       );
       await interaction.followUp({
         embeds: [errorEmbed],
