@@ -2811,8 +2811,11 @@ export async function handleEditCategoryModalSubmit(interaction) {
 
     const categories = await getShopCategories(interaction.guildId);
     const oldCat = categories.find(c => c.id.toString() === categoryId);
+    if (!oldCat) {
+      return interaction.followUp({ content: '❌ Category not found in this server.', flags: MessageFlags.Ephemeral });
+    }
 
-    await updateShopCategory(categoryId, { name, category_type: type });
+    await updateShopCategory(categoryId, { name, category_type: type }, interaction.guildId);
 
     // Standardized Shop Admin Log (Smart Diffing)
     const diff = formatDiff(oldCat, { ...oldCat, name, category_type: type }, ['name', 'category_type']);
@@ -2897,13 +2900,19 @@ export async function handleDeleteCategoryConfirm(interaction) {
     // Get name for feedback
     const categoriesBefore = await getShopCategories(interaction.guildId);
     const category = categoriesBefore.find(c => c.id.toString() === categoryId);
-    const categoryName = category ? category.name : 'Category';
+    if (!category) {
+      return interaction.followUp({
+        content: '❌ Category not found in this server.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+    const categoryName = category.name;
 
-    // Step 1: Detach items (Make them standalone)
-    const detachResult = await detachItemsFromCategory(categoryId);
+    // Step 1: Detach items (Make them standalone, scoped to guild)
+    const detachResult = await detachItemsFromCategory(categoryId, interaction.guildId);
 
-    // Step 2: Delete Category
-    await deleteShopCategory(categoryId);
+    // Step 2: Delete Category (scoped to guild)
+    await deleteShopCategory(categoryId, interaction.guildId);
 
     // Bulk Audit Log
     sendBulkLog(
