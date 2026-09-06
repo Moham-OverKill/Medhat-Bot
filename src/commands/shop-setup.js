@@ -832,8 +832,8 @@ export async function handleItemModalSubmit(interaction) {
         updates.is_pack = true;
       }
 
-      await updateShopItem(itemId, updates);
-      const updatedRecord = await getShopItem(itemId);
+      await updateShopItem(itemId, updates, interaction.guildId);
+      const updatedRecord = await getShopItem(itemId, interaction.guildId);
 
       // Smart Diff: Exclude internal IDs and timestamps
       const diff = formatDiff(oldItem, updatedRecord, ['id', 'guild_id', 'created_at', 'updated_at', 'item_type', 'is_pack', 'category_id']);
@@ -883,7 +883,7 @@ export async function handleManageItemCategorySelect(interaction) {
   const oldCatId = item?.category_id;
   const oldCatName = oldCatId ? (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [oldCatId, interaction.guildId])).rows[0]?.name : 'None';
   
-  await updateShopItem(itemId, { category_id: categoryId });
+  await updateShopItem(itemId, { category_id: categoryId }, interaction.guildId);
 
   // Standardized Shop Admin Log
   const catName = categoryId ? (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [categoryId, interaction.guildId])).rows[0]?.name : 'None';
@@ -1912,7 +1912,7 @@ export async function handleShopPostPublish(interaction) {
       .setColor('#3498DB'); 
 
     // JIT Sync: Always update global price and stock in DB before publishing to ensure state consistency
-    await updateShopItem(itemId, { price: effectivePrice, stock }); 
+    await updateShopItem(itemId, { price: effectivePrice, stock }, interaction.guildId); 
     item.price = effectivePrice;
     item.stock = stock;
 
@@ -2588,7 +2588,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       });
     }
 
-    await updateShopItem(itemId, { category_id: parseInt(categoryId) });
+    await updateShopItem(itemId, { category_id: parseInt(categoryId) }, interaction.guildId);
 
     // Standardized Shop Admin Log
     const categoriesAll = await getShopCategories(interaction.guildId);
@@ -2735,7 +2735,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
     const category = categoriesAll.find(c => c.id.toString() === categoryId);
     const categoryName = category ? category.name : 'Category';
 
-    await updateShopItem(itemId, { category_id: null });
+    await updateShopItem(itemId, { category_id: null }, interaction.guildId);
 
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'blue', '📂 Item Removed from Category', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from category **${categoryName}**`);
@@ -4210,7 +4210,7 @@ export async function handlePackAddContentSelect(interaction) {
     const packName = pack ? pack.name : 'Pack';
 
     // EXECUTE UPDATE
-    await updateShopItem(packId, { contents: newContents, role_id: newRoleId });
+    await updateShopItem(packId, { contents: newContents, role_id: newRoleId }, interaction.guildId);
 
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'blue', '📦 Item Added to Pack', `Admin **<@${interaction.user.id}>** added item **${addedItemName}** to pack **${packName}**`);
@@ -4347,7 +4347,7 @@ export async function handlePackRemoveContentSelect(interaction) {
     const packName = pack.name || 'Pack';
 
     // EXECUTE UPDATE
-    await updateShopItem(packId, { contents: newContents, role_id: newRoleId });
+    await updateShopItem(packId, { contents: newContents, role_id: newRoleId }, interaction.guildId);
 
     // Standardized Shop Admin Log
     sendLog(interaction.guild, 'shop', 'red', '📦 Item Removed from Pack', `Admin **<@${interaction.user.id}>** removed item **${removedItemName}** from pack **${packName}**`);
@@ -4638,7 +4638,7 @@ export async function handleShopPostUpdate(interaction) {
     }
 
     // JIT DB Update
-    await updateShopItem(itemId, { price: effectivePrice, stock });
+    await updateShopItem(itemId, { price: effectivePrice, stock }, interaction.guildId);
     item.price = effectivePrice;
     item.stock = stock;
 

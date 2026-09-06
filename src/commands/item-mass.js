@@ -422,7 +422,7 @@ export async function handleMassSave(interaction) {
         }
         
         if (packId && processedItemIds.length > 0) {
-            const pack = await getShopItem(packId);
+            const pack = await getShopItem(packId, interaction.guildId);
             if (pack) {
                 // Update Roles
                 const currentRoles = pack.role_id ? pack.role_id.split(/[,\s]+/) : [];
@@ -441,7 +441,7 @@ export async function handleMassSave(interaction) {
                 await updateShopItem(packId, { 
                     role_id: newRoles.join(' '),
                     contents: newContents
-                });
+                }, interaction.guildId);
                 addedToPack = itemsActuallyAdded;
             }
         }

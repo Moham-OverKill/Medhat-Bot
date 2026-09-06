@@ -351,7 +351,7 @@ export async function handleShopItemSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const itemId = parseInt(interaction.values[0]);
-    const item = await getShopItem(itemId);
+    const item = await getShopItem(itemId, interaction.guildId);
 
     if (!item) return interaction.editReply({ files: [], content: 'Item not found.' });
 
