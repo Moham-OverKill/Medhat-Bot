@@ -68,7 +68,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors - Levels - Coins - Shop
+    // Row 1: Colors / Levels / Coins / Shop
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -92,7 +92,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Users - Customize - Organize - Embed
+    // Row 2: Users / Roles / Organize / Customize
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
@@ -100,9 +100,9 @@ export async function showMainMenu(interaction) {
             .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_customize')
-            .setLabel('Customize')
-            .setEmoji('✨')
+            .setCustomId('settings_roles')
+            .setLabel('Roles')
+            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_organize')
@@ -110,18 +110,23 @@ export async function showMainMenu(interaction) {
             .setEmoji('🧹')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_embed')
-            .setLabel('Embed')
-            .setEmoji('📰')
+            .setCustomId('settings_customize')
+            .setLabel('Customize')
+            .setEmoji('✨')
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 3: Leaderboards - Logs - Economy
+    // Row 3: Leaderboard / Embed / Logs / Economy
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
-            .setLabel('Leaderboards')
+            .setLabel('Leaderboard')
             .setEmoji('📊')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_embed')
+            .setLabel('Embed')
+            .setEmoji('📰')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_logs')
@@ -694,7 +699,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_users_roles') {
+        if (customId === 'settings_users_roles' || customId === 'settings_roles') {
             await showRoleRewardsMenu(interaction);
             return;
         }
