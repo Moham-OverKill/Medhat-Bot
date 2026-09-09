@@ -27,7 +27,7 @@ import {
     handleLeaderboardDisable
 } from './settings/leaderboards.js';
 import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
-import { showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
+import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
@@ -699,8 +699,18 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'settings_users_roles' || customId === 'settings_roles') {
+        if (customId === 'settings_roles') {
+            await showRolesMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_roles_auto' || customId === 'settings_users_roles') {
             await showRoleRewardsMenu(interaction);
+            return;
+        }
+
+        if (customId === 'settings_roles_self') {
+            await showSelfRolesDashboard(interaction);
             return;
         }
 
