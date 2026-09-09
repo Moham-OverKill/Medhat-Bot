@@ -195,7 +195,7 @@ export async function showRoleRewardsMenu(interaction) {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_users')
+            .setCustomId('settings_home')
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
