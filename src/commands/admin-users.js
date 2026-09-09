@@ -1103,7 +1103,11 @@ export async function handleAdminUserComponent(interaction) {
 export async function showAntiCheatHub(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Anti-Cheat')
-        .setDescription('Configure anti-cheat protections and farming gates.')
+        .setDescription(
+            'Configure anti-cheat protections and farming gates.\n\n' +
+            '• **Alt Farming** — Account age and join date gates\n' +
+            '• **Voice AFK** — Voice farming prevention (Coming Soon)'
+        )
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(
@@ -1195,7 +1199,7 @@ export async function showAltFarmingDashboard(interaction) {
 export async function showVoiceAfkDashboard(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Voice AFK')
-        .setDescription('Configure Voice AFK detection settings and anti-farming rules.')
+        .setDescription('This feature is coming soon.')
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(

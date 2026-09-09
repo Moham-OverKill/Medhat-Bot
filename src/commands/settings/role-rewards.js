@@ -154,7 +154,79 @@ function buildRoleRewardPanel(type, config) {
 
 // ── Public: Roles Sub-Menu ────────────────────────────────────────────────────
 /**
- * Renders the /settings → Users → Roles sub-menu.
+ * Renders the /settings → Roles sub-menu.
+ * Offers options for Auto Roles and Self Roles.
+ */
+export async function showRolesMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('Roles Management')
+        .setDescription(
+            'Configure server roles and automation.\n\n' +
+            '• **Auto Roles** — Automated role rewards for top members\n' +
+            '• **Self Roles** — Self-assignable roles for members (Coming Soon)'
+        )
+        .setColor(0x5865F2);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_roles_auto')
+            .setLabel('Auto Roles')
+            .setEmoji('🤖')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_roles_self')
+            .setLabel('Self Roles')
+            .setEmoji('🏷️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
+ * Renders the Self Roles placeholder dashboard.
+ */
+export async function showSelfRolesDashboard(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('Self Roles')
+        .setDescription('This feature is coming soon.')
+        .setColor(0x5865F2);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_roles')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1]
+    });
+}
+
+/**
+ * Renders the /settings → Roles → Auto Roles sub-menu.
  * Shows MVP / Richest / Streaks buttons plus a summary of their current state.
  */
 export async function showRoleRewardsMenu(interaction) {
@@ -166,7 +238,7 @@ export async function showRoleRewardsMenu(interaction) {
     const streakStatus  = config.streak_role_enabled  ? '🟢' : '🔴';
 
     const embed = new EmbedBuilder()
-        .setTitle('Role Rewards')
+        .setTitle('Auto Roles')
         .setDescription(
             `Configure automated roles awarded to top members each hour.\n\n` +
             `${mvpStatus} **MVP** — Daily activity champions\n` +
@@ -195,7 +267,7 @@ export async function showRoleRewardsMenu(interaction) {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_home')
+            .setCustomId('settings_roles')
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
