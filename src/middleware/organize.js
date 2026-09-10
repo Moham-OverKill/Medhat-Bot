@@ -9,7 +9,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 // Allowed social media domains for "media_only" (Socials Only) rule
 const SOCIAL_MEDIA_DOMAINS = [
   'youtube.com', 'youtu.be', 'www.youtube.com', 'm.youtube.com',
-  'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
+  'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com', 'lite.tiktok.com', 'tiktokv.com',
   'instagram.com', 'www.instagram.com',
   'reddit.com', 'www.reddit.com', 'old.reddit.com',
   'x.com', 'www.x.com',
@@ -175,8 +175,8 @@ function isMediaPostUrl(url) {
     return /\/(p|reel|reels|tv)\/[\w-]+/i.test(url);
   }
 
-  if (/tiktok\.com/i.test(url)) {
-    return /\/(video|photo|v)\/\d+/i.test(url) || /vt\.tiktok\.com/i.test(url);
+  if (/(tiktok\.com|tiktokv\.com)/i.test(url)) {
+    return /\/(video|photo|v)\/\d+/i.test(url) || /(vt|vm)\.tiktok\.com/i.test(url) || /\/t\/[\w-]+/i.test(url);
   }
 
   if (/(youtube\.com|youtu\.be)/i.test(url)) {
