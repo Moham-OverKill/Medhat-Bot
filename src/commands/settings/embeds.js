@@ -15,6 +15,8 @@ import {
 import { getPool } from '../../storage/postgres.js';
 import { sysError, sysLog } from '../../utils/logger.js';
 import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
+import { verifyAndHealMessageImages } from '../../utils/image-healer.js';
+import { sanitizeEmbed } from '../../utils/embed-sanitizer.js';
 
 const DEFAULT_EMBED_COLOR = 0x2F3136;
 
@@ -711,6 +713,11 @@ async function handleGroupChannelSend(interaction, groupId) {
       components: [publicRow]
     });
 
+    verifyAndHealMessageImages(sentMsg, {
+      expectedImageUrl: grp.image_url || null,
+      expectedThumbnailUrl: grp.thumbnail_url || null
+    });
+
     // Save to server_embed_group_posts
     await pool.query(
       `INSERT INTO server_embed_group_posts (message_id, guild_id, group_id, channel_id)
@@ -1396,6 +1403,10 @@ async function handleEmbedChannelSend(interaction, embedId) {
   let sentMessage;
   try {
     sentMessage = await targetChannel.send({ embeds: [postEmbed] });
+    verifyAndHealMessageImages(sentMessage, {
+      expectedImageUrl: emb.image_url || null,
+      expectedThumbnailUrl: emb.thumbnail_url || null
+    });
   } catch (sendErr) {
     sysError('Embed Send Error', sendErr, { guild: interaction.guildId, channel: channelId });
     await handleInteractionError(interaction, sendErr, 'Send Custom Embed', { targetChannel });
@@ -1829,7 +1840,12 @@ export async function handleEmbedModal(interaction) {
     const updatedEmbed = buildDiscordEmbed(emb);
 
     try {
-      await targetMsg.edit({ embeds: [updatedEmbed] });
+      const sanitized = sanitizeEmbed(updatedEmbed);
+      await targetMsg.edit({ embeds: [sanitized] });
+      verifyAndHealMessageImages(targetMsg, {
+        expectedImageUrl: emb.image_url || null,
+        expectedThumbnailUrl: emb.thumbnail_url || null
+      });
     } catch (editErr) {
       sysError('Live Embed Edit Failed', editErr, { guild: guildId, messageId: urlMessageId });
       await handleInteractionError(interaction, editErr, 'Live Embed Edit', { targetChannel: channel });
@@ -2278,9 +2294,14 @@ export async function handleEmbedModal(interaction) {
     }
 
     try {
+      const sanitized = sanitizeEmbed(groupEmbed);
       await targetMessage.edit({
-        embeds: [groupEmbed],
+        embeds: [sanitized],
         components
+      });
+      verifyAndHealMessageImages(targetMessage, {
+        expectedImageUrl: grp.image_url || null,
+        expectedThumbnailUrl: grp.thumbnail_url || null
       });
 
       // Ensure logged in tracking table

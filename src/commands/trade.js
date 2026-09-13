@@ -21,6 +21,7 @@ import { isMemberBooster } from './colors.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShopCategories } from '../economy/shop.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
+import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
 import { getCachedGuildConfig } from '../activity/tracker.js';
 
 /**
@@ -72,7 +73,7 @@ export async function initializeTradeJanitor(client) {
                     if (channel) {
                         const msg = await channel.messages.fetch(trade.message_id).catch(() => null);
                         if (msg) {
-                            const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
+                            const expiredEmbed = sanitizeEmbed(msg.embeds[0])
                                 .setColor(0x95A5A6)
                                 .setFooter({ text: 'Trade Expired (Recovery Audit)' })
                                 .setTimestamp();
@@ -1251,7 +1252,7 @@ async function finalizeTradePosting(interaction, setup) {
                     await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, setup.guildId]);
 
                     // Edit original message to show expired state
-                    const expiredEmbed = EmbedBuilder.from(embed)
+                    const expiredEmbed = sanitizeEmbed(embed)
                         .setColor(0x95A5A6) // Gray
                         .setFooter({ text: 'Trade Expired' })
                         .setTimestamp();
@@ -1330,7 +1331,7 @@ export async function handleTradeExecution(interaction) {
         
         // Clean up the message visually so it doesn't look like a "Zombie"
         try {
-            const expiredEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            const expiredEmbed = sanitizeEmbed(interaction.message.embeds[0])
                 .setColor(0x95A5A6)
                 .setFooter({ text: 'Trade Expired' })
                 .setTimestamp();
@@ -1361,7 +1362,7 @@ export async function handleTradeExecution(interaction) {
         if (timeoutId) { clearTimeout(timeoutId); TRADE_TIMEOUTS.delete(tradeId); }
 
         const declinedEmbed = interaction.message.embeds.length > 0
-            ? EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444)
+            ? sanitizeEmbed(interaction.message.embeds[0]).setColor(0xEE4444)
             : new EmbedBuilder().setColor(0xEE4444);
 
         await interaction.editReply({ files: [], content: '',
@@ -1415,7 +1416,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             
             await interaction.editReply({ files: [], content: '',
                 components: [],
-                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x95A5A6).setFooter({ text: 'Trade Expired' }).setTimestamp()]
+                embeds: [sanitizeEmbed(interaction.message.embeds[0]).setColor(0x95A5A6).setFooter({ text: 'Trade Expired' }).setTimestamp()]
             });
             return;
         }
@@ -1828,7 +1829,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
 
         await interaction.editReply({ files: [], content: '',
             components: [],
-            embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' }).setTimestamp()]
+            embeds: [sanitizeEmbed(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' }).setTimestamp()]
         });
 
         // 9. Clear Garbage Collector
@@ -1920,7 +1921,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]).catch(() => {});
            await interaction.editReply({ files: [], content: '',
                 components: [],
-                embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled: Assets Missing' })]
+                embeds: [sanitizeEmbed(interaction.message.embeds[0]).setColor(0xEE4444).setFooter({ text: 'Trade Canceled: Assets Missing' })]
            }).catch(() => { });
         } else {
             const finalMsg = errorMessage;
