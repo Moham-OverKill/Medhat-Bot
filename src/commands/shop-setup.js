@@ -1996,7 +1996,7 @@ export async function handleShopPostPublish(interaction) {
     const row = new ActionRowBuilder().addComponents(buyButton);
 
     const postMsg = await channel.send({ embeds: [embed], components: [row] });
-    verifyAndHealMessageImages(postMsg);
+    verifyAndHealMessageImages(postMsg, { expectedImageUrl: finalImage || null });
 
     // Standardized Shop Admin Log
     if (item.item_type === 'loot_box' || item.loot_box_id) {
@@ -4727,7 +4727,7 @@ export async function handleShopPostUpdate(interaction) {
 
     // Edit message live
     await message.edit({ embeds: [embed], components: [row] });
-    verifyAndHealMessageImages(message);
+    verifyAndHealMessageImages(message, { expectedImageUrl: finalImage || null });
 
     // Log & Cleanup
     if (item.item_type === 'loot_box' || item.loot_box_id) {

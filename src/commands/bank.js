@@ -20,6 +20,7 @@ import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/t
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
+import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
 import {
   getShopCategories,
   getShopItems,
@@ -608,11 +609,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
 
     if (updatedItem && msg.embeds && msg.embeds.length > 0) {
       const origEmbed = msg.embeds[0];
-      const embed = EmbedBuilder.from(origEmbed);
-
-      // Clean read-only Discord API fields to prevent schema rejection
-      delete embed.data.id;
-      delete embed.data.type;
+      const embed = sanitizeEmbed(origEmbed);
 
       // Ensure the image from the database or original embed is cleanly restored
       let itemImage = getItemImage(updatedItem) || origEmbed.image?.url;
@@ -672,12 +669,20 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
           row.setComponents(buyBtn);
 
-          await interaction.message.edit({
+          const editedMsg = await interaction.message.edit({
             embeds: [embed],
             components: [row]
           }).catch((editErr) => {
             sysError('Live UI Refresh Edit Failed', editErr, { guild: gId, itemId });
+            return null;
           });
+
+          if (editedMsg) {
+            verifyAndHealMessageImages(editedMsg, {
+              expectedImageUrl: itemImage || null,
+              expectedThumbnailUrl: itemThumb || null
+            });
+          }
         }
       }
     }
@@ -1757,7 +1762,7 @@ export async function handleInventoryAction(interaction) {
         );
 
         const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [row] });
-        verifyAndHealMessageImages(publicMsg);
+        verifyAndHealMessageImages(publicMsg, { expectedImageUrl: dropImg || null });
         await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
           [publicMsg.id, interaction.channelId, res.dropId]);
 
@@ -1968,7 +1973,7 @@ export async function handleItemClaim(interaction) {
 
         const newDesc = `${firstLine}\n\n${resolutionLine}`;
 
-        const claimedEmbed = EmbedBuilder.from(publicMsg.embeds[0])
+        const claimedEmbed = sanitizeEmbed(publicMsg.embeds[0])
           .setColor(isSelfClaim ? '#3498DB' : '#2ECC71')
           .setDescription(newDesc)
           .setTimestamp(new Date(res.dropped_at));
@@ -1982,14 +1987,19 @@ export async function handleItemClaim(interaction) {
             .setDisabled(true)
         );
 
-        await publicMsg.edit({ 
+        const claimEditedMsg = await publicMsg.edit({ 
             embeds: [claimedEmbed], 
             components: [lockedRow] 
-        }).then(() => {
-            verifyAndHealMessageImages(publicMsg);
         }).catch(err => {
             sysError('Failed to disable public claim button', err, { guild: interaction.guildId });
+            return null;
         });
+
+        if (claimEditedMsg) {
+            verifyAndHealMessageImages(claimEditedMsg, {
+              expectedImageUrl: publicMsg.embeds[0]?.image?.url || null
+            });
+        }
       }
 
       // 3. Log Audit
@@ -2150,7 +2160,7 @@ export async function cleanupExpiredDrops(client) {
               const oldEmbed = message.embeds[0];
               const firstLine = oldEmbed.description?.split('\n')[0] || `An item was dropped.`;
 
-              const expiredEmbed = EmbedBuilder.from(oldEmbed)
+              const expiredEmbed = sanitizeEmbed(oldEmbed)
                 .setColor('#2C2F33') // Dark Grey
                 .setDescription(`${firstLine}\n\n⏰ This item has expired and the drop was lost.`)
                 .setTimestamp(new Date(drop.created_at));
@@ -2279,7 +2289,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     );
 
     const publicMsg = await interaction.channel.send({ embeds: [publicEmbed], components: [claimRow] });
-    verifyAndHealMessageImages(publicMsg);
+    verifyAndHealMessageImages(publicMsg, { expectedImageUrl: dropImg || null });
     await query('UPDATE dropped_items SET message_id = $1, channel_id = $2 WHERE id = $3',
       [publicMsg.id, interaction.channelId, res.dropId]);
 
