@@ -1998,6 +1998,18 @@ export async function handleShopPostPublish(interaction) {
     const postMsg = await channel.send({ embeds: [embed], components: [row] });
     verifyAndHealMessageImages(postMsg, { expectedImageUrl: finalImage || null });
 
+    if (finalImage) {
+      try {
+        const pool = (await import('../storage/postgres.js')).getPool();
+        await pool.query(
+          `INSERT INTO shop_posts (message_id, guild_id, channel_id, item_id, custom_image_url)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (message_id) DO UPDATE SET custom_image_url = $5, updated_at = NOW()`,
+          [postMsg.id, interaction.guildId, channelId, itemId, finalImage]
+        );
+      } catch (_) {}
+    }
+
     // Standardized Shop Admin Log
     if (item.item_type === 'loot_box' || item.loot_box_id) {
       const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
@@ -4523,10 +4535,23 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
     }
 
-    // Extract embed contents
     const firstEmbed = message.embeds[0];
     let embedDescription = firstEmbed?.description || null;
-    const embedImageUrl = firstEmbed?.image?.url || null;
+    let embedImageUrl = firstEmbed?.image?.url || null;
+
+    // If message embed image is missing, check shop_posts tracking
+    if (!embedImageUrl && messageId) {
+      try {
+        const pool = (await import('../storage/postgres.js')).getPool();
+        const spRes = await pool.query(
+          `SELECT custom_image_url FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [messageId]
+        );
+        if (spRes.rows.length > 0 && spRes.rows[0].custom_image_url) {
+          embedImageUrl = spRes.rows[0].custom_image_url;
+        }
+      } catch (_) {}
+    }
 
     // The message embed is the source of truth for description — always use what's visible on the post
     // No database comparison needed; the user wants to edit what they see
@@ -4725,9 +4750,20 @@ export async function handleShopPostUpdate(interaction) {
 
     const row = new ActionRowBuilder().addComponents(buyButton);
 
-    // Edit message live
     await message.edit({ embeds: [embed], components: [row] });
     verifyAndHealMessageImages(message, { expectedImageUrl: finalImage || null });
+
+    if (finalImage) {
+      try {
+        const pool = (await import('../storage/postgres.js')).getPool();
+        await pool.query(
+          `INSERT INTO shop_posts (message_id, guild_id, channel_id, item_id, custom_image_url)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (message_id) DO UPDATE SET custom_image_url = $5, updated_at = NOW()`,
+          [message.id, interaction.guildId, message.channelId || channel.id, itemId, finalImage]
+        );
+      } catch (_) {}
+    }
 
     // Log & Cleanup
     if (item.item_type === 'loot_box' || item.loot_box_id) {

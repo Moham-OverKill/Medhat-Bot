@@ -611,10 +611,30 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       const origEmbed = msg.embeds[0];
       const embed = sanitizeEmbed(origEmbed);
 
-      // Ensure the image from the database or original embed is cleanly restored
-      let itemImage = getItemImage(updatedItem) || origEmbed.image?.url;
+      // Resolve image with strict priority:
+      // 1. The image already on the message embed (preserves custom overwrite images set during post setup or editing)
+      let itemImage = origEmbed.image?.url || null;
 
-      // Direct fallback to loot_boxes if image still not found
+      // 2. If the embed currently has no image, check the shop_posts tracking table for any custom overwrite image
+      if (!itemImage && msg.id) {
+        try {
+          const pool = (await import('../storage/postgres.js')).getPool();
+          const spRes = await pool.query(
+            `SELECT custom_image_url FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+            [msg.id]
+          );
+          if (spRes.rows.length > 0 && spRes.rows[0].custom_image_url) {
+            itemImage = spRes.rows[0].custom_image_url;
+          }
+        } catch (_) {}
+      }
+
+      // 3. Fallback to default item image from database
+      if (!itemImage) {
+        itemImage = getItemImage(updatedItem);
+      }
+
+      // 4. Direct fallback to loot_boxes if image still not found
       if (!itemImage && (updatedItem.item_type === 'loot_box' || updatedItem.loot_box_id)) {
         try {
           const pool = (await import('../storage/postgres.js')).getPool();
@@ -628,6 +648,21 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         } catch (_) {}
       }
 
+      // If we have an active image for this post, record it in shop_posts for future persistence
+      if (itemImage && msg.id) {
+        (async () => {
+          try {
+            const pool = (await import('../storage/postgres.js')).getPool();
+            await pool.query(
+              `INSERT INTO shop_posts (message_id, guild_id, channel_id, item_id, custom_image_url)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (message_id) DO UPDATE SET custom_image_url = $5, updated_at = NOW()`,
+              [msg.id, gId, msg.channelId, itemId, itemImage]
+            );
+          } catch (_) {}
+        })().catch(() => {});
+      }
+
       if (itemImage) {
         embed.setImage(itemImage);
       } else {
@@ -635,9 +670,9 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       }
 
       const itemThumb = origEmbed.thumbnail?.url;
-      if (itemThumb && !itemImage) {
+      if (itemThumb) {
         embed.setThumbnail(itemThumb);
-      } else if (!itemThumb) {
+      } else {
         delete embed.data.thumbnail;
       }
 
