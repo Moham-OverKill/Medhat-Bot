@@ -1,20 +1,23 @@
-import { EmbedBuilder, ActionRowBuilder } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
 import { sysLog, sysError } from './logger.js';
 
 /**
- * Checks whether all images and thumbnails inside an embed have been resolved
+ * Checks whether all expected images/thumbnails inside an embed have been resolved
  * by Discord's media proxy with valid dimensions.
  *
  * @param {import('discord.js').Embed} embed
+ * @param {Object} expected - The expected media URLs from the original message
  * @returns {boolean}
  */
-function isEmbedMediaLoaded(embed) {
-  if (embed.image?.url) {
+function isEmbedMediaLoaded(embed, expected) {
+  if (expected.imageUrl) {
+    if (!embed.image?.url) return false;
     const hasProxy = Boolean(embed.image.proxyURL);
     const hasDimensions = Boolean(embed.image.width || embed.image.height);
     if (!hasProxy || !hasDimensions) return false;
   }
-  if (embed.thumbnail?.url) {
+  if (expected.thumbUrl) {
+    if (!embed.thumbnail?.url) return false;
     const hasProxy = Boolean(embed.thumbnail.proxyURL);
     const hasDimensions = Boolean(embed.thumbnail.width || embed.thumbnail.height);
     if (!hasProxy || !hasDimensions) return false;
@@ -23,23 +26,46 @@ function isEmbedMediaLoaded(embed) {
 }
 
 /**
- * Verify and heal image loading in public Discord bot messages.
+ * Cleanly reconstructs an embed for an edit operation, stripping Discord's
+ * internal read-only gateway properties (proxy_url, width, height, type)
+ * that cause Discord REST API to discard the media.
  *
- * Background: When Discord sends MESSAGE_CREATE to clients upon message creation,
- * Discord's media proxy has often not yet resolved or measured external image URLs.
- * Once Discord's proxy completes caching in the database, Discord DOES NOT dispatch
- * a MESSAGE_UPDATE gateway event. Connected clients therefore continue displaying
- * collapsed or unrendered images until an edit event is explicitly triggered.
+ * @param {import('discord.js').Embed} embed
+ * @param {Object} expected - The original expected media URLs
+ * @returns {EmbedBuilder}
+ */
+function cleanEmbedForEdit(embed, expected) {
+  const b = EmbedBuilder.from(embed);
+  delete b.data.id;
+  delete b.data.type;
+
+  const imgUrl = expected.imageUrl || embed.image?.url;
+  if (imgUrl) {
+    b.setImage(imgUrl);
+  } else {
+    delete b.data.image;
+  }
+
+  const thumbUrl = expected.thumbUrl || embed.thumbnail?.url;
+  if (thumbUrl) {
+    b.setThumbnail(thumbUrl);
+  } else {
+    delete b.data.thumbnail;
+  }
+
+  return b;
+}
+
+/**
+ * Verify image loading in public Discord bot messages without destructive edits.
+ * Only re-applies the original media URL if Discord's proxy scraper stalled.
+ * Never edits messages that are already loaded.
  *
- * This function polls the Discord API in the background until the proxy metadata
- * (proxyURL and width/height) is verified, then dispatches a single live message
- * edit to broadcast MESSAGE_UPDATE to all connected clients.
- *
- * @param {import('discord.js').Message} message - The message to verify and heal
+ * @param {import('discord.js').Message} message - The message to verify
  * @param {Object} [options={}]
- * @param {number} [options.maxAttempts=6] - Maximum verification attempts (default: 6)
- * @param {number} [options.initialDelayMs=1500] - Delay before first inspection (default: 1500ms)
- * @param {number} [options.retryDelayMs=1500] - Delay between subsequent checks (default: 1500ms)
+ * @param {number} [options.maxAttempts=4] - Maximum verification checks (default: 4)
+ * @param {number} [options.initialDelayMs=3000] - Delay before first inspection (default: 3000ms)
+ * @param {number} [options.retryDelayMs=3000] - Delay between subsequent checks (default: 3000ms)
  */
 export function verifyAndHealMessageImages(message, options = {}) {
   if (!message || !message.channel || !message.guild || !message.id) return;
@@ -50,21 +76,21 @@ export function verifyAndHealMessageImages(message, options = {}) {
     return;
   }
 
-  // Check if any embed expects an image or thumbnail
-  const hasExpectedMedia = message.embeds.some(e => Boolean(e.image?.url || e.thumbnail?.url));
-  if (!hasExpectedMedia) return;
+  // Extract expected media URLs from the original message embeds
+  const expectedMedia = message.embeds.map(e => ({
+    imageUrl: e.image?.url || null,
+    thumbUrl: e.thumbnail?.url || null
+  }));
 
-  // If all expected media are ALREADY verified and loaded on the provided message,
-  // the client already has the dimensions and no healing or edit is needed.
-  const alreadyFullyLoaded = message.embeds.every(isEmbedMediaLoaded);
-  if (alreadyFullyLoaded) return;
+  const hasExpectedMedia = expectedMedia.some(m => Boolean(m.imageUrl || m.thumbUrl));
+  if (!hasExpectedMedia) return;
 
   // Run asynchronously in background so we do not block caller
   (async () => {
     try {
-      const maxAttempts = options.maxAttempts || 6;
-      const initialDelayMs = options.initialDelayMs ?? 1500;
-      const retryDelayMs = options.retryDelayMs ?? 1500;
+      const maxAttempts = options.maxAttempts || 4;
+      const initialDelayMs = options.initialDelayMs ?? 3000;
+      const retryDelayMs = options.retryDelayMs ?? 3000;
 
       if (initialDelayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, initialDelayMs));
@@ -75,66 +101,44 @@ export function verifyAndHealMessageImages(message, options = {}) {
         const freshMsg = await message.channel.messages.fetch(message.id).catch(() => null);
         if (!freshMsg || !freshMsg.embeds || freshMsg.embeds.length === 0) return;
 
-        const isLoaded = freshMsg.embeds.every(isEmbedMediaLoaded);
+        const allLoaded = freshMsg.embeds.every((e, idx) =>
+          isEmbedMediaLoaded(e, expectedMedia[idx] || {})
+        );
 
-        if (isLoaded) {
-          // Discord proxy has resolved and cached the image dimensions in its database.
-          // We MUST edit the message so Discord broadcasts a MESSAGE_UPDATE gateway event
-          // to all connected clients, forcing Discord desktop/mobile clients to render the image.
-          const rebuiltEmbeds = freshMsg.embeds.map(e => EmbedBuilder.from(e));
-          const rebuiltComponents = (freshMsg.components || []).map(c =>
-            ActionRowBuilder.from(typeof c.toJSON === 'function' ? c.toJSON() : c)
-          );
-
-          await freshMsg.edit({
-            embeds: rebuiltEmbeds,
-            components: rebuiltComponents
-          }).catch(() => null);
-
-          sysLog('Embed Image Healed', {
+        if (allLoaded) {
+          // Media is verified and properly indexed by Discord proxy.
+          // Do NOT edit the message; Discord already has the image.
+          sysLog('Embed Image Verified', {
             guild: message.guildId,
             channel: message.channelId,
-            detail: `Message ${message.id} image(s) verified and refreshed after ${attempt} attempt(s)`
+            detail: `Message ${message.id} media verified on attempt ${attempt}`
           });
           return;
         }
 
-        // If not yet loaded after attempt 3, Discord's proxy scraper may need a nudge.
-        // Re-editing re-queues the embed URLs in Discord's internal proxy fetcher.
-        if (attempt >= 3 && attempt < maxAttempts) {
-          const rebuiltEmbeds = freshMsg.embeds.map(e => EmbedBuilder.from(e));
-          const rebuiltComponents = (freshMsg.components || []).map(c =>
-            ActionRowBuilder.from(typeof c.toJSON === 'function' ? c.toJSON() : c)
+        // If after 2 checks the image is still not resolved, Discord's proxy scraper may need a nudge.
+        if (attempt >= 2 && attempt < maxAttempts) {
+          const rebuiltEmbeds = freshMsg.embeds.map((e, idx) =>
+            cleanEmbedForEdit(e, expectedMedia[idx] || {})
           );
 
           await freshMsg.edit({
             embeds: rebuiltEmbeds,
-            components: rebuiltComponents
+            components: freshMsg.components
           }).catch(() => null);
 
           sysLog('Embed Image Scraper Nudge', {
             guild: message.guildId,
             channel: message.channelId,
-            detail: `Message ${message.id} re-edited to nudge Discord proxy (Attempt ${attempt}/${maxAttempts})`
+            detail: `Message ${message.id} re-sent cleanly to nudge Discord proxy (Attempt ${attempt}/${maxAttempts})`
           });
         }
 
         if (attempt >= maxAttempts) {
-          // Final attempt: perform one last refresh edit in case resolution finished at the boundary
-          const rebuiltEmbeds = freshMsg.embeds.map(e => EmbedBuilder.from(e));
-          const rebuiltComponents = (freshMsg.components || []).map(c =>
-            ActionRowBuilder.from(typeof c.toJSON === 'function' ? c.toJSON() : c)
-          );
-
-          await freshMsg.edit({
-            embeds: rebuiltEmbeds,
-            components: rebuiltComponents
-          }).catch(() => null);
-
           sysLog('Embed Image Healing Exhausted', {
             guild: message.guildId,
             channel: message.channelId,
-            detail: `Message ${message.id} reached max attempts (${maxAttempts})`
+            detail: `Message ${message.id} reached max verification attempts (${maxAttempts})`
           });
           return;
         }
