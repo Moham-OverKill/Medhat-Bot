@@ -416,8 +416,10 @@ export async function handleShopBuyButton(interaction) {
     const member = interaction.member;
 
     // Self-heal image on the shop post message if missing from Discord embed
-    if (interaction.message?.editable && interaction.message.embeds?.[0] && !interaction.message.embeds[0].image?.url) {
-      refreshShopMessageUI(interaction, itemId, guildId).catch(() => {});
+    if (interaction.message && !interaction.message.embeds?.[0]?.image?.url) {
+      await refreshShopMessageUI(interaction, itemId, guildId).catch(err => {
+        sysError('Self-heal buy button click refresh failed', err, { itemId, guildId });
+      });
     }
 
     // STEP 0: Interstitial Prerequisite Check
@@ -597,12 +599,15 @@ export async function handleShopBuyButton(interaction) {
 export async function refreshShopMessageUI(interaction, itemId, guildId) {
   const gId = guildId || interaction?.guildId;
   try {
-    if (!interaction.message || !interaction.message.editable) return;
+    const msg = interaction.message;
+    if (!msg) return;
+    if (msg.author?.id && interaction.client?.user?.id && msg.author.id !== interaction.client.user.id) return;
+
     const { getShopItem, getItemImage } = await import('../economy/shop.js');
     const updatedItem = await getShopItem(itemId, gId);
 
-    if (updatedItem && interaction.message.embeds && interaction.message.embeds.length > 0) {
-      const origEmbed = interaction.message.embeds[0];
+    if (updatedItem && msg.embeds && msg.embeds.length > 0) {
+      const origEmbed = msg.embeds[0];
       const embed = EmbedBuilder.from(origEmbed);
 
       // Clean read-only Discord API fields to prevent schema rejection
@@ -610,7 +615,22 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       delete embed.data.type;
 
       // Ensure the image from the database or original embed is cleanly restored
-      const itemImage = getItemImage(updatedItem) || origEmbed.image?.url;
+      let itemImage = getItemImage(updatedItem) || origEmbed.image?.url;
+
+      // Direct fallback to loot_boxes if image still not found
+      if (!itemImage && (updatedItem.item_type === 'loot_box' || updatedItem.loot_box_id)) {
+        try {
+          const pool = (await import('../storage/postgres.js')).getPool();
+          const lbRes = await pool.query(
+            `SELECT image_url, opened_image_url FROM loot_boxes WHERE (guild_id = $1 OR guild_id IS NULL) AND (id = $2 OR LOWER(name) = LOWER($3)) LIMIT 1`,
+            [gId, updatedItem.loot_box_id || 0, updatedItem.name]
+          );
+          if (lbRes.rows.length > 0) {
+            itemImage = lbRes.rows[0].image_url || lbRes.rows[0].opened_image_url || null;
+          }
+        } catch (_) {}
+      }
+
       if (itemImage) {
         embed.setImage(itemImage);
       } else {
@@ -655,7 +675,9 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           await interaction.message.edit({
             embeds: [embed],
             components: [row]
-          }).catch(() => { });
+          }).catch((editErr) => {
+            sysError('Live UI Refresh Edit Failed', editErr, { guild: gId, itemId });
+          });
         }
       }
     }
