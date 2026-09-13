@@ -398,11 +398,6 @@ export async function handleShopItemSelect(interaction) {
 
 export async function handleShopBuyButton(interaction) {
   try {
-    // Automatically trigger image healer on the shop post message on every buy click
-    if (interaction.message) {
-      verifyAndHealMessageImages(interaction.message);
-    }
-
     const isForce = interaction.customId.startsWith('force_buy_');
 
     // Parse customId:
@@ -419,6 +414,11 @@ export async function handleShopBuyButton(interaction) {
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
     const member = interaction.member;
+
+    // Self-heal image on the shop post message if missing from Discord embed
+    if (interaction.message?.editable && interaction.message.embeds?.[0] && !interaction.message.embeds[0].image?.url) {
+      refreshShopMessageUI(interaction, itemId, guildId).catch(() => {});
+    }
 
     // STEP 0: Interstitial Prerequisite Check
     if (!isForce) {
@@ -598,20 +598,40 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
   const gId = guildId || interaction?.guildId;
   try {
     if (!interaction.message || !interaction.message.editable) return;
-    const { getShopItem } = await import('../economy/shop.js');
+    const { getShopItem, getItemImage } = await import('../economy/shop.js');
     const updatedItem = await getShopItem(itemId, gId);
 
     if (updatedItem && interaction.message.embeds && interaction.message.embeds.length > 0) {
-      const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+      const origEmbed = interaction.message.embeds[0];
+      const embed = EmbedBuilder.from(origEmbed);
 
-      let stockHeader = '\u267E\uFE0F Stock';
+      // Clean read-only Discord API fields to prevent schema rejection
+      delete embed.data.id;
+      delete embed.data.type;
+
+      // Ensure the image from the database or original embed is cleanly restored
+      const itemImage = getItemImage(updatedItem) || origEmbed.image?.url;
+      if (itemImage) {
+        embed.setImage(itemImage);
+      } else {
+        delete embed.data.image;
+      }
+
+      const itemThumb = origEmbed.thumbnail?.url;
+      if (itemThumb && !itemImage) {
+        embed.setThumbnail(itemThumb);
+      } else if (!itemThumb) {
+        delete embed.data.thumbnail;
+      }
+
+      let stockHeader = '♾️ Stock';
       let stockValue = 'Unlimited';
       if (updatedItem.stock !== null && updatedItem.stock !== undefined) {
         if (updatedItem.stock <= 0) {
-          stockHeader = '\uD83D\uDD34 Stock';
+          stockHeader = '🔴 Stock';
           stockValue = 'Sold Out';
         } else {
-          stockHeader = '\uD83D\uDFE2 Stock';
+          stockHeader = '🟢 Stock';
           stockValue = `**${updatedItem.stock}** Left`;
         }
       }
@@ -636,7 +656,6 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             embeds: [embed],
             components: [row]
           }).catch(() => { });
-          verifyAndHealMessageImages(interaction.message);
         }
       }
     }
