@@ -14,7 +14,7 @@ import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysError 
  * @returns {string|null}
  */
 export function getItemImage(item) {
-  return item?.default_image_url || null;
+  return item?.resolved_image_url || item?.default_image_url || item?.lootbox_image_url || item?.image_url || null;
 }
 
 /**
@@ -130,12 +130,32 @@ export async function getShopItem(itemId, guildId = null) {
     let result;
     if (guildId) {
       result = await query(
-        'SELECT * FROM shop_items WHERE id = $1 AND guild_id = $2',
+        `SELECT si.*, 
+                COALESCE(si.default_image_url, lb.image_url, lb.opened_image_url) as resolved_image_url,
+                lb.image_url as lootbox_image_url,
+                lb.opened_image_url as lootbox_opened_image_url
+         FROM shop_items si
+         LEFT JOIN loot_boxes lb ON (
+           si.loot_box_id = lb.id 
+           OR si.role_id = 'LOOT_BOX_' || lb.id::text 
+           OR (si.item_type = 'loot_box' AND LOWER(si.name) = LOWER(lb.name) AND si.guild_id = lb.guild_id)
+         )
+         WHERE si.id = $1 AND si.guild_id = $2`,
         [numId, String(guildId)]
       );
     } else {
       result = await query(
-        'SELECT * FROM shop_items WHERE id = $1',
+        `SELECT si.*, 
+                COALESCE(si.default_image_url, lb.image_url, lb.opened_image_url) as resolved_image_url,
+                lb.image_url as lootbox_image_url,
+                lb.opened_image_url as lootbox_opened_image_url
+         FROM shop_items si
+         LEFT JOIN loot_boxes lb ON (
+           si.loot_box_id = lb.id 
+           OR si.role_id = 'LOOT_BOX_' || lb.id::text 
+           OR (si.item_type = 'loot_box' AND LOWER(si.name) = LOWER(lb.name))
+         )
+         WHERE si.id = $1`,
         [numId]
       );
     }
