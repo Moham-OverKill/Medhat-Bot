@@ -999,6 +999,17 @@ async function createTables() {
       );
       CREATE INDEX IF NOT EXISTS idx_server_embed_group_posts_guild ON server_embed_group_posts(guild_id);
       CREATE INDEX IF NOT EXISTS idx_server_embed_group_posts_group ON server_embed_group_posts(group_id);
+
+      CREATE TABLE IF NOT EXISTS shop_posts (
+        message_id VARCHAR(32) PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        item_id INTEGER NOT NULL,
+        custom_image_url TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_shop_posts_guild ON shop_posts(guild_id, item_id);
     `);
 
     // Level Leaderboard migration
