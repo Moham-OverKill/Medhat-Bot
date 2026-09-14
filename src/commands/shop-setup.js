@@ -4406,15 +4406,15 @@ export async function handleShopPostGate(interaction) {
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-          .setCustomId('shop_post_new_layout')
-          .setLabel('New Post')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
           .setCustomId('shop_post_edit_layout')
           .setLabel('Edit Post')
           .setEmoji('📝')
-          .setStyle(ButtonStyle.Primary)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('shop_post_new_layout')
+          .setLabel('New Post')
+          .setEmoji('➕')
+          .setStyle(ButtonStyle.Success)
       );
 
     await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
