@@ -1347,25 +1347,19 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
       throw new Error('This item is locked and cannot be dropped');
     }
 
-    let targetDropRow = item;
-    let availableToDrop = item.expires_at ? Math.max(0, currentQty - 1) : currentQty;
+    // 1. Fetch all unactivated copies for this shop_item_id
+    const unactRes = await client.query(
+      `SELECT ui.*, si.name, si.role_id, si.is_tradable 
+       FROM user_inventory ui
+       JOIN shop_items si ON ui.shop_item_id = si.id
+       WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
+         AND (ui.expires_at IS NULL OR ui.expires_at <= NOW())
+       ORDER BY ui.id ASC
+       FOR UPDATE`,
+      [userId, guildId, item.shop_item_id]
+    );
 
-    if (item.expires_at) {
-      const unactRes = await client.query(
-        `SELECT ui.*, si.name, si.role_id, si.is_tradable 
-         FROM user_inventory ui
-         JOIN shop_items si ON ui.shop_item_id = si.id
-         WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
-           AND (ui.expires_at IS NULL OR ui.expires_at <= NOW())
-         ORDER BY ui.id ASC
-         FOR UPDATE`,
-        [userId, guildId, item.shop_item_id]
-      );
-      if (unactRes.rows.length > 0) {
-        targetDropRow = unactRes.rows[0];
-        availableToDrop = unactRes.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
-      }
-    }
+    const availableToDrop = unactRes.rows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 1), 0);
 
     if (availableToDrop <= 0 || qty > availableToDrop) {
       await client.query('ROLLBACK');
@@ -1376,11 +1370,7 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
       }
     }
 
-    // 2. Calculate remaining quantity after the drop on targetDropRow
-    const targetCurrentQty = parseInt(targetDropRow.quantity) || 1;
-    const remainingQty = targetCurrentQty - qty;
-
-    // 3. Role removal — only strip role if the user's total remaining quantity across ALL rows hits 0
+    // 2. Role removal — only strip role if the user's total remaining quantity across ALL rows hits 0
     //    (they may have another active copy we should not strip)
     const totalRemainingRes = await client.query(
       `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) - $1 as remaining
@@ -1413,14 +1403,22 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
       }
     }
 
-    // 4. Decrement or delete the inventory row
-    if (remainingQty <= 0) {
-      await client.query('DELETE FROM user_inventory WHERE id = $1', [targetDropRow.id]);
-    } else {
-      await client.query(
-        'UPDATE user_inventory SET quantity = $1 WHERE id = $2',
-        [remainingQty, targetDropRow.id]
-      );
+    // 3. Decrement or delete across unactivated inventory rows
+    let needed = qty;
+    for (const r of unactRes.rows) {
+      if (needed <= 0) break;
+      const rQty = parseInt(r.quantity, 10) || 1;
+      if (rQty <= needed) {
+        await client.query('DELETE FROM user_inventory WHERE id = $1', [r.id]);
+        needed -= rQty;
+      } else {
+        await client.query(
+          'UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2',
+          [needed, r.id]
+        );
+        needed = 0;
+        break;
+      }
     }
 
     // 5. Create Drop Record with quantity
