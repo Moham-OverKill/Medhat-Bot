@@ -930,6 +930,34 @@ export async function handleTradeModal(interaction) {
         if (result.rows.length === 0) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
         const item = result.rows[0];
 
+        let tradeInvId = invId;
+        let itemOwnedQty = parseInt(item.quantity) || 1;
+
+        const isTempItem = Boolean(
+            item.expires_at ||
+            (item.duration_seconds && item.duration_seconds > 0) ||
+            (item.duration_hours && item.duration_hours > 0)
+        );
+
+        if (isTempItem) {
+            const unactRows = await query(
+                `SELECT id, COALESCE(quantity, 1) as quantity
+                 FROM user_inventory
+                 WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+                   AND (expires_at IS NULL OR expires_at <= NOW())
+                 ORDER BY id ASC`,
+                [itemOwnerId, setup.guildId, item.shop_item_id]
+            );
+
+            const totalUnactivated = unactRows.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
+            if (totalUnactivated <= 0) {
+                return interaction.followUp({ content: '❌ An active running temporary item cannot be traded.', flags: MessageFlags.Ephemeral });
+            }
+
+            tradeInvId = unactRows.rows[0].id;
+            itemOwnedQty = totalUnactivated;
+        }
+
         const recipientId = isGive ? setup.targetId : setup.senderId;
         const recipientRes = await query(
             'SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
@@ -937,8 +965,6 @@ export async function handleTradeModal(interaction) {
         );
         const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
         const maxAllowedByCap = 999 - recipientTotal;
-        const rawOwned = parseInt(item.quantity) || 1;
-        const itemOwnedQty = item.expires_at ? Math.max(0, rawOwned - 1) : rawOwned;
         const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
 
         if (qty > availableQty) {
@@ -946,8 +972,8 @@ export async function handleTradeModal(interaction) {
         }
 
         const targetList = isGive ? setup.senderItems : setup.targetItems;
-        const existingIdx = targetList.findIndex(i => i.id === invId);
-        const itemObj = { ...item, quantity: qty };
+        const existingIdx = targetList.findIndex(i => i.id === tradeInvId || i.shop_item_id === item.shop_item_id);
+        const itemObj = { ...item, id: tradeInvId, quantity: qty };
         if (existingIdx !== -1) {
             targetList[existingIdx] = itemObj;
         } else {
@@ -1055,11 +1081,33 @@ export async function handleTradeSelect(interaction) {
         return interaction.followUp({ content: '❌ This item is locked and cannot be traded.', flags: MessageFlags.Ephemeral });
     }
 
-    const rawOwned = parseInt(item.quantity) || 1;
-    const itemOwnedQty = item.expires_at ? Math.max(0, rawOwned - 1) : rawOwned;
-    if (itemOwnedQty <= 0) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.followUp({ content: '❌ An active running temporary item cannot be traded.', flags: MessageFlags.Ephemeral });
+    let tradeInvId = invId;
+    let itemOwnedQty = parseInt(item.quantity) || 1;
+
+    const isTempItem = Boolean(
+        item.expires_at ||
+        (item.duration_seconds && item.duration_seconds > 0) ||
+        (item.duration_hours && item.duration_hours > 0)
+    );
+
+    if (isTempItem) {
+        const unactRows = await query(
+            `SELECT id, COALESCE(quantity, 1) as quantity
+             FROM user_inventory
+             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+               AND (expires_at IS NULL OR expires_at <= NOW())
+             ORDER BY id ASC`,
+            [itemOwnerId, setup.guildId, item.shop_item_id]
+        );
+
+        const totalUnactivated = unactRows.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
+        if (totalUnactivated <= 0) {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
+            return interaction.followUp({ content: '❌ An active running temporary item cannot be traded.', flags: MessageFlags.Ephemeral });
+        }
+
+        tradeInvId = unactRows.rows[0].id;
+        itemOwnedQty = totalUnactivated;
     }
 
     const recipientId = isGive ? setup.targetId : setup.senderId;
@@ -1079,7 +1127,7 @@ export async function handleTradeSelect(interaction) {
     if (availableQty >= 1) {
         const modalTitle = safeTruncate(`${isGive ? 'Giving' : 'Requesting'} ${item.name}`, 45);
         const modal = new ModalBuilder()
-            .setCustomId(`trade_modal_item_qty_${isGive ? 'give' : 'req'}_${invId}`)
+            .setCustomId(`trade_modal_item_qty_${isGive ? 'give' : 'req'}_${tradeInvId}`)
             .setTitle(modalTitle);
 
         const qtyInput = new TextInputBuilder()
@@ -1096,8 +1144,8 @@ export async function handleTradeSelect(interaction) {
     } else {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         const targetList = isGive ? setup.senderItems : setup.targetItems;
-        const existingIdx = targetList.findIndex(i => i.id === invId);
-        const itemObj = { ...item, quantity: 1 };
+        const existingIdx = targetList.findIndex(i => i.id === tradeInvId || i.shop_item_id === item.shop_item_id);
+        const itemObj = { ...item, id: tradeInvId, quantity: 1 };
         if (existingIdx !== -1) {
             targetList[existingIdx] = itemObj;
         } else {
@@ -1469,7 +1517,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
 
             // Lock offered inventory rows and verify sender still owns them (quantity-aware)
             const senderItemsRes = await client.query(`
-                SELECT i.id, i.shop_item_id, i.quantity, s.name, s.is_tradable, s.role_id
+                SELECT i.id, i.shop_item_id, i.quantity, i.expires_at, s.name, s.is_tradable, s.role_id
                 FROM user_inventory i
                 JOIN shop_items s ON i.shop_item_id = s.id
                 WHERE i.id = ANY($1::int[]) AND i.user_id = $2 AND i.guild_id = $3
@@ -1484,6 +1532,10 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const offerObj = itemObjects.find(o => o.id === row.id);
                 const offerQty = offerObj ? (offerObj.qty || 1) : 1;
                 const rowQty = parseInt(row.quantity, 10) || 1;
+
+                if (row.expires_at && new Date(row.expires_at) > new Date()) {
+                    throw new Error(`An active running temporary item cannot be traded.`);
+                }
 
                 if (rowQty < offerQty) {
                     throw new Error(`Insufficient quantity for **${row.name}** (Offered ${offerQty}, but only ${rowQty} available).`);
@@ -1659,7 +1711,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         if (sItemObjects.length > 0) {
             for (const offer of sItemObjects) {
                 const rowRes = await client.query(
-                    `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
+                    `SELECT i.id, i.shop_item_id, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
                      WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source != 'SYNC' AND i.source != 'ADMIN'
                      FOR UPDATE`,
@@ -1669,13 +1721,29 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const row = rowRes.rows[0];
                 senderLostShopItemIds.push(row.shop_item_id);
 
-                const currentQty = parseInt(row.quantity) || 1;
+                let deductId = row.id;
+                let currentQty = parseInt(row.quantity) || 1;
+
+                if (row.expires_at && new Date(row.expires_at) > new Date()) {
+                    const unactRes = await client.query(
+                        `SELECT id, COALESCE(quantity, 1) as quantity FROM user_inventory
+                         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+                           AND (expires_at IS NULL OR expires_at <= NOW())
+                         ORDER BY id ASC LIMIT 1 FOR UPDATE`,
+                        [trade.sender_id, trade.guild_id, row.shop_item_id]
+                    );
+                    if (unactRes.rows.length > 0) {
+                        deductId = unactRes.rows[0].id;
+                        currentQty = parseInt(unactRes.rows[0].quantity) || 1;
+                    }
+                }
+
                 const tradedQty = Math.min(offer.qty || 1, currentQty);
 
                 if (currentQty - tradedQty <= 0) {
-                    await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
+                    await client.query('DELETE FROM user_inventory WHERE id = $1', [deductId]);
                 } else {
-                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, row.id]);
+                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, deductId]);
                 }
 
                 const targetCheck = await client.query(
@@ -1699,7 +1767,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         if (tItemObjects.length > 0) {
             for (const offer of tItemObjects) {
                 const rowRes = await client.query(
-                    `SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
+                    `SELECT i.id, i.shop_item_id, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.role_id 
                      FROM user_inventory i JOIN shop_items s ON i.shop_item_id = s.id 
                      WHERE i.id = $1 AND i.user_id = $2 AND i.guild_id = $3 AND i.source != 'SYNC' AND i.source != 'ADMIN'
                      FOR UPDATE`,
@@ -1709,13 +1777,29 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 const row = rowRes.rows[0];
                 targetLostShopItemIds.push(row.shop_item_id);
 
-                const currentQty = parseInt(row.quantity) || 1;
+                let deductId = row.id;
+                let currentQty = parseInt(row.quantity) || 1;
+
+                if (row.expires_at && new Date(row.expires_at) > new Date()) {
+                    const unactRes = await client.query(
+                        `SELECT id, COALESCE(quantity, 1) as quantity FROM user_inventory
+                         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+                           AND (expires_at IS NULL OR expires_at <= NOW())
+                         ORDER BY id ASC LIMIT 1 FOR UPDATE`,
+                        [trade.target_id, trade.guild_id, row.shop_item_id]
+                    );
+                    if (unactRes.rows.length > 0) {
+                        deductId = unactRes.rows[0].id;
+                        currentQty = parseInt(unactRes.rows[0].quantity) || 1;
+                    }
+                }
+
                 const tradedQty = Math.min(offer.qty || 1, currentQty);
 
                 if (currentQty - tradedQty <= 0) {
-                    await client.query('DELETE FROM user_inventory WHERE id = $1', [row.id]);
+                    await client.query('DELETE FROM user_inventory WHERE id = $1', [deductId]);
                 } else {
-                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, row.id]);
+                    await client.query('UPDATE user_inventory SET quantity = COALESCE(quantity, 1) - $1 WHERE id = $2', [tradedQty, deductId]);
                 }
 
                 const senderCheck = await client.query(

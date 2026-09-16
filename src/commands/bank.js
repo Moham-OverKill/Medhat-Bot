@@ -1693,7 +1693,7 @@ export async function handleInventoryAction(interaction) {
       // (Already handled above in the combined action guard)
 
       const [item] = await query(
-        `SELECT si.name, si.duration_seconds, si.duration_hours, si.is_tradable, ui.expires_at, COALESCE(ui.quantity, 1) as quantity
+        `SELECT si.name, si.duration_seconds, si.duration_hours, si.is_tradable, ui.expires_at, COALESCE(ui.quantity, 1) as quantity, ui.shop_item_id
          FROM user_inventory ui 
          JOIN shop_items si ON ui.shop_item_id = si.id 
          WHERE ui.id = $1`,
@@ -1710,8 +1710,25 @@ export async function handleInventoryAction(interaction) {
         return interaction.followUp({ content: '❌ This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
+      let targetDropInvId = invId;
       const rawQty = parseInt(item.quantity) || 1;
-      const availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
+      let availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
+
+      if (item.expires_at) {
+        const unactCheck = await query(
+          `SELECT id, COALESCE(quantity, 1) as quantity
+           FROM user_inventory
+           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+             AND (expires_at IS NULL OR expires_at <= NOW())
+           ORDER BY id ASC`,
+          [interaction.user.id, interaction.guildId, item.shop_item_id]
+        );
+        if (unactCheck.rows.length > 0) {
+          targetDropInvId = unactCheck.rows[0].id;
+          availableToDrop = unactCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
+        }
+      }
+
       if (availableToDrop <= 0) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
         return interaction.followUp({ content: '❌ An active running temporary item cannot be dropped.', flags: MessageFlags.Ephemeral });
@@ -1719,7 +1736,7 @@ export async function handleInventoryAction(interaction) {
 
       // Show the quantity modal directly on the original interaction (no defer!)
       const modal = new ModalBuilder()
-        .setCustomId(`bank_inv_drop_qty_${invId}_${catIdStr}_${currentIndex}`)
+        .setCustomId(`bank_inv_drop_qty_${targetDropInvId}_${catIdStr}_${currentIndex}`)
         .setTitle(`Drop: ${item.name}`);
 
       const qtyInput = new TextInputBuilder()
@@ -1825,52 +1842,94 @@ export async function handleInventoryAction(interaction) {
 
     // --- 4. EQUIP / ACTIVATE (Toggle Logic) ---
     if (action === 'equip') {
-      // 1. Anti-Stacking Check: Block activating multiple copies of the same temporary item
-      const sameItemRunning = await query(
-        `SELECT s.name FROM user_inventory i
-         JOIN shop_items s ON i.shop_item_id = s.id
-         WHERE i.user_id = $1 AND i.guild_id = $2
-           AND i.shop_item_id = (SELECT shop_item_id FROM user_inventory WHERE id = $3)
-           AND i.id != $3
-           AND i.expires_at IS NOT NULL
-           AND i.expires_at > NOW()
-         LIMIT 1`,
-        [interaction.user.id, interaction.guildId, invId]
+      const currentItemRes = await query(
+        `SELECT ui.id, ui.is_active, ui.shop_item_id, ui.expires_at, si.name, si.duration_seconds, si.duration_hours
+         FROM user_inventory ui
+         JOIN shop_items si ON ui.shop_item_id = si.id
+         WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3`,
+        [invId, interaction.user.id, interaction.guildId]
       );
 
-      if (sameItemRunning.rows.length > 0) {
+      if (currentItemRes.rows.length === 0) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-        return interaction.followUp({
-          content: `❌ You already have an active copy of **${sameItemRunning.rows[0].name}** running. You cannot activate another copy until the current timer expires.`,
-          flags: MessageFlags.Ephemeral
-        });
+        return interaction.followUp({ content: '❌ Item not found in inventory.', flags: MessageFlags.Ephemeral });
       }
 
-      // 2. Check for category timer conflict (different item in Single/Swap category)
-      const hasConflict = await checkSingleCategoryActiveTimerConflict(interaction.user.id, interaction.guildId, invId);
+      let currentItem = currentItemRes.rows[0];
 
-      if (hasConflict) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-        const embed = new EmbedBuilder()
-          .setColor(0xFEE75C)
-          .setDescription('You already have an active timer running in this category!');
-
-        const confirmRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`bank_inv_cancel_${invId}_${catIdStr}_${currentIndex}`)
-            .setLabel('Cancel')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId(`bank_inv_forceequip_${invId}_${catIdStr}_${currentIndex}`)
-            .setLabel('Equip')
-            .setStyle(ButtonStyle.Success)
+      // If the clicked row is inactive, check if the user has an active running copy of this shop_item_id.
+      // If so, the user clicked "Deactivate" on the consolidated card -> redirect invId to the active copy.
+      if (!currentItem.is_active) {
+        const activeRunningCopy = await query(
+          `SELECT ui.id, ui.is_active, ui.shop_item_id, ui.expires_at, si.name
+           FROM user_inventory ui
+           JOIN shop_items si ON ui.shop_item_id = si.id
+           WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
+             AND ui.id != $4
+             AND ui.is_active = true
+             AND ui.expires_at IS NOT NULL
+             AND ui.expires_at > NOW()
+           LIMIT 1`,
+          [interaction.user.id, interaction.guildId, currentItem.shop_item_id, invId]
         );
 
-        return interaction.editReply({
-          embeds: [embed],
-          components: [confirmRow]
-        });
+        if (activeRunningCopy.rows.length > 0) {
+          invId = activeRunningCopy.rows[0].id;
+          currentItem = activeRunningCopy.rows[0];
+        }
+      }
+
+      const isCurrentlyActive = currentItem.is_active === true;
+
+      // Anti-stacking and category conflict checks ONLY apply when ACTIVATING (isCurrentlyActive === false)
+      if (!isCurrentlyActive) {
+        // 1. Anti-Stacking Check: Block activating multiple copies of the same temporary item
+        const sameItemRunning = await query(
+          `SELECT s.name FROM user_inventory i
+           JOIN shop_items s ON i.shop_item_id = s.id
+           WHERE i.user_id = $1 AND i.guild_id = $2
+             AND i.shop_item_id = $3
+             AND i.id != $4
+             AND i.expires_at IS NOT NULL
+             AND i.expires_at > NOW()
+           LIMIT 1`,
+          [interaction.user.id, interaction.guildId, currentItem.shop_item_id, invId]
+        );
+
+        if (sameItemRunning.rows.length > 0) {
+          if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+          return interaction.followUp({
+            content: `❌ You already have an active copy of **${sameItemRunning.rows[0].name}** running. You cannot activate another copy until the current timer expires.`,
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
+        // 2. Check for category timer conflict (different item in Single/Swap category)
+        const hasConflict = await checkSingleCategoryActiveTimerConflict(interaction.user.id, interaction.guildId, invId);
+
+        if (hasConflict) {
+          if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
+          const embed = new EmbedBuilder()
+            .setColor(0xFEE75C)
+            .setDescription('You already have an active timer running in this category!');
+
+          const confirmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`bank_inv_cancel_${invId}_${catIdStr}_${currentIndex}`)
+              .setLabel('Cancel')
+              .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+              .setCustomId(`bank_inv_forceequip_${invId}_${catIdStr}_${currentIndex}`)
+              .setLabel('Equip')
+              .setStyle(ButtonStyle.Success)
+          );
+
+          return interaction.editReply({
+            embeds: [embed],
+            components: [confirmRow]
+          });
+        }
       }
 
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
