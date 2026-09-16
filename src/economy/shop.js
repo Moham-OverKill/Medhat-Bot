@@ -1600,6 +1600,7 @@ export async function getUserInventory(userId, guildId) {
         consolidated.push(itemObj);
       } else {
         const primary = itemMap.get(key);
+        primary.quantity += rowQty;
         primary.total_quantity += rowQty;
         if (isRowUnact) {
           primary.unactivated_quantity += rowQty;
@@ -1631,6 +1632,8 @@ export async function getUserInventory(userId, guildId) {
           } else {
             item.quantity = item.total_quantity;
           }
+        } else {
+          item.quantity = item.total_quantity;
         }
       }
     }
