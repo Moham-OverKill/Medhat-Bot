@@ -38,8 +38,13 @@ async function checkUrlReachable(url) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+
     let res = await fetch(url, {
       method: 'HEAD',
+      headers,
       signal: controller.signal,
       redirect: 'follow'
     }).catch(() => null);
@@ -48,20 +53,29 @@ async function checkUrlReachable(url) {
     if (!res || res.status === 405) {
       res = await fetch(url, {
         method: 'GET',
-        headers: { 'Range': 'bytes=0-0' },
+        headers: { ...headers, 'Range': 'bytes=0-0' },
         signal: controller.signal,
         redirect: 'follow'
       }).catch(() => null);
     }
 
     clearTimeout(timeout);
-    if (res && (res.ok || res.status === 206 || res.status === 304)) {
+
+    // If status is 404 or 410, URL is definitely dead
+    if (res && (res.status === 404 || res.status === 410)) {
+      return { ok: false, status: res.status, reason: `http_${res.status}` };
+    }
+
+    // For other responses (2xx, 3xx, 401, 403, or bot-side network limits), Discord proxy crawler
+    // may still have access even if direct Node.js fetch is restricted or challenged.
+    if (res && (res.ok || res.status === 206 || res.status === 304 || res.status === 401 || res.status === 403)) {
       return { ok: true, status: res.status, reason: 'ok' };
     }
+
     return { ok: false, status: res?.status ?? null, reason: res ? `http_${res.status}` : 'network_error' };
   } catch (err) {
-    const reason = err.name === 'AbortError' ? 'timeout' : (err.code || err.message || 'network_error');
-    return { ok: false, status: null, reason };
+    // Network fallback: don't block Discord's internal proxy crawler due to local host network limits
+    return { ok: true, status: null, reason: 'network_fallback' };
   }
 }
 
