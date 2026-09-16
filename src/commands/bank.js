@@ -1710,24 +1710,17 @@ export async function handleInventoryAction(interaction) {
         return interaction.followUp({ content: '❌ This item is locked and cannot be dropped.', flags: MessageFlags.Ephemeral });
       }
 
-      let targetDropInvId = invId;
-      const rawQty = parseInt(item.quantity) || 1;
-      let availableToDrop = item.expires_at ? Math.max(0, rawQty - 1) : rawQty;
+      const unactCheck = await query(
+        `SELECT id, COALESCE(quantity, 1) as quantity
+         FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+           AND (expires_at IS NULL OR expires_at <= NOW())
+         ORDER BY id ASC`,
+        [interaction.user.id, interaction.guildId, item.shop_item_id]
+      );
 
-      if (item.expires_at) {
-        const unactCheck = await query(
-          `SELECT id, COALESCE(quantity, 1) as quantity
-           FROM user_inventory
-           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
-             AND (expires_at IS NULL OR expires_at <= NOW())
-           ORDER BY id ASC`,
-          [interaction.user.id, interaction.guildId, item.shop_item_id]
-        );
-        if (unactCheck.rows.length > 0) {
-          targetDropInvId = unactCheck.rows[0].id;
-          availableToDrop = unactCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
-        }
-      }
+      const availableToDrop = unactCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 1), 0);
+      const targetDropInvId = unactCheck.rows.length > 0 ? unactCheck.rows[0].id : invId;
 
       if (availableToDrop <= 0) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
