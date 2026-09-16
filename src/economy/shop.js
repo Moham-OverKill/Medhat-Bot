@@ -1347,14 +1347,38 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
       throw new Error('This item is locked and cannot be dropped');
     }
 
-    const availableToDrop = item.expires_at ? Math.max(0, currentQty - 1) : currentQty;
-    if (qty > availableToDrop) {
-      await client.query('ROLLBACK');
-      throw new Error(`You can only drop up to ${availableToDrop} unactivated cop${availableToDrop === 1 ? 'y' : 'ies'} of this item.`);
+    let targetDropRow = item;
+    let availableToDrop = item.expires_at ? Math.max(0, currentQty - 1) : currentQty;
+
+    if (item.expires_at) {
+      const unactRes = await client.query(
+        `SELECT ui.*, si.name, si.role_id, si.is_tradable 
+         FROM user_inventory ui
+         JOIN shop_items si ON ui.shop_item_id = si.id
+         WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
+           AND (ui.expires_at IS NULL OR ui.expires_at <= NOW())
+         ORDER BY ui.id ASC
+         FOR UPDATE`,
+        [userId, guildId, item.shop_item_id]
+      );
+      if (unactRes.rows.length > 0) {
+        targetDropRow = unactRes.rows[0];
+        availableToDrop = unactRes.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
+      }
     }
 
-    // 2. Calculate remaining quantity after the drop
-    const remainingQty = currentQty - qty;
+    if (availableToDrop <= 0 || qty > availableToDrop) {
+      await client.query('ROLLBACK');
+      if (availableToDrop <= 0) {
+        throw new Error('An active running temporary item cannot be dropped.');
+      } else {
+        throw new Error(`You can only drop up to ${availableToDrop} unactivated cop${availableToDrop === 1 ? 'y' : 'ies'} of this item.`);
+      }
+    }
+
+    // 2. Calculate remaining quantity after the drop on targetDropRow
+    const targetCurrentQty = parseInt(targetDropRow.quantity) || 1;
+    const remainingQty = targetCurrentQty - qty;
 
     // 3. Role removal — only strip role if the user's total remaining quantity across ALL rows hits 0
     //    (they may have another active copy we should not strip)
@@ -1391,11 +1415,11 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
 
     // 4. Decrement or delete the inventory row
     if (remainingQty <= 0) {
-      await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
+      await client.query('DELETE FROM user_inventory WHERE id = $1', [targetDropRow.id]);
     } else {
       await client.query(
         'UPDATE user_inventory SET quantity = $1 WHERE id = $2',
-        [remainingQty, invId]
+        [remainingQty, targetDropRow.id]
       );
     }
 
@@ -1563,24 +1587,50 @@ export async function getUserInventory(userId, guildId) {
       }
       const key = `${row.shop_item_id}`;
       const rowQty = Math.max(1, parseInt(row.quantity, 10) || 1);
+      const isRowUnact = (!row.expires_at || new Date(row.expires_at) <= new Date());
 
       if (!itemMap.has(key)) {
         const itemObj = {
           ...row,
+          total_quantity: rowQty,
+          unactivated_quantity: isRowUnact ? rowQty : 0,
           quantity: rowQty
         };
         itemMap.set(key, itemObj);
         consolidated.push(itemObj);
       } else {
         const primary = itemMap.get(key);
-        primary.quantity += rowQty;
-        // Prioritize active running timer row as the primary representation
-        if (!primary.expires_at && row.expires_at) {
+        primary.total_quantity += rowQty;
+        if (isRowUnact) {
+          primary.unactivated_quantity += rowQty;
+        }
+        // For trading (which uses getUserInventory), prioritize the unactivated row if present
+        const isPrimaryUnact = (!primary.expires_at || new Date(primary.expires_at) <= new Date());
+        if (isRowUnact && !isPrimaryUnact) {
           primary.id = row.id;
           primary.expires_at = row.expires_at;
           primary.is_active = row.is_active;
-        } else if (!primary.is_active && row.is_active) {
-          primary.is_active = true;
+        }
+      }
+    }
+
+    // Final pass for trading: If this temporary item has unactivated copies,
+    // expose the unactivated copy's ID, null expires_at, and unactivated quantity.
+    for (const item of consolidated) {
+      if (item.shop_item_id) {
+        const isTemp = Boolean(
+          item.expires_at ||
+          (item.duration_seconds && item.duration_seconds > 0) ||
+          (item.duration_hours && item.duration_hours > 0)
+        );
+        if (isTemp) {
+          if (item.unactivated_quantity > 0) {
+            item.quantity = item.unactivated_quantity;
+            item.expires_at = null;
+            item.is_active = false;
+          } else {
+            item.quantity = item.total_quantity;
+          }
         }
       }
     }
@@ -1748,12 +1798,23 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
         const primary = consolidatedMap.get(key);
         primary.quantity += rowQty;
         // Prioritize active running timer row as primary representation
-        if (!primary.expires_at && row.expires_at) {
+        const isRowActive = row.is_active === true;
+        const isPrimaryActive = primary.is_active === true;
+        const isRowRunning = Boolean(row.expires_at && new Date(row.expires_at) > new Date());
+        const isPrimaryRunning = Boolean(primary.expires_at && new Date(primary.expires_at) > new Date());
+
+        if ((isRowActive || isRowRunning) && (!isPrimaryActive && !isPrimaryRunning)) {
           primary.id = row.id;
           primary.expires_at = row.expires_at;
           primary.is_active = row.is_active;
-        } else if (!primary.is_active && row.is_active) {
-          primary.is_active = true;
+        } else if (isRowActive && !isPrimaryActive) {
+          primary.id = row.id;
+          primary.expires_at = row.expires_at;
+          primary.is_active = row.is_active;
+        } else if (!primary.expires_at && row.expires_at) {
+          primary.id = row.id;
+          primary.expires_at = row.expires_at;
+          primary.is_active = row.is_active;
         }
       }
     }
