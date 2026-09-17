@@ -1039,6 +1039,13 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
     );
 
     if (allRewardsRes.rows.length === 0 && legacyConfigChests.rows.length === 0) {
+      if (userId) {
+        sysLog('Self-Healing: No Configured Level Rewards', {
+          guild: guildId,
+          user: userId,
+          detail: 'No battlepass rewards or legacy config chests configured for guild'
+        });
+      }
       return;
     }
 
@@ -1125,7 +1132,16 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       const xpLevel = calculateLevelFromXp(totalXp, baseXp, incrementXp).level;
       const maxClaimLevel = parseInt(u.max_claim_level || 0, 10);
       const reachedLevel = Math.max(xpLevel, maxClaimLevel);
-      if (reachedLevel <= 0) continue;
+      if (reachedLevel <= 0) {
+        if (userId) {
+          sysLog('Self-Healing: User Level Inactive', {
+            user: uid,
+            guild: guildId,
+            detail: `Total XP: ${totalXp} | Max Claim Level: ${maxClaimLevel} (No earned levels to reconcile)`
+          });
+        }
+        continue;
+      }
 
       const missingRewards = [];
       for (const br of allRewardsRes.rows) {
@@ -1507,6 +1523,14 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             detail: `Added ${deficit}x ${entry.name} (Expected: ${entry.expectedQty}, Held: ${heldQty}, Opened: ${openedQty})`
           });
         }
+      }
+
+      if (userId) {
+        sysLog('Self-Healing: User Level Audit Complete', {
+          user: uid,
+          guild: guildId,
+          detail: `Level: ${reachedLevel} | Missing Reconciled: ${missingRewards.length} | Configured Chests Audited: ${configuredChestsMap.size}`
+        });
       }
     }
   } catch (err) {
