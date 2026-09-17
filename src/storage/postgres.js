@@ -902,8 +902,10 @@ async function createTables() {
           purchase_source = 'level'
       FROM shop_items si
       WHERE ui.shop_item_id IS NULL
-        AND ui.role_id LIKE 'CHEST_%'
-        AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
+        AND (
+          (ui.role_id LIKE 'CHEST_%' AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER)
+          OR (ui.role_id LIKE 'LOOT_BOX_%' AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 10), '')::INTEGER)
+        )
         AND si.guild_id = ui.guild_id;
     `).catch(() => {});
 
