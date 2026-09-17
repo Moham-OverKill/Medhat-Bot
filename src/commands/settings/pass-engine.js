@@ -999,6 +999,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
   try {
     const { getGuildConfig } = await import('../../storage/config.js');
     const config = await getGuildConfig(guildId) || {};
+    if (config.battlepass_enabled !== true) return;
+
     const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
     const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
 
