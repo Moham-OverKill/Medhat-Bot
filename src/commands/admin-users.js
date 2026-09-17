@@ -866,13 +866,23 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
     const offset = page * LIMIT;
     const pool = getPool();
 
-    const result = await pool.query(
-        `SELECT * FROM transactions 
-         WHERE guild_id = $1 AND user_id = $2 
-         ORDER BY created_at DESC 
-         LIMIT $3 OFFSET $4`,
-        [interaction.guildId, targetUserId, LIMIT, offset]
-    );
+    const [result, countRes] = await Promise.all([
+        pool.query(
+            `SELECT * FROM transactions 
+             WHERE guild_id = $1 AND user_id = $2 
+             ORDER BY created_at DESC 
+             LIMIT $3 OFFSET $4`,
+            [interaction.guildId, targetUserId, LIMIT, offset]
+        ),
+        pool.query(
+            `SELECT COUNT(*) as total FROM transactions 
+             WHERE guild_id = $1 AND user_id = $2`,
+            [interaction.guildId, targetUserId]
+        )
+    ]);
+
+    const totalCount = parseInt(countRes.rows[0]?.total || 0, 10);
+    const totalPages = Math.max(1, Math.ceil(totalCount / LIMIT));
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     const displayName = targetMember ? targetMember.displayName : targetUserId;
@@ -880,7 +890,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
     const embed = new EmbedBuilder()
         .setTitle(safeTruncate(`History: ${displayName}`, 256))
         .setColor(0x808080)
-        .setFooter({ text: `Page ${page + 1}` });
+        .setFooter({ text: `Page ${page + 1} / ${totalPages}` });
 
     if (result.rowCount === 0) {
         embed.setDescription('No transactions found.');
@@ -921,7 +931,7 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
             .setLabel('Next')
             .setEmoji('▶️')
             .setStyle(ButtonStyle.Secondary)
-            .setDisabled(result.rowCount < LIMIT)
+            .setDisabled(page >= totalPages - 1 || result.rowCount < LIMIT)
     );
 
     const backRow = new ActionRowBuilder().addComponents(

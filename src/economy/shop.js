@@ -1525,8 +1525,8 @@ export async function claimItem(claimerId, guildId, dropId, member) {
       );
     } else {
       await client.query(
-        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, quantity)
-         VALUES ($1, $2, $3, $4, false, 'SHOP', $5)`,
+        `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+         VALUES ($1, $2, $3, $4, false, 'DROP', 'drop', $5)`,
         [claimerId, guildId, drop.shop_item_id, drop.role_id, claimedQty]
       );
     }
@@ -1673,6 +1673,12 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
         AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
         AND si.guild_id = ui.guild_id
     `, [userId, guildId]).catch(() => {});
+
+    // Proactively self-heal any missing milestone rewards for claimed levels on inventory view
+    try {
+      const { reconcileMissingLevelRewards } = await import('../commands/settings/pass-engine.js');
+      await reconcileMissingLevelRewards(guildId, userId);
+    } catch {}
 
     // Self-heal active temporary items missing timers
     await query(`
