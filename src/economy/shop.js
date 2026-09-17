@@ -1669,8 +1669,10 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       FROM shop_items si
       WHERE ui.user_id = $1 AND ui.guild_id = $2
         AND ui.shop_item_id IS NULL
-        AND ui.role_id LIKE 'CHEST_%'
-        AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
+        AND (
+          (ui.role_id LIKE 'CHEST_%' AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER)
+          OR (ui.role_id LIKE 'LOOT_BOX_%' AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 10), '')::INTEGER)
+        )
         AND si.guild_id = ui.guild_id
     `, [userId, guildId]).catch(() => {});
 
@@ -1701,7 +1703,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       DELETE FROM user_inventory
       WHERE user_id = $1 AND guild_id = $2
         AND (shop_item_id IS NULL OR shop_item_id NOT IN (SELECT id FROM shop_items WHERE guild_id = $2))
-        AND (role_id NOT LIKE 'CHEST_%' OR role_id IS NULL)
+        AND (role_id NOT LIKE 'CHEST_%' AND role_id NOT LIKE 'LOOT_BOX_%' OR role_id IS NULL)
     `, [userId, guildId]).catch(() => {});
 
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========

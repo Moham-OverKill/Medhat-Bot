@@ -607,11 +607,17 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
         if (chestShopItemId) {
           const existingChest = await client2.query(
-            `SELECT id FROM user_inventory
-             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
-               AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-             ORDER BY is_active DESC LIMIT 1`,
-            [userId, guildId, chestShopItemId]
+            `SELECT ui.id FROM user_inventory ui
+             LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
+             WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.expires_at IS NULL
+               AND (
+                 (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
+                 OR si.loot_box_id = $4
+                 OR ui.role_id = ('LOOT_BOX_' || $4::text)
+                 OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
+               )
+             ORDER BY ui.is_active DESC, ui.id ASC LIMIT 1`,
+            [userId, guildId, chestShopItemId, reward.loot_box_id]
           );
           if (existingChest.rows.length > 0) {
             await client2.query(
@@ -999,7 +1005,6 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
   try {
     const { getGuildConfig } = await import('../../storage/config.js');
     const config = await getGuildConfig(guildId) || {};
-    if (config.battlepass_enabled !== true) return;
 
     const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
     const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
@@ -1048,7 +1053,10 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
          FROM (SELECT $2::VARCHAR as user_id) u
          LEFT JOIN user_activity ua ON ua.guild_id = $1 AND ua.user_id = u.user_id
          LEFT JOIN (
-           SELECT MAX(level_claimed) as max_level FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2
+           SELECT GREATEST(
+             COALESCE((SELECT MAX(level_claimed) FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2), 0),
+             COALESCE((SELECT MAX(level) FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2), 0)
+           ) as max_level
          ) upc ON true`,
         [guildId, userId]
       );
@@ -1063,13 +1071,16 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
            SELECT user_id FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0
            UNION
            SELECT user_id FROM user_pass_claims WHERE guild_id = $1
+           UNION
+           SELECT user_id FROM user_pass_reward_claims WHERE guild_id = $1
          ) u
          LEFT JOIN user_activity ua ON ua.guild_id = $1 AND ua.user_id = u.user_id
          LEFT JOIN (
-           SELECT user_id, MAX(level_claimed) as max_level 
-           FROM user_pass_claims 
-           WHERE guild_id = $1 
-           GROUP BY user_id
+           SELECT user_id, MAX(max_l) as max_level FROM (
+             SELECT user_id, MAX(level_claimed) as max_l FROM user_pass_claims WHERE guild_id = $1 GROUP BY user_id
+             UNION ALL
+             SELECT user_id, MAX(level) as max_l FROM user_pass_reward_claims WHERE guild_id = $1 GROUP BY user_id
+           ) all_claims GROUP BY user_id
          ) upc ON upc.user_id = u.user_id`,
         [guildId]
       );
@@ -1175,13 +1186,18 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             }
           }
 
-          // Check if user already holds a chest specifically from LEVEL / BATTLEPASS
+          // Check if user already holds this chest
           const levelInvCheck = await pool.query(
-            `SELECT id, quantity FROM user_inventory 
-             WHERE user_id = $1 AND guild_id = $2 
-               AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-               AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
-             ORDER BY id ASC LIMIT 1`,
+            `SELECT ui.id, ui.quantity FROM user_inventory ui
+             LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
+             WHERE ui.user_id = $1 AND ui.guild_id = $2
+               AND (
+                 (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
+                 OR si.loot_box_id = $4
+                 OR ui.role_id = ('LOOT_BOX_' || $4::text)
+                 OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
+               )
+             ORDER BY ui.id ASC LIMIT 1`,
             [uid, guildId, chestShopItemId, loot_box_id]
           );
 
@@ -1308,11 +1324,16 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
         }
 
         const levelInvCheck = await pool.query(
-          `SELECT id, quantity FROM user_inventory 
-           WHERE user_id = $1 AND guild_id = $2 
-             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-             AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
-           ORDER BY id ASC LIMIT 1`,
+          `SELECT ui.id, ui.quantity FROM user_inventory ui
+           LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
+           WHERE ui.user_id = $1 AND ui.guild_id = $2
+             AND (
+               (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
+               OR si.loot_box_id = $4
+               OR ui.role_id = ('LOOT_BOX_' || $4::text)
+               OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
+             )
+           ORDER BY ui.id ASC LIMIT 1`,
           [uid, guildId, chestShopItemId, reward_chest_id]
         );
 
@@ -1389,28 +1410,68 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
           entry.shopItemId = shopItemRes.rows[0]?.id;
           entry.roleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${entry.boxId}`;
         }
+        if (!entry.shopItemId) {
+          const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [entry.boxId, guildId]);
+          if (boxRow.rows.length > 0) {
+            const newShopItem = await pool.query(
+              `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
+               VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
+               RETURNING id, role_id`,
+              [guildId, boxRow.rows[0].name, `LOOT_BOX_${entry.boxId}`, entry.boxId]
+            );
+            entry.shopItemId = newShopItem.rows[0]?.id;
+            entry.roleId = newShopItem.rows[0]?.role_id || `LOOT_BOX_${entry.boxId}`;
+          }
+        }
         if (!entry.shopItemId) continue;
 
-        // Held quantity in inventory with source LEVEL/BATTLEPASS
+        // Held quantity in inventory
         const heldRes = await pool.query(
-          `SELECT id, COALESCE(quantity, 1) as quantity FROM user_inventory
-           WHERE user_id = $1 AND guild_id = $2
-             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-             AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
-           ORDER BY id ASC`,
+          `SELECT ui.id, COALESCE(ui.quantity, 1) as quantity
+           FROM user_inventory ui
+           LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
+           WHERE ui.user_id = $1 AND ui.guild_id = $2
+             AND (
+               (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
+               OR si.loot_box_id = $4
+               OR ui.role_id = ('LOOT_BOX_' || $4::text)
+               OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
+             )
+           ORDER BY ui.id ASC`,
           [uid, guildId, entry.shopItemId, entry.boxId]
         );
         const heldQty = heldRes.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
 
-        // Count opened chests
-        const openedRes = await pool.query(
-          `SELECT COUNT(*)::INTEGER as count FROM transactions
-           WHERE user_id = $1 AND guild_id = $2
-             AND type = 'loot_box_reward'
-             AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
-          [uid, guildId, entry.boxId, entry.name]
+        // Count opened chests only AFTER the user claimed a pass reward for this chest
+        const claimDateRes = await pool.query(
+          `SELECT MIN(claimed_at) as first_claim_at
+           FROM (
+             SELECT uprc.claimed_at 
+             FROM user_pass_reward_claims uprc
+             JOIN battlepass_rewards br ON uprc.reward_id = br.id AND uprc.guild_id = br.guild_id
+             WHERE uprc.guild_id = $1 AND uprc.user_id = $2 AND br.loot_box_id = $3
+             UNION ALL
+             SELECT upc.claimed_at 
+             FROM user_pass_claims upc
+             JOIN battlepass_config bc ON upc.level_claimed = bc.level AND upc.guild_id = bc.guild_id
+             WHERE upc.guild_id = $1 AND upc.user_id = $2 AND bc.reward_chest_id = $3
+           ) c`,
+          [guildId, uid, entry.boxId]
         );
-        const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+        const firstClaimAt = claimDateRes.rows[0]?.first_claim_at;
+
+        let openedQty = 0;
+        if (firstClaimAt) {
+          const openedRes = await pool.query(
+            `SELECT COUNT(*)::INTEGER as count FROM transactions
+             WHERE user_id = $1 AND guild_id = $2
+               AND type = 'loot_box_reward'
+               AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))
+               AND created_at >= $5`,
+            [uid, guildId, entry.boxId, entry.name, firstClaimAt]
+          );
+          openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+        }
 
         const accountedQty = heldQty + openedQty;
         const deficit = Math.max(0, entry.expectedQty - accountedQty);
@@ -1428,6 +1489,17 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
               [uid, guildId, entry.shopItemId, entry.roleId, deficit]
             );
           }
+
+          // Sync quantity_claimed in user_pass_reward_claims so claim ledger matches reality
+          await pool.query(
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+             SELECT $1, $2, br.level, br.id, COALESCE(br.quantity, 1)
+             FROM battlepass_rewards br
+             WHERE br.guild_id = $1 AND br.loot_box_id = $3 AND br.level <= $4
+             ON CONFLICT (guild_id, user_id, reward_id)
+             DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
+            [guildId, uid, entry.boxId, reachedLevel]
+          ).catch(() => {});
 
           sysLog('Self-Healing: Reconciled Level Chest Deficit', {
             user: uid,
