@@ -11,7 +11,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage } from '../economy/shop.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
@@ -542,7 +542,6 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 .setCustomId(`admin_user_icat_${targetUserId}_lootboxes`)
                 .setLabel(lootBoxCatName)
                 .setStyle(ButtonStyle.Secondary);
-            const { safeSetButtonEmoji } = await import('../shared.js');
             safeSetButtonEmoji(lbBtn, lootBoxEmoji, interaction.guild, '🎁');
             buttons.push(lbBtn);
         }
@@ -624,7 +623,9 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                     const isTemp = !!(i.expires_at || 
                                    (i.duration_seconds && i.duration_seconds > 0) || 
                                    (i.duration_hours && i.duration_hours > 0));
-                    let statusEmoji = isLootBox ? '🎁' : (isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜'));
+                    let statusEmoji = isLootBox 
+                        ? parseSelectEmoji(lootBoxCatEmoji, interaction.guild, '🎁') 
+                        : (isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜'));
                     let statusText = isLootBox ? 'Unopened Loot Box' : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
                     const itemQty = parseInt(i.quantity) || 1;
                     const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
