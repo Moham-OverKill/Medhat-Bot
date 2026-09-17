@@ -441,8 +441,9 @@ export async function handleLevelModal(interaction) {
         );
 
         if (newLevel > 0) {
-            const { syncUserLevelRewards } = await import('./settings/pass-engine.js');
+            const { syncUserLevelRewards, reconcileMissingLevelRewards } = await import('./settings/pass-engine.js');
             await syncUserLevelRewards(guildId, targetUserId, targetMember?.user?.username || 'User', interaction.client);
+            await reconcileMissingLevelRewards(guildId, targetUserId).catch(() => {});
         }
 
         sysLog('Admin Action', {
