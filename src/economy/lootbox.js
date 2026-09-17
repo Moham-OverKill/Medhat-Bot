@@ -713,7 +713,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       }
     }
 
-    // Credit total coins if any were awarded
+    // Credit total coins if any were awarded, and ensure balance record exists
     if (totalCoinsAwarded > 0) {
       await client.query(
         `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
@@ -722,13 +722,20 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
          SET balance = user_balances.balance + $3, total_earned = user_balances.total_earned + $3, updated_at = NOW()`,
         [userId, guildId, totalCoinsAwarded]
       );
-
+    } else {
       await client.query(
-        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
-         SELECT $1, $2, $3, balance, 'loot_box_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-        [userId, guildId, totalCoinsAwarded, `Opened ${box.name}`, lootBoxId.toString()]
+        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (user_id, guild_id) DO NOTHING`,
+        [userId, guildId]
       );
     }
+
+    await client.query(
+      `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+       SELECT $1, $2, $3, balance, 'loot_box_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+      [userId, guildId, totalCoinsAwarded, `Opened ${box.name}`, lootBoxId.toString()]
+    );
 
     await client.query('COMMIT');
 
