@@ -974,7 +974,8 @@ export async function getUserPassProgress(guildId, userId) {
 }
 
 /**
- * Reconcile missing milestone rewards (items/chests) for claimed levels.
+ * Reconcile missing milestone rewards (items/chests) for reached levels.
+ * Highly optimized: uses set-based querying and in-memory diffing.
  * Can be run for a specific user (on inventory view) or globally for all users.
  *
  * @param {string} guildId
@@ -990,42 +991,73 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
     const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
     const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
 
-    // 1. Clean up any false locks in user_pass_reward_claims where the user does NOT possess the reward in user_inventory
-    await pool.query(
-      `DELETE FROM user_pass_reward_claims
-       WHERE guild_id = $1 ${userId ? 'AND user_id = $2' : ''}
-         AND reward_id IN (
-           SELECT br.id FROM battlepass_rewards br
-           WHERE br.guild_id = user_pass_reward_claims.guild_id
-             AND NOT EXISTS (
-               SELECT 1 FROM user_inventory ui
-               LEFT JOIN shop_items uisi ON ui.shop_item_id = uisi.id
-               WHERE ui.user_id = user_pass_reward_claims.user_id
-                 AND ui.guild_id = user_pass_reward_claims.guild_id
-                 AND (UPPER(COALESCE(ui.source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(ui.purchase_source, '')) IN ('level', 'battlepass'))
-                 AND (
-                   (br.reward_type = 'chest' AND (uisi.loot_box_id = br.loot_box_id OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = br.loot_box_id)))
-                   OR
-                   (br.reward_type = 'item' AND ui.shop_item_id = br.shop_item_id)
-                 )
-             )
-         )`,
-      userId ? [guildId, userId] : [guildId]
-    ).catch(err => sysError('Purge False Reward Claims Failed', err));
+    // 1. Fetch all configured rewards for this guild
+    const allRewardsRes = await pool.query(
+      `SELECT br.id as reward_id, br.level, br.reward_type, br.shop_item_id, br.loot_box_id, COALESCE(br.quantity, 1) as quantity,
+              si.role_id as item_role_id, si.name as item_name, si.is_active as item_is_active, si.item_type,
+              lb.name as chest_name, lb.id as valid_box_id
+       FROM battlepass_rewards br
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = br.guild_id
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
+       WHERE br.guild_id = $1
+       ORDER BY br.level ASC`,
+      [guildId]
+    );
 
-    // 2. Identify target users to reconcile
+    // Also check legacy single columns on battlepass_config
+    const legacyConfigChests = await pool.query(
+      `SELECT bc.level, bc.reward_chest_id,
+              si.id as shop_item_id, si.role_id, lb.name as chest_name, lb.id as valid_box_id
+       FROM battlepass_config bc
+       LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id AND lb.guild_id = bc.guild_id
+       LEFT JOIN shop_items si ON si.loot_box_id = bc.reward_chest_id AND si.guild_id = bc.guild_id
+       WHERE bc.guild_id = $1
+         AND bc.reward_chest_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM battlepass_rewards br
+           WHERE br.guild_id = bc.guild_id AND br.level = bc.level AND br.reward_type = 'chest' AND br.loot_box_id = bc.reward_chest_id
+         )`,
+      [guildId]
+    );
+
+    if (allRewardsRes.rows.length === 0 && legacyConfigChests.rows.length === 0) {
+      return;
+    }
+
+    // 2. Resolve target users and their XP / max claimed level in a single aggregated query
     let targetUsers = [];
     if (userId) {
-      targetUsers = [{ user_id: userId }];
+      const userRes = await pool.query(
+        `SELECT 
+           $2::VARCHAR as user_id,
+           COALESCE(ua.battlepass_xp, 0) as battlepass_xp,
+           COALESCE(upc.max_level, 0) as max_claim_level
+         FROM (SELECT $2::VARCHAR as user_id) u
+         LEFT JOIN user_activity ua ON ua.guild_id = $1 AND ua.user_id = u.user_id
+         LEFT JOIN (
+           SELECT MAX(level_claimed) as max_level FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2
+         ) upc ON true`,
+        [guildId, userId]
+      );
+      targetUsers = userRes.rows;
     } else {
       const usersRes = await pool.query(
-        `SELECT DISTINCT user_id FROM (
+        `SELECT 
+           u.user_id,
+           COALESCE(ua.battlepass_xp, 0) as battlepass_xp,
+           COALESCE(upc.max_level, 0) as max_claim_level
+         FROM (
            SELECT user_id FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0
            UNION
            SELECT user_id FROM user_pass_claims WHERE guild_id = $1
-           UNION
-           SELECT user_id FROM user_pass_reward_claims WHERE guild_id = $1
-         ) u`,
+         ) u
+         LEFT JOIN user_activity ua ON ua.guild_id = $1 AND ua.user_id = u.user_id
+         LEFT JOIN (
+           SELECT user_id, MAX(level_claimed) as max_level 
+           FROM user_pass_claims 
+           WHERE guild_id = $1 
+           GROUP BY user_id
+         ) upc ON upc.user_id = u.user_id`,
         [guildId]
       );
       targetUsers = usersRes.rows;
@@ -1033,44 +1065,61 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
 
     if (targetUsers.length === 0) return;
 
-    // 3. For each user, calculate their maximum earned level and reconcile missing rewards
+    // 3. Fetch existing claims from user_pass_reward_claims to perform in-memory diffing
+    let claimedRewardKeys;
+    let claimedLegacyLevels;
+    if (userId) {
+      const claimsRes = await pool.query(
+        `SELECT reward_id FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2`,
+        [guildId, userId]
+      );
+      claimedRewardKeys = new Set(claimsRes.rows.map(r => r.reward_id));
+
+      const legacyClaimsRes = await pool.query(
+        `SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
+        [guildId, userId]
+      );
+      claimedLegacyLevels = new Set(legacyClaimsRes.rows.map(r => r.level_claimed));
+    } else {
+      const claimsRes = await pool.query(
+        `SELECT user_id, reward_id FROM user_pass_reward_claims WHERE guild_id = $1`,
+        [guildId]
+      );
+      claimedRewardKeys = new Set(claimsRes.rows.map(r => `${r.user_id}_${r.reward_id}`));
+
+      const legacyClaimsRes = await pool.query(
+        `SELECT user_id, level_claimed FROM user_pass_claims WHERE guild_id = $1`,
+        [guildId]
+      );
+      claimedLegacyLevels = new Set(legacyClaimsRes.rows.map(r => `${r.user_id}_${r.level_claimed}`));
+    }
+
+    // 4. For each user, calculate reached level and reconcile missing rewards
     for (const u of targetUsers) {
       const uid = u.user_id;
-
-      // Get user XP
-      const actRes = await pool.query(
-        `SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, uid]
-      );
-      const totalXp = parseFloat(actRes.rows[0]?.battlepass_xp || 0);
+      const totalXp = parseFloat(u.battlepass_xp || 0);
       const xpLevel = calculateLevelFromXp(totalXp, baseXp, incrementXp).level;
-
-      // Get highest level claimed in user_pass_claims
-      const maxClaimRes = await pool.query(
-        `SELECT MAX(level_claimed) as max_level FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, uid]
-      );
-      const maxClaimLevel = parseInt(maxClaimRes.rows[0]?.max_level || 0, 10);
-
+      const maxClaimLevel = parseInt(u.max_claim_level || 0, 10);
       const reachedLevel = Math.max(xpLevel, maxClaimLevel);
       if (reachedLevel <= 0) continue;
 
-      // Fetch all rewards configured for levels up to reachedLevel
-      const rewardsRes = await pool.query(
-        `SELECT br.id as reward_id, br.level, br.reward_type, br.shop_item_id, br.loot_box_id, COALESCE(br.quantity, 1) as quantity,
-                si.role_id as item_role_id, si.name as item_name, si.is_active as item_is_active, si.item_type,
-                lb.name as chest_name, lb.id as valid_box_id
-         FROM battlepass_rewards br
-         LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = br.guild_id
-         LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
-         LEFT JOIN user_pass_reward_claims uprc ON uprc.guild_id = br.guild_id AND uprc.user_id = $2 AND uprc.reward_id = br.id
-         WHERE br.guild_id = $1 AND br.level <= $3
-           AND uprc.reward_id IS NULL
-         ORDER BY br.level ASC`,
-        [guildId, uid, reachedLevel]
-      );
+      const missingRewards = allRewardsRes.rows.filter(br => {
+        if (br.level > reachedLevel) return false;
+        const key = userId ? br.reward_id : `${uid}_${br.reward_id}`;
+        return !claimedRewardKeys.has(key);
+      });
 
-      for (const row of rewardsRes.rows) {
+      const missingLegacyChests = legacyConfigChests.rows.filter(bc => {
+        if (bc.level > reachedLevel) return false;
+        const key = userId ? bc.level : `${uid}_${bc.level}`;
+        return !claimedLegacyLevels.has(key);
+      });
+
+      if (missingRewards.length === 0 && missingLegacyChests.length === 0) {
+        continue;
+      }
+
+      for (const row of missingRewards) {
         const { reward_id, level, reward_type, shop_item_id, loot_box_id, quantity, item_role_id, chest_name, item_name, item_is_active, item_type, valid_box_id } = row;
         const qty = Math.min(100, Math.max(1, parseInt(quantity || 1, 10)));
 
@@ -1081,6 +1130,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
               [guildId, uid, level, reward_id]
             );
+            if (userId) claimedRewardKeys.add(reward_id);
+            else claimedRewardKeys.add(`${uid}_${reward_id}`);
             continue;
           }
 
@@ -1138,6 +1189,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
             [uid, guildId, level]
           );
+          if (userId) claimedRewardKeys.add(reward_id);
+          else claimedRewardKeys.add(`${uid}_${reward_id}`);
 
         } else if (reward_type === 'item' && shop_item_id) {
           if (!item_role_id || item_is_active !== true || item_type === 'pack') {
@@ -1146,6 +1199,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
               [guildId, uid, level, reward_id]
             );
+            if (userId) claimedRewardKeys.add(reward_id);
+            else claimedRewardKeys.add(`${uid}_${reward_id}`);
             continue;
           }
 
@@ -1181,26 +1236,12 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
             [uid, guildId, level]
           );
+          if (userId) claimedRewardKeys.add(reward_id);
+          else claimedRewardKeys.add(`${uid}_${reward_id}`);
         }
       }
 
-      // Also check legacy single columns on battlepass_config for any levels <= reachedLevel
-      const legacyConfigChests = await pool.query(
-        `SELECT bc.level, bc.reward_chest_id,
-                si.id as shop_item_id, si.role_id, lb.name as chest_name, lb.id as valid_box_id
-         FROM battlepass_config bc
-         LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id AND lb.guild_id = bc.guild_id
-         LEFT JOIN shop_items si ON si.loot_box_id = bc.reward_chest_id AND si.guild_id = bc.guild_id
-         WHERE bc.guild_id = $1 AND bc.level <= $2
-           AND bc.reward_chest_id IS NOT NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM battlepass_rewards br
-             WHERE br.guild_id = bc.guild_id AND br.level = bc.level AND br.reward_type = 'chest' AND br.loot_box_id = bc.reward_chest_id
-           )`,
-        [guildId, reachedLevel]
-      );
-
-      for (const row of legacyConfigChests.rows) {
+      for (const row of missingLegacyChests) {
         const { level, reward_chest_id, shop_item_id, role_id, chest_name, valid_box_id } = row;
         if (!valid_box_id) continue;
 
@@ -1241,12 +1282,14 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             guild: guildId,
             detail: `Level ${level} | 1x ${chest_name || 'Chest'}`
           });
-          await pool.query(
-            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [uid, guildId, level]
-          );
         }
+        await pool.query(
+          `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [uid, guildId, level]
+        );
+        if (userId) claimedLegacyLevels.add(level);
+        else claimedLegacyLevels.add(`${uid}_${level}`);
       }
     }
   } catch (err) {

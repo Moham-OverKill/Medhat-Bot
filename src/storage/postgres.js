@@ -923,20 +923,6 @@ async function createTables() {
       WHERE purchase_source IS NULL;
     `).catch(() => {});
 
-    // Self-healing migration: Retroactively reconcile missing rewards for already-claimed levels without duplication
-    try {
-      const { reconcileMissingLevelRewards } = await import('../commands/settings/pass-engine.js');
-      const guildsResult = await pool.query(`
-        SELECT DISTINCT guild_id FROM user_pass_claims
-        UNION
-        SELECT DISTINCT guild_id FROM user_activity WHERE battlepass_xp > 0
-      `);
-      for (const gRow of guildsResult.rows) {
-        await reconcileMissingLevelRewards(gRow.guild_id);
-      }
-    } catch (shErr) {
-      sysError('Self-Healing Level Rewards Reconciliation Failed', shErr);
-    }
 
     // Self-healing migration: Start missing expiration timers for currently active temporary items
     await pool.query(`
