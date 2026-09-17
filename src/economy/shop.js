@@ -1674,11 +1674,13 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
         AND si.guild_id = ui.guild_id
     `, [userId, guildId]).catch(() => {});
 
-    // Proactively self-heal any missing milestone rewards for claimed levels on inventory view
+    // Proactively self-heal any missing milestone rewards for reached levels on inventory view
     try {
       const { reconcileMissingLevelRewards } = await import('../commands/settings/pass-engine.js');
       await reconcileMissingLevelRewards(guildId, userId);
-    } catch {}
+    } catch (err) {
+      sysError('reconcileMissingLevelRewards invocation error', err, { guildId, userId });
+    }
 
     // Self-heal active temporary items missing timers
     await query(`
