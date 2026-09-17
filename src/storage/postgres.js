@@ -873,6 +873,22 @@ async function createTables() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_battlepass_config_guild ON battlepass_config(guild_id, level)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_pass_claims_user ON user_pass_claims(guild_id, user_id)`);
 
+    // Granular User Reward Claim History (Multi-reward anti-double-claim ledger)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_pass_reward_claims (
+        guild_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        level INT NOT NULL,
+        reward_id INT NOT NULL,
+        claimed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id, reward_id)
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_pass_reward_claims_lookup 
+      ON user_pass_reward_claims(guild_id, user_id, level);
+    `);
+
     // Self-healing migration: Fix legacy chest rows in user_inventory
     await pool.query(`
       UPDATE user_inventory ui
@@ -886,6 +902,41 @@ async function createTables() {
         AND si.loot_box_id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER
         AND si.guild_id = ui.guild_id;
     `).catch(() => {});
+
+    // Self-healing migration: Normalize legacy BATTLEPASS tags to LEVEL
+    await pool.query(`
+      UPDATE user_inventory
+      SET source = 'LEVEL',
+          purchase_source = 'level'
+      WHERE UPPER(source) = 'BATTLEPASS' OR LOWER(purchase_source) = 'battlepass';
+    `).catch(() => {});
+
+    // Self-healing migration: Ensure untagged rows safely default to SHOP
+    await pool.query(`
+      UPDATE user_inventory
+      SET source = 'SHOP'
+      WHERE source IS NULL;
+    `).catch(() => {});
+    await pool.query(`
+      UPDATE user_inventory
+      SET purchase_source = 'shop'
+      WHERE purchase_source IS NULL;
+    `).catch(() => {});
+
+    // Self-healing migration: Retroactively reconcile missing rewards for already-claimed levels without duplication
+    try {
+      const { reconcileMissingLevelRewards } = await import('../commands/settings/pass-engine.js');
+      const guildsResult = await pool.query(`
+        SELECT DISTINCT guild_id FROM user_pass_claims
+        UNION
+        SELECT DISTINCT guild_id FROM user_activity WHERE battlepass_xp > 0
+      `);
+      for (const gRow of guildsResult.rows) {
+        await reconcileMissingLevelRewards(gRow.guild_id);
+      }
+    } catch (shErr) {
+      sysError('Self-Healing Level Rewards Reconciliation Failed', shErr);
+    }
 
     // Self-healing migration: Start missing expiration timers for currently active temporary items
     await pool.query(`

@@ -252,8 +252,27 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       `SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
     );
-    const alreadyClaimed = new Set(claimsResult.rows.map(r => r.level_claimed));
-    const toClaim = levelsResult.rows.filter(r => !alreadyClaimed.has(r.level));
+    const alreadyClaimedLevels = new Set(claimsResult.rows.map(r => r.level_claimed));
+
+    // Also detect if any reached/claimed levels have pending multi-rewards not yet in user_pass_reward_claims
+    const pendingMultiRewards = await pool.query(
+      `SELECT br.level
+       FROM battlepass_rewards br
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = br.guild_id AND si.is_active = true
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
+       LEFT JOIN user_pass_reward_claims uprc 
+         ON uprc.guild_id = br.guild_id AND uprc.user_id = $2 AND uprc.reward_id = br.id
+       WHERE br.guild_id = $1 AND br.level <= $3 AND uprc.reward_id IS NULL
+         AND (
+           (br.reward_type = 'item' AND si.id IS NOT NULL AND si.item_type != 'pack' AND si.role_id IS NOT NULL) OR
+           (br.reward_type = 'chest' AND lb.id IS NOT NULL)
+         )
+       GROUP BY br.level`,
+      [guildId, userId, currentLevel]
+    );
+    const levelsWithPendingRewards = new Set(pendingMultiRewards.rows.map(r => r.level));
+
+    const toClaim = levelsResult.rows.filter(r => !alreadyClaimedLevels.has(r.level) || levelsWithPendingRewards.has(r.level));
     if (toClaim.length === 0) return;
 
     const isBulk = toClaim.length > 5;
@@ -379,85 +398,140 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
   try {
     await client2.query('BEGIN');
 
-    // A. Lock the claim row first (anti-double-claim)
+    // A. Check if the level base claim (coins) is already locked
     const lockCheck = await client2.query(
       `SELECT 1 FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed = $3`,
       [guildId, userId, levelRow.level]
     );
-    if (lockCheck.rows.length > 0) {
-      await client2.query('ROLLBACK');
-      return null;
+    const levelAlreadyClaimed = lockCheck.rows.length > 0;
+
+    // B. Insert base claim record if not yet claimed
+    if (!levelAlreadyClaimed) {
+      await client2.query(
+        `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [userId, guildId, levelRow.level]
+      );
     }
 
-    // B. Insert claim record (prevents double-claiming permanently)
-    await client2.query(
-      `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed) VALUES ($1, $2, $3)`,
-      [userId, guildId, levelRow.level]
-    );
+    // C. Award coins ONLY if this level was NOT previously claimed
+    let coins = 0;
+    if (!levelAlreadyClaimed) {
+      coins = parseInt(levelRow.reward_coins || 0, 10);
+      if (coins > 0) {
+        await client2.query(
+          `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
+           VALUES ($1, $2, $3, $3)
+           ON CONFLICT (user_id, guild_id)
+           DO UPDATE SET
+             balance = user_balances.balance + $3,
+             total_earned = user_balances.total_earned + $3,
+             updated_at = NOW()`,
+          [userId, guildId, coins]
+        );
 
-    // C. Award coins
-    const coins = parseInt(levelRow.reward_coins || 0, 10);
-    if (coins > 0) {
-      await client2.query(
-        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
-         VALUES ($1, $2, $3, $3)
-         ON CONFLICT (user_id, guild_id)
-         DO UPDATE SET
-           balance = user_balances.balance + $3,
-           total_earned = user_balances.total_earned + $3,
-           updated_at = NOW()`,
-        [userId, guildId, coins]
-      );
-
-      await client2.query(
-        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
-         SELECT $1, $2, $3, balance, 'battlepass_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
-        [userId, guildId, coins, `Level ${levelRow.level} Reward`, `bp_lvl_${levelRow.level}`]
-      );
+        await client2.query(
+          `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
+           SELECT $1, $2, $3, balance, 'battlepass_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
+          [userId, guildId, coins, `Level ${levelRow.level} Reward`, `bp_lvl_${levelRow.level}`]
+        );
+      }
     }
 
     // D. Fetch and award configured items/chests from battlepass_rewards (Phase 3 multi-reward)
     const rewardsResult = await client2.query(
-      `SELECT br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
-              si.name as item_name, si.role_id as item_role_id,
-              lb.name as chest_name
+      `SELECT br.id as reward_id, br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
+              si.name as item_name, si.role_id as item_role_id, si.is_active as item_is_active, si.item_type,
+              lb.name as chest_name, lb.id as valid_box_id
        FROM battlepass_rewards br
-       LEFT JOIN shop_items si ON br.shop_item_id = si.id
-       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = br.guild_id
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
        WHERE br.guild_id = $1 AND br.level = $2`,
       [guildId, levelRow.level]
     );
 
     const grantedRewards = [];
 
-    // Fallback if no multi-rewards were found: check legacy single columns on battlepass_config
-    if (rewardsResult.rows.length === 0) {
+    // Fallback if no multi-rewards were found: check legacy single columns on battlepass_config (only if level not previously claimed)
+    if (rewardsResult.rows.length === 0 && !levelAlreadyClaimed) {
       if (levelRow.reward_item_id) {
         rewardsResult.rows.push({
+          reward_id: null,
           reward_type: 'item',
           shop_item_id: levelRow.reward_item_id,
           item_name: levelRow.item_name,
           item_role_id: levelRow.item_role_id,
+          item_is_active: true,
           quantity: 1
         });
       }
       if (levelRow.reward_chest_id) {
         rewardsResult.rows.push({
+          reward_id: null,
           reward_type: 'chest',
           loot_box_id: levelRow.reward_chest_id,
           chest_name: levelRow.chest_name,
+          valid_box_id: levelRow.reward_chest_id,
           quantity: 1
         });
       }
     }
 
     for (const reward of rewardsResult.rows) {
-      const qty = Math.max(1, parseInt(reward.quantity || 1, 10));
-      if (reward.reward_type === 'item' && reward.shop_item_id) {
+      // Check if this specific reward has already been claimed
+      if (reward.reward_id) {
+        const rewardClaimCheck = await client2.query(
+          `SELECT 1 FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND reward_id = $3`,
+          [guildId, userId, reward.reward_id]
+        );
+        if (rewardClaimCheck.rows.length > 0) {
+          continue; // Already claimed, skip
+        }
+      }
+
+      const qty = Math.min(100, Math.max(1, parseInt(reward.quantity || 1, 10)));
+      if (reward.reward_type === 'item') {
+        // Guard 1: Item must exist in shop, be active, have a valid role, and not be a pack
+        if (!reward.shop_item_id || !reward.item_role_id || reward.item_is_active !== true || reward.item_type === 'pack') {
+          if (reward.reward_id) {
+            await client2.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+              [guildId, userId, levelRow.level, reward.reward_id]
+            );
+          }
+          continue;
+        }
+
+        // Guard 2: Discord role dangerous permissions & hierarchy check
+        if (client) {
+          const guild = client.guilds?.cache?.get(guildId);
+          if (guild) {
+            const role = guild.roles.cache.get(reward.item_role_id);
+            if (role) {
+              const secErr = validateRoleForAssignment(role, guild);
+              if (secErr) {
+                sysError('Battlepass Level Reward Blocked: Dangerous Role', new Error(secErr), { guild: guildId, user: userId, role: reward.item_role_id });
+                if (reward.reward_id) {
+                  await client2.query(
+                    `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+                     VALUES ($1, $2, $3, $4)
+                     ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+                    [guildId, userId, levelRow.level, reward.reward_id]
+                  );
+                }
+                continue;
+              }
+            }
+          }
+        }
+
         // Stack into existing inventory or create a new row
         const existingItem = await client2.query(
           `SELECT id FROM user_inventory
            WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
+             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
            ORDER BY is_active DESC LIMIT 1`,
           [userId, guildId, reward.shop_item_id]
         );
@@ -478,7 +552,29 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
           name: reward.item_name || 'Item',
           quantity: qty
         });
-      } else if (reward.reward_type === 'chest' && reward.loot_box_id) {
+
+        if (reward.reward_id) {
+          await client2.query(
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+            [guildId, userId, levelRow.level, reward.reward_id]
+          );
+        }
+      } else if (reward.reward_type === 'chest') {
+        // Guard: Loot box must exist in this guild
+        if (!reward.loot_box_id || !reward.valid_box_id) {
+          if (reward.reward_id) {
+            await client2.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+              [guildId, userId, levelRow.level, reward.reward_id]
+            );
+          }
+          continue;
+        }
+
         const shopItemRes = await client2.query(
           `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
           [reward.loot_box_id, guildId]
@@ -504,6 +600,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
           const existingChest = await client2.query(
             `SELECT id FROM user_inventory
              WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3 AND expires_at IS NULL
+               AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
              ORDER BY is_active DESC LIMIT 1`,
             [userId, guildId, chestShopItemId]
           );
@@ -524,8 +621,31 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
             name: reward.chest_name || 'Chest',
             quantity: qty
           });
+
+          if (reward.reward_id) {
+            await client2.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+              [guildId, userId, levelRow.level, reward.reward_id]
+            );
+          }
+        } else {
+          if (reward.reward_id) {
+            await client2.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+              [guildId, userId, levelRow.level, reward.reward_id]
+            );
+          }
         }
       }
+    }
+
+    if (coins === 0 && grantedRewards.length === 0) {
+      await client2.query('COMMIT');
+      return null;
     }
 
     await client2.query('COMMIT');
@@ -755,14 +875,18 @@ export async function getUserPassProgress(guildId, userId) {
     [guildId, userId]
   );
 
-  // Get all configured rewards across levels
+  // Get all active configured rewards across levels
   const rewardsResult = await pool.query(
     `SELECT br.level, br.reward_type, br.quantity,
             si.name as item_name, lb.name as chest_name
      FROM battlepass_rewards br
-     LEFT JOIN shop_items si ON br.shop_item_id = si.id
-     LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+     LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = br.guild_id AND si.is_active = true
+     LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
      WHERE br.guild_id = $1
+       AND (
+         (br.reward_type = 'item' AND si.id IS NOT NULL AND si.item_type != 'pack' AND si.role_id IS NOT NULL) OR
+         (br.reward_type = 'chest' AND lb.id IS NOT NULL)
+       )
      ORDER BY br.level ASC, br.id ASC`,
     [guildId]
   );
@@ -847,4 +971,283 @@ export async function getUserPassProgress(guildId, userId) {
     totalBoostPct,
     config
   };
+}
+
+/**
+ * Reconcile missing milestone rewards (items/chests) for claimed levels.
+ * Can be run for a specific user (on inventory view) or globally for all users.
+ *
+ * @param {string} guildId
+ * @param {string|null} userId
+ */
+export async function reconcileMissingLevelRewards(guildId, userId = null) {
+  if (!guildId) return;
+  const pool = getPool();
+
+  try {
+    const queryParams = [guildId];
+    let userClause = '';
+    if (userId) {
+      queryParams.push(userId);
+      userClause = ` AND upc.user_id = $2`;
+    }
+
+    // 1. Clean up any erroneous locks where user has neither the inventory row nor any transaction record of opening
+    await pool.query(
+      `DELETE FROM user_pass_reward_claims uprc
+       USING battlepass_rewards br
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id
+       WHERE uprc.guild_id = br.guild_id AND uprc.reward_id = br.id
+         AND uprc.guild_id = $1 ${userId ? 'AND uprc.user_id = $2' : ''}
+         AND (
+           (
+             br.reward_type = 'chest'
+             AND NOT EXISTS (
+               SELECT 1 FROM user_inventory ui 
+               LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+               WHERE ui.user_id = uprc.user_id AND ui.guild_id = uprc.guild_id 
+                 AND (UPPER(COALESCE(ui.source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(ui.purchase_source, '')) IN ('level', 'battlepass'))
+                 AND (
+                   si.loot_box_id = br.loot_box_id
+                   OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = br.loot_box_id)
+                 )
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM transactions t
+               WHERE t.user_id = uprc.user_id AND t.guild_id = uprc.guild_id
+                 AND t.type = 'loot_box_reward'
+                 AND (t.reference_id = br.loot_box_id::text OR (lb.name IS NOT NULL AND t.description ILIKE ('%' || lb.name || '%')))
+             )
+           )
+           OR
+           (
+             br.reward_type = 'item'
+             AND NOT EXISTS (
+               SELECT 1 FROM user_inventory ui 
+               WHERE ui.user_id = uprc.user_id AND ui.guild_id = uprc.guild_id 
+                 AND (UPPER(COALESCE(ui.source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(ui.purchase_source, '')) IN ('level', 'battlepass'))
+                 AND ui.shop_item_id = br.shop_item_id
+             )
+           )
+         )`,
+      queryParams
+    ).catch(() => {});
+
+    // 1b. If user has XP in user_activity, sync their level rewards immediately
+    if (userId) {
+      const userActRes = await pool.query(
+        `SELECT battlepass_xp, username FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
+        [guildId, userId]
+      );
+      if (userActRes.rows.length > 0 && parseFloat(userActRes.rows[0].battlepass_xp || 0) > 0) {
+        await syncUserLevelRewards(guildId, userId, userActRes.rows[0].username, null).catch(() => {});
+      }
+    }
+
+    // 2. Query all combinations of claimed levels with configured rewards that lack claim records
+    const unlinkedRewards = await pool.query(
+      `SELECT upc.user_id, upc.guild_id, upc.level_claimed,
+              br.id as reward_id, br.reward_type, br.shop_item_id, br.loot_box_id, COALESCE(br.quantity, 1) as quantity,
+              si.role_id as item_role_id, si.name as item_name, si.is_active as item_is_active, si.item_type,
+              lb.name as chest_name, lb.id as valid_box_id
+       FROM user_pass_claims upc
+       JOIN battlepass_rewards br ON upc.guild_id = br.guild_id AND upc.level_claimed = br.level
+       LEFT JOIN shop_items si ON br.shop_item_id = si.id AND si.guild_id = upc.guild_id
+       LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = upc.guild_id
+       LEFT JOIN user_pass_reward_claims uprc ON uprc.guild_id = upc.guild_id AND uprc.user_id = upc.user_id AND uprc.reward_id = br.id
+       WHERE upc.guild_id = $1 ${userClause}
+         AND uprc.reward_id IS NULL
+       ORDER BY upc.user_id, upc.level_claimed ASC`,
+      queryParams
+    );
+
+    for (const row of unlinkedRewards.rows) {
+      const { user_id, level_claimed, reward_id, reward_type, shop_item_id, loot_box_id, quantity, item_role_id, chest_name, item_name, item_is_active, item_type, valid_box_id } = row;
+      const qty = Math.min(100, Math.max(1, parseInt(quantity || 1, 10)));
+
+      if (reward_type === 'chest' && loot_box_id) {
+        if (!valid_box_id) {
+          await pool.query(
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+            [guildId, user_id, level_claimed, reward_id]
+          );
+          continue;
+        }
+
+        const shopItemRes = await pool.query(
+          `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+          [loot_box_id, guildId]
+        );
+        let chestShopItemId = shopItemRes.rows[0]?.id;
+        let chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${loot_box_id}`;
+
+        if (!chestShopItemId) {
+          const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [loot_box_id, guildId]);
+          if (boxRow.rows.length > 0) {
+            const newShopItem = await pool.query(
+              `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
+               VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
+               RETURNING id, role_id`,
+              [guildId, boxRow.rows[0].name, `LOOT_BOX_${loot_box_id}`, loot_box_id]
+            );
+            chestShopItemId = newShopItem.rows[0]?.id;
+            chestRoleId = newShopItem.rows[0]?.role_id || chestRoleId;
+          }
+        }
+
+        // Check if user already holds a chest specifically from LEVEL / BATTLEPASS
+        const levelInvCheck = await pool.query(
+          `SELECT id FROM user_inventory 
+           WHERE user_id = $1 AND guild_id = $2 
+             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
+             AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
+           LIMIT 1`,
+          [user_id, guildId, chestShopItemId, loot_box_id]
+        );
+
+        // Check if user has ever opened this chest in transaction history
+        const openedCheck = await pool.query(
+          `SELECT id FROM transactions 
+           WHERE user_id = $1 AND guild_id = $2 
+             AND type = 'loot_box_reward' 
+             AND (reference_id = $3::text OR description ILIKE '%Normal Chest%')
+           LIMIT 1`,
+          [user_id, guildId, loot_box_id]
+        );
+
+        if (levelInvCheck.rows.length === 0 && openedCheck.rows.length === 0) {
+          if (chestShopItemId) {
+            await pool.query(
+              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+              [user_id, guildId, chestShopItemId, chestRoleId, qty]
+            );
+            sysLog('Self-Healing: Granted Missing Level Chest', {
+              user: user_id,
+              guild: guildId,
+              detail: `Level ${level_claimed} | ${qty}x ${chest_name || 'Chest'} (Reward ID: ${reward_id})`
+            });
+          }
+        }
+
+        await pool.query(
+          `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+           VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+          [guildId, user_id, level_claimed, reward_id]
+        );
+
+      } else if (reward_type === 'item' && shop_item_id) {
+        if (!item_role_id || item_is_active !== true || item_type === 'pack') {
+          await pool.query(
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+            [guildId, user_id, level_claimed, reward_id]
+          );
+          continue;
+        }
+
+        const levelItemInvCheck = await pool.query(
+          `SELECT id FROM user_inventory 
+           WHERE user_id = $1 AND guild_id = $2 
+             AND shop_item_id = $3
+             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
+           LIMIT 1`,
+          [user_id, guildId, shop_item_id]
+        );
+
+        if (levelItemInvCheck.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+            [user_id, guildId, shop_item_id, item_role_id || null, qty]
+          );
+          sysLog('Self-Healing: Granted Missing Level Item', {
+            user: user_id,
+            guild: guildId,
+            detail: `Level ${level_claimed} | ${qty}x ${item_name || 'Item'} (Reward ID: ${reward_id})`
+          });
+        }
+
+        await pool.query(
+          `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
+           VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+          [guildId, user_id, level_claimed, reward_id]
+        );
+      }
+    }
+
+    // 3. Check legacy battlepass_config for any chest configured on a claimed level not yet in battlepass_rewards
+    const legacyConfigChests = await pool.query(
+      `SELECT upc.user_id, upc.guild_id, upc.level_claimed,
+              bc.reward_chest_id,
+              si.id as shop_item_id, si.role_id, lb.name as chest_name, lb.id as valid_box_id
+       FROM user_pass_claims upc
+       JOIN battlepass_config bc ON upc.guild_id = bc.guild_id AND upc.level_claimed = bc.level
+       LEFT JOIN loot_boxes lb ON bc.reward_chest_id = lb.id AND lb.guild_id = upc.guild_id
+       LEFT JOIN shop_items si ON si.loot_box_id = bc.reward_chest_id AND si.guild_id = upc.guild_id
+       WHERE bc.reward_chest_id IS NOT NULL
+         AND upc.guild_id = $1 ${userClause}
+         AND NOT EXISTS (
+           SELECT 1 FROM battlepass_rewards br
+           WHERE br.guild_id = upc.guild_id AND br.level = upc.level_claimed AND br.reward_type = 'chest' AND br.loot_box_id = bc.reward_chest_id
+         )`,
+      queryParams
+    );
+
+    for (const row of legacyConfigChests.rows) {
+      const { user_id, level_claimed, reward_chest_id, shop_item_id, role_id, chest_name, valid_box_id } = row;
+      if (!valid_box_id) continue;
+
+      let chestShopItemId = shop_item_id;
+      let chestRoleId = role_id || `LOOT_BOX_${reward_chest_id}`;
+
+      if (!chestShopItemId) {
+        const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [reward_chest_id, guildId]);
+        if (boxRow.rows.length > 0) {
+          const newShopItem = await pool.query(
+            `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
+             VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
+             RETURNING id, role_id`,
+            [guildId, boxRow.rows[0].name, `LOOT_BOX_${reward_chest_id}`, reward_chest_id]
+          );
+          chestShopItemId = newShopItem.rows[0]?.id;
+          chestRoleId = newShopItem.rows[0]?.role_id || chestRoleId;
+        }
+      }
+
+      const levelInvCheck = await pool.query(
+        `SELECT id FROM user_inventory 
+         WHERE user_id = $1 AND guild_id = $2 
+           AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
+           AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
+         LIMIT 1`,
+        [user_id, guildId, chestShopItemId, reward_chest_id]
+      );
+
+      const openedCheck = await pool.query(
+        `SELECT id FROM transactions 
+         WHERE user_id = $1 AND guild_id = $2 
+           AND type = 'loot_box_reward' 
+           AND (reference_id = $3::text OR description ILIKE '%Normal Chest%')
+         LIMIT 1`,
+        [user_id, guildId, reward_chest_id]
+      );
+
+      if (levelInvCheck.rows.length === 0 && openedCheck.rows.length === 0 && chestShopItemId) {
+        await pool.query(
+          `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+           VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
+          [user_id, guildId, chestShopItemId, chestRoleId]
+        );
+        sysLog('Self-Healing: Granted Legacy Config Level Chest', {
+          user: user_id,
+          guild: guildId,
+          detail: `Level ${level_claimed} | 1x ${chest_name || 'Chest'}`
+        });
+      }
+    }
+  } catch (err) {
+    sysError('Reconcile Missing Level Rewards Failed', err, { guild: guildId, user: userId });
+  }
 }
