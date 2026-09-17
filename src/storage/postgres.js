@@ -888,6 +888,10 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_user_pass_reward_claims_lookup 
       ON user_pass_reward_claims(guild_id, user_id, level);
     `);
+    await pool.query(`
+      ALTER TABLE user_pass_reward_claims 
+      ADD COLUMN IF NOT EXISTS quantity_claimed INT NOT NULL DEFAULT 1;
+    `);
 
     // Self-healing migration: Fix legacy chest rows in user_inventory
     await pool.query(`

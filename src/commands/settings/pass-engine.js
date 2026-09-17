@@ -262,7 +262,8 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
        LEFT JOIN loot_boxes lb ON br.loot_box_id = lb.id AND lb.guild_id = br.guild_id
        LEFT JOIN user_pass_reward_claims uprc 
          ON uprc.guild_id = br.guild_id AND uprc.user_id = $2 AND uprc.reward_id = br.id
-       WHERE br.guild_id = $1 AND br.level <= $3 AND uprc.reward_id IS NULL
+        WHERE br.guild_id = $1 AND br.level <= $3 
+          AND (uprc.reward_id IS NULL OR COALESCE(uprc.quantity_claimed, 1) < COALESCE(br.quantity, 1))
          AND (
            (br.reward_type = 'item' AND si.id IS NOT NULL AND si.item_type != 'pack' AND si.role_id IS NOT NULL) OR
            (br.reward_type = 'chest' AND lb.id IS NOT NULL)
@@ -478,27 +479,32 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
     }
 
     for (const reward of rewardsResult.rows) {
-      // Check if this specific reward has already been claimed
+      let qty = Math.min(100, Math.max(1, parseInt(reward.quantity || 1, 10)));
+      // Check if this specific reward has already been claimed (including partial quantity checks)
       if (reward.reward_id) {
         const rewardClaimCheck = await client2.query(
-          `SELECT 1 FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND reward_id = $3`,
+          `SELECT quantity_claimed FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND reward_id = $3`,
           [guildId, userId, reward.reward_id]
         );
         if (rewardClaimCheck.rows.length > 0) {
-          continue; // Already claimed, skip
+          const claimedQty = parseInt(rewardClaimCheck.rows[0]?.quantity_claimed || 1, 10);
+          if (claimedQty >= qty) {
+            continue; // Already fully claimed, skip
+          }
+          qty = qty - claimedQty;
         }
       }
 
-      const qty = Math.min(100, Math.max(1, parseInt(reward.quantity || 1, 10)));
       if (reward.reward_type === 'item') {
         // Guard 1: Item must exist in shop, be active, have a valid role, and not be a pack
         if (!reward.shop_item_id || !reward.item_role_id || reward.item_is_active !== true || reward.item_type === 'pack') {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-              [guildId, userId, levelRow.level, reward.reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, userId, levelRow.level, reward.reward_id, qty]
             );
           }
           continue;
@@ -515,10 +521,11 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
                 sysError('Battlepass Level Reward Blocked: Dangerous Role', new Error(secErr), { guild: guildId, user: userId, role: reward.item_role_id });
                 if (reward.reward_id) {
                   await client2.query(
-                    `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-                     VALUES ($1, $2, $3, $4)
-                     ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-                    [guildId, userId, levelRow.level, reward.reward_id]
+                    `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+                     VALUES ($1, $2, $3, $4, $5)
+                     ON CONFLICT (guild_id, user_id, reward_id)
+                     DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+                    [guildId, userId, levelRow.level, reward.reward_id, qty]
                   );
                 }
                 continue;
@@ -555,10 +562,11 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
         if (reward.reward_id) {
           await client2.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-            [guildId, userId, levelRow.level, reward.reward_id]
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (guild_id, user_id, reward_id)
+             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+            [guildId, userId, levelRow.level, reward.reward_id, qty]
           );
         }
       } else if (reward.reward_type === 'chest') {
@@ -566,10 +574,11 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
         if (!reward.loot_box_id || !reward.valid_box_id) {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-              [guildId, userId, levelRow.level, reward.reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, userId, levelRow.level, reward.reward_id, qty]
             );
           }
           continue;
@@ -624,19 +633,21 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-              [guildId, userId, levelRow.level, reward.reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, userId, levelRow.level, reward.reward_id, qty]
             );
           }
         } else {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
-              [guildId, userId, levelRow.level, reward.reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, userId, levelRow.level, reward.reward_id, qty]
             );
           }
         }
@@ -1066,14 +1077,14 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
     if (targetUsers.length === 0) return;
 
     // 3. Fetch existing claims from user_pass_reward_claims to perform in-memory diffing
-    let claimedRewardKeys;
+    let claimedRewardMap;
     let claimedLegacyLevels;
     if (userId) {
       const claimsRes = await pool.query(
-        `SELECT reward_id FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2`,
+        `SELECT reward_id, COALESCE(quantity_claimed, 1) as quantity_claimed FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2`,
         [guildId, userId]
       );
-      claimedRewardKeys = new Set(claimsRes.rows.map(r => r.reward_id));
+      claimedRewardMap = new Map(claimsRes.rows.map(r => [r.reward_id, parseInt(r.quantity_claimed || 1, 10)]));
 
       const legacyClaimsRes = await pool.query(
         `SELECT level_claimed FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2`,
@@ -1082,10 +1093,10 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       claimedLegacyLevels = new Set(legacyClaimsRes.rows.map(r => r.level_claimed));
     } else {
       const claimsRes = await pool.query(
-        `SELECT user_id, reward_id FROM user_pass_reward_claims WHERE guild_id = $1`,
+        `SELECT user_id, reward_id, COALESCE(quantity_claimed, 1) as quantity_claimed FROM user_pass_reward_claims WHERE guild_id = $1`,
         [guildId]
       );
-      claimedRewardKeys = new Set(claimsRes.rows.map(r => `${r.user_id}_${r.reward_id}`));
+      claimedRewardMap = new Map(claimsRes.rows.map(r => [`${r.user_id}_${r.reward_id}`, parseInt(r.quantity_claimed || 1, 10)]));
 
       const legacyClaimsRes = await pool.query(
         `SELECT user_id, level_claimed FROM user_pass_claims WHERE guild_id = $1`,
@@ -1103,21 +1114,25 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       const reachedLevel = Math.max(xpLevel, maxClaimLevel);
       if (reachedLevel <= 0) continue;
 
-      const missingRewards = allRewardsRes.rows.filter(br => {
-        if (br.level > reachedLevel) return false;
+      const missingRewards = [];
+      for (const br of allRewardsRes.rows) {
+        if (br.level > reachedLevel) continue;
         const key = userId ? br.reward_id : `${uid}_${br.reward_id}`;
-        return !claimedRewardKeys.has(key);
-      });
+        const claimedQty = claimedRewardMap.get(key) || 0;
+        const targetQty = Math.min(100, Math.max(1, parseInt(br.quantity || 1, 10)));
+        if (claimedQty < targetQty) {
+          missingRewards.push({
+            ...br,
+            quantity: targetQty - claimedQty
+          });
+        }
+      }
 
       const missingLegacyChests = legacyConfigChests.rows.filter(bc => {
         if (bc.level > reachedLevel) return false;
         const key = userId ? bc.level : `${uid}_${bc.level}`;
         return !claimedLegacyLevels.has(key);
       });
-
-      if (missingRewards.length === 0 && missingLegacyChests.length === 0) {
-        continue;
-      }
 
       for (const row of missingRewards) {
         const { reward_id, level, reward_type, shop_item_id, loot_box_id, quantity, item_role_id, chest_name, item_name, item_is_active, item_type, valid_box_id } = row;
@@ -1126,12 +1141,14 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
         if (reward_type === 'chest' && loot_box_id) {
           if (!valid_box_id) {
             await pool.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-              [guildId, uid, level, reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, uid, level, reward_id, qty]
             );
-            if (userId) claimedRewardKeys.add(reward_id);
-            else claimedRewardKeys.add(`${uid}_${reward_id}`);
+            if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
+            else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
             continue;
           }
 
@@ -1158,15 +1175,25 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
 
           // Check if user already holds a chest specifically from LEVEL / BATTLEPASS
           const levelInvCheck = await pool.query(
-            `SELECT id FROM user_inventory 
+            `SELECT id, quantity FROM user_inventory 
              WHERE user_id = $1 AND guild_id = $2 
                AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
                AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
-             LIMIT 1`,
+             ORDER BY id ASC LIMIT 1`,
             [uid, guildId, chestShopItemId, loot_box_id]
           );
 
-          if (levelInvCheck.rows.length === 0 && chestShopItemId) {
+          if (levelInvCheck.rows.length > 0) {
+            await pool.query(
+              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+              [qty, levelInvCheck.rows[0].id]
+            );
+            sysLog('Self-Healing: Stacked Missing Level Chest', {
+              user: uid,
+              guild: guildId,
+              detail: `Level ${level} | +${qty}x ${chest_name || 'Chest'} (Total: ${parseInt(levelInvCheck.rows[0].quantity || 1, 10) + qty})`
+            });
+          } else if (chestShopItemId) {
             await pool.query(
               `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
                VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
@@ -1180,40 +1207,54 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
           }
 
           await pool.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-            [guildId, uid, level, reward_id]
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (guild_id, user_id, reward_id)
+             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+            [guildId, uid, level, reward_id, qty]
           );
           await pool.query(
             `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
             [uid, guildId, level]
           );
-          if (userId) claimedRewardKeys.add(reward_id);
-          else claimedRewardKeys.add(`${uid}_${reward_id}`);
+          if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
+          else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
 
         } else if (reward_type === 'item' && shop_item_id) {
           if (!item_role_id || item_is_active !== true || item_type === 'pack') {
             await pool.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-               VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-              [guildId, uid, level, reward_id]
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+              [guildId, uid, level, reward_id, qty]
             );
-            if (userId) claimedRewardKeys.add(reward_id);
-            else claimedRewardKeys.add(`${uid}_${reward_id}`);
+            if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
+            else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
             continue;
           }
 
           const levelItemInvCheck = await pool.query(
-            `SELECT id FROM user_inventory 
+            `SELECT id, quantity FROM user_inventory 
              WHERE user_id = $1 AND guild_id = $2 
                AND shop_item_id = $3
                AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-             LIMIT 1`,
+             ORDER BY id ASC LIMIT 1`,
             [uid, guildId, shop_item_id]
           );
 
-          if (levelItemInvCheck.rows.length === 0) {
+          if (levelItemInvCheck.rows.length > 0) {
+            await pool.query(
+              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+              [qty, levelItemInvCheck.rows[0].id]
+            );
+            sysLog('Self-Healing: Stacked Missing Level Item', {
+              user: uid,
+              guild: guildId,
+              detail: `Level ${level} | +${qty}x ${item_name || 'Item'}`
+            });
+          } else {
             await pool.query(
               `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
                VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
@@ -1227,17 +1268,19 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
           }
 
           await pool.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id)
-             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-            [guildId, uid, level, reward_id]
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (guild_id, user_id, reward_id)
+             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
+            [guildId, uid, level, reward_id, qty]
           );
           await pool.query(
             `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
             [uid, guildId, level]
           );
-          if (userId) claimedRewardKeys.add(reward_id);
-          else claimedRewardKeys.add(`${uid}_${reward_id}`);
+          if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
+          else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
         }
       }
 
@@ -1263,15 +1306,25 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
         }
 
         const levelInvCheck = await pool.query(
-          `SELECT id FROM user_inventory 
+          `SELECT id, quantity FROM user_inventory 
            WHERE user_id = $1 AND guild_id = $2 
              AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
              AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
-           LIMIT 1`,
+           ORDER BY id ASC LIMIT 1`,
           [uid, guildId, chestShopItemId, reward_chest_id]
         );
 
-        if (levelInvCheck.rows.length === 0 && chestShopItemId) {
+        if (levelInvCheck.rows.length > 0) {
+          await pool.query(
+            `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $2`,
+            [levelInvCheck.rows[0].id]
+          );
+          sysLog('Self-Healing: Stacked Legacy Config Level Chest', {
+            user: uid,
+            guild: guildId,
+            detail: `Level ${level} | +1x ${chest_name || 'Chest'}`
+          });
+        } else if (chestShopItemId) {
           await pool.query(
             `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
              VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
@@ -1290,6 +1343,96 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
         );
         if (userId) claimedLegacyLevels.add(level);
         else claimedLegacyLevels.add(`${uid}_${level}`);
+      }
+
+      // 5. Chest Deficit Reconciliation: Audit total held + opened chests against expected rewards
+      const configuredChestsMap = new Map();
+      for (const br of allRewardsRes.rows) {
+        if (br.level > reachedLevel || br.reward_type !== 'chest' || !br.loot_box_id || !br.valid_box_id) continue;
+        const boxId = br.loot_box_id;
+        const qty = Math.min(100, Math.max(1, parseInt(br.quantity || 1, 10)));
+        if (!configuredChestsMap.has(boxId)) {
+          configuredChestsMap.set(boxId, {
+            boxId,
+            expectedQty: 0,
+            name: br.chest_name || 'Chest',
+            shopItemId: null,
+            roleId: null
+          });
+        }
+        configuredChestsMap.get(boxId).expectedQty += qty;
+      }
+
+      for (const bc of legacyConfigChests.rows) {
+        if (bc.level > reachedLevel || !bc.reward_chest_id || !bc.valid_box_id) continue;
+        const boxId = bc.reward_chest_id;
+        if (!configuredChestsMap.has(boxId)) {
+          configuredChestsMap.set(boxId, {
+            boxId,
+            expectedQty: 0,
+            name: bc.chest_name || 'Chest',
+            shopItemId: bc.shop_item_id,
+            roleId: bc.role_id || `LOOT_BOX_${boxId}`
+          });
+        }
+        configuredChestsMap.get(boxId).expectedQty += 1;
+      }
+
+      for (const entry of configuredChestsMap.values()) {
+        if (!entry.shopItemId) {
+          const shopItemRes = await pool.query(
+            `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+            [entry.boxId, guildId]
+          );
+          entry.shopItemId = shopItemRes.rows[0]?.id;
+          entry.roleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${entry.boxId}`;
+        }
+        if (!entry.shopItemId) continue;
+
+        // Held quantity in inventory with source LEVEL/BATTLEPASS
+        const heldRes = await pool.query(
+          `SELECT id, COALESCE(quantity, 1) as quantity FROM user_inventory
+           WHERE user_id = $1 AND guild_id = $2
+             AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
+             AND (shop_item_id = $3 OR (role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(role_id FROM 7), '')::INTEGER = $4))
+           ORDER BY id ASC`,
+          [uid, guildId, entry.shopItemId, entry.boxId]
+        );
+        const heldQty = heldRes.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
+
+        // Count opened chests
+        const openedRes = await pool.query(
+          `SELECT COUNT(*)::INTEGER as count FROM transactions
+           WHERE user_id = $1 AND guild_id = $2
+             AND type = 'loot_box_reward'
+             AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
+          [uid, guildId, entry.boxId, entry.name]
+        );
+        const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+
+        const accountedQty = heldQty + openedQty;
+        const deficit = Math.max(0, entry.expectedQty - accountedQty);
+
+        if (deficit > 0) {
+          if (heldRes.rows.length > 0) {
+            await pool.query(
+              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+              [deficit, heldRes.rows[0].id]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+              [uid, guildId, entry.shopItemId, entry.roleId, deficit]
+            );
+          }
+
+          sysLog('Self-Healing: Reconciled Level Chest Deficit', {
+            user: uid,
+            guild: guildId,
+            detail: `Added ${deficit}x ${entry.name} (Expected: ${entry.expectedQty}, Held: ${heldQty}, Opened: ${openedQty})`
+          });
+        }
       }
     }
   } catch (err) {
