@@ -367,18 +367,22 @@ client.once(Events.ClientReady, async () => {
       }
     }, 8 * 60 * 60 * 1000); // 8 hours in milliseconds
 
-    // Reconcile inventory and notifications for users who left while the bot was offline.
+    // Reconcile inventory, notifications, and pass level rewards in the background.
     // Runs in the background — one guild at a time with a short delay to avoid rate limits.
     (async () => {
       try {
         const { reconcileGuildInventory } = await import('./economy/shop.js');
         const { reconcileGuildNotifications } = await import('./storage/notifications.js');
+        const { reconcileMissingLevelRewards } = await import('./commands/settings/pass-engine.js');
         for (const guild of client.guilds.cache.values()) {
           await reconcileGuildInventory(guild).catch(err =>
             sysError('Inventory Reconciliation Error', err, { guild: guild.id })
           );
           await reconcileGuildNotifications(guild).catch(err =>
             sysError('Notification Reconciliation Error', err, { guild: guild.id })
+          );
+          await reconcileMissingLevelRewards(guild.id).catch(err =>
+            sysError('Level Rewards Reconciliation Error', err, { guild: guild.id })
           );
           await new Promise(r => setTimeout(r, 2000)); // 2s between guilds
         }
