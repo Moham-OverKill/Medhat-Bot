@@ -1850,25 +1850,24 @@ export async function handleInventoryAction(interaction) {
 
       let currentItem = currentItemRes.rows[0];
 
-      // If the clicked row is inactive, check if the user has an active running copy of this shop_item_id.
-      // If so, the user clicked "Deactivate" on the consolidated card -> redirect invId to the active copy.
+      // If the clicked row is inactive, check if the user has an active or running timer copy of this shop_item_id.
+      // If so, redirect invId to that running copy so actions act upon the timer copy rather than the reserve copy.
       if (!currentItem.is_active) {
-        const activeRunningCopy = await query(
+        const runningCopy = await query(
           `SELECT ui.id, ui.is_active, ui.shop_item_id, ui.expires_at, si.name
            FROM user_inventory ui
            JOIN shop_items si ON ui.shop_item_id = si.id
            WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
-             AND ui.id != $4
-             AND ui.is_active = true
              AND ui.expires_at IS NOT NULL
              AND ui.expires_at > NOW()
+           ORDER BY ui.is_active DESC, ui.expires_at DESC
            LIMIT 1`,
-          [interaction.user.id, interaction.guildId, currentItem.shop_item_id, invId]
+          [interaction.user.id, interaction.guildId, currentItem.shop_item_id]
         );
 
-        if (activeRunningCopy.rows.length > 0) {
-          invId = activeRunningCopy.rows[0].id;
-          currentItem = activeRunningCopy.rows[0];
+        if (runningCopy.rows.length > 0) {
+          invId = runningCopy.rows[0].id;
+          currentItem = runningCopy.rows[0];
         }
       }
 
@@ -1876,25 +1875,27 @@ export async function handleInventoryAction(interaction) {
 
       // Anti-stacking and category conflict checks ONLY apply when ACTIVATING (isCurrentlyActive === false)
       if (!isCurrentlyActive) {
-        // 1. Anti-Stacking Check: Block activating multiple copies of the same temporary item
-        const sameItemRunning = await query(
-          `SELECT s.name FROM user_inventory i
-           JOIN shop_items s ON i.shop_item_id = s.id
-           WHERE i.user_id = $1 AND i.guild_id = $2
-             AND i.shop_item_id = $3
-             AND i.id != $4
-             AND i.expires_at IS NOT NULL
-             AND i.expires_at > NOW()
-           LIMIT 1`,
-          [interaction.user.id, interaction.guildId, currentItem.shop_item_id, invId]
-        );
+        // 1. Anti-Stacking Check: Only block if activating an UNACTIVATED item (!currentItem.expires_at) while another copy is already counting down
+        if (!currentItem.expires_at) {
+          const sameItemRunning = await query(
+            `SELECT s.name FROM user_inventory i
+             JOIN shop_items s ON i.shop_item_id = s.id
+             WHERE i.user_id = $1 AND i.guild_id = $2
+               AND i.shop_item_id = $3
+               AND i.id != $4
+               AND i.expires_at IS NOT NULL
+               AND i.expires_at > NOW()
+             LIMIT 1`,
+            [interaction.user.id, interaction.guildId, currentItem.shop_item_id, invId]
+          );
 
-        if (sameItemRunning.rows.length > 0) {
-          if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-          return interaction.followUp({
-            content: `❌ You already have an active copy of **${sameItemRunning.rows[0].name}** running. You cannot activate another copy until the current timer expires.`,
-            flags: MessageFlags.Ephemeral
-          });
+          if (sameItemRunning.rows.length > 0) {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            return interaction.followUp({
+              content: `❌ You already have an active copy of **${sameItemRunning.rows[0].name}** running. You cannot activate another copy until the current timer expires.`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
         }
 
         // 2. Check for category timer conflict (different item in Single/Swap category)
