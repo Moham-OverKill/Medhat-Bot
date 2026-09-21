@@ -1740,9 +1740,17 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
           invItem.is_active = false;
         } else if (!shouldHaveRole && hasRole) {
           // User has role but DB says unequipped (likely admin granted)
-          // If they own it, just mark it as Equipped (Auto-Sync)
-          await query(`UPDATE user_inventory SET is_active = true WHERE id = $1`, [invItem.id]);
-          invItem.is_active = true;
+          // NEVER auto-equip unactivated temporary items (expires_at IS NULL).
+          // Starting a timer on an unactivated copy must only be triggered explicitly by user activation.
+          const isTempItem = Boolean(
+            invItem.expires_at ||
+            (invItem.duration_seconds && parseInt(invItem.duration_seconds, 10) > 0) ||
+            (invItem.duration_hours && parseInt(invItem.duration_hours, 10) > 0)
+          );
+          if (!isTempItem || invItem.expires_at) {
+            await query(`UPDATE user_inventory SET is_active = true WHERE id = $1`, [invItem.id]);
+            invItem.is_active = true;
+          }
         }
       }
     }
@@ -1750,11 +1758,55 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
     await runDependencySweep(userId, guildId, freshMember);
 
+    // Auto-heal / deduplicate any accidental duplicate active running timer rows for temporary items
+    const activeRunningMap = new Map();
+    const duplicateRunningRowsToDelete = [];
+
+    for (const row of inventory.rows) {
+      if (!row.shop_item_id || !row.expires_at) continue;
+      const isRunning = new Date(row.expires_at) > new Date();
+      if (!isRunning) continue;
+
+      const key = `${row.shop_item_id}`;
+      if (!activeRunningMap.has(key)) {
+        activeRunningMap.set(key, row);
+      } else {
+        const primaryRow = activeRunningMap.get(key);
+        primaryRow.quantity = (parseInt(primaryRow.quantity, 10) || 1) + (parseInt(row.quantity, 10) || 1);
+        // Keep the latest expiration timestamp
+        if (new Date(row.expires_at) > new Date(primaryRow.expires_at)) {
+          primaryRow.expires_at = row.expires_at;
+        }
+        if (!primaryRow.is_active && row.is_active) {
+          primaryRow.is_active = true;
+        }
+        duplicateRunningRowsToDelete.push(row.id);
+      }
+    }
+
+    if (duplicateRunningRowsToDelete.length > 0) {
+      for (const delId of duplicateRunningRowsToDelete) {
+        await query(`DELETE FROM user_inventory WHERE id = $1`, [delId]);
+      }
+      for (const primaryRow of activeRunningMap.values()) {
+        await query(
+          `UPDATE user_inventory SET quantity = $1, expires_at = $2, is_active = $3 WHERE id = $4`,
+          [primaryRow.quantity, primaryRow.expires_at, primaryRow.is_active, primaryRow.id]
+        );
+      }
+      sysLog('Self-Healing: Deduplicated Running Timers', {
+        user: userId,
+        guild: guildId,
+        detail: `Purged ${duplicateRunningRowsToDelete.length} duplicate running timer row(s)`
+      });
+    }
+
     // Auto-consolidate any duplicate permanent/unactivated item rows for the user in DB
     const permanentItemMap = new Map();
     const rowsToDelete = [];
 
     for (const row of inventory.rows) {
+      if (duplicateRunningRowsToDelete.includes(row.id)) continue;
       if (row.expires_at !== null || !row.shop_item_id) {
         continue;
       }
@@ -1785,7 +1837,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     const consolidatedRows = [];
 
     for (const row of inventory.rows) {
-      if (rowsToDelete.includes(row.id)) continue;
+      if (rowsToDelete.includes(row.id) || duplicateRunningRowsToDelete.includes(row.id)) continue;
 
       if (!row.shop_item_id) {
         consolidatedRows.push({
@@ -2101,21 +2153,25 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     if (newStatus && isTemp) {
       // Trying to ACTIVATE a temporary item
       // ANTI-STACKING CHECK: User cannot activate multiple copies of the same temporary item concurrently
-      const activeRunningRes = await client.query(
-        `SELECT id, expires_at FROM user_inventory
-         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
-           AND id != $4
-           AND expires_at IS NOT NULL
-           AND expires_at > NOW()`,
-        [userId, guildId, item.shop_item_id, inventoryId]
-      );
+      // ONLY enforce when activating an UNACTIVATED item (!item.expires_at).
+      // If item.expires_at is already set and > NOW(), this is a RE-ACTIVATION of an existing running timer, not a new copy.
+      if (!item.expires_at) {
+        const activeRunningRes = await client.query(
+          `SELECT id, expires_at FROM user_inventory
+           WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+             AND id != $4
+             AND expires_at IS NOT NULL
+             AND expires_at > NOW()`,
+          [userId, guildId, item.shop_item_id, inventoryId]
+        );
 
-      if (activeRunningRes.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return {
-          success: false,
-          error: `You already have an active copy of **${item.name}** running.`
-        };
+        if (activeRunningRes.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return {
+            success: false,
+            error: `You already have an active copy of **${item.name}** running.`
+          };
+        }
       }
 
       if (!item.expires_at) {
