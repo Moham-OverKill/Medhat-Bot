@@ -1594,11 +1594,16 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             const gName = getUserDisplayName(giverMember) || giverId;
             const rName = getUserDisplayName(receiverMember) || receiverId;
 
-            await client.query(
+            const deductRes = await client.query(
                 `UPDATE user_balances SET balance = balance - $1, total_spent = total_spent + $1, updated_at = NOW()
-                 WHERE user_id = $2 AND guild_id = $3`,
+                 WHERE user_id = $2 AND guild_id = $3 AND balance >= $1
+                 RETURNING balance`,
                 [finalSenderDeduction, giverId, trade.guild_id]
             );
+
+            if (deductRes.rowCount === 0) {
+                throw new Error('Giver balance changed during processing (insufficient funds).');
+            }
 
             if (phase === 1 && finalFee > 0) {
                 // 1. Insert Trade Tax FIRST (lower ID -> appears below trade line in DESC history)

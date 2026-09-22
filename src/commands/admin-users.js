@@ -95,13 +95,17 @@ export async function showUserDashboard(interaction, targetUserId) {
             sysLog('Infrastructure Audit', { guild: guildId, detail: `Creating first-time balance entry for ${targetUserId}` });
             // Create entry if missing
             userResult = await pool.query(
-                'INSERT INTO user_balances (guild_id, user_id, balance, daily_streak) VALUES ($1, $2, 0, 0) RETURNING balance, daily_streak',
-                [guildId, targetUserId]
+                `INSERT INTO user_balances (user_id, guild_id, balance, daily_streak)
+                 VALUES ($1, $2, 0, 0)
+                 ON CONFLICT (user_id, guild_id)
+                 DO UPDATE SET updated_at = NOW()
+                 RETURNING balance, daily_streak`,
+                [targetUserId, guildId]
             );
         }
 
-        const balance = parseInt(userResult.rows[0].balance);
-        const streak = parseInt(userResult.rows[0].daily_streak) || 0;
+        const balance = parseInt(userResult.rows[0]?.balance || 0, 10);
+        const streak = parseInt(userResult.rows[0]?.daily_streak || 0, 10);
 
         // Fetch user level from user_activity
         let userLevel = 0;
@@ -213,10 +217,10 @@ export async function handleBalanceAction(interaction, targetUserId) {
 export async function handleBalanceModal(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const targetUserId = interaction.customId.split('_').pop();
-    const newBalance = parseInt(interaction.fields.getTextInputValue('new_balance'));
+    const newBalance = parseInt(interaction.fields.getTextInputValue('new_balance'), 10);
 
-    if (isNaN(newBalance) || newBalance < 0) {
-        return interaction.followUp({ content: '❌ Invalid balance. Please enter a positive number.', flags: MessageFlags.Ephemeral });
+    if (!Number.isSafeInteger(newBalance) || newBalance < 0) {
+        return interaction.followUp({ content: '❌ Invalid balance. Please enter a valid non-negative integer.', flags: MessageFlags.Ephemeral });
     }
 
     const guildId = interaction.guildId;
@@ -227,22 +231,22 @@ export async function handleBalanceModal(interaction) {
 
         // Get old balance for history logging
         const oldRes = await pool.query('SELECT balance FROM user_balances WHERE guild_id = $1 AND user_id = $2', [guildId, targetUserId]);
-        const oldBalance = oldRes.rowCount > 0 ? parseInt(oldRes.rows[0].balance) : 0;
+        const oldBalance = oldRes.rowCount > 0 ? parseInt(oldRes.rows[0].balance, 10) : 0;
         const delta = newBalance - oldBalance;
 
         // Update balance
         await pool.query(
-            `INSERT INTO user_balances (guild_id, user_id, balance) VALUES ($1, $2, $3)
-             ON CONFLICT (guild_id, user_id) DO UPDATE SET balance = $3, updated_at = NOW()`,
-            [guildId, targetUserId, newBalance]
+            `INSERT INTO user_balances (user_id, guild_id, balance) VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, guild_id) DO UPDATE SET balance = $3, updated_at = NOW()`,
+            [targetUserId, guildId, newBalance]
         );
 
         // Log transaction (DB)
         const adminName = getUserDisplayName(interaction.member);
         await pool.query(
-            `INSERT INTO transactions (guild_id, user_id, amount, balance_after, type, description)
+            `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
              VALUES ($1, $2, $3, $4, 'admin_adjust', $5)`,
-            [guildId, targetUserId, delta, newBalance, `${adminName} adjusted balance to ${newBalance}`]
+            [targetUserId, guildId, delta, newBalance, `${adminName} adjusted balance to ${newBalance}`]
         );
 
         // Discord Log
@@ -343,9 +347,9 @@ export async function handleStreakModal(interaction) {
 
         // Upsert database entry
         await pool.query(
-            `INSERT INTO user_balances (guild_id, user_id, daily_streak, last_daily, balance) VALUES ($1, $2, $3, $4, 0)
-             ON CONFLICT (guild_id, user_id) DO UPDATE SET daily_streak = $3, last_daily = $4, updated_at = NOW()`,
-            [guildId, targetUserId, newStreak, targetLastDaily]
+            `INSERT INTO user_balances (user_id, guild_id, daily_streak, last_daily, balance) VALUES ($1, $2, $3, $4, 0)
+             ON CONFLICT (user_id, guild_id) DO UPDATE SET daily_streak = $3, last_daily = $4, updated_at = NOW()`,
+            [targetUserId, guildId, newStreak, targetLastDaily]
         );
 
         // Discord Log
@@ -433,11 +437,11 @@ export async function handleLevelModal(interaction) {
         const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
 
         await pool.query(
-            `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+            `INSERT INTO user_activity (user_id, guild_id, username, battlepass_xp)
              VALUES ($1, $2, $3, $4)
-             ON CONFLICT (guild_id, user_id)
+             ON CONFLICT (user_id, guild_id)
              DO UPDATE SET battlepass_xp = $4`,
-            [guildId, targetUserId, targetMember?.user?.username || 'User', targetXp]
+            [targetUserId, guildId, targetMember?.user?.username || 'User', targetXp]
         );
 
         if (newLevel > 0) {

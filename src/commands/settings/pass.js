@@ -1399,11 +1399,11 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
 
       // 1. Upsert user XP and username (Level and XP are now set)
       await pool.query(
-        `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+        `INSERT INTO user_activity (user_id, guild_id, username, battlepass_xp)
          VALUES ($1, $2, $3, $4)
-         ON CONFLICT (guild_id, user_id)
+         ON CONFLICT (user_id, guild_id)
          DO UPDATE SET battlepass_xp = $4, username = $3`,
-        [guildId, userId, username, totalXp]
+        [userId, guildId, username, totalXp]
       );
 
       // 2. Role alignment: strip conflicting level roles, ensure lowest-level role is active
