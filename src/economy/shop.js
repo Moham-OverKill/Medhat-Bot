@@ -842,14 +842,21 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     const item = itemResult.rows[0];
 
     // Define effectivePrice (Check for admin override from button first)
-    let effectivePrice = (overridePrice !== null && overridePrice !== undefined) ? Number(overridePrice) : item.price;
+    const rawPrice = (overridePrice !== null && overridePrice !== undefined) ? overridePrice : item.price;
 
     // ========== NULL-PRICE GUARD ==========
     // Use effectivePrice for the safety check. Hard-block if no global or button price exists.
-    if (effectivePrice === null || effectivePrice === undefined) {
+    if (rawPrice === null || rawPrice === undefined) {
       await client.query('ROLLBACK');
       sysLog('Purchase Blocked', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Price not set` });
       return { success: false, error: 'This item does not have a price set yet. Contact an admin.' };
+    }
+
+    let effectivePrice = parseInt(rawPrice, 10);
+    if (isNaN(effectivePrice) || effectivePrice < 0) {
+      await client.query('ROLLBACK');
+      sysLog('Purchase Blocked', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Invalid price (${rawPrice})` });
+      return { success: false, error: 'This item has an invalid price configured. Contact an admin.' };
     }
 
     // ========== PREREQUISITE CHECK (Informational Only) ==========
@@ -1022,28 +1029,32 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // ========== STEP 3: Verify User Balance (Lock Wallet) ==========
     // Total cost is effectivePrice * qty for unlocked bulk purchases.
     // Locked items always use qty=1 (enforced above).
-    const totalCost = isLocked ? effectivePrice : effectivePrice * qty;
+    const safeEffectivePrice = Math.max(0, parseInt(effectivePrice, 10) || 0);
+    const safeQty = isLocked ? 1 : Math.max(1, parseInt(qty, 10) || 1);
+    const totalCost = safeEffectivePrice * safeQty;
 
     let currentBalance = 0;
     if (!skipBalanceDeduction) {
-      const balanceResult = await client.query(
+      let balanceResult = await client.query(
         'SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE',
         [userId, guildId]
       );
 
       if (balanceResult.rows.length === 0) {
-        await client.query(
-          'INSERT INTO user_balances (user_id, guild_id, balance) VALUES ($1, $2, 0)',
+        balanceResult = await client.query(
+          `INSERT INTO user_balances (user_id, guild_id, balance) VALUES ($1, $2, 0)
+           ON CONFLICT (user_id, guild_id) DO UPDATE SET updated_at = NOW()
+           RETURNING balance`,
           [userId, guildId]
         );
       }
 
-      currentBalance = parseInt(balanceResult.rows[0]?.balance || 0);
+      currentBalance = parseInt(balanceResult.rows[0]?.balance || 0, 10);
 
       if (currentBalance < totalCost) {
         await client.query('ROLLBACK');
         sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Insufficient funds (Bal: ${currentBalance}, Req: ${totalCost})` });
-        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `${getUserLogName(member)} tried to buy **${qty > 1 ? `${qty}x ` : ''}${item.name}** but has insufficient funds.\n• Required: **${totalCost.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
+        sendLog(member.guild, 'shop', 'red', '❌ Purchase Failed', `${getUserLogName(member)} tried to buy **${safeQty > 1 ? `${safeQty}x ` : ''}${item.name}** but has insufficient funds.\n• Required: **${totalCost.toLocaleString()}** ${COIN_EMOJI}\n• Balance: **${currentBalance.toLocaleString()}** ${COIN_EMOJI}`);
         return { success: false, error: 'Insufficient balance' };
       }
     }
@@ -1170,22 +1181,32 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     }
 
     // ========== STEP 5: Deduct Coins (Charge SECOND) ==========
-    let newBalance = currentBalance - totalCost;
+    let newBalance = currentBalance;
 
     if (!skipBalanceDeduction) {
-      // Atomic non-negative guard
-      if (newBalance < 0) {
-        await client.query('ROLLBACK');
-        sysLog('Purchase Rejection', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Atomic balance fault check` });
-        return { success: false, error: 'Transaction rejected: Negative balance protection.' };
-      }
+      if (totalCost > 0) {
+        const deductRes = await client.query(
+          `UPDATE user_balances 
+           SET balance = balance - $1, total_spent = total_spent + $1, updated_at = NOW()
+           WHERE user_id = $2 AND guild_id = $3 AND balance >= $1
+           RETURNING balance`,
+          [totalCost, userId, guildId]
+        );
 
-      await client.query(
-        `UPDATE user_balances 
-         SET balance = $1, total_spent = total_spent + $2, updated_at = NOW()
-         WHERE user_id = $3 AND guild_id = $4`,
-        [newBalance, totalCost, userId, guildId]
-      );
+        if (deductRes.rowCount === 0) {
+          await client.query('ROLLBACK');
+          sysLog('Purchase Rejection', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Atomic balance fault check (insufficient balance)` });
+          return { success: false, error: 'Transaction rejected: Insufficient balance.' };
+        }
+
+        newBalance = parseInt(deductRes.rows[0].balance, 10);
+      } else {
+        const balResult = await client.query(
+          'SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2',
+          [userId, guildId]
+        );
+        newBalance = parseInt(balResult.rows[0]?.balance || 0, 10);
+      }
 
       const itemLabel = qty > 1 ? `${qty}x ${item.name}` : item.name;
       await client.query(
@@ -1198,7 +1219,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         'SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2',
         [userId, guildId]
       );
-      newBalance = parseInt(balResult.rows[0]?.balance || 0);
+      newBalance = parseInt(balResult.rows[0]?.balance || 0, 10);
     }
 
     // Update stock — decrement by qty
@@ -1213,28 +1234,32 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // ========== STEP 5.5: Seller Payout (ATOMIC) ==========
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
+    const safePayout = Math.max(0, parseInt(payoutAmount, 10) || 0);
     
-    if (hasSeller && payoutAmount > 0) {
-      // 1. Give coins to seller
-      await client.query(
-        `INSERT INTO user_balances (guild_id, user_id, balance, total_earned)
+    if (hasSeller && safePayout > 0) {
+      // 1. Give coins to seller (Canonical user_id, guild_id column and conflict order)
+      const sellerRes = await client.query(
+        `INSERT INTO user_balances (user_id, guild_id, balance, total_earned)
          VALUES ($1, $2, $3, $3)
-         ON CONFLICT (guild_id, user_id) 
+         ON CONFLICT (user_id, guild_id) 
          DO UPDATE SET 
             balance = user_balances.balance + $3, 
             total_earned = user_balances.total_earned + $3, 
-            updated_at = NOW()`,
-        [guildId, sellerId, payoutAmount]
+            updated_at = NOW()
+         RETURNING balance`,
+        [sellerId, guildId, safePayout]
       );
+
+      const sellerAfterBal = parseInt(sellerRes.rows[0]?.balance || (sellerBefore + safePayout), 10);
 
       // 2. Log to seller's transaction history
       await client.query(
-        `INSERT INTO transactions (guild_id, user_id, amount, balance_after, type, description, reference_id, created_at)
+        `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id, created_at)
          VALUES ($1, $2, $3, $4, 'sale', $5, $6, NOW())`,
-        [guildId, sellerId, payoutAmount, sellerBefore + payoutAmount, `<@${userId}> bought **${item.name}**`, `sale_${itemId}_${userId}`]
+        [sellerId, guildId, safePayout, sellerAfterBal, `<@${userId}> bought **${item.name}**`, `sale_${itemId}_${userId}`]
       );
       
-      sysLog('Seller Payout Executed', { user: sellerId, guild: guildId, detail: `Amount: ${payoutAmount} | Item: ${item.name} | From: ${userId}` });
+      sysLog('Seller Payout Executed', { user: sellerId, guild: guildId, detail: `Amount: ${safePayout} | Item: ${item.name} | From: ${userId}` });
     }
 
     await client.query('COMMIT');

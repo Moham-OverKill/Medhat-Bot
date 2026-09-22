@@ -97,9 +97,9 @@ function getCoinThumbnailUrl() {
 }
 
 function buildBankUI(userData, member) {
-  const balance = parseInt(userData.balance);
-  const dbStreak = parseInt(userData.daily_streak) || 0;
-  const lastDaily = userData.last_daily;
+  const balance = Number.isFinite(parseInt(userData?.balance, 10)) ? Math.max(0, parseInt(userData.balance, 10)) : 0;
+  const dbStreak = parseInt(userData?.daily_streak, 10) || 0;
+  const lastDaily = userData?.last_daily;
 
   // ========== CAIRO TIME LOGIC ==========
   // Check if daily is available (not claimed today)

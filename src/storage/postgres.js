@@ -262,6 +262,24 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_user_balances_guild_id ON user_balances(guild_id);
     `);
 
+    // Ensure composite unique index exists to safely support both (user_id, guild_id) and (guild_id, user_id) conflict targets
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_balances_guild_user ON user_balances(guild_id, user_id);
+    `);
+
+    // Database-level safety: enforce non-negative balances
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'user_balances' AND constraint_name = 'chk_user_balances_balance_non_negative'
+        ) THEN 
+          ALTER TABLE user_balances ADD CONSTRAINT chk_user_balances_balance_non_negative CHECK (balance >= 0); 
+        END IF; 
+      END $$;
+    `).catch(() => {});
+
     // Table for transactions (cleanup after 6 months)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS transactions (
@@ -333,6 +351,11 @@ async function createTables() {
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_user_activity_voice_tracking ON user_activity(guild_id, is_voice_tracking) WHERE is_voice_tracking = TRUE;
+    `);
+
+    // Ensure composite unique index exists to safely support both (user_id, guild_id) and (guild_id, user_id) conflict targets
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_activity_guild_user ON user_activity(guild_id, user_id);
     `);
 
     // Table for shop categories (essential data - never cleaned)

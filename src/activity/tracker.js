@@ -67,15 +67,15 @@ export async function flushMessageBatch() {
       await client.query('BEGIN');
       for (const entry of entriesToFlush) {
         await client.query(
-          `INSERT INTO user_activity (guild_id, user_id, username, message_count, last_message_time, last_active)
+          `INSERT INTO user_activity (user_id, guild_id, username, message_count, last_message_time, last_active)
            VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (guild_id, user_id)
+           ON CONFLICT (user_id, guild_id)
            DO UPDATE SET 
              message_count = user_activity.message_count + $4,
              last_message_time = GREATEST(user_activity.last_message_time, $5),
              last_active = GREATEST(user_activity.last_active, $6),
              username = $3`,
-          [entry.guildId, entry.userId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
+          [entry.userId, entry.guildId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
         );
       }
       await client.query('COMMIT');
@@ -495,14 +495,14 @@ async function startVoiceTracking(guild, userId, username) {
     if (alreadyTracking) return;
 
     await pool.query(
-      `INSERT INTO user_activity (guild_id, user_id, username, voice_valid_start, last_active)
+      `INSERT INTO user_activity (user_id, guild_id, username, voice_valid_start, last_active)
        VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (guild_id, user_id)
+       ON CONFLICT (user_id, guild_id)
        DO UPDATE SET 
          voice_valid_start = $4,
          last_active = $5,
          username = $3`,
-      [guildId, userId, username, now, new Date(now)]
+      [userId, guildId, username, now, new Date(now)]
     );
   } catch (error) {
     sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Start voice tracking' });

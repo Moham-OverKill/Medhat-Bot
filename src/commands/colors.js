@@ -23,7 +23,7 @@ import { logServerEvent, sendLog, sendBulkLog, sysLog, sysError } from '../utils
 export async function isMemberBooster(member) {
   if (!member) return false;
   // Strictly use Discord's native premiumSince property
-  return member.premiumSinceTimestamp !== null;
+  return Boolean(member?.premiumSinceTimestamp);
 }
 
 // Dangerous permissions that color roles should never have

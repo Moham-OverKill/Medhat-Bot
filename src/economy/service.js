@@ -41,8 +41,11 @@ export async function updateBalance(userId, guildId, amount, type, description =
   const pool = getPool();
   const client = await pool.connect();
 
-  // Ensure amount is a proper integer to avoid PostgreSQL type issues
+  // Ensure amount is a proper safe integer to avoid PostgreSQL type issues
   const numericAmount = parseInt(amount, 10);
+  if (!Number.isSafeInteger(numericAmount)) {
+    return { success: false, error: 'Invalid numeric amount: must be a safe integer' };
+  }
 
   try {
     await client.query('BEGIN');
@@ -63,7 +66,7 @@ export async function updateBalance(userId, guildId, amount, type, description =
       [userId, guildId, numericAmount]
     );
 
-    const newBalance = parseInt(result.rows[0].balance);
+    const newBalance = parseInt(result.rows[0].balance, 10);
 
     // Prevent negative balances
     if (newBalance < 0) {
@@ -115,10 +118,11 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     let isNewUser = false;
 
     if (userResult.rows.length === 0) {
-      // Create new user
+      // Create new user atomically
       const createResult = await client.query(
         `INSERT INTO user_balances (user_id, guild_id, balance, daily_streak)
          VALUES ($1, $2, 0, 0)
+         ON CONFLICT (user_id, guild_id) DO UPDATE SET updated_at = NOW()
          RETURNING *`,
         [userId, guildId]
       );
@@ -163,11 +167,18 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     
     const config = await getGuildConfig(guildId) || {};
     
-    // 1. Fetch values with hardcoded fallbacks (Synced with UI defaults)
-    const baseReward = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
-    const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 30; // Sync: 30 days
-    const streakBonusPerDay = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
-    const boosterMultiplier = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2.0;
+    // 1. Fetch values with defensive sanitization against NaN and malformed configs
+    const parsedBase = parseInt(config.daily_base_reward, 10);
+    const baseReward = Number.isFinite(parsedBase) ? Math.max(0, parsedBase) : 25;
+
+    const parsedCap = parseInt(config.daily_streak_cap, 10);
+    const streakCap = Number.isFinite(parsedCap) ? Math.max(0, parsedCap) : 30;
+
+    const parsedBonus = parseInt(config.daily_streak_bonus, 10);
+    const streakBonusPerDay = Number.isFinite(parsedBonus) ? Math.max(0, parsedBonus) : 5;
+
+    const parsedBooster = parseFloat(config.booster_multiplier);
+    const boosterMultiplier = Number.isFinite(parsedBooster) ? Math.max(0, parsedBooster) : 2.0;
 
     // 2. Apply Dynamic Cap (Protects against mid-stream config changes)
     const streakMultiplier = Math.min(currentStreak, streakCap);
@@ -181,7 +192,10 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     // 5. Apply Real-Time Booster Multiplier (Allow nerfs but floor at 0.0)
     const effectiveMultiplier = isBooster ? Math.max(0, boosterMultiplier) : 1;
     
-    const totalReward = Math.floor(subtotal * effectiveMultiplier);
+    let totalReward = Math.floor(subtotal * effectiveMultiplier);
+    if (!Number.isSafeInteger(totalReward) || totalReward < 0) {
+      totalReward = 0;
+    }
     const boostBonus = totalReward - subtotal;
 
     // --- 3. Increment Streak (AFTER Calculation) ---
