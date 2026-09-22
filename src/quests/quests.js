@@ -194,8 +194,8 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
   const client = await pool.connect();
   const date = getTodayCairo();
   
-  const requiredCount = parseInt(quest.required_count) || 1;
-  const reward = parseInt(quest.reward_coins) || 0;
+  const requiredCount = parseInt(quest.required_count, 10) || 1;
+  const reward = Math.max(0, parseInt(quest.reward_coins, 10) || 0);
 
   if (requiredCount <= 0 || amount <= 0) {
     client.release();
@@ -346,7 +346,7 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
   const date = getTodayCairo();
   
   const requiredCount = parseInt(quest.required_count, 10) || 1;
-  const reward = parseInt(quest.reward_coins, 10) || 0;
+  const reward = Math.max(0, parseInt(quest.reward_coins, 10) || 0);
 
   if (requiredCount <= 0 || !messageId || !emojiKey) {
     client.release();

@@ -187,13 +187,13 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     // Atomically increment battlepass_xp
     await pool.query(
-      `INSERT INTO user_activity (guild_id, user_id, username, battlepass_xp)
+      `INSERT INTO user_activity (user_id, guild_id, username, battlepass_xp)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (guild_id, user_id)
+       ON CONFLICT (user_id, guild_id)
        DO UPDATE SET
          battlepass_xp = user_activity.battlepass_xp + $4,
          username = $3`,
-      [guildId, userId, username, finalXp]
+      [userId, guildId, username, finalXp]
     );
 
     // Dispatch any newly qualified level rewards
