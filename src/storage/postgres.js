@@ -271,6 +271,9 @@ async function createTables() {
     await pool.query(`
       DO $$ 
       BEGIN 
+        -- Heal any legacy negative balances before applying constraint
+        UPDATE user_balances SET balance = 0 WHERE balance < 0;
+
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.table_constraints 
           WHERE table_name = 'user_balances' AND constraint_name = 'chk_user_balances_balance_non_negative'
