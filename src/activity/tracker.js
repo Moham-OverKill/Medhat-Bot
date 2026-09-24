@@ -441,6 +441,13 @@ export async function handleVoiceStateChange(guild, oldState, newState) {
   const wasValid = isVoiceStateValid(oldState);
   const isNowValid = isVoiceStateValid(newState);
 
+  // Track voice call/session joined toward weekly activity summary
+  if (!oldState?.channelId && newState?.channelId) {
+    import('../cron/weeklySummary.js')
+      .then(({ recordWeeklyVoiceCallJoined }) => recordWeeklyVoiceCallJoined(guild.id, userId, username))
+      .catch(() => {});
+  }
+
   if (!wasValid && isNowValid) {
     await startVoiceTracking(guild, userId, username);
   } else if (wasValid && !isNowValid) {

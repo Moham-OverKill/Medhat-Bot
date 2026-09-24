@@ -106,14 +106,12 @@ export async function registerSlashCommands(client) {
     );
     sysLog('Global Slash Commands Cleared', { detail: 'Scoped registration to guild-level' });
 
-    // 2. Register dynamic commands per guild
-    let count = 0;
-    for (const [guildId] of client.guilds.cache) {
-      await syncGuildSlashCommands(guildId, client);
-      count++;
-    }
-
-    return { registered: true, count };
+    // Guild commands are registered dynamically via real-time event triggers:
+    // - On guild join (guildCreate event in src/index.js)
+    // - On quest configuration changes (src/commands/quests-dashboard.js)
+    // - On level/battlepass configuration changes (src/commands/settings/pass.js)
+    // Discord permanently retains registered guild commands, so sweeping all guilds on boot is omitted to eliminate startup latency.
+    return { registered: true, count: 0 };
   } catch (error) {
     sysError('Slash command registration failed', error, { detail: client.application?.id });
     throw error;

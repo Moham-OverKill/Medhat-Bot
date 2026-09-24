@@ -6,7 +6,7 @@ import { sysLog, sysError } from '../utils/logger.js';
 let weeklyActivityTableEnsured = false;
 
 /**
- * Self-healing migration to ensure table and columns exist
+ * Self-healing migration to ensure table and all columns exist
  */
 export async function ensureWeeklyActivityTable() {
   if (weeklyActivityTableEnsured) return;
@@ -19,12 +19,18 @@ export async function ensureWeeklyActivityTable() {
         username TEXT,
         messages_count INTEGER NOT NULL DEFAULT 0,
         voice_minutes INTEGER NOT NULL DEFAULT 0,
+        voice_calls_count INTEGER NOT NULL DEFAULT 0,
+        media_count INTEGER NOT NULL DEFAULT 0,
         reactions_count INTEGER NOT NULL DEFAULT 0,
+        reactions_received_count INTEGER NOT NULL DEFAULT 0,
         total_xp_gained NUMERIC(14, 2) NOT NULL DEFAULT 0,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         PRIMARY KEY (guild_id, user_id)
       );
       CREATE INDEX IF NOT EXISTS idx_user_weekly_activity_lookup ON user_weekly_activity(guild_id, user_id);
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS voice_calls_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS media_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS reactions_received_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE user_notification_settings ADD COLUMN IF NOT EXISTS notif_weekly_summary BOOLEAN NOT NULL DEFAULT FALSE;
     `);
     weeklyActivityTableEnsured = true;
@@ -80,7 +86,53 @@ export async function recordWeeklyVoice(guildId, userId, username, minutes = 1) 
 }
 
 /**
- * Record a reaction performed toward weekly activity
+ * Record voice call/session joined toward weekly activity
+ */
+export async function recordWeeklyVoiceCallJoined(guildId, userId, username) {
+  if (!guildId || !userId) return;
+  try {
+    await ensureWeeklyActivityTable();
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO user_weekly_activity (guild_id, user_id, username, voice_calls_count, updated_at)
+       VALUES ($1, $2, $3, 1, NOW())
+       ON CONFLICT (guild_id, user_id)
+       DO UPDATE SET
+         voice_calls_count = user_weekly_activity.voice_calls_count + 1,
+         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+         updated_at = NOW()`,
+      [guildId, userId, username]
+    );
+  } catch (err) {
+    sysError('Record Weekly Voice Call Joined Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Record media/files shared toward weekly activity
+ */
+export async function recordWeeklyMedia(guildId, userId, username, count = 1) {
+  if (!guildId || !userId || count <= 0) return;
+  try {
+    await ensureWeeklyActivityTable();
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO user_weekly_activity (guild_id, user_id, username, media_count, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (guild_id, user_id)
+       DO UPDATE SET
+         media_count = user_weekly_activity.media_count + $4,
+         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+         updated_at = NOW()`,
+      [guildId, userId, username, count]
+    );
+  } catch (err) {
+    sysError('Record Weekly Media Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Record a reaction given by the user toward weekly activity
  */
 export async function recordWeeklyReaction(guildId, userId, username = null, delta = 1) {
   if (!guildId || !userId) return;
@@ -109,6 +161,39 @@ export async function recordWeeklyReaction(guildId, userId, username = null, del
     }
   } catch (err) {
     sysError('Record Weekly Reaction Failed', err, { guild: guildId, user: userId });
+  }
+}
+
+/**
+ * Record a reaction received by the user from others toward weekly activity
+ */
+export async function recordWeeklyReactionReceived(guildId, userId, username = null, delta = 1) {
+  if (!guildId || !userId) return;
+  try {
+    await ensureWeeklyActivityTable();
+    const pool = getPool();
+    if (delta > 0) {
+      await pool.query(
+        `INSERT INTO user_weekly_activity (guild_id, user_id, username, reactions_received_count, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (guild_id, user_id)
+         DO UPDATE SET
+           reactions_received_count = user_weekly_activity.reactions_received_count + $4,
+           username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+           updated_at = NOW()`,
+        [guildId, userId, username, delta]
+      );
+    } else if (delta < 0) {
+      await pool.query(
+        `UPDATE user_weekly_activity
+         SET reactions_received_count = GREATEST(0, reactions_received_count + $3),
+             updated_at = NOW()
+         WHERE guild_id = $1 AND user_id = $2`,
+        [guildId, userId, delta]
+      );
+    }
+  } catch (err) {
+    sysError('Record Weekly Reaction Received Failed', err, { guild: guildId, user: userId });
   }
 }
 
@@ -146,12 +231,15 @@ export async function dispatchWeeklyActivitySummaries(client) {
     await ensureWeeklyActivityTable();
     const pool = getPool();
 
-    // Query opted-in users with their weekly activity
+    // Query opted-in users with their full weekly activity
     const queryResult = await pool.query(`
       SELECT uns.guild_id, uns.user_id,
              COALESCE(uwa.messages_count, 0) AS messages_count,
              COALESCE(uwa.voice_minutes, 0) AS voice_minutes,
+             COALESCE(uwa.voice_calls_count, 0) AS voice_calls_count,
+             COALESCE(uwa.media_count, 0) AS media_count,
              COALESCE(uwa.reactions_count, 0) AS reactions_count,
+             COALESCE(uwa.reactions_received_count, 0) AS reactions_received_count,
              COALESCE(uwa.total_xp_gained, 0) AS total_xp_gained
       FROM user_notification_settings uns
       LEFT JOIN user_weekly_activity uwa
@@ -176,19 +264,23 @@ export async function dispatchWeeklyActivitySummaries(client) {
 
       const msgCount = Number(record.messages_count || 0).toLocaleString();
       const voiceMins = Number(record.voice_minutes || 0).toLocaleString();
-      const reactCount = Number(record.reactions_count || 0).toLocaleString();
+      const voiceCalls = Number(record.voice_calls_count || 0).toLocaleString();
+      const mediaFiles = Number(record.media_count || 0).toLocaleString();
+      const reactGiven = Number(record.reactions_count || 0).toLocaleString();
+      const reactReceived = Number(record.reactions_received_count || 0).toLocaleString();
       const xpGained = Math.round(Number(record.total_xp_gained || 0)).toLocaleString();
 
       const embed = new EmbedBuilder()
-        .setTitle('📊 Your Weekly Activity Summary')
+        .setTitle('📊 Weekly Activity Summary')
         .setColor(0x5865F2)
         .setDescription(
-          `Here is your activity breakdown for this past week in **${guild.name}**:\n\n` +
+          `Activity breakdown for **${guild.name}**:\n\n` +
           `• 💬 Messages Sent: \`${msgCount}\`\n` +
-          `• 🎙️ Voice Time: \`${voiceMins} mins\`\n` +
-          `• ⭐ Reactions: \`${reactCount}\`\n` +
-          `• ⚡ Total XP Gained: \`+${xpGained} XP\`\n\n` +
-          `Keep up the great work! See you on the leaderboard next week. 🚀`
+          `• 🎙️ Voice Time: \`${voiceMins} mins\` (${voiceCalls} calls joined)\n` +
+          `• 📎 Media Shared: \`${mediaFiles} files\`\n` +
+          `• ⭐ Reactions Given: \`${reactGiven}\`\n` +
+          `• ❤️ Reactions Received: \`${reactReceived}\`\n` +
+          `• ⚡ Total XP Gained: \`+${xpGained} XP\``
         );
 
       const sent = await user.send({ embeds: [embed] }).then(() => true).catch(() => false);

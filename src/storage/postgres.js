@@ -1000,12 +1000,18 @@ async function createTables() {
         username TEXT,
         messages_count INTEGER NOT NULL DEFAULT 0,
         voice_minutes INTEGER NOT NULL DEFAULT 0,
+        voice_calls_count INTEGER NOT NULL DEFAULT 0,
+        media_count INTEGER NOT NULL DEFAULT 0,
         reactions_count INTEGER NOT NULL DEFAULT 0,
+        reactions_received_count INTEGER NOT NULL DEFAULT 0,
         total_xp_gained NUMERIC(14, 2) NOT NULL DEFAULT 0,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         PRIMARY KEY (guild_id, user_id)
       );
       CREATE INDEX IF NOT EXISTS idx_user_weekly_activity_lookup ON user_weekly_activity(guild_id, user_id);
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS voice_calls_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS media_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS reactions_received_count INTEGER NOT NULL DEFAULT 0;
     `);
 
     // Global User Preferences (Persistent inventory sort preference, etc.)
