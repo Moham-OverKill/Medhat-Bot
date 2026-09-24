@@ -416,10 +416,26 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
       if (user.bot) return;
       if (!guildId) return;
 
-      // Track reaction toward weekly activity summary
+      // Track reaction given toward weekly activity summary
       import('./cron/weeklySummary.js')
         .then(({ recordWeeklyReaction }) => recordWeeklyReaction(guildId, user.id, user.username, 1))
         .catch(() => {});
+
+      // Track reaction received toward weekly activity summary
+      const msgAuthorAdd = reaction.message?.author;
+      if (msgAuthorAdd && !msgAuthorAdd.bot && msgAuthorAdd.id !== user.id) {
+        import('./cron/weeklySummary.js')
+          .then(({ recordWeeklyReactionReceived }) => recordWeeklyReactionReceived(guildId, msgAuthorAdd.id, msgAuthorAdd.username, 1))
+          .catch(() => {});
+      } else if (!msgAuthorAdd && reaction.message) {
+        reaction.message.fetch().then(msg => {
+          if (msg?.author && !msg.author.bot && msg.author.id !== user.id) {
+            import('./cron/weeklySummary.js')
+              .then(({ recordWeeklyReactionReceived }) => recordWeeklyReactionReceived(guildId, msg.author.id, msg.author.username, 1))
+              .catch(() => {});
+          }
+        }).catch(() => {});
+      }
 
       // Direct check on partial message data to avoid API calls for non-quest channels
       const channelId = reaction.message.channelId;
@@ -465,10 +481,26 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
       if (user.bot) return;
       if (!guildId) return;
 
-      // Decrement reaction toward weekly activity summary
+      // Decrement reaction given toward weekly activity summary
       import('./cron/weeklySummary.js')
         .then(({ recordWeeklyReaction }) => recordWeeklyReaction(guildId, user.id, user.username, -1))
         .catch(() => {});
+
+      // Decrement reaction received toward weekly activity summary
+      const msgAuthorRemove = reaction.message?.author;
+      if (msgAuthorRemove && !msgAuthorRemove.bot && msgAuthorRemove.id !== user.id) {
+        import('./cron/weeklySummary.js')
+          .then(({ recordWeeklyReactionReceived }) => recordWeeklyReactionReceived(guildId, msgAuthorRemove.id, msgAuthorRemove.username, -1))
+          .catch(() => {});
+      } else if (!msgAuthorRemove && reaction.message) {
+        reaction.message.fetch().then(msg => {
+          if (msg?.author && !msg.author.bot && msg.author.id !== user.id) {
+            import('./cron/weeklySummary.js')
+              .then(({ recordWeeklyReactionReceived }) => recordWeeklyReactionReceived(guildId, msg.author.id, msg.author.username, -1))
+              .catch(() => {});
+          }
+        }).catch(() => {});
+      }
 
       const channelId = reaction.message.channelId;
       if (!channelId) return;
