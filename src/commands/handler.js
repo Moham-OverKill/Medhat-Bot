@@ -9,6 +9,7 @@ import { handleVoteCommand } from './vote.js';
 import { handleLevelCommand } from './pass.js';
 import { handleNotificationsCommand } from './notifications.js';
 import { handleInviteCommand } from './invite.js';
+import { handleItemsCommand } from './items.js';
 import { getGuildConfig } from '../storage/config.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -78,6 +79,9 @@ export async function handleSlashCommand(interaction) {
       break;
     case 'invite':
       await handleInviteCommand(interaction);
+      break;
+    case 'items':
+      await handleItemsCommand(interaction);
       break;
     default:
       await interaction.reply({
