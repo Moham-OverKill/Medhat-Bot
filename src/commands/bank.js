@@ -1124,27 +1124,37 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
     });
 
     // Row 1: Sorting Buttons [ 🔤 A-Z ] | [ 🕒 Date ] | [ ✨ Rarity ] | [ 📦 Quantity ]
+    const isAzActive = sortPreference === 'az' || sortPreference === 'za';
+    const isDateActive = sortPreference === 'date' || sortPreference === 'date_desc' || sortPreference === 'date_asc';
+    const isRarityActive = sortPreference === 'rarity' || sortPreference === 'rarity_desc' || sortPreference === 'rarity_asc';
+    const isQuantityActive = sortPreference === 'quantity' || sortPreference === 'quantity_desc' || sortPreference === 'quantity_asc';
+
+    const azLabel = sortPreference === 'za' ? 'Z-A' : 'A-Z';
+    const dateLabel = sortPreference === 'date_asc' ? 'Date ⬆' : (isDateActive ? 'Date ⬇' : 'Date');
+    const rarityLabel = sortPreference === 'rarity_asc' ? 'Rarity ⬆' : (isRarityActive ? 'Rarity ⬇' : 'Rarity');
+    const quantityLabel = sortPreference === 'quantity_asc' ? 'Quantity ⬆' : (isQuantityActive ? 'Quantity ⬇' : 'Quantity');
+
     const sortButtonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`bank_inv_sort_az_${catIdStr}`)
-        .setLabel('A-Z')
+        .setLabel(azLabel)
         .setEmoji('🔤')
-        .setStyle(sortPreference === 'az' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        .setStyle(isAzActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`bank_inv_sort_date_${catIdStr}`)
-        .setLabel('Date')
+        .setLabel(dateLabel)
         .setEmoji('🕒')
-        .setStyle(sortPreference === 'date' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        .setStyle(isDateActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`bank_inv_sort_rarity_${catIdStr}`)
-        .setLabel('Rarity')
+        .setLabel(rarityLabel)
         .setEmoji('✨')
-        .setStyle(sortPreference === 'rarity' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        .setStyle(isRarityActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`bank_inv_sort_quantity_${catIdStr}`)
-        .setLabel('Quantity')
+        .setLabel(quantityLabel)
         .setEmoji('📦')
-        .setStyle(sortPreference === 'quantity' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setStyle(isQuantityActive ? ButtonStyle.Primary : ButtonStyle.Secondary)
     );
 
     // Row 2: Item Select Menu
@@ -1184,12 +1194,23 @@ export async function handleInventorySortButton(interaction) {
     }
 
     const parts = interaction.customId.split('_');
-    const mode = parts[3];
+    const targetType = parts[3];
     const catIdStr = parts.slice(4).join('_');
 
-    if (['az', 'date', 'rarity', 'quantity'].includes(mode)) {
-      await setUserInventorySortPreference(interaction.user.id, mode);
+    const currentPref = await getUserInventorySortPreference(interaction.user.id);
+    let nextPref = targetType;
+
+    if (targetType === 'az') {
+      nextPref = (currentPref === 'az') ? 'za' : 'az';
+    } else if (targetType === 'date') {
+      nextPref = (currentPref === 'date' || currentPref === 'date_desc') ? 'date_asc' : 'date_desc';
+    } else if (targetType === 'rarity') {
+      nextPref = (currentPref === 'rarity' || currentPref === 'rarity_desc') ? 'rarity_asc' : 'rarity_desc';
+    } else if (targetType === 'quantity') {
+      nextPref = (currentPref === 'quantity' || currentPref === 'quantity_desc') ? 'quantity_asc' : 'quantity_desc';
     }
+
+    await setUserInventorySortPreference(interaction.user.id, nextPref);
 
     await handleInventoryCategorySelect(interaction, 1, catIdStr);
   } catch (error) {

@@ -200,6 +200,15 @@ export function sortInventoryItems(items, sortMode = 'date') {
   const copy = [...items];
 
   switch (sortMode) {
+    case 'za':
+      return copy.sort((a, b) => {
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameB.localeCompare(nameA, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (b.id || 0) - (a.id || 0);
+      });
+
     case 'az':
       return copy.sort((a, b) => {
         const nameA = String(a.name || '').trim();
@@ -209,7 +218,20 @@ export function sortInventoryItems(items, sortMode = 'date') {
         return (a.id || 0) - (b.id || 0);
       });
 
+    case 'rarity_asc':
+      return copy.sort((a, b) => {
+        const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
+        const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
+        if (weightA !== weightB) return weightA - weightB; // Lowest rarity first
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (a.id || 0) - (b.id || 0);
+      });
+
     case 'rarity':
+    case 'rarity_desc':
       return copy.sort((a, b) => {
         const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
         const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
@@ -221,7 +243,20 @@ export function sortInventoryItems(items, sortMode = 'date') {
         return (a.id || 0) - (b.id || 0);
       });
 
+    case 'quantity_asc':
+      return copy.sort((a, b) => {
+        const qtyA = parseInt(a.quantity, 10) || 1;
+        const qtyB = parseInt(b.quantity, 10) || 1;
+        if (qtyA !== qtyB) return qtyA - qtyB; // Lowest quantity first
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (a.id || 0) - (b.id || 0);
+      });
+
     case 'quantity':
+    case 'quantity_desc':
       return copy.sort((a, b) => {
         const qtyA = parseInt(a.quantity, 10) || 1;
         const qtyB = parseInt(b.quantity, 10) || 1;
@@ -233,7 +268,16 @@ export function sortInventoryItems(items, sortMode = 'date') {
         return (a.id || 0) - (b.id || 0);
       });
 
+    case 'date_asc':
+      return copy.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.purchased_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.updated_at || b.purchased_at || b.created_at || 0).getTime();
+        if (dateA !== dateB) return dateA - dateB; // Oldest first
+        return (a.id || 0) - (b.id || 0);
+      });
+
     case 'date':
+    case 'date_desc':
     default:
       return copy.sort((a, b) => {
         const dateA = new Date(a.updated_at || a.purchased_at || a.created_at || 0).getTime();
