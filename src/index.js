@@ -694,8 +694,15 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   });
 });
 
-// B-01 FIX: Duplicate roleDelete listener removed.
-// Role deletion cleanup is already handled by Events.GuildRoleDelete (line 299).
+// Sync slash commands when the bot joins a new server
+client.on('guildCreate', async (guild) => {
+  try {
+    const { syncGuildSlashCommands } = await import('./commands/register.js');
+    await syncGuildSlashCommands(guild.id, client);
+  } catch (error) {
+    sysError('Failed to sync slash commands on guildCreate', error, { guild: guild.id });
+  }
+});
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
