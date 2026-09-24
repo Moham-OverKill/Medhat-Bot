@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getShopCategories, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
-import { getItemRarityEmoji, sortItemsByRolePosition, safeSetButtonEmoji } from '../shared.js';
+import { getItemRarityEmoji, RARITY_WEIGHTS, safeSetButtonEmoji } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { sysError } from '../utils/logger.js';
 
@@ -100,10 +100,27 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     currentCategory = availableCategories[0];
   }
 
-  // Sort items in active category
-  if (!currentCategory.isLootBox) {
-    currentCategory.items = await sortItemsByRolePosition(currentCategory.items, guild);
-  }
+  // Sort items strictly by rarity (Legendary > Epic > Rare > Uncommon > Common)
+  currentCategory.items = [...currentCategory.items].sort((a, b) => {
+    const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
+    const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
+    if (weightB !== weightA) return weightB - weightA;
+
+    // Secondary: Discord role position (if available)
+    if (guild?.roles?.cache && a.role_id && b.role_id) {
+      const roleA = guild.roles.cache.get(a.role_id.split(/[,\s]+/)[0]);
+      const roleB = guild.roles.cache.get(b.role_id.split(/[,\s]+/)[0]);
+      if (roleA && roleB && roleB.position !== roleA.position) {
+        return roleB.position - roleA.position;
+      }
+    }
+
+    const nameA = String(a.name || '').trim();
+    const nameB = String(b.name || '').trim();
+    const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+    if (cmp !== 0) return cmp;
+    return (a.id || 0) - (b.id || 0);
+  });
 
   // Pagination for items list
   const pageSize = 20;
@@ -133,13 +150,31 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     .setColor('#3498DB')
     .setDescription(desc);
 
-  // Build category buttons (max 4 per row, max 4-5 rows depending on item pagination)
+  const rows = [];
+
+  // Top Row: 2 navigation arrows side-by-side directly under the list (only if totalPages > 1)
+  if (totalPages > 1) {
+    const navRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`items_page_${currentCategory.id}_${page - 1}`)
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page <= 1),
+      new ButtonBuilder()
+        .setCustomId(`items_page_${currentCategory.id}_${page + 1}`)
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages)
+    );
+    rows.push(navRow);
+  }
+
+  // Category switch buttons (max 4 per row, up to 4-5 rows)
   const CATS_PER_ROW = 4;
   const maxCatRows = totalPages > 1 ? 4 : 5;
   const maxCategories = maxCatRows * CATS_PER_ROW;
   const visibleCategories = availableCategories.slice(0, maxCategories);
 
-  const rows = [];
   for (let i = 0; i < visibleCategories.length; i += CATS_PER_ROW) {
     const chunk = visibleCategories.slice(i, i + CATS_PER_ROW);
     const row = new ActionRowBuilder();
@@ -154,28 +189,6 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
       row.addComponents(btn);
     });
     rows.push(row);
-  }
-
-  // Item pagination navigation row
-  if (totalPages > 1) {
-    const navRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`items_page_${currentCategory.id}_${page - 1}`)
-        .setEmoji('◀️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page <= 1),
-      new ButtonBuilder()
-        .setCustomId('items_page_indicator')
-        .setLabel(`${page}/${totalPages}`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId(`items_page_${currentCategory.id}_${page + 1}`)
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page >= totalPages)
-    );
-    rows.push(navRow);
   }
 
   return { empty: false, embed, rows };
