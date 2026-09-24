@@ -986,10 +986,26 @@ async function createTables() {
         notif_trades BOOLEAN DEFAULT FALSE,
         notif_mvp_win BOOLEAN DEFAULT FALSE,
         notif_quests_refresh BOOLEAN DEFAULT FALSE,
+        notif_weekly_summary BOOLEAN DEFAULT FALSE,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         PRIMARY KEY (guild_id, user_id)
       );
+      ALTER TABLE user_notification_settings ADD COLUMN IF NOT EXISTS notif_weekly_summary BOOLEAN DEFAULT FALSE;
       CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
+
+      // User Weekly Activity Summary Ledger
+      CREATE TABLE IF NOT EXISTS user_weekly_activity (
+        guild_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        username TEXT,
+        messages_count INTEGER NOT NULL DEFAULT 0,
+        voice_minutes INTEGER NOT NULL DEFAULT 0,
+        reactions_count INTEGER NOT NULL DEFAULT 0,
+        total_xp_gained NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_weekly_activity_lookup ON user_weekly_activity(guild_id, user_id);
     `);
 
     // Global User Preferences (Persistent inventory sort preference, etc.)
