@@ -1272,6 +1272,11 @@ export async function handleInventoryItemSelect(interaction) {
     } else {
       items = inventory.filter(i => {
         if (i.item_type === 'pack' || i.is_pack || i.item_type === 'loot_box') return false;
+        // Fail-safe: Skip items with missing roles
+        if (i.role_id) {
+          const firstRoleId = i.role_id.split(/[,\s]+/)[0];
+          if (!interaction.guild.roles.cache.has(firstRoleId)) return false;
+        }
         return isOther ? i.category_id === null : i.category_id === categoryId;
       });
       items = sortInventoryItems(items, sortPreference);
@@ -1363,12 +1368,19 @@ export async function handleInventoryItemSelect(interaction) {
         embed.setThumbnail(boxImg);
       }
 
-      const selectOptions = items.slice(0, 25).map((i, idx) => {
+      let windowItems = items;
+      let startIdx = 0;
+      if (items.length > 25) {
+        startIdx = Math.max(0, Math.min(currentIndex - 12, items.length - 25));
+        windowItems = items.slice(startIdx, startIdx + 25);
+      }
+
+      const selectOptions = windowItems.map((i, idx) => {
         const itemQty = parseInt(i.quantity) || 1;
         const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
         return {
           label: `${baseName} (x${itemQty})`,
-          value: `${i.id}_${idx}`,
+          value: `${i.id}_${startIdx + idx}`,
           emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁'),
           default: String(i.id) === String(item.id)
         };
@@ -1501,7 +1513,14 @@ export async function handleInventoryItemSelect(interaction) {
     const hasMultipleItems = items.length > 1;
 
     // ROW 1: Item Selection Dropdown List (Pure items, up to 25)
-    const selectOptions = items.slice(0, 25).map((i, idx) => {
+    let windowItems = items;
+    let startIdx = 0;
+    if (items.length > 25) {
+      startIdx = Math.max(0, Math.min(currentIndex - 12, items.length - 25));
+      windowItems = items.slice(startIdx, startIdx + 25);
+    }
+
+    const selectOptions = windowItems.map((i, idx) => {
       const isItemTemp = !!(i.expires_at ||
         (i.duration_seconds && i.duration_seconds > 0) ||
         (i.duration_hours && i.duration_hours > 0));
@@ -1527,7 +1546,7 @@ export async function handleInventoryItemSelect(interaction) {
 
       return {
         label: `${baseName}${qtyBadge}`,
-        value: `${i.id}_${idx}`,
+        value: `${i.id}_${startIdx + idx}`,
         description: statusText,
         emoji: statusEmoji,
         default: String(i.id) === String(item.id)
