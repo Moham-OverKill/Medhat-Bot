@@ -22,11 +22,6 @@ export async function handleInviteCommand(interaction) {
       .setDescription('**ADD MEDHAT BOT TO YOUR OWN SERVER!! 🤩**')
       .setColor('#5865F2');
 
-    const avatarUrl = interaction.client.user?.displayAvatarURL?.();
-    if (avatarUrl) {
-      embed.setThumbnail(avatarUrl);
-    }
-
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setLabel('❤️ TOP.GG')
