@@ -19,8 +19,7 @@ export async function handleInviteCommand(interaction) {
     const topGgUrl = `https://top.gg/bot/${clientId}`;
 
     const embed = new EmbedBuilder()
-      .setTitle('ADD MEDHAT BOT TO YOUR OWN SERVER!! 🤩')
-      .setDescription('Click the buttons below to invite Medhat directly to your server or visit our official page on Top.gg.')
+      .setDescription('**ADD MEDHAT BOT TO YOUR OWN SERVER!! 🤩**')
       .setColor('#5865F2');
 
     const avatarUrl = interaction.client.user?.displayAvatarURL?.();
@@ -30,13 +29,13 @@ export async function handleInviteCommand(interaction) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setLabel('➕ INVITE')
-        .setStyle(ButtonStyle.Link)
-        .setURL(inviteUrl),
-      new ButtonBuilder()
         .setLabel('❤️ TOP.GG')
         .setStyle(ButtonStyle.Link)
-        .setURL(topGgUrl)
+        .setURL(topGgUrl),
+      new ButtonBuilder()
+        .setLabel('➕ INVITE')
+        .setStyle(ButtonStyle.Link)
+        .setURL(inviteUrl)
     );
 
     await interaction.reply({
