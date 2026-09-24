@@ -6,7 +6,8 @@ export const NOTIFICATION_KEYS = {
   DAILY_CLAIM: 'notif_daily_claim',
   TRADES: 'notif_trades',
   MVP_WIN: 'notif_mvp_win',
-  QUESTS_REFRESH: 'notif_quests_refresh'
+  QUESTS_REFRESH: 'notif_quests_refresh',
+  WEEKLY_SUMMARY: 'notif_weekly_summary'
 };
 
 const DEFAULT_SETTINGS = {
@@ -14,7 +15,8 @@ const DEFAULT_SETTINGS = {
   notif_daily_claim: false,
   notif_trades: false,
   notif_mvp_win: false,
-  notif_quests_refresh: false
+  notif_quests_refresh: false,
+  notif_weekly_summary: false
 };
 
 /**
@@ -27,7 +29,7 @@ export async function getUserNotificationSettings(guildId, userId) {
   try {
     const pool = getPool();
     const result = await pool.query(
-      `SELECT notif_level_up, notif_daily_claim, notif_trades, notif_mvp_win, notif_quests_refresh
+      `SELECT notif_level_up, notif_daily_claim, notif_trades, notif_mvp_win, notif_quests_refresh, notif_weekly_summary
        FROM user_notification_settings
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
@@ -43,7 +45,8 @@ export async function getUserNotificationSettings(guildId, userId) {
       notif_daily_claim: Boolean(row.notif_daily_claim),
       notif_trades: Boolean(row.notif_trades),
       notif_mvp_win: Boolean(row.notif_mvp_win),
-      notif_quests_refresh: Boolean(row.notif_quests_refresh)
+      notif_quests_refresh: Boolean(row.notif_quests_refresh),
+      notif_weekly_summary: Boolean(row.notif_weekly_summary)
     };
   } catch (error) {
     sysError('Get Notification Settings Failed', error, { guild: guildId, user: userId });
@@ -70,7 +73,7 @@ export async function toggleUserNotificationSetting(guildId, userId, key) {
        VALUES ($1, $2, TRUE, NOW())
        ON CONFLICT (guild_id, user_id)
        DO UPDATE SET ${key} = NOT COALESCE(user_notification_settings.${key}, FALSE), updated_at = NOW()
-       RETURNING notif_level_up, notif_daily_claim, notif_trades, notif_mvp_win, notif_quests_refresh`,
+       RETURNING notif_level_up, notif_daily_claim, notif_trades, notif_mvp_win, notif_quests_refresh, notif_weekly_summary`,
       [guildId, userId]
     );
 
@@ -80,7 +83,8 @@ export async function toggleUserNotificationSetting(guildId, userId, key) {
       notif_daily_claim: Boolean(row.notif_daily_claim),
       notif_trades: Boolean(row.notif_trades),
       notif_mvp_win: Boolean(row.notif_mvp_win),
-      notif_quests_refresh: Boolean(row.notif_quests_refresh)
+      notif_quests_refresh: Boolean(row.notif_quests_refresh),
+      notif_weekly_summary: Boolean(row.notif_weekly_summary)
     };
   } catch (error) {
     sysError('Toggle Notification Setting Failed', error, { guild: guildId, user: userId, key });
@@ -151,6 +155,7 @@ export async function disableUserNotificationsOnLeave(guildId, userId) {
            notif_trades = FALSE,
            notif_mvp_win = FALSE,
            notif_quests_refresh = FALSE,
+           notif_weekly_summary = FALSE,
            updated_at = NOW()
        WHERE guild_id = $1 AND user_id = $2`,
       [guildId, userId]
@@ -183,7 +188,8 @@ export async function reconcileGuildNotifications(guild) {
          notif_daily_claim = TRUE OR
          notif_trades = TRUE OR
          notif_mvp_win = TRUE OR
-         notif_quests_refresh = TRUE
+         notif_quests_refresh = TRUE OR
+         notif_weekly_summary = TRUE
        )`,
       [guild.id]
     );
@@ -216,6 +222,7 @@ export async function reconcileGuildNotifications(guild) {
            notif_trades = FALSE,
            notif_mvp_win = FALSE,
            notif_quests_refresh = FALSE,
+           notif_weekly_summary = FALSE,
            updated_at = NOW()
        WHERE guild_id = $1 AND user_id = ANY($2::text[])`,
       [guild.id, departed]

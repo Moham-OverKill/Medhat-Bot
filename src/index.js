@@ -16,6 +16,7 @@ import { seedMvpCacheFromDb } from './mvp/mvpCache.js';
 import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { startExpirationScheduler } from './cron/expirations.js';
+import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
 import { sendLog, logSystemEvent, sysLog, sysError } from './utils/logger.js';
@@ -330,6 +331,7 @@ client.once(Events.ClientReady, async () => {
     startQuestScheduler(client);
     startLeaderboardScheduler(client); // Also runs KotH every hour
     startExpirationScheduler(client);
+    startWeeklySummaryScheduler(client);
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
@@ -412,10 +414,16 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   return runInGuildContext(guildId, async () => {
     try {
       if (user.bot) return;
+      if (!guildId) return;
+
+      // Track reaction toward weekly activity summary
+      import('./cron/weeklySummary.js')
+        .then(({ recordWeeklyReaction }) => recordWeeklyReaction(guildId, user.id, user.username, 1))
+        .catch(() => {});
 
       // Direct check on partial message data to avoid API calls for non-quest channels
       const channelId = reaction.message.channelId;
-      if (!guildId || !channelId) return;
+      if (!channelId) return;
 
       // Get parent ID for threads/posts (Robust lookup)
       let parentId = reaction.message.channel?.parentId;
@@ -455,9 +463,15 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
   return runInGuildContext(guildId, async () => {
     try {
       if (user.bot) return;
+      if (!guildId) return;
+
+      // Decrement reaction toward weekly activity summary
+      import('./cron/weeklySummary.js')
+        .then(({ recordWeeklyReaction }) => recordWeeklyReaction(guildId, user.id, user.username, -1))
+        .catch(() => {});
 
       const channelId = reaction.message.channelId;
-      if (!guildId || !channelId) return;
+      if (!channelId) return;
 
       let parentId = reaction.message.channel?.parentId;
       if (!parentId && reaction.message.guild) {

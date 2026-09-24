@@ -77,6 +77,18 @@ export async function flushMessageBatch() {
              username = $3`,
           [entry.userId, entry.guildId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
         );
+
+        // Record toward weekly activity summary
+        await client.query(
+          `INSERT INTO user_weekly_activity (guild_id, user_id, username, messages_count, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (guild_id, user_id)
+           DO UPDATE SET
+             messages_count = user_weekly_activity.messages_count + $4,
+             username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+             updated_at = NOW()`,
+          [entry.guildId, entry.userId, entry.username, entry.count]
+        ).catch(() => {});
       }
       await client.query('COMMIT');
     } catch (err) {
@@ -546,6 +558,11 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
 
     // Battlepass XP hook for voice points — reads voice XP rate from guild config (default: 1)
     if (pointsToAward > 0) {
+      // Record toward weekly activity summary
+      import('../cron/weeklySummary.js')
+        .then(({ recordWeeklyVoice }) => recordWeeklyVoice(guildId, userId, username, pointsToAward))
+        .catch(() => {});
+
       import('../storage/config.js')
         .then(({ getGuildConfig }) => getGuildConfig(guildId))
         .then(cfg => {
@@ -684,6 +701,13 @@ export async function voicePointsTick(client) {
             return;
           }
 
+          // Record toward weekly activity summary
+          if (pointsToAward > 0) {
+            import('../cron/weeklySummary.js')
+              .then(({ recordWeeklyVoice }) => recordWeeklyVoice(row.guild_id, row.user_id, row.username, pointsToAward))
+              .catch(() => {});
+          }
+
           // Battlepass XP hook for voice tick
           import('../storage/config.js')
             .then(({ getGuildConfig }) => getGuildConfig(row.guild_id))
@@ -772,6 +796,13 @@ export async function flushAllVoiceTime(guildId) {
          WHERE guild_id = $1 AND user_id = $2`,
         [guildId, row.user_id, pointsToAward]
       );
+
+      // Record toward weekly activity summary
+      if (pointsToAward > 0) {
+        import('../cron/weeklySummary.js')
+          .then(({ recordWeeklyVoice }) => recordWeeklyVoice(guildId, row.user_id, row.username, pointsToAward))
+          .catch(() => {});
+      }
     }
   } catch (error) {
     sysError('Activity Flush Failed', error, { guild: guildId, detail: 'Flush all voice time' });
