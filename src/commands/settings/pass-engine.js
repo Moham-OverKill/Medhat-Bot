@@ -196,6 +196,11 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
       [userId, guildId, username, finalXp]
     );
 
+    // Record toward weekly activity summary
+    import('../../cron/weeklySummary.js')
+      .then(({ recordWeeklyXp }) => recordWeeklyXp(guildId, userId, username, finalXp))
+      .catch(() => {});
+
     // Dispatch any newly qualified level rewards
     await syncUserLevelRewards(guildId, userId, username, client);
   } catch (err) {

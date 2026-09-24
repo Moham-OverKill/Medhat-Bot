@@ -41,7 +41,10 @@ export function buildNotificationsPayload(guild, settings) {
     `↳ *Receive a DM if you are selected as one of the daily server MVPs.*`,
     ``,
     `• **Quest Rotations:** ${settings.notif_quests_refresh ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
-    `↳ *Receive a DM whenever server quests rotate with new tasks.*`
+    `↳ *Receive a DM whenever server quests rotate with new tasks.*`,
+    ``,
+    `• **Weekly Summary:** ${settings.notif_weekly_summary ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
+    `↳ *Receive a weekly DM summary of your messages, voice time, reactions, and XP every Friday.*`
   ].join('\n');
 
   const embed = new EmbedBuilder()
@@ -77,7 +80,12 @@ export function buildNotificationsPayload(guild, settings) {
       .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.QUESTS_REFRESH}`)
       .setLabel('Quest Rotations')
       .setEmoji('🎯')
-      .setStyle(settings.notif_quests_refresh ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(settings.notif_quests_refresh ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.WEEKLY_SUMMARY}`)
+      .setLabel('Weekly Summary')
+      .setEmoji('📊')
+      .setStyle(settings.notif_weekly_summary ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
 
   return {
