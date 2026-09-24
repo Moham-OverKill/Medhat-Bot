@@ -993,7 +993,7 @@ async function createTables() {
       ALTER TABLE user_notification_settings ADD COLUMN IF NOT EXISTS notif_weekly_summary BOOLEAN DEFAULT FALSE;
       CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
 
-      // User Weekly Activity Summary Ledger
+      -- User Weekly Activity Summary Ledger
       CREATE TABLE IF NOT EXISTS user_weekly_activity (
         guild_id VARCHAR(32) NOT NULL,
         user_id VARCHAR(32) NOT NULL,
