@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@discordjs/rest": "^2.2.0",
+    "@napi-rs/canvas": "^1.0.9",
     "discord-api-types": "^0.37.83",
     "discord.js": "^14.14.1",
     "dotenv": "^17.2.3",
