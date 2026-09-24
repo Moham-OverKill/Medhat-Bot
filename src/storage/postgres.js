@@ -992,6 +992,38 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_user_notif_guild ON user_notification_settings(guild_id);
     `);
 
+    // Global User Preferences (Persistent inventory sort preference, etc.)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id VARCHAR(32) PRIMARY KEY,
+        inventory_sort_preference VARCHAR(32) NOT NULL DEFAULT 'date',
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS inventory_sort_preference VARCHAR(32) NOT NULL DEFAULT 'date';
+    `);
+
+    // Inventory updated_at tracking and auto-update trigger
+    await pool.query(`
+      ALTER TABLE user_inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+      UPDATE user_inventory SET updated_at = purchased_at WHERE updated_at IS NULL AND purchased_at IS NOT NULL;
+    `).catch(() => {});
+
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION update_user_inventory_timestamp()
+      RETURNS TRIGGER AS $$
+      BEGIN
+         NEW.updated_at = NOW();
+         RETURN NEW;
+      END;
+      $$ language 'plpgsql';
+
+      DROP TRIGGER IF EXISTS trg_user_inventory_updated_at ON user_inventory;
+      CREATE TRIGGER trg_user_inventory_updated_at
+      BEFORE UPDATE ON user_inventory
+      FOR EACH ROW
+      EXECUTE FUNCTION update_user_inventory_timestamp();
+    `).catch(() => {});
+
     // Custom Server Embeds Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS server_embeds (
@@ -1194,5 +1226,54 @@ export async function query(text, params, retryCount = 0) {
 
     sysError('Database Query Error', error, { detail: text.substring(0, 100) });
     throw error;
+  }
+}
+
+/**
+ * Get user's persistent inventory sort preference
+ * @param {string} userId
+ * @returns {Promise<'date'|'az'|'rarity'|'quantity'>}
+ */
+export async function getUserInventorySortPreference(userId) {
+  if (!userId) return 'date';
+  try {
+    const res = await query(
+      'SELECT inventory_sort_preference FROM user_preferences WHERE user_id = $1',
+      [userId]
+    );
+    const pref = res.rows[0]?.inventory_sort_preference;
+    if (pref && ['date', 'az', 'rarity', 'quantity'].includes(pref)) {
+      return pref;
+    }
+    return 'date';
+  } catch (err) {
+    sysError('Failed to get inventory sort preference', err, { userId });
+    return 'date';
+  }
+}
+
+/**
+ * Set user's persistent inventory sort preference
+ * @param {string} userId
+ * @param {'date'|'az'|'rarity'|'quantity'} sortPreference
+ * @returns {Promise<string>}
+ */
+export async function setUserInventorySortPreference(userId, sortPreference) {
+  if (!userId) return 'date';
+  const validPref = ['date', 'az', 'rarity', 'quantity'].includes(sortPreference)
+    ? sortPreference
+    : 'date';
+  try {
+    await query(
+      `INSERT INTO user_preferences (user_id, inventory_sort_preference, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id)
+       DO UPDATE SET inventory_sort_preference = $2, updated_at = NOW()`,
+      [userId, validPref]
+    );
+    return validPref;
+  } catch (err) {
+    sysError('Failed to set inventory sort preference', err, { userId, sortPreference });
+    return 'date';
   }
 }

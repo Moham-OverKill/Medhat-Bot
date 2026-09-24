@@ -11,13 +11,13 @@ import {
   StringSelectMenuBuilder,
   MessageFlags
 } from 'discord.js';
-import { getPool } from '../storage/postgres.js';
+import { getPool, getUserInventorySortPreference, setUserInventorySortPreference } from '../storage/postgres.js';
 import { logServerEvent, sendLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
@@ -987,23 +987,33 @@ export async function handleInventoryButton(interaction) {
 
 
 // VIEW 2: Category Content View
-export async function handleInventoryCategorySelect(interaction, targetPage = 1) {
+export async function handleInventoryCategorySelect(interaction, targetPage = 1, overrideCatId = null) {
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => { });
     }
 
-    const catIdStr = interaction.customId.startsWith('bank_inv_item_select_')
-      ? interaction.customId.replace('bank_inv_item_select_', '')
-      : interaction.customId.replace('bank_inv_cat_', '');
+    let catIdStr;
+    if (overrideCatId !== null && overrideCatId !== undefined) {
+      catIdStr = String(overrideCatId);
+    } else if (interaction.customId.startsWith('bank_inv_sort_')) {
+      const parts = interaction.customId.split('_');
+      catIdStr = parts.slice(4).join('_');
+    } else if (interaction.customId.startsWith('bank_inv_item_select_')) {
+      catIdStr = interaction.customId.replace('bank_inv_item_select_', '');
+    } else {
+      catIdStr = interaction.customId.replace('bank_inv_cat_', '');
+    }
+
     const isLootBox = catIdStr === 'lootboxes';
     const isOther = catIdStr === 'null';
     const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr, 10);
 
-    // Unified Fetch: Includes DB items + Live synthesis of admin roles
-    const [inventory, categories] = await Promise.all([
+    // Unified Fetch: DB items, Live admin roles, Shop categories, and persistent sort preference
+    const [inventory, categories, sortPreference] = await Promise.all([
       getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member),
-      getShopCategories(interaction.guildId)
+      getShopCategories(interaction.guildId),
+      getUserInventorySortPreference(interaction.user.id)
     ]);
 
     let items = [];
@@ -1012,6 +1022,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
     if (isLootBox) {
       categoryName = await getLootBoxCategoryName(interaction.guildId);
       items = inventory.filter(i => i.item_type === 'loot_box');
+      items = sortInventoryItems(items, sortPreference);
     } else {
       // Filter Items (no packs, no loot boxes, match category, fail-safe for ghost roles)
       items = inventory.filter(i => {
@@ -1024,8 +1035,8 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
         return isOther ? i.category_id === null : i.category_id === categoryId;
       });
 
-      // Sort by role position
-      items = await sortItemsByRolePosition(items, interaction.guild);
+      // Sort according to user persistent preference ('date', 'az', 'rarity', 'quantity')
+      items = sortInventoryItems(items, sortPreference);
 
       if (!isOther && categoryId) {
         const cat = categories.find(c => c.id === categoryId);
@@ -1112,14 +1123,44 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
       }
     });
 
-    const row1 = new ActionRowBuilder().addComponents(selectMenu);
+    // Row 1: Sorting Buttons [ 🔤 A-Z ] | [ 🕒 Date ] | [ ✨ Rarity ] | [ 📦 Quantity ]
+    const sortButtonsRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`bank_inv_sort_az_${catIdStr}`)
+        .setLabel('A-Z')
+        .setEmoji('🔤')
+        .setStyle(sortPreference === 'az' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`bank_inv_sort_date_${catIdStr}`)
+        .setLabel('Date')
+        .setEmoji('🕒')
+        .setStyle(sortPreference === 'date' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`bank_inv_sort_rarity_${catIdStr}`)
+        .setLabel('Rarity')
+        .setEmoji('✨')
+        .setStyle(sortPreference === 'rarity' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`bank_inv_sort_quantity_${catIdStr}`)
+        .setLabel('Quantity')
+        .setEmoji('📦')
+        .setStyle(sortPreference === 'quantity' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
+
+    // Row 2: Item Select Menu
+    const rowSelect = new ActionRowBuilder().addComponents(selectMenu);
+
+    // Row 3: Action Row (Back button)
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('bank_inventory').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.editReply({ files: [], content: null,
+    await interaction.editReply({
+      files: [],
+      content: null,
       embeds: [embed],
-      components: [row1, rowBack] });
+      components: [sortButtonsRow, rowSelect, rowBack]
+    });
 
   } catch (error) {
     sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
@@ -1130,6 +1171,29 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1)
         await interaction.reply({ content: '❌ Error loading category.', flags: MessageFlags.Ephemeral });
       }
     } catch (_) { }
+  }
+}
+
+/**
+ * Handle inventory category sort button clicks
+ */
+export async function handleInventorySortButton(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
+
+    const parts = interaction.customId.split('_');
+    const mode = parts[3];
+    const catIdStr = parts.slice(4).join('_');
+
+    if (['az', 'date', 'rarity', 'quantity'].includes(mode)) {
+      await setUserInventorySortPreference(interaction.user.id, mode);
+    }
+
+    await handleInventoryCategorySelect(interaction, 1, catIdStr);
+  } catch (error) {
+    sysError('Inventory Sort Button Error', error, { user: interaction.user.id, guild: interaction.guildId });
   }
 }
 
@@ -1194,19 +1258,23 @@ export async function handleInventoryItemSelect(interaction) {
     const isLootBoxCategory = categoryId === 'lootboxes';
     const isOther = !isLootBoxCategory && (categoryId === null || categoryId === 'null');
 
-    // 1. Fetch Unified Inventory: Includes DB items + Live synthesis of admin roles
-    const inventory = await getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member);
+    // 1. Fetch Unified Inventory and persistent sort preference
+    const [inventory, sortPreference] = await Promise.all([
+      getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member),
+      getUserInventorySortPreference(interaction.user.id)
+    ]);
 
     // 2. Filter Category Items
     let items = [];
     if (isLootBoxCategory) {
       items = inventory.filter(i => i.item_type === 'loot_box');
+      items = sortInventoryItems(items, sortPreference);
     } else {
       items = inventory.filter(i => {
         if (i.item_type === 'pack' || i.is_pack || i.item_type === 'loot_box') return false;
         return isOther ? i.category_id === null : i.category_id === categoryId;
       });
-      items = await sortItemsByRolePosition(items, interaction.guild);
+      items = sortInventoryItems(items, sortPreference);
     }
 
     // STATE ANCHORING: If we have a specific invId (from an action or select),
