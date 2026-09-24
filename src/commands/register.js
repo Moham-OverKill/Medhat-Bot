@@ -10,6 +10,7 @@ import { voteCommand } from './vote.js';
 import { levelCommand } from './pass.js';
 import { notificationsCommand } from './notifications.js';
 import { inviteCommand } from './invite.js';
+import { itemsCommand } from './items.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { getQuests } from '../quests/quests.js';
@@ -49,7 +50,8 @@ export async function buildGuildCommands(guildId) {
     tradeCommand.toJSON(),
     voteCommand.toJSON(),
     notificationsCommand.toJSON(),
-    inviteCommand.toJSON()
+    inviteCommand.toJSON(),
+    itemsCommand.toJSON()
   ];
 
   if (hasQuests) {

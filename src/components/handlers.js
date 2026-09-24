@@ -128,6 +128,7 @@ import {
   handleTradeExecution,
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
+import { handleItemsComponent } from '../commands/items.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -435,6 +436,8 @@ export function setupComponentHandlers(client) {
         await handleInventoryAction(interaction);
       } else if (customId === 'bank_back') {
         await handleBackButton(interaction);
+      } else if (customId.startsWith('items_cat_') || customId.startsWith('items_page_')) {
+        await handleItemsComponent(interaction);
       }
 
       // ADMIN SHOP SETUP - EDIT START HANDLERS
