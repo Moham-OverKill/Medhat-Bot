@@ -60,7 +60,7 @@ export function buildNotificationsPayload(guild, settings) {
       .setStyle(settings.notif_level_up ? ButtonStyle.Success : ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.DAILY_CLAIM}`)
-      .setLabel('Daily Claim')
+      .setLabel('Daily')
       .setEmoji('💰')
       .setStyle(settings.notif_daily_claim ? ButtonStyle.Success : ButtonStyle.Secondary),
     new ButtonBuilder()
@@ -73,17 +73,17 @@ export function buildNotificationsPayload(guild, settings) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.MVP_WIN}`)
-      .setLabel('MVP Winner')
+      .setLabel('MVP')
       .setEmoji('🏆')
       .setStyle(settings.notif_mvp_win ? ButtonStyle.Success : ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.QUESTS_REFRESH}`)
-      .setLabel('Quest Rotations')
+      .setLabel('Quests')
       .setEmoji('🎯')
       .setStyle(settings.notif_quests_refresh ? ButtonStyle.Success : ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`notif_toggle_${NOTIFICATION_KEYS.WEEKLY_SUMMARY}`)
-      .setLabel('Weekly Summary')
+      .setLabel('Summary')
       .setEmoji('📊')
       .setStyle(settings.notif_weekly_summary ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
