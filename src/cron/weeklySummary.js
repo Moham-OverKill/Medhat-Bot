@@ -264,7 +264,6 @@ export async function dispatchWeeklyActivitySummaries(client) {
 
       const msgCount = Number(record.messages_count || 0).toLocaleString();
       const voiceMins = Number(record.voice_minutes || 0).toLocaleString();
-      const voiceCalls = Number(record.voice_calls_count || 0).toLocaleString();
       const mediaFiles = Number(record.media_count || 0).toLocaleString();
       const reactGiven = Number(record.reactions_count || 0).toLocaleString();
       const reactReceived = Number(record.reactions_received_count || 0).toLocaleString();
@@ -276,7 +275,7 @@ export async function dispatchWeeklyActivitySummaries(client) {
         .setDescription(
           `Activity breakdown for **${guild.name}**:\n\n` +
           `• 💬 Messages Sent: \`${msgCount}\`\n` +
-          `• 🎙️ Voice Time: \`${voiceMins} mins\` (${voiceCalls} calls joined)\n` +
+          `• 🎙️ Voice Time: \`${voiceMins} mins\`\n` +
           `• 📎 Media Shared: \`${mediaFiles} files\`\n` +
           `• ⭐ Reactions Given: \`${reactGiven}\`\n` +
           `• ❤️ Reactions Received: \`${reactReceived}\`\n` +
