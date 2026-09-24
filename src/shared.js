@@ -179,6 +179,71 @@ export async function sortItemsByRolePosition(items, guild) {
   });
 }
 
+export const RARITY_WEIGHTS = {
+  legendary: 5,
+  epic: 4,
+  rare: 3,
+  uncommon: 2,
+  common: 1
+};
+
+/**
+ * Sorts inventory items according to user's preference
+ * Modes: 'date' (default), 'az', 'rarity', 'quantity'
+ *
+ * @param {Array<Object>} items
+ * @param {string} [sortMode='date']
+ * @returns {Array<Object>}
+ */
+export function sortInventoryItems(items, sortMode = 'date') {
+  if (!Array.isArray(items) || items.length <= 1) return items || [];
+  const copy = [...items];
+
+  switch (sortMode) {
+    case 'az':
+      return copy.sort((a, b) => {
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (a.id || 0) - (b.id || 0);
+      });
+
+    case 'rarity':
+      return copy.sort((a, b) => {
+        const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
+        const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
+        if (weightB !== weightA) return weightB - weightA; // Highest rarity first
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (a.id || 0) - (b.id || 0);
+      });
+
+    case 'quantity':
+      return copy.sort((a, b) => {
+        const qtyA = parseInt(a.quantity, 10) || 1;
+        const qtyB = parseInt(b.quantity, 10) || 1;
+        if (qtyB !== qtyA) return qtyB - qtyA; // Highest quantity first
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+        if (cmp !== 0) return cmp;
+        return (a.id || 0) - (b.id || 0);
+      });
+
+    case 'date':
+    default:
+      return copy.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.purchased_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.updated_at || b.purchased_at || b.created_at || 0).getTime();
+        if (dateB !== dateA) return dateB - dateA; // Most recently updated first
+        return (b.id || 0) - (a.id || 0);
+      });
+  }
+}
+
 /**
  * Standardized inventory line formatting for both User and Admin views.
  * Ensures perfectly aligned emojis and mentions.

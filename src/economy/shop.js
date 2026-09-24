@@ -1885,6 +1885,10 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       } else {
         const primary = consolidatedMap.get(key);
         primary.quantity += rowQty;
+        if (new Date(row.updated_at || row.purchased_at || 0) > new Date(primary.updated_at || primary.purchased_at || 0)) {
+          primary.updated_at = row.updated_at;
+          primary.purchased_at = row.purchased_at;
+        }
         // Prioritize active running timer row as primary representation
         const isRowActive = row.is_active === true;
         const isPrimaryActive = primary.is_active === true;
@@ -1942,7 +1946,8 @@ export async function getSynthesizedInventory(userId, guildId, member) {
         source: 'SYNC',
         is_active: true, // Always active for roles
         price: 0,
-        purchased_at: new Date()
+        purchased_at: new Date(),
+        updated_at: new Date()
       });
     }
   }
