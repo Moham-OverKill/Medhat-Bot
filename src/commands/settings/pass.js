@@ -587,6 +587,9 @@ export async function handlePassComponent(interaction) {
       await setGuildConfig(guildId, { battlepass_enabled: false });
       sysLog('Levels Paused', { guild: guildId, user: interaction.user.id });
       sendLog(interaction.guild, 'audit', 'orange', '⏸️ Levels Paused', `Admin **<@${interaction.user.id}>** paused Level progression.`);
+      import('../register.js').then(({ syncGuildSlashCommands }) => {
+        syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+      }).catch(() => {});
       const payload = await getPassDashboardPayload(guildId, page, null);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
@@ -629,6 +632,9 @@ export async function handlePassComponent(interaction) {
       await setGuildConfig(guildId, { battlepass_enabled: true });
       sysLog('Levels Started', { guild: guildId, user: interaction.user.id });
       sendLog(interaction.guild, 'audit', 'green', '⭐ Levels Started', `Admin **<@${interaction.user.id}>** started Level progression.`);
+      import('../register.js').then(({ syncGuildSlashCommands }) => {
+        syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+      }).catch(() => {});
 
       // Background reward distribution for all members with imported/existing XP
       import('./pass-engine.js').then(async ({ syncUserLevelRewards }) => {
@@ -1052,6 +1058,9 @@ export async function handlePassComponent(interaction) {
       await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2', [guildId, level]);
       await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
       await pool.query('DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND level = $2', [guildId, level]);
+      import('../register.js').then(({ syncGuildSlashCommands }) => {
+        syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+      }).catch(() => {});
       // Find previous level (or closest remaining level)
       const prevLevelRes = await pool.query(
         `SELECT level FROM battlepass_config WHERE guild_id = $1 AND level < $2 ORDER BY level DESC LIMIT 1`,
@@ -1588,6 +1597,9 @@ export async function handlePassModal(interaction) {
 
       sysLog('Level Created', { guild: guildId, user: interaction.user.id, detail: 'Level ' + level + ' created' });
       sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Created', `Admin **<@${interaction.user.id}>** created **Level ${level}**.`);
+      import('../register.js').then(({ syncGuildSlashCommands }) => {
+        syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+      }).catch(() => {});
 
       const payload = await getPassDashboardPayload(guildId, page, level);
       await interaction.editReply({ files: [], content: '', ...payload });

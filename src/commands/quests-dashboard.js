@@ -512,6 +512,10 @@ export async function handleAddQuestModal(interaction) {
       return;
     }
 
+    import('./register.js').then(({ syncGuildSlashCommands }) => {
+      syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+    }).catch(() => {});
+
     await showQuestsDashboard(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Add quest modal submit');
@@ -652,6 +656,10 @@ export async function handleDeleteQuest(interaction, questId) {
     const { syncQuestChannelCache } = await import('../activity/index.js');
     await syncQuestChannelCache(guildId);
 
+    import('./register.js').then(({ syncGuildSlashCommands }) => {
+      syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+    }).catch(() => {});
+
     await showQuestsDashboard(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Delete quest');
@@ -707,6 +715,10 @@ export async function handleToggleQuests(interaction) {
 
       sysLog('Quest System Enabled', { guild: guildId, detail: 'Fresh rotation triggered immediately' });
     }
+
+    import('./register.js').then(({ syncGuildSlashCommands }) => {
+      syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+    }).catch(() => {});
 
     await showQuestsDashboard(interaction);
   } catch (error) {

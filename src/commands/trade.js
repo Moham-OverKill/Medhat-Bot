@@ -331,6 +331,25 @@ export async function handleTradeCommand(interaction) {
             return interaction.reply({ content: '❌ You cannot trade with bots.', flags: MessageFlags.Ephemeral });
         }
 
+        // Upfront check: User must have tradable items in inventory to initiate a trade
+        const allSenderItems = await getUserInventory(sender.id, guildId);
+        const hasTradable = allSenderItems.some(i => {
+            const source = (i.purchase_source || i.source || '').toUpperCase();
+            if (source === 'SYNC' || source === 'ADMIN') return false; 
+            if (i.item_type === 'pack') return false; 
+            if (i.is_tradable === false) return false;
+            const rawQty = parseInt(i.quantity, 10) || 1;
+            const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
+            return availToTrade > 0;
+        });
+
+        if (!hasTradable) {
+            return interaction.reply({
+                content: 'You do not have any tradable items in your inventory to initiate a trade.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
         // ── Anti-Smurf / Anti-Alt Gate (7-Day Server Membership & 30-Day Discord Age) ──
         // UPDATED: Dynamic toggles via settings. Default to false (OFF) for all servers.
         const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
