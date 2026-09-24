@@ -1229,6 +1229,22 @@ export async function query(text, params, retryCount = 0) {
   }
 }
 
+let preferencesTableEnsured = false;
+async function ensurePreferencesTable() {
+  if (preferencesTableEnsured) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id VARCHAR(32) PRIMARY KEY,
+        inventory_sort_preference VARCHAR(32) NOT NULL DEFAULT 'date',
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS inventory_sort_preference VARCHAR(32) NOT NULL DEFAULT 'date';
+    `);
+    preferencesTableEnsured = true;
+  } catch (_) {}
+}
+
 /**
  * Get user's persistent inventory sort preference
  * @param {string} userId
@@ -1237,6 +1253,7 @@ export async function query(text, params, retryCount = 0) {
 export async function getUserInventorySortPreference(userId) {
   if (!userId) return 'date';
   try {
+    await ensurePreferencesTable();
     const res = await query(
       'SELECT inventory_sort_preference FROM user_preferences WHERE user_id = $1',
       [userId]
@@ -1264,6 +1281,7 @@ export async function setUserInventorySortPreference(userId, sortPreference) {
     ? sortPreference
     : 'date';
   try {
+    await ensurePreferencesTable();
     await query(
       `INSERT INTO user_preferences (user_id, inventory_sort_preference, updated_at)
        VALUES ($1, $2, NOW())
