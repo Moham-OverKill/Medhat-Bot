@@ -3,8 +3,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  SlashCommandBuilder,
-  MessageFlags
+  SlashCommandBuilder
 } from 'discord.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -35,8 +34,7 @@ export async function handleInviteCommand(interaction) {
 
     await interaction.reply({
       embeds: [embed],
-      components: [row],
-      flags: MessageFlags.Ephemeral
+      components: [row]
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'invite command');
