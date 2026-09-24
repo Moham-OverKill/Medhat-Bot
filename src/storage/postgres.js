@@ -1267,10 +1267,17 @@ async function ensurePreferencesTable() {
   } catch (_) {}
 }
 
+const VALID_SORT_PREFERENCES = [
+  'date', 'date_desc', 'date_asc',
+  'az', 'za',
+  'rarity', 'rarity_desc', 'rarity_asc',
+  'quantity', 'quantity_desc', 'quantity_asc'
+];
+
 /**
  * Get user's persistent inventory sort preference
  * @param {string} userId
- * @returns {Promise<'date'|'az'|'rarity'|'quantity'>}
+ * @returns {Promise<string>}
  */
 export async function getUserInventorySortPreference(userId) {
   if (!userId) return 'date';
@@ -1281,7 +1288,7 @@ export async function getUserInventorySortPreference(userId) {
       [userId]
     );
     const pref = res.rows[0]?.inventory_sort_preference;
-    if (pref && ['date', 'az', 'rarity', 'quantity'].includes(pref)) {
+    if (pref && VALID_SORT_PREFERENCES.includes(pref)) {
       return pref;
     }
     return 'date';
@@ -1294,12 +1301,12 @@ export async function getUserInventorySortPreference(userId) {
 /**
  * Set user's persistent inventory sort preference
  * @param {string} userId
- * @param {'date'|'az'|'rarity'|'quantity'} sortPreference
+ * @param {string} sortPreference
  * @returns {Promise<string>}
  */
 export async function setUserInventorySortPreference(userId, sortPreference) {
   if (!userId) return 'date';
-  const validPref = ['date', 'az', 'rarity', 'quantity'].includes(sortPreference)
+  const validPref = VALID_SORT_PREFERENCES.includes(sortPreference)
     ? sortPreference
     : 'date';
   try {
