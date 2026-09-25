@@ -265,6 +265,15 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
          SELECT $1, $2, $3, balance, 'quest_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
         [userId, guildId, reward, 'Completed Quest', quest.id]
       );
+
+      // Permanently increment user's all-time completed quests counter
+      await client.query(
+        `INSERT INTO user_activity (user_id, guild_id, quests_completed)
+         VALUES ($1, $2, 1)
+         ON CONFLICT (user_id, guild_id) DO UPDATE
+         SET quests_completed = COALESCE(user_activity.quests_completed, 0) + 1`,
+        [userId, guildId]
+      ).catch(() => {});
       
       sysLog('Quest Atomic Payout', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Amount: ${reward}` });
     }
@@ -433,6 +442,15 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
          SELECT $1, $2, $3, balance, 'quest_reward', $4, $5 FROM user_balances WHERE user_id = $1 AND guild_id = $2`,
         [userId, guildId, reward, 'Completed Quest', quest.id]
       );
+
+      // Permanently increment user's all-time completed quests counter
+      await client.query(
+        `INSERT INTO user_activity (user_id, guild_id, quests_completed)
+         VALUES ($1, $2, 1)
+         ON CONFLICT (user_id, guild_id) DO UPDATE
+         SET quests_completed = COALESCE(user_activity.quests_completed, 0) + 1`,
+        [userId, guildId]
+      ).catch(() => {});
       
       sysLog('Quest Atomic Payout', { user: userId, guild: guildId, detail: `QuestID: ${quest.id} | Amount: ${reward}` });
     }
