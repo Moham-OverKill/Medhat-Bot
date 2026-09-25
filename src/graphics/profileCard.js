@@ -140,6 +140,8 @@ export async function generateProfileCard(profileData) {
   const height = 260;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   const {
     displayName = 'User',
@@ -274,23 +276,6 @@ export async function generateProfileCard(profileData) {
     badgeX += badgeW + 10;
   }
 
-  if (boostPct > 0) {
-    const boostLabel = `+${boostPct}% XP`;
-    ctx.font = `bold 12px ${fontStack}`;
-    const boostW = ctx.measureText(boostLabel).width + 18;
-    const boostH = 26;
-    roundRect(ctx, badgeX, 34, boostW, boostH, 13);
-    ctx.fillStyle = 'rgba(56, 239, 125, 0.2)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(56, 239, 125, 0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#38EF7D';
-    ctx.textAlign = 'center';
-    ctx.fillText(boostLabel, badgeX + boostW / 2, 40);
-  }
-
   // Accent Underline spanning across content area
   const underlineY = 78;
   ctx.beginPath();
@@ -310,19 +295,21 @@ export async function generateProfileCard(profileData) {
   const stats = [
     { label: 'Level', value: String(currentLevel), color: '#FFFFFF' },
     { label: 'Rank', value: `#${rank}`, color: rank === 1 ? '#FFD700' : '#00E5FF' },
-    { label: 'Streak', value: `${streak}d`, color: '#FF7675' },
+    { label: 'Streak', value: String(streak), color: '#FF7675' },
     { label: 'Quests', value: String(questsDone), color: '#38EF7D' },
     { label: 'Coins', value: formatCompactNumber(balance), color: '#FFD700', isCoin: true },
     { label: 'Items', value: String(itemCount), color: '#C4B5FD' }
   ];
 
   // Measure all stats to evenly distribute them across contentWidth with zero empty space
+  const coinIconSize = 28;
+  const coinSpacing = 8;
   const measured = stats.map(st => {
     ctx.font = `bold 17px ${fontStack}`;
     const labelW = ctx.measureText(st.label + ': ').width;
     ctx.font = `bold 22px ${fontStack}`;
     const valW = ctx.measureText(st.value).width;
-    const coinW = st.isCoin ? 24 : 0;
+    const coinW = st.isCoin ? (coinIconSize + coinSpacing) : 0;
     return { ...st, width: labelW + coinW + valW, labelW, valW, coinW };
   });
 
@@ -331,7 +318,6 @@ export async function generateProfileCard(profileData) {
   const statsY = 98;
   let curX = contentX;
 
-  const coinIconSize = 20;
   measured.forEach((st) => {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -344,13 +330,13 @@ export async function generateProfileCard(profileData) {
     let valX = curX + st.labelW;
 
     if (st.isCoin) {
-      const coinIconY = statsY + 2;
+      const coinIconY = statsY - 3;
       if (customCoinImg) {
         ctx.drawImage(customCoinImg, valX, coinIconY, coinIconSize, coinIconSize);
       } else {
         drawVectorCoin(ctx, valX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
       }
-      valX += coinIconSize + 6;
+      valX += coinIconSize + coinSpacing;
     }
 
     // Value
