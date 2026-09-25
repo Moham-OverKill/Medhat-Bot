@@ -1,5 +1,26 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { sysError, sysLog } from '../utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const fontsDir = path.resolve(__dirname, '../assets/fonts');
+
+// Register bundled Roboto fonts for consistent font rendering across all platforms and Docker
+try {
+  const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
+  const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
+  if (fs.existsSync(boldPath)) {
+    GlobalFonts.registerFromPath(boldPath, 'Roboto');
+  }
+  if (fs.existsSync(regularPath)) {
+    GlobalFonts.registerFromPath(regularPath, 'Roboto');
+  }
+} catch (err) {
+  sysError('Font Registration Error', err);
+}
 
 /**
  * Format numbers with compact suffixes (e.g., 1.5K, 2.3M) or standard commas
@@ -137,7 +158,7 @@ export async function generateProfileCard(profileData) {
     accentColor = '#00E5FF'
   } = profileData;
 
-  const fontStack = '"Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
+  const fontStack = '"Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
 
   // 1. Base Canvas Background (Deep Obsidian Gradient)
   const bgGrad = ctx.createLinearGradient(0, 0, width, height);
