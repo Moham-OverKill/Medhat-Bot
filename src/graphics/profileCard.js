@@ -133,6 +133,26 @@ function hexToRgba(hex, alpha = 1) {
 }
 
 /**
+ * Shift hex color brightness by a percentage (-1.0 to 1.0)
+ * @param {string} hex
+ * @param {number} percent
+ * @returns {string}
+ */
+function shiftColorBrightness(hex, percent) {
+  let clean = String(hex || '#00E5FF').replace('#', '');
+  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
+  const num = parseInt(clean, 16);
+  if (isNaN(num)) return '#0099FF';
+  let r = (num >> 16) & 255;
+  let g = (num >> 8) & 255;
+  let b = num & 255;
+  r = Math.min(255, Math.max(0, Math.round(r * (1 + percent))));
+  g = Math.min(255, Math.max(0, Math.round(g * (1 + percent))));
+  b = Math.min(255, Math.max(0, Math.round(b * (1 + percent))));
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Extract dominant vibrant color from an avatar image
  * @param {import('@napi-rs/canvas').Image} img
  * @returns {string|null} Hex color code or null
@@ -236,6 +256,7 @@ export async function generateProfileCard(profileData) {
     itemCount = 0,
     customCoinUrl = null,
     isBooster = false,
+    isMvp = false,
     boostPct = 0,
     accentColor = '#00E5FF'
   } = profileData;
@@ -339,10 +360,10 @@ export async function generateProfileCard(profileData) {
   }
   ctx.fillText(handleText, contentX, 28);
 
-  // Optional Badges (Booster pill, XP boost)
-  let badgeX = contentX + ctx.measureText(handleText).width + 18;
+  // Badges (Booster, MVP)
+  let badgeX = contentX + ctx.measureText(handleText).width + 16;
   if (isBooster) {
-    const badgeW = 86;
+    const badgeW = 76;
     const badgeH = 26;
     roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
     ctx.fillStyle = 'rgba(244, 127, 255, 0.2)';
@@ -355,7 +376,24 @@ export async function generateProfileCard(profileData) {
     ctx.font = `bold 12px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.fillText('BOOSTER', badgeX + badgeW / 2, 40);
-    badgeX += badgeW + 10;
+    badgeX += badgeW + 8;
+  }
+
+  if (isMvp) {
+    const badgeW = 54;
+    const badgeH = 26;
+    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.18)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font = `bold 12px ${fontStack}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('MVP', badgeX + badgeW / 2, 40);
+    badgeX += badgeW + 8;
   }
 
   // Accent Underline spanning across content area
@@ -458,8 +496,8 @@ export async function generateProfileCard(profileData) {
 
     roundRect(ctx, barX, barY, fillWidth, barHeight, barRadius);
     const fillGrad = ctx.createLinearGradient(barX, 0, barX + fillWidth, 0);
-    fillGrad.addColorStop(0, '#00E5FF');
-    fillGrad.addColorStop(1, '#0099FF');
+    fillGrad.addColorStop(0, themeColor);
+    fillGrad.addColorStop(1, shiftColorBrightness(themeColor, -0.25));
     ctx.fillStyle = fillGrad;
     ctx.fill();
     ctx.restore();
