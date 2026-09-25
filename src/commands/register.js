@@ -108,11 +108,33 @@ export async function registerSlashCommands(client) {
     );
     sysLog('Global Slash Commands Cleared', { detail: 'Scoped registration to guild-level' });
 
-    // Guild commands are registered dynamically via real-time event triggers:
-    // - On guild join (guildCreate event in src/index.js)
-    // - On quest configuration changes (src/commands/quests-dashboard.js)
-    // - On level/battlepass configuration changes (src/commands/settings/pass.js)
-    // Discord permanently retains registered guild commands, so sweeping all guilds on boot is omitted to eliminate startup latency.
+    // 2. Synchronize guild slash commands across all guilds in the background (non-blocking)
+    // Active/configured guilds are prioritized so newly introduced commands (like /profile) appear immediately.
+    setImmediate(async () => {
+      try {
+        const pool = getPool();
+        const confRes = await pool.query('SELECT guild_id FROM guild_configs').catch(() => ({ rows: [] }));
+        const priorityGuildIds = new Set(confRes.rows.map(r => r.guild_id));
+
+        const allGuildIds = Array.from(client.guilds.cache.keys());
+        allGuildIds.sort((a, b) => {
+          const aPri = priorityGuildIds.has(a) ? 1 : 0;
+          const bPri = priorityGuildIds.has(b) ? 1 : 0;
+          return bPri - aPri;
+        });
+
+        let synced = 0;
+        for (const guildId of allGuildIds) {
+          await syncGuildSlashCommands(guildId, client);
+          synced++;
+          await new Promise(r => setTimeout(r, 120));
+        }
+        sysLog('Background Slash Commands Sync Complete', { detail: `Synced ${synced} guilds` });
+      } catch (bgErr) {
+        sysError('Background Guild Slash Commands Sync Error', bgErr);
+      }
+    });
+
     return { registered: true, count: 0 };
   } catch (error) {
     sysError('Slash command registration failed', error, { detail: client.application?.id });
