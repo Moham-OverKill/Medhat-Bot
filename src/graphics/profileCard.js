@@ -505,13 +505,22 @@ export async function generateProfileCard(profileData) {
   const currentXp = Math.max(0, xpIntoCurrentLevel);
   const progressRatio = Math.min(1, Math.max(0, currentXp / requiredXp));
 
-  // Progress Bar Track (Clean high-contrast rounded capsule)
-  roundRect(ctx, barX, barY, barWidth, barHeight, barRadius);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fill();
-
-  // Progress Bar Filled Portion (Vibrant Cyan-to-Blue pill fill)
-  if (progressRatio > 0) {
+  // Progress Bar Track & Fill
+  if (progressRatio <= 0) {
+    // 0% progress: whole track is white capsule
+    roundRect(ctx, barX, barY, barWidth, barHeight, barRadius);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+  } else if (progressRatio >= 1) {
+    // 100% progress: full capsule filled with theme gradient
+    roundRect(ctx, barX, barY, barWidth, barHeight, barRadius);
+    const fillGrad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0);
+    fillGrad.addColorStop(0, themeColor);
+    fillGrad.addColorStop(1, shiftColorBrightness(themeColor, -0.25));
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+  } else {
+    // Partial progress: clip to track capsule so the rounded outer bounds are preserved
     const minFillWidth = barRadius * 2;
     const fillWidth = Math.max(minFillWidth, barWidth * progressRatio);
 
@@ -519,12 +528,18 @@ export async function generateProfileCard(profileData) {
     roundRect(ctx, barX, barY, barWidth, barHeight, barRadius);
     ctx.clip();
 
+    // White unfilled track rendered ONLY behind the unfilled area (preventing white fringe on the left cap)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(barX + fillWidth - barRadius, barY - 2, barWidth - fillWidth + barRadius + 4, barHeight + 4);
+
+    // Filled portion with dynamic gradient and rounded right end cap
     roundRect(ctx, barX, barY, fillWidth, barHeight, barRadius);
     const fillGrad = ctx.createLinearGradient(barX, 0, barX + fillWidth, 0);
     fillGrad.addColorStop(0, themeColor);
     fillGrad.addColorStop(1, shiftColorBrightness(themeColor, -0.25));
     ctx.fillStyle = fillGrad;
     ctx.fill();
+
     ctx.restore();
   }
 
