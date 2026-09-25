@@ -75,9 +75,11 @@ export async function handleProfileCommand(interaction) {
         [guildId, userId]
       ).catch(() => ({ rows: [{ total_items: 0 }] })),
       pool.query(
-        `SELECT COUNT(*)::int AS quests_done
-         FROM quest_progress
-         WHERE guild_id = $1 AND user_id = $2 AND completed = TRUE`,
+        `SELECT GREATEST(
+           COALESCE((SELECT quests_completed FROM user_activity WHERE guild_id = $1 AND user_id = $2), 0),
+           COALESCE((SELECT COUNT(*)::int FROM transactions WHERE user_id = $2 AND guild_id = $1 AND type IN ('quest_reward', 'mission_reward')), 0),
+           COALESCE((SELECT COUNT(*)::int FROM quest_progress WHERE guild_id = $1 AND user_id = $2 AND completed = TRUE), 0)
+         ) AS quests_done`,
         [guildId, userId]
       ).catch(() => ({ rows: [{ quests_done: 0 }] })),
       getGuildConfig(guildId).catch(() => ({}))
