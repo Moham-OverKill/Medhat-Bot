@@ -6,6 +6,8 @@ import {
 import { generateProfileCard } from '../graphics/profileCard.js';
 import { getUserPassProgress } from './settings/pass-engine.js';
 import { getUserBalance } from '../economy/service.js';
+import { purgeUserInventory, getSynthesizedInventory } from '../economy/shop.js';
+import { isStreakValid } from '../utils/time.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -47,9 +49,18 @@ export async function handleProfileCommand(interaction) {
     const userId = targetUser.id;
     const pool = getPool();
 
+    // 0. Flush live tracking batch first so DB is fully up to date
+    try {
+      const { flushMessageBatch } = await import('../activity/tracker.js');
+      await flushMessageBatch().catch(() => {});
+    } catch {}
+
+    // Event-driven purge so inventory data matches /inventory exactly
+    await purgeUserInventory(userId, guildId, targetMember).catch(() => {});
+
     // 1. Fetch Economy stats, Level progress, Inventory, Quests, and Rank in parallel
-    const [balanceData, passData, rankResult, invResult, questResult, config] = await Promise.all([
-      getUserBalance(userId, guildId).catch(() => ({ balance: 0, total_earned: 0, daily_streak: 0 })),
+    const [balanceData, passData, rankResult, totalRankedResult, inventory, questResult, config] = await Promise.all([
+      getUserBalance(userId, guildId).catch(() => ({ balance: 0, total_earned: 0, daily_streak: 0, last_daily: null })),
       getUserPassProgress(guildId, userId).catch(() => ({
         currentLevel: 0,
         totalXp: 0,
@@ -58,22 +69,19 @@ export async function handleProfileCommand(interaction) {
         totalBoostPct: 0
       })),
       pool.query(
-        `SELECT COUNT(*) + 1 AS rank
-         FROM user_activity
-         WHERE guild_id = $1
-           AND battlepass_xp > (
-             SELECT COALESCE(battlepass_xp, 0)
-             FROM user_activity
-             WHERE guild_id = $1 AND user_id = $2
-           )`,
+        `WITH ranked AS (
+           SELECT user_id, ROW_NUMBER() OVER (ORDER BY COALESCE(battlepass_xp, 0) DESC, user_id ASC) AS rank
+           FROM user_activity
+           WHERE guild_id = $1 AND battlepass_xp > 0
+         )
+         SELECT rank FROM ranked WHERE user_id = $2`,
         [guildId, userId]
-      ).catch(() => ({ rows: [{ rank: 1 }] })),
+      ).catch(() => ({ rows: [] })),
       pool.query(
-        `SELECT COALESCE(SUM(quantity), 0)::int AS total_items
-         FROM user_inventory
-         WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, userId]
-      ).catch(() => ({ rows: [{ total_items: 0 }] })),
+        `SELECT COUNT(*)::int AS count FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0`,
+        [guildId]
+      ).catch(() => ({ rows: [{ count: 0 }] })),
+      getSynthesizedInventory(userId, guildId, targetMember).catch(() => []),
       pool.query(
         `SELECT GREATEST(
            COALESCE((SELECT quests_completed FROM user_activity WHERE guild_id = $1 AND user_id = $2), 0),
@@ -85,9 +93,18 @@ export async function handleProfileCommand(interaction) {
       getGuildConfig(guildId).catch(() => ({}))
     ]);
 
-    const rank = parseInt(rankResult.rows[0]?.rank || 1, 10);
-    const itemCount = parseInt(invResult.rows[0]?.total_items || 0, 10);
+    const totalRankedCount = parseInt(totalRankedResult.rows[0]?.count || 0, 10);
+    const rank = parseInt(rankResult.rows[0]?.rank || (totalRankedCount + 1), 10);
+
+    // Exact inventory calculation matching /inventory command (filtering out packs)
+    const visibleItems = (inventory || []).filter(i => i.item_type !== 'pack' && !i.is_pack);
+    const itemCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 1), 0);
+
     const questsDone = parseInt(questResult.rows[0]?.quests_done || 0, 10);
+
+    // Validate streak using Cairo midnight logic matching /bank command
+    const streakIsValid = isStreakValid(balanceData?.last_daily);
+    const streak = streakIsValid ? parseInt(balanceData?.daily_streak || 0, 10) : 0;
 
     const isBooster = Boolean(targetMember?.premiumSince);
     const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
@@ -115,8 +132,8 @@ export async function handleProfileCommand(interaction) {
       xpIntoCurrentLevel: passData.xpIntoCurrentLevel || 0,
       xpForNextLevel: passData.xpForNextLevel || 100,
       totalXp: passData.totalXp || 0,
-      balance: balanceData.balance || 0,
-      streak: balanceData.daily_streak || 0,
+      balance: parseInt(balanceData.balance || 0, 10),
+      streak,
       questsDone,
       itemCount,
       customCoinUrl,
