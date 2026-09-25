@@ -44,7 +44,7 @@ export function buildNotificationsPayload(guild, settings) {
     `↳ *Receive a DM whenever server quests rotate with new tasks.*`,
     ``,
     `• **Weekly Summary:** ${settings.notif_weekly_summary ? '`🟢 Enabled`' : '`🔴 Disabled`'}`,
-    `↳ *Receive a weekly DM summary of your messages, voice time, reactions, and XP every Friday.*`
+    `↳ *Receive a weekly DM summary of your messages, voice time and reactions.*`
   ].join('\n');
 
   const embed = new EmbedBuilder()
