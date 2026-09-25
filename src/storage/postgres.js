@@ -345,8 +345,23 @@ async function createTables() {
     // Add new columns if they don't exist (migration for existing DBs)
     await pool.query(`
       ALTER TABLE user_activity 
-      ADD COLUMN IF NOT EXISTS voice_valid_start BIGINT;
+      ADD COLUMN IF NOT EXISTS voice_valid_start BIGINT,
+      ADD COLUMN IF NOT EXISTS quests_completed INTEGER NOT NULL DEFAULT 0;
     `);
+
+    // Backfill historical quest completions from immutable transactions ledger
+    await pool.query(`
+      UPDATE user_activity ua
+      SET quests_completed = sub.cnt
+      FROM (
+        SELECT user_id, guild_id, COUNT(*)::int AS cnt
+        FROM transactions
+        WHERE type IN ('quest_reward', 'mission_reward')
+        GROUP BY user_id, guild_id
+      ) sub
+      WHERE ua.user_id = sub.user_id AND ua.guild_id = sub.guild_id
+        AND ua.quests_completed = 0;
+    `).catch(() => {});
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_user_activity_guild_id ON user_activity(guild_id);
