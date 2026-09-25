@@ -111,6 +111,10 @@ export async function handleProfileCommand(interaction) {
     const streakIsValid = isStreakValid(balanceData?.last_daily);
     const streak = streakIsValid ? parseInt(balanceData?.daily_streak || 0, 10) : 0;
 
+    const isOwner = Boolean(
+      (interaction.guild?.ownerId && interaction.guild.ownerId === targetUser.id) ||
+      (targetMember?.id && interaction.guild?.ownerId === targetMember.id)
+    );
     const isBooster = Boolean(targetMember?.premiumSince);
     const isMvp = isUserMvp(guildId, userId)
       || (mvpResult.rows.length > 0)
@@ -146,6 +150,7 @@ export async function handleProfileCommand(interaction) {
       questsDone,
       itemCount,
       customCoinUrl,
+      isOwner,
       isBooster,
       isMvp,
       boostPct: passData.totalBoostPct || 0,
