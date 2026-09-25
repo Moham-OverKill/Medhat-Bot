@@ -255,6 +255,7 @@ export async function generateProfileCard(profileData) {
     questsDone = 0,
     itemCount = 0,
     customCoinUrl = null,
+    isOwner = false,
     isBooster = false,
     isMvp = false,
     boostPct = 0,
@@ -351,7 +352,13 @@ export async function generateProfileCard(profileData) {
   ctx.fillStyle = '#FFFFFF';
 
   let handleText = userHandle;
-  const maxHandleWidth = contentWidth - 190;
+  let totalBadgesWidth = 0;
+  if (isOwner) totalBadgesWidth += 68 + 8;
+  if (isMvp) totalBadgesWidth += 54 + 8;
+  if (isBooster) totalBadgesWidth += 76 + 8;
+  if (totalBadgesWidth > 0) totalBadgesWidth += 16;
+
+  const maxHandleWidth = Math.max(160, contentWidth - totalBadgesWidth);
   if (ctx.measureText(handleText).width > maxHandleWidth) {
     while (ctx.measureText(handleText + '...').width > maxHandleWidth && handleText.length > 0) {
       handleText = handleText.slice(0, -1);
@@ -360,22 +367,23 @@ export async function generateProfileCard(profileData) {
   }
   ctx.fillText(handleText, contentX, 28);
 
-  // Badges (Booster, MVP)
+  // Badges (Owner, MVP, Booster)
   let badgeX = contentX + ctx.measureText(handleText).width + 16;
-  if (isBooster) {
-    const badgeW = 76;
+
+  if (isOwner) {
+    const badgeW = 68;
     const badgeH = 26;
     roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
-    ctx.fillStyle = 'rgba(244, 127, 255, 0.2)';
+    ctx.fillStyle = 'rgba(255, 68, 85, 0.18)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(244, 127, 255, 0.6)';
+    ctx.strokeStyle = 'rgba(255, 68, 85, 0.6)';
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    ctx.fillStyle = '#F47FFF';
+    ctx.fillStyle = '#FF4455';
     ctx.font = `bold 12px ${fontStack}`;
     ctx.textAlign = 'center';
-    ctx.fillText('BOOSTER', badgeX + badgeW / 2, 40);
+    ctx.fillText('OWNER', badgeX + badgeW / 2, 40);
     badgeX += badgeW + 8;
   }
 
@@ -393,6 +401,23 @@ export async function generateProfileCard(profileData) {
     ctx.font = `bold 12px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.fillText('MVP', badgeX + badgeW / 2, 40);
+    badgeX += badgeW + 8;
+  }
+
+  if (isBooster) {
+    const badgeW = 76;
+    const badgeH = 26;
+    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
+    ctx.fillStyle = 'rgba(244, 127, 255, 0.2)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(244, 127, 255, 0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#F47FFF';
+    ctx.font = `bold 12px ${fontStack}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('BOOSTER', badgeX + badgeW / 2, 40);
     badgeX += badgeW + 8;
   }
 
