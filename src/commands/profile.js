@@ -116,6 +116,7 @@ export async function handleProfileCommand(interaction) {
       xpForNextLevel: passData.xpForNextLevel || 100,
       totalXp: passData.totalXp || 0,
       balance: balanceData.balance || 0,
+      streak: balanceData.daily_streak || 0,
       questsDone,
       itemCount,
       customCoinUrl,

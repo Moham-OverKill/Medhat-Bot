@@ -50,7 +50,7 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
   ctx.lineTo(x + radius.bl, y + height);
   ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-  ctx.lineTo(x, y + radius.tl);
+  ctx.lineTo(x + radius.tl);
   ctx.quadraticCurveTo(x, y, x + radius.tl, y);
   ctx.closePath();
 }
@@ -106,7 +106,7 @@ function drawVectorCoin(ctx, x, y, radius) {
 
   // Coin star/dollar symbol in center
   ctx.fillStyle = '#FFF8DB';
-  ctx.font = `bold ${Math.round(radius * 1.05)}px "Segoe UI", Arial, sans-serif`;
+  ctx.font = `bold ${Math.round(radius * 1.05)}px "Roboto", "Segoe UI", Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('$', x, y + 0.5);
@@ -126,6 +126,7 @@ function drawVectorCoin(ctx, x, y, radius) {
  * @param {number} profileData.xpForNextLevel
  * @param {number} profileData.totalXp
  * @param {number} profileData.balance
+ * @param {number} [profileData.streak=0]
  * @param {number} profileData.questsDone
  * @param {number} profileData.itemCount
  * @param {string} [profileData.customCoinUrl]
@@ -136,7 +137,7 @@ function drawVectorCoin(ctx, x, y, radius) {
  */
 export async function generateProfileCard(profileData) {
   const width = 960;
-  const height = 240;
+  const height = 260;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
@@ -150,6 +151,7 @@ export async function generateProfileCard(profileData) {
     xpForNextLevel = 100,
     totalXp = 0,
     balance = 0,
+    streak = 0,
     questsDone = 0,
     itemCount = 0,
     customCoinUrl = null,
@@ -162,25 +164,25 @@ export async function generateProfileCard(profileData) {
 
   // 1. Base Canvas Background (Deep Obsidian Gradient)
   const bgGrad = ctx.createLinearGradient(0, 0, width, height);
-  bgGrad.addColorStop(0, '#0D1117');
-  bgGrad.addColorStop(0.65, '#131922');
-  bgGrad.addColorStop(1, '#161E2E');
+  bgGrad.addColorStop(0, '#0B0F15');
+  bgGrad.addColorStop(0.5, '#111722');
+  bgGrad.addColorStop(1, '#151D2A');
   ctx.fillStyle = bgGrad;
   roundRect(ctx, 0, 0, width, height, 16);
   ctx.fill();
 
   // Subtle ambient radial glow (top-left near avatar & top-right)
-  const glowGrad = ctx.createRadialGradient(80, 80, 10, 80, 80, 220);
-  glowGrad.addColorStop(0, 'rgba(0, 229, 255, 0.16)');
+  const glowGrad = ctx.createRadialGradient(90, 85, 10, 90, 85, 230);
+  glowGrad.addColorStop(0, 'rgba(0, 229, 255, 0.18)');
   glowGrad.addColorStop(1, 'transparent');
   ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, 420, 240);
+  ctx.fillRect(0, 0, 450, 260);
 
   const glowRight = ctx.createRadialGradient(width - 120, 60, 10, width - 120, 60, 240);
   glowRight.addColorStop(0, 'rgba(88, 101, 242, 0.12)');
   glowRight.addColorStop(1, 'transparent');
   ctx.fillStyle = glowRight;
-  ctx.fillRect(width - 450, 0, 450, 240);
+  ctx.fillRect(width - 450, 0, 450, 260);
 
   // Outer border with soft rounded corners
   roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 16);
@@ -197,7 +199,7 @@ export async function generateProfileCard(profileData) {
   // 3. User Avatar (Circular portrait with glowing accent border)
   const avatarX = 36;
   const avatarY = 32;
-  const avatarSize = 104;
+  const avatarSize = 110;
   const avatarRadius = avatarSize / 2;
 
   ctx.save();
@@ -213,7 +215,7 @@ export async function generateProfileCard(profileData) {
     ctx.fillStyle = '#21262D';
     ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = `bold 44px ${fontStack}`;
+    ctx.font = `bold 48px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText((displayName[0] || 'U').toUpperCase(), avatarX + avatarRadius, avatarY + avatarRadius);
@@ -223,65 +225,65 @@ export async function generateProfileCard(profileData) {
   // Avatar Border Ring with subtle glow
   ctx.save();
   ctx.shadowColor = accentColor;
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 12;
   ctx.beginPath();
   ctx.arc(avatarX + avatarRadius, avatarY + avatarRadius, avatarRadius, 0, Math.PI * 2);
   ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 4;
   ctx.stroke();
   ctx.restore();
 
   // 4. Content Area (To the right of Avatar)
-  const contentX = avatarX + avatarSize + 26;
+  const contentX = avatarX + avatarSize + 28;
   const contentWidth = width - contentX - 36;
 
-  // Header: Username (@username) in Arcane style
+  // Header: Username (@username) in Arcane style - prominent 36px font
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
   const userHandle = `@${username}`;
-  ctx.font = `bold 30px ${fontStack}`;
+  ctx.font = `bold 36px ${fontStack}`;
   ctx.fillStyle = '#FFFFFF';
 
   let handleText = userHandle;
-  const maxHandleWidth = contentWidth - 180;
+  const maxHandleWidth = contentWidth - 190;
   if (ctx.measureText(handleText).width > maxHandleWidth) {
     while (ctx.measureText(handleText + '...').width > maxHandleWidth && handleText.length > 0) {
       handleText = handleText.slice(0, -1);
     }
     handleText += '...';
   }
-  ctx.fillText(handleText, contentX, 32);
+  ctx.fillText(handleText, contentX, 28);
 
   // Optional Badges (Booster pill, XP boost)
-  let badgeX = contentX + ctx.measureText(handleText).width + 16;
+  let badgeX = contentX + ctx.measureText(handleText).width + 18;
   if (isBooster) {
-    const badgeW = 76;
-    const badgeH = 22;
-    roundRect(ctx, badgeX, 36, badgeW, badgeH, 11);
-    ctx.fillStyle = 'rgba(244, 127, 255, 0.18)';
+    const badgeW = 86;
+    const badgeH = 26;
+    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
+    ctx.fillStyle = 'rgba(244, 127, 255, 0.2)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(244, 127, 255, 0.5)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(244, 127, 255, 0.6)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
     ctx.fillStyle = '#F47FFF';
-    ctx.font = `bold 11px ${fontStack}`;
+    ctx.font = `bold 12px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.fillText('BOOSTER', badgeX + badgeW / 2, 40);
-    badgeX += badgeW + 8;
+    badgeX += badgeW + 10;
   }
 
   if (boostPct > 0) {
     const boostLabel = `+${boostPct}% XP`;
-    ctx.font = `bold 11px ${fontStack}`;
-    const boostW = ctx.measureText(boostLabel).width + 16;
-    const boostH = 22;
-    roundRect(ctx, badgeX, 36, boostW, boostH, 11);
-    ctx.fillStyle = 'rgba(56, 239, 125, 0.18)';
+    ctx.font = `bold 12px ${fontStack}`;
+    const boostW = ctx.measureText(boostLabel).width + 18;
+    const boostH = 26;
+    roundRect(ctx, badgeX, 34, boostW, boostH, 13);
+    ctx.fillStyle = 'rgba(56, 239, 125, 0.2)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(56, 239, 125, 0.5)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(56, 239, 125, 0.6)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
     ctx.fillStyle = '#38EF7D';
@@ -289,83 +291,84 @@ export async function generateProfileCard(profileData) {
     ctx.fillText(boostLabel, badgeX + boostW / 2, 40);
   }
 
-  // Accent Underline beneath username (Exact Arcane signature visual)
-  const underlineY = 72;
-  const underlineWidth = Math.min(contentWidth, 540);
+  // Accent Underline spanning across content area
+  const underlineY = 78;
   ctx.beginPath();
   ctx.moveTo(contentX, underlineY);
-  ctx.lineTo(contentX + underlineWidth, underlineY);
-  ctx.strokeStyle = accentColor;
+  ctx.lineTo(contentX + contentWidth, underlineY);
+  const lineGrad = ctx.createLinearGradient(contentX, 0, contentX + contentWidth, 0);
+  lineGrad.addColorStop(0, accentColor);
+  lineGrad.addColorStop(0.85, accentColor);
+  lineGrad.addColorStop(1, 'rgba(0, 229, 255, 0.2)');
+  ctx.strokeStyle = lineGrad;
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
   // 5. Statistics Row (Above the progress bar)
-  // Format: Level: 41 | XP: 1.1K / 4.2K | Rank: #156 | [Coin] 12,450 | Quests: 14 | Items: 28
-  const statsY = 88;
-  let curStatX = contentX;
+  // Reordered per user instruction: Level, Rank, Streak, Quests, Coins, Items (Coins then Items are last 2)
+  // XP removed from this row to eliminate repetition with the progress bar underneath
+  const stats = [
+    { label: 'Level', value: String(currentLevel), color: '#FFFFFF' },
+    { label: 'Rank', value: `#${rank}`, color: rank === 1 ? '#FFD700' : '#00E5FF' },
+    { label: 'Streak', value: `${streak}d`, color: '#FF7675' },
+    { label: 'Quests', value: String(questsDone), color: '#38EF7D' },
+    { label: 'Coins', value: formatCompactNumber(balance), color: '#FFD700', isCoin: true },
+    { label: 'Items', value: String(itemCount), color: '#C4B5FD' }
+  ];
 
-  // Stat item helper
-  function drawStat(label, value, valueColor = '#FFFFFF') {
+  // Measure all stats to evenly distribute them across contentWidth with zero empty space
+  const measured = stats.map(st => {
+    ctx.font = `bold 17px ${fontStack}`;
+    const labelW = ctx.measureText(st.label + ': ').width;
+    ctx.font = `bold 22px ${fontStack}`;
+    const valW = ctx.measureText(st.value).width;
+    const coinW = st.isCoin ? 24 : 0;
+    return { ...st, width: labelW + coinW + valW, labelW, valW, coinW };
+  });
+
+  const totalStatsW = measured.reduce((acc, m) => acc + m.width, 0);
+  const gap = Math.max(16, (contentWidth - totalStatsW) / (measured.length - 1));
+  const statsY = 98;
+  let curX = contentX;
+
+  const coinIconSize = 20;
+  measured.forEach((st) => {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    ctx.font = `bold 15px ${fontStack}`;
-    ctx.fillStyle = '#8B949E';
-    ctx.fillText(`${label}: `, curStatX, statsY);
-    curStatX += ctx.measureText(`${label}: `).width;
+    // Label
+    ctx.font = `bold 17px ${fontStack}`;
+    ctx.fillStyle = '#94A3B8';
+    ctx.fillText(st.label + ':', curX, statsY);
 
-    ctx.font = `bold 16px ${fontStack}`;
-    ctx.fillStyle = valueColor;
-    ctx.fillText(value, curStatX, statsY);
-    curStatX += ctx.measureText(value).width + 24;
-  }
+    let valX = curX + st.labelW;
 
-  // Level
-  drawStat('Level', String(currentLevel), '#FFFFFF');
+    if (st.isCoin) {
+      const coinIconY = statsY + 2;
+      if (customCoinImg) {
+        ctx.drawImage(customCoinImg, valX, coinIconY, coinIconSize, coinIconSize);
+      } else {
+        drawVectorCoin(ctx, valX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+      }
+      valX += coinIconSize + 6;
+    }
 
-  // XP
-  const xpCurrentCompact = formatCompactNumber(Math.floor(xpIntoCurrentLevel));
-  const xpNeededCompact = formatCompactNumber(Math.floor(xpForNextLevel));
-  drawStat('XP', `${xpCurrentCompact} / ${xpNeededCompact}`, '#FFFFFF');
+    // Value
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `bold 22px ${fontStack}`;
+    ctx.fillStyle = st.color;
+    ctx.fillText(st.value, valX, statsY - 2);
 
-  // Rank
-  drawStat('Rank', `#${rank}`, rank === 1 ? '#FFD700' : '#FFFFFF');
-
-  // Coins (with coin image/vector)
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.font = `bold 15px ${fontStack}`;
-  ctx.fillStyle = '#8B949E';
-  ctx.fillText('Coins: ', curStatX, statsY);
-  curStatX += ctx.measureText('Coins: ').width;
-
-  const coinIconSize = 18;
-  const coinIconY = statsY + 1;
-  if (customCoinImg) {
-    ctx.drawImage(customCoinImg, curStatX, coinIconY, coinIconSize, coinIconSize);
-  } else {
-    drawVectorCoin(ctx, curStatX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-  }
-  curStatX += coinIconSize + 6;
-
-  ctx.font = `bold 16px ${fontStack}`;
-  ctx.fillStyle = '#FFD700';
-  const coinText = formatCompactNumber(balance);
-  ctx.fillText(coinText, curStatX, statsY);
-  curStatX += ctx.measureText(coinText).width + 24;
-
-  // Quests Done
-  drawStat('Quests', String(questsDone), '#38EF7D');
-
-  // Items Owned
-  drawStat('Items', String(itemCount), '#A29BFE');
+    curX += st.width + gap;
+  });
 
   // 6. XP Progress Bar (Bottom Capsule Meter)
   const barX = 36;
-  const barY = 160;
+  const barY = 168;
   const barWidth = width - 72;
-  const barHeight = 26;
-  const barRadius = 13;
+  const barHeight = 28;
+  const barRadius = 14;
 
   const requiredXp = Math.max(1, xpForNextLevel);
   const currentXp = Math.max(0, xpIntoCurrentLevel);
@@ -382,30 +385,31 @@ export async function generateProfileCard(profileData) {
     const fillWidth = Math.max(minFillWidth, barWidth * progressRatio);
 
     ctx.save();
-    // Clip to pill container
     roundRect(ctx, barX, barY, barWidth, barHeight, barRadius);
     ctx.clip();
 
-    // Draw filled bar with rounded ends
     roundRect(ctx, barX, barY, fillWidth, barHeight, barRadius);
     const fillGrad = ctx.createLinearGradient(barX, 0, barX + fillWidth, 0);
     fillGrad.addColorStop(0, '#00E5FF');
-    fillGrad.addColorStop(1, '#00B4D8');
+    fillGrad.addColorStop(1, '#0099FF');
     ctx.fillStyle = fillGrad;
     ctx.fill();
     ctx.restore();
   }
 
-  // XP Progress Label (Under Progress Bar)
-  ctx.font = `12px ${fontStack}`;
-  ctx.fillStyle = '#8B949E';
+  // XP Progress Label (Under Progress Bar) - Bigger, bolder typography
+  const textY = barY + barHeight + 10;
+  ctx.font = `bold 15px ${fontStack}`;
+  ctx.fillStyle = '#94A3B8';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('Level Progression', barX + 4, barY + barHeight + 8);
+  ctx.fillText('Level Progression', barX + 4, textY);
 
   ctx.textAlign = 'right';
+  ctx.font = `bold 16px ${fontStack}`;
+  ctx.fillStyle = '#E2E8F0';
   const xpDetailed = `${Math.floor(currentXp).toLocaleString()} / ${Math.floor(requiredXp).toLocaleString()} XP (${Math.round(progressRatio * 100)}%)`;
-  ctx.fillText(xpDetailed, barX + barWidth - 4, barY + barHeight + 8);
+  ctx.fillText(xpDetailed, barX + barWidth - 4, textY);
 
   return await canvas.encode('png');
 }
