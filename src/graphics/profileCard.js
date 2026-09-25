@@ -114,6 +114,84 @@ function drawVectorCoin(ctx, x, y, radius) {
 }
 
 /**
+ * Convert hex color to rgba string
+ * @param {string} hex
+ * @param {number} alpha
+ * @returns {string}
+ */
+function hexToRgba(hex, alpha = 1) {
+  let clean = String(hex || '#00E5FF').replace('#', '');
+  if (clean.length === 3) {
+    clean = clean.split('').map(c => c + c).join('');
+  }
+  const num = parseInt(clean, 16);
+  if (isNaN(num)) return `rgba(0, 229, 255, ${alpha})`;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Extract dominant vibrant color from an avatar image
+ * @param {import('@napi-rs/canvas').Image} img
+ * @returns {string|null} Hex color code or null
+ */
+function extractDominantColor(img) {
+  if (!img) return null;
+  try {
+    const size = 48;
+    const offCanvas = createCanvas(size, size);
+    const offCtx = offCanvas.getContext('2d');
+    offCtx.drawImage(img, 0, 0, size, size);
+    const { data } = offCtx.getImageData(0, 0, size, size);
+
+    const colorCounts = new Map();
+    let maxScore = 0;
+    let dominant = null;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const a = data[i + 3];
+
+      if (a < 128) continue; // transparent pixel
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      const brightness = (r + g + b) / 3;
+
+      // Filter out extreme darks, extreme lights, and low-saturation grays
+      if (brightness < 30 || brightness > 235) continue;
+      if (delta < 20) continue;
+
+      // Quantize to 5 bits per channel (16-step quantization)
+      const qr = Math.min(255, Math.round(r / 16) * 16);
+      const qg = Math.min(255, Math.round(g / 16) * 16);
+      const qb = Math.min(255, Math.round(b / 16) * 16);
+      const key = (qr << 16) | (qg << 8) | qb;
+
+      // Weight by saturation and hue intensity
+      const saturation = delta / max;
+      const score = (colorCounts.get(key) || 0) + (1 + saturation * 2.5);
+      colorCounts.set(key, score);
+
+      if (score > maxScore) {
+        maxScore = score;
+        dominant = { r: qr, g: qg, b: qb };
+      }
+    }
+
+    if (!dominant) return null;
+    return '#' + [dominant.r, dominant.g, dominant.b].map(x => x.toString(16).padStart(2, '0')).join('');
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Generate Arcane-style Profile Card Buffer
  *
  * @param {object} profileData
@@ -164,7 +242,17 @@ export async function generateProfileCard(profileData) {
 
   const fontStack = '"Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
 
-  // 1. Base Canvas Background (Deep Obsidian Gradient)
+  // 1. Fetch images concurrently (Avatar & Custom Coin)
+  const [avatarImg, customCoinImg] = await Promise.all([
+    fetchImageSafe(avatarUrl),
+    fetchImageSafe(customCoinUrl)
+  ]);
+
+  // Extract dominant vibrant color from avatar, fallback to server role color or cyan
+  const dominantAvatarColor = extractDominantColor(avatarImg);
+  const themeColor = dominantAvatarColor || accentColor || '#00E5FF';
+
+  // 2. Base Canvas Background (Deep Obsidian Gradient)
   const bgGrad = ctx.createLinearGradient(0, 0, width, height);
   bgGrad.addColorStop(0, '#0B0F15');
   bgGrad.addColorStop(0.5, '#111722');
@@ -173,15 +261,15 @@ export async function generateProfileCard(profileData) {
   roundRect(ctx, 0, 0, width, height, 16);
   ctx.fill();
 
-  // Subtle ambient radial glow (top-left near avatar & top-right)
+  // Subtle ambient radial glow matched to avatar dominant color
   const glowGrad = ctx.createRadialGradient(90, 85, 10, 90, 85, 230);
-  glowGrad.addColorStop(0, 'rgba(0, 229, 255, 0.18)');
+  glowGrad.addColorStop(0, hexToRgba(themeColor, 0.22));
   glowGrad.addColorStop(1, 'transparent');
   ctx.fillStyle = glowGrad;
   ctx.fillRect(0, 0, 450, 260);
 
   const glowRight = ctx.createRadialGradient(width - 120, 60, 10, width - 120, 60, 240);
-  glowRight.addColorStop(0, 'rgba(88, 101, 242, 0.12)');
+  glowRight.addColorStop(0, hexToRgba(themeColor, 0.12));
   glowRight.addColorStop(1, 'transparent');
   ctx.fillStyle = glowRight;
   ctx.fillRect(width - 450, 0, 450, 260);
@@ -191,12 +279,6 @@ export async function generateProfileCard(profileData) {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-
-  // 2. Fetch images concurrently (Avatar & Custom Coin)
-  const [avatarImg, customCoinImg] = await Promise.all([
-    fetchImageSafe(avatarUrl),
-    fetchImageSafe(customCoinUrl)
-  ]);
 
   // 3. User Avatar (Circular portrait with glowing accent border)
   const avatarX = 36;
@@ -224,13 +306,13 @@ export async function generateProfileCard(profileData) {
   }
   ctx.restore();
 
-  // Avatar Border Ring with subtle glow
+  // Avatar Border Ring with glowing theme color
   ctx.save();
-  ctx.shadowColor = accentColor;
-  ctx.shadowBlur = 12;
+  ctx.shadowColor = themeColor;
+  ctx.shadowBlur = 14;
   ctx.beginPath();
   ctx.arc(avatarX + avatarRadius, avatarY + avatarRadius, avatarRadius, 0, Math.PI * 2);
-  ctx.strokeStyle = accentColor;
+  ctx.strokeStyle = themeColor;
   ctx.lineWidth = 4;
   ctx.stroke();
   ctx.restore();
@@ -282,9 +364,9 @@ export async function generateProfileCard(profileData) {
   ctx.moveTo(contentX, underlineY);
   ctx.lineTo(contentX + contentWidth, underlineY);
   const lineGrad = ctx.createLinearGradient(contentX, 0, contentX + contentWidth, 0);
-  lineGrad.addColorStop(0, accentColor);
-  lineGrad.addColorStop(0.85, accentColor);
-  lineGrad.addColorStop(1, 'rgba(0, 229, 255, 0.2)');
+  lineGrad.addColorStop(0, themeColor);
+  lineGrad.addColorStop(0.85, themeColor);
+  lineGrad.addColorStop(1, hexToRgba(themeColor, 0.2));
   ctx.strokeStyle = lineGrad;
   ctx.lineWidth = 2.5;
   ctx.stroke();
