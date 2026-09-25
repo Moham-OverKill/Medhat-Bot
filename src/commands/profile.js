@@ -102,7 +102,7 @@ export async function handleProfileCommand(interaction) {
     const coinEmojiStr = config?.coin_emoji || '';
     const customEmojiMatch = coinEmojiStr.match(/<a?:\w+:(\d{17,20})>/);
     if (customEmojiMatch && customEmojiMatch[1]) {
-      customCoinUrl = `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=64&quality=lossless`;
+      customCoinUrl = `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
     }
 
     // 2. Generate Arcane-style Profile Image Buffer
