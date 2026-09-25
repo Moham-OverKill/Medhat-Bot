@@ -8,6 +8,7 @@ import { getUserPassProgress } from './settings/pass-engine.js';
 import { getUserBalance } from '../economy/service.js';
 import { purgeUserInventory, getSynthesizedInventory } from '../economy/shop.js';
 import { isStreakValid } from '../utils/time.js';
+import { isUserMvp } from '../mvp/mvpCache.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -59,7 +60,7 @@ export async function handleProfileCommand(interaction) {
     await purgeUserInventory(userId, guildId, targetMember).catch(() => {});
 
     // 1. Fetch Economy stats, Level progress, Inventory, Quests, and Rank in parallel
-    const [balanceData, passData, rankResult, totalRankedResult, inventory, questResult, config] = await Promise.all([
+    const [balanceData, passData, rankResult, totalRankedResult, inventory, questResult, mvpResult, config] = await Promise.all([
       getUserBalance(userId, guildId).catch(() => ({ balance: 0, total_earned: 0, daily_streak: 0, last_daily: null })),
       getUserPassProgress(guildId, userId).catch(() => ({
         currentLevel: 0,
@@ -90,6 +91,10 @@ export async function handleProfileCommand(interaction) {
          ) AS quests_done`,
         [guildId, userId]
       ).catch(() => ({ rows: [{ quests_done: 0 }] })),
+      pool.query(
+        `SELECT 1 FROM active_mvps WHERE guild_id = $1 AND user_id = $2 LIMIT 1`,
+        [guildId, userId]
+      ).catch(() => ({ rows: [] })),
       getGuildConfig(guildId).catch(() => ({}))
     ]);
 
@@ -107,6 +112,10 @@ export async function handleProfileCommand(interaction) {
     const streak = streakIsValid ? parseInt(balanceData?.daily_streak || 0, 10) : 0;
 
     const isBooster = Boolean(targetMember?.premiumSince);
+    const isMvp = isUserMvp(guildId, userId)
+      || (mvpResult.rows.length > 0)
+      || Boolean(config?.mvp_role_id && targetMember?.roles?.cache?.has(config.mvp_role_id));
+
     const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
 
     // Derive accent color from member's highest role with color, default to cyan #00E5FF
@@ -138,6 +147,7 @@ export async function handleProfileCommand(interaction) {
       itemCount,
       customCoinUrl,
       isBooster,
+      isMvp,
       boostPct: passData.totalBoostPct || 0,
       accentColor: roleColor
     });
