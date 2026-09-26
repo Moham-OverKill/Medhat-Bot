@@ -53,7 +53,22 @@ export async function buildHubEmbed(guild, config = null) {
 
   // Active Quests Section
   const questsEnabled = guildConfig.quests_enabled ?? guildConfig.missions_enabled ?? false;
-  const activeQuests = guildConfig.active_quest_snapshot || [];
+  let activeQuests = Array.isArray(guildConfig.active_quest_snapshot) ? guildConfig.active_quest_snapshot : [];
+
+  // Self-healing: If pool has available quests but active snapshot has fewer than targetCount, synchronize immediately
+  if (questsEnabled) {
+    const { getQuests } = await import('../quests/quests.js');
+    const poolQuests = await getQuests(guildId);
+    const targetCount = Math.min(guildConfig.quests_per_refresh || 3, poolQuests.length);
+    if (poolQuests.length > 0 && activeQuests.length < targetCount) {
+      const { rotateGuildQuests } = await import('../cron/quests.js');
+      const { getPool } = await import('../storage/postgres.js');
+      await rotateGuildQuests(guildId, guildConfig, getPool(), null, { skipNotifications: true });
+      const freshConfig = await getGuildConfig(guildId);
+      activeQuests = Array.isArray(freshConfig?.active_quest_snapshot) ? freshConfig.active_quest_snapshot : [];
+    }
+  }
+
   const refreshesPerDay = guildConfig.quests_refreshes_per_day || 1;
   const nextQuestDate = getNextQuestRefresh(refreshesPerDay);
   const nextQuestTs = Math.floor(nextQuestDate.getTime() / 1000);

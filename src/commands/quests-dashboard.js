@@ -150,33 +150,27 @@ export async function showQuestsSchedule(interaction) {
     const config = await getGuildConfig(guildId) || {};
 
     const refreshes = config.quests_refreshes_per_day || 1;
-    let perRefresh = config.quests_per_refresh || 3;
+    const perRefresh = config.quests_per_refresh || 3;
     
     const quests = await getQuests(guildId);
     const totalQuests = quests.length;
 
-    // AUTO-SHRINK: If pool is now smaller than the setting (e.g. after deletion), 
-    // cap the setting at the max available pool size to keep UI consistent.
-    if (totalQuests > 0 && perRefresh > totalQuests) {
-        perRefresh = totalQuests;
-        config.quests_per_refresh = perRefresh;
-        await setGuildConfig(guildId, config);
-        sysLog('Quest Setting Auto-Shrink', { guild: guildId, detail: `Capped per_refresh at ${perRefresh} due to pool size` });
-    }
-
+    const refreshDesc = refreshes === 4 ? 'every 6 hours' : refreshes === 2 ? 'every 12 hours' : 'every 24 hours';
     const embed = new EmbedBuilder()
       .setTitle('Quest Rotation Schedule')
-      .setDescription(`Current Pool: **${totalQuests} quest(s)** available.`)
+      .setDescription(
+        `Current Pool: **${totalQuests} quest(s)** available.\n` +
+        `Current Setting: **${perRefresh} quest(s)** per rotation, **${refreshes}x Daily** (${refreshDesc}).`
+      )
       .setColor('#3498DB');
 
-    // Dropdown for Quests Per Refresh (1-10, limited by pool size)
-    const maxOptions = Math.max(1, Math.min(10, totalQuests));
+    // Dropdown for Quests Per Refresh (1-10)
     const perRefreshMenu = new StringSelectMenuBuilder()
       .setCustomId('quests_setting_per_refresh')
       .setPlaceholder('Quests per Refresh...')
       .addOptions(
-        Array.from({ length: maxOptions }, (_, i) => ({
-          label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
+        Array.from({ length: 10 }, (_, i) => ({
+          label: `${i + 1} Quest${i === 0 ? '' : 's'}${totalQuests > 0 && (i + 1) > totalQuests ? ' (exceeds current pool)' : ''}`,
           value: `${i + 1}`,
           emoji: '🎯',
           default: perRefresh === (i + 1)
@@ -225,27 +219,43 @@ export async function handleQuestsScheduleUpdate(interaction) {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
     const quests = await getQuests(guildId);
-    const maxAllowed = Math.max(1, quests.length);
+
+    let scheduleChanged = false;
+    let targetCountChanged = false;
 
     if (interaction.customId === 'quests_setting_per_refresh') {
-      const perRefresh = parseInt(interaction.values[0], 10);
-      config.quests_per_refresh = Math.min(perRefresh, maxAllowed);
+      const perRefresh = Math.max(1, Math.min(10, parseInt(interaction.values[0], 10)));
+      if (config.quests_per_refresh !== perRefresh) {
+        config.quests_per_refresh = perRefresh;
+        targetCountChanged = true;
+      }
     } else if (interaction.customId === 'quests_setting_refreshes') {
-      config.quests_refreshes_per_day = parseInt(interaction.values[0], 10);
+      const refreshes = Math.max(1, Math.min(4, parseInt(interaction.values[0], 10)));
+      if (config.quests_refreshes_per_day !== refreshes) {
+        config.quests_refreshes_per_day = refreshes;
+        scheduleChanged = true;
+      }
     }
 
     await setGuildConfig(guildId, config);
 
-    // If quests are enabled and current active count does not match perRefresh, rotate immediately
+    // If quests are enabled:
     const questsEnabled = config.quests_enabled ?? config.missions_enabled ?? false;
+    const activeCount = (config.active_quest_ids || []).length;
+    const targetCount = Math.min(config.quests_per_refresh || 3, quests.length);
+
     if (questsEnabled && quests.length > 0) {
-      const activeCount = (config.active_quest_ids || []).length;
-      const targetCount = config.quests_per_refresh || 1;
-      if (activeCount !== targetCount) {
+      if (targetCountChanged || activeCount !== targetCount) {
         const { rotateGuildQuests } = await import('../cron/quests.js');
         const { getPool } = await import('../storage/postgres.js');
         await rotateGuildQuests(guildId, config, getPool(), interaction.client, { skipNotifications: true });
+      } else if (scheduleChanged) {
+        const { publishOrUpdateHub } = await import('./interface.js');
+        await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
       }
+    } else if (scheduleChanged || targetCountChanged) {
+      const { publishOrUpdateHub } = await import('./interface.js');
+      await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
     }
 
     const { syncQuestChannelCache } = await import('../activity/index.js');
@@ -516,6 +526,23 @@ export async function handleAddQuestModal(interaction) {
       syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
     }).catch(() => {});
 
+    // Check if we should replenish active quests up to quests_per_refresh
+    const updatedConfig = await getGuildConfig(guildId) || {};
+    const questsEnabled = updatedConfig.quests_enabled ?? updatedConfig.missions_enabled ?? false;
+    if (questsEnabled) {
+      const allQuests = await getQuests(guildId);
+      const activeCount = (updatedConfig.active_quest_ids || []).length;
+      const targetCount = Math.min(updatedConfig.quests_per_refresh || 3, allQuests.length);
+      if (activeCount < targetCount) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        const { getPool } = await import('../storage/postgres.js');
+        await rotateGuildQuests(guildId, updatedConfig, getPool(), interaction.client, { skipNotifications: true });
+      } else {
+        const { publishOrUpdateHub } = await import('./interface.js');
+        await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
+      }
+    }
+
     await showQuestsDashboard(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Add quest modal submit');
@@ -616,6 +643,9 @@ export async function handleEditQuestModal(interaction) {
     const { syncQuestChannelCache } = await import('../activity/index.js');
     await syncQuestChannelCache(guildId);
 
+    const { publishOrUpdateHub } = await import('./interface.js');
+    await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
+
     await showQuestDetail(interaction, questId);
   } catch (error) {
     await handleInteractionError(interaction, error, 'Edit quest modal submit');
@@ -656,6 +686,22 @@ export async function handleDeleteQuest(interaction, questId) {
     const { syncQuestChannelCache } = await import('../activity/index.js');
     await syncQuestChannelCache(guildId);
 
+    // Replenish active quests if available pool allows, and sync Hub
+    const questsEnabled = config?.quests_enabled ?? config?.missions_enabled ?? false;
+    if (questsEnabled) {
+      const allQuests = await getQuests(guildId);
+      const activeCount = (config.active_quest_ids || []).length;
+      const targetCount = Math.min(config.quests_per_refresh || 3, allQuests.length);
+      if (activeCount < targetCount && allQuests.length > 0) {
+        const { rotateGuildQuests } = await import('../cron/quests.js');
+        const { getPool } = await import('../storage/postgres.js');
+        await rotateGuildQuests(guildId, config, getPool(), interaction.client, { skipNotifications: true });
+      } else {
+        const { publishOrUpdateHub } = await import('./interface.js');
+        await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
+      }
+    }
+
     import('./register.js').then(({ syncGuildSlashCommands }) => {
       syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
     }).catch(() => {});
@@ -694,6 +740,9 @@ export async function handleToggleQuests(interaction) {
       const { getPool } = await import('../storage/postgres.js');
       await getPool().query('DELETE FROM quest_progress WHERE guild_id = $1', [guildId]);
 
+      const { publishOrUpdateHub } = await import('./interface.js');
+      await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
+
       sysLog('Quest System Disabled', { guild: guildId, detail: 'Snapshot wiped, DB progress purged, caches cleared' });
     } else {
       // ── ENABLE: Fresh rotation right now ─────────────────────────────────
@@ -711,6 +760,9 @@ export async function handleToggleQuests(interaction) {
         // No quests in pool – still sync so cache is clean
         const { syncQuestChannelCache } = await import('../activity/index.js');
         await syncQuestChannelCache(guildId);
+
+        const { publishOrUpdateHub } = await import('./interface.js');
+        await publishOrUpdateHub(interaction.client, guildId, { allowCreate: false }).catch(() => {});
       }
 
       sysLog('Quest System Enabled', { guild: guildId, detail: 'Fresh rotation triggered immediately' });

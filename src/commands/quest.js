@@ -53,8 +53,19 @@ export async function renderQuests(interaction, page = 0) {
     }
 
     // Snapshot Architecture: Render directly from the immutable snapshot
-    const validQuests = config.active_quest_snapshot || [];
+    let validQuests = Array.isArray(config.active_quest_snapshot) ? config.active_quest_snapshot : [];
     
+    // Self-healing: If pool has available quests but active snapshot has fewer than targetCount, synchronize immediately
+    const poolQuests = await getQuests(guildId);
+    const targetCount = Math.min(config.quests_per_refresh || 3, poolQuests.length);
+    if (poolQuests.length > 0 && validQuests.length < targetCount) {
+      const { rotateGuildQuests } = await import('../cron/quests.js');
+      const { getPool } = await import('../storage/postgres.js');
+      await rotateGuildQuests(guildId, config, getPool(), interaction.client, { skipNotifications: true });
+      const freshConfig = await getGuildConfig(guildId);
+      validQuests = Array.isArray(freshConfig?.active_quest_snapshot) ? freshConfig.active_quest_snapshot : [];
+    }
+
     if (validQuests.length === 0) {
       const msg = '📝 There are currently no active quests. Please check back later!';
       return isButton ? interaction.editReply({ files: [], content: msg, embeds: [], components: [] }) : interaction.editReply({ files: [], content: msg });
