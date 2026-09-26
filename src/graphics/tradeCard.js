@@ -289,23 +289,27 @@ export async function renderTradeCard({
   ctx.fillRect(0, 0, baseWidth, baseHeight);
   ctx.restore();
 
-  // 2. Outer Border with state accent tint
-  roundRect(ctx, 1, 1, baseWidth - 2, baseHeight - 2, cardRadius);
-  ctx.strokeStyle = hexToRgba(themeColor, 0.4);
-  ctx.lineWidth = 1.5;
+  // 2. Outer Border with state accent tint (Reinforced thickness for high-DPI scaling)
+  const borderThickness = 4;
+  const halfBorder = borderThickness / 2;
+  roundRect(ctx, halfBorder, halfBorder, baseWidth - borderThickness, baseHeight - borderThickness, cardRadius - halfBorder);
+  ctx.strokeStyle = hexToRgba(themeColor, 0.6);
+  ctx.lineWidth = borderThickness;
   ctx.stroke();
 
   // Top Specular Highlight
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(cardRadius + 20, 1.5);
-  ctx.lineTo(baseWidth - cardRadius - 20, 1.5);
+  ctx.moveTo(cardRadius + 24, halfBorder);
+  ctx.lineTo(baseWidth - cardRadius - 24, halfBorder);
   const topLightGrad = ctx.createLinearGradient(cardRadius, 0, baseWidth - cardRadius, 0);
   topLightGrad.addColorStop(0, 'transparent');
-  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.25)');
+  topLightGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.25)');
+  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.7)');
+  topLightGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.25)');
   topLightGrad.addColorStop(1, 'transparent');
   ctx.strokeStyle = topLightGrad;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = Math.max(2, borderThickness - 1);
   ctx.stroke();
   ctx.restore();
 
