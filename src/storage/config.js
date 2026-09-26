@@ -103,11 +103,11 @@ export const CONFIG_DEFAULTS = {
   streak_role_winners: 1,
   battlepass_enabled: false,
   battlepass_base_xp: 100,
-  battlepass_xp_increment: 0,
+  battlepass_xp_increment: 50,
   battlepass_xp_per_level: 100,
   battlepass_msg_xp: 1,
   battlepass_voice_xp: 1,
-  battlepass_quest_xp: 25
+  battlepass_quest_xp: 150
 };
 
 /**
