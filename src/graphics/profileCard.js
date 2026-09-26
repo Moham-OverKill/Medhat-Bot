@@ -182,7 +182,7 @@ function shiftColorBrightness(hex, percent) {
  * @param {import('@napi-rs/canvas').Image} img
  * @returns {string|null} Hex color code or null
  */
-function extractDominantColor(img) {
+export function extractDominantColor(img) {
   if (!img) return null;
   try {
     const size = 48;
