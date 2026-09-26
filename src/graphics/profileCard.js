@@ -357,21 +357,6 @@ export async function generateProfileCard(profileData) {
   ctx.lineWidth = borderThickness;
   ctx.stroke();
 
-  // Top Specular Highlight
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(cardRadius + 24, halfBorder);
-  ctx.lineTo(width - cardRadius - 24, halfBorder);
-  const topLightGrad = ctx.createLinearGradient(cardRadius, 0, width - cardRadius, 0);
-  topLightGrad.addColorStop(0, 'transparent');
-  topLightGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.25)');
-  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.7)');
-  topLightGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.25)');
-  topLightGrad.addColorStop(1, 'transparent');
-  ctx.strokeStyle = topLightGrad;
-  ctx.lineWidth = Math.max(2, borderThickness - 1);
-  ctx.stroke();
-  ctx.restore();
 
   // 3. User Avatar (Circular portrait with glowing accent border)
   const avatarX = 36;
