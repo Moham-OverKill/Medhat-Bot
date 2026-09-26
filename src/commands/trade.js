@@ -1384,51 +1384,11 @@ async function finalizeTradePosting(interaction, setup) {
             sysError('Trade DM Notification Failed', dmErr, { guild: setup.guildId, target: setup.targetId });
         }
 
-        // 5. Dynamic 1-Minute Countdown & Expiration (Garbage Collector)
+        // 5. Automatic Expiration (5 minutes timeout, 1m image re-render disabled)
         const channelId = interaction.channelId;
         const msgId = publicMsg.id;
-        let minutesLeft = 5;
-
-        const intervalId = setInterval(async () => {
-            minutesLeft--;
-            if (minutesLeft <= 0) {
-                clearInterval(intervalId);
-                return;
-            }
-
-            try {
-                const check = await query('SELECT status FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, setup.guildId]);
-                if (check.rows.length === 0 || check.rows[0].status !== 'pending') {
-                    clearInterval(intervalId);
-                    return;
-                }
-
-                const updatedCardBuffer = await renderTradeCard({
-                    status: 'pending',
-                    expiresText: `Expires in ${minutesLeft}m`,
-                    customCoinUrl,
-                    sender: senderCardData,
-                    target: targetCardData
-                });
-
-                const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
-                if (channel) {
-                    const targetMsg = await channel.messages.fetch(msgId).catch(() => null);
-                    if (targetMsg) {
-                        await targetMsg.edit({
-                            content: `<@${setup.senderId}> — <@${setup.targetId}>`,
-                            files: [new AttachmentBuilder(updatedCardBuffer, { name: 'trade.png' })],
-                            attachments: []
-                        }).catch(() => {});
-                    }
-                }
-            } catch (_) {
-                // Ignore transient errors during countdown tick
-            }
-        }, 60000);
 
         const timeoutId = setTimeout(async () => {
-            clearInterval(intervalId);
             try {
                 // Check if still pending
                 const check = await query('SELECT status FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, setup.guildId]);
@@ -1463,7 +1423,7 @@ async function finalizeTradePosting(interaction, setup) {
             }
         }, 300000); // 5 minutes
 
-        TRADE_TIMEOUTS.set(tradeId, { timeoutId, intervalId });
+        TRADE_TIMEOUTS.set(tradeId, { timeoutId });
 
         // 5. Finalize the ephemeral setup UI
         return interaction.editReply({ files: [], content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
