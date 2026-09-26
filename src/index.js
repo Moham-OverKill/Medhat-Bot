@@ -327,6 +327,14 @@ client.once(Events.ClientReady, async () => {
     await healAllActiveTemporaryItemsOnStartup();
     sysLog('Task Started', { detail: 'MVP Cache Seeded from DB' });
 
+    // One-time self-healing rollback for the level inflation bug
+    try {
+      const { runLevelBugRollback } = await import('./commands/settings/level-rollback.js');
+      await runLevelBugRollback(client);
+    } catch (rollbackErr) {
+      sysError('Level Bug Rollback Failed', rollbackErr);
+    }
+
     // Start background jobs
     startQuestScheduler(client);
     startLeaderboardScheduler(client); // Also runs KotH every hour
