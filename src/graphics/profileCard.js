@@ -317,8 +317,6 @@ export async function generateProfileCard(profileData) {
     accentColor = '#00E5FF'
   } = profileData;
 
-  const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
-
   // 1. Fetch images concurrently (Avatar & Custom Coin)
   const [avatarImg, customCoinImg] = await Promise.all([
     fetchImageSafe(avatarUrl),
@@ -416,6 +414,7 @@ export async function generateProfileCard(profileData) {
   const contentX = avatarX + avatarSize + 28;
   const contentWidth = width - contentX - 36;
   const headerCenterY = 44;
+  const badgeCenterY = Math.round(headerCenterY + 3.5);
 
   // Header: Username (@username) in Arcane style - prominent 32px font vertically centered
   ctx.textAlign = 'left';
@@ -441,26 +440,26 @@ export async function generateProfileCard(profileData) {
   }
   ctx.fillText(handleText, contentX, headerCenterY);
 
-  // Badges: Vertically centered on the exact same axis as the username text, tightly coupled next to name
+  // Badges: Optically aligned with text baseline and cap-height, docked immediately next to name
   let badgeX = contentX + Math.ceil(ctx.measureText(handleText).width) + 10;
 
   if (isOwner) {
-    const bw = drawBadge(ctx, badgeX, headerCenterY, 'OWNER', '#FF4455', 'rgba(255, 68, 85, 0.18)', 'rgba(255, 68, 85, 0.6)');
+    const bw = drawBadge(ctx, badgeX, badgeCenterY, 'OWNER', '#FF4455', 'rgba(255, 68, 85, 0.18)', 'rgba(255, 68, 85, 0.6)');
     badgeX += bw + 8;
   }
 
   if (isMvp) {
-    const bw = drawBadge(ctx, badgeX, headerCenterY, 'MVP', '#FFD700', 'rgba(255, 215, 0, 0.18)', 'rgba(255, 215, 0, 0.6)');
+    const bw = drawBadge(ctx, badgeX, badgeCenterY, 'MVP', '#FFD700', 'rgba(255, 215, 0, 0.18)', 'rgba(255, 215, 0, 0.6)');
     badgeX += bw + 8;
   }
 
   if (isBooster) {
-    const bw = drawBadge(ctx, badgeX, headerCenterY, 'BOOSTER', '#F47FFF', 'rgba(244, 127, 255, 0.2)', 'rgba(244, 127, 255, 0.6)');
+    const bw = drawBadge(ctx, badgeX, badgeCenterY, 'BOOSTER', '#F47FFF', 'rgba(244, 127, 255, 0.2)', 'rgba(244, 127, 255, 0.6)');
     badgeX += bw + 8;
   }
 
-  // Accent Underline spanning across content area (Y = 80 provides clear margin below descenders)
-  const underlineY = 80;
+  // Accent Underline spanning across content area (Y = 82 provides generous clearance for descenders)
+  const underlineY = 82;
   ctx.beginPath();
   ctx.moveTo(contentX, underlineY);
   ctx.lineTo(contentX + contentWidth, underlineY);
@@ -498,7 +497,7 @@ export async function generateProfileCard(profileData) {
 
   const totalStatsW = measured.reduce((acc, m) => acc + m.width, 0);
   const gap = Math.max(16, (contentWidth - totalStatsW) / (measured.length - 1));
-  const statsY = 100;
+  const statsY = 104;
   let curX = contentX;
 
   measured.forEach((st) => {

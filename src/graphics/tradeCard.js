@@ -245,20 +245,16 @@ export async function renderTradeCard({
   // State Themes
   let themeColor = '#F59E0B'; // Pending (Amber Gold)
   let titleText = 'PENDING OFFER';
-  let centerSubtext = expiresText;
 
   if (status === 'completed') {
     themeColor = '#10B981'; // Emerald Green
     titleText = 'TRADE COMPLETED';
-    centerSubtext = 'Settled';
   } else if (status === 'declined') {
     themeColor = '#EF4444'; // Ruby Red
     titleText = 'TRADE DECLINED';
-    centerSubtext = 'Rejected';
   } else if (status === 'expired') {
     themeColor = '#64748B'; // Slate Gray
     titleText = 'TRADE EXPIRED';
-    centerSubtext = 'Timed Out';
   }
 
   // Concurrently fetch participant avatars and custom coin icon
