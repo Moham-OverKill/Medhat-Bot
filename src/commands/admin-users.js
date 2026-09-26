@@ -267,6 +267,15 @@ export async function handleBalanceModal(interaction) {
             );
         }
 
+        sysLog('Admin Balance Override', {
+            tag: 'SECURITY',
+            user: interaction.user.id,
+            target: targetUserId,
+            guild: guildId,
+            amount: delta,
+            detail: `Admin ${interaction.user.id} modified balance by ${delta > 0 ? '+' : ''}${delta} coins for user ${targetUserId}`
+        });
+
         await showUserDashboard(interaction, targetUserId);
 
         // Real-time role re-evaluation for Richest Role
@@ -361,6 +370,14 @@ export async function handleStreakModal(interaction) {
             `**Streak Changed:** \`${oldStreak}\` ➜ \`${newStreak}\`\n` +
             `**Admin:** ${adminLogName} (via User Settings)`
         );
+
+        sysLog('Admin Streak Override', {
+            tag: 'SECURITY',
+            user: interaction.user.id,
+            target: targetUserId,
+            guild: guildId,
+            detail: `Admin ${interaction.user.id} changed streak from ${oldStreak} to ${newStreak} for user ${targetUserId}`
+        });
 
         await showUserDashboard(interaction, targetUserId);
 

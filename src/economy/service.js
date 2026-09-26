@@ -1,7 +1,7 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { formatDetailedTimeRemaining, getNextCairoMidnight, hasClaimedToday, isStreakValid } from '../utils/time.js';
-import { sendLog, logServerEvent, logServerError, sysLog, sysError } from '../utils/logger.js';
+import { sendLog, logServerEvent, logServerError, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
 
 /**
@@ -231,7 +231,13 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
 
     await client.query('COMMIT');
 
-    // No log for daily claim to reduce noise
+    sysLog('Daily Streak Claimed', {
+      tag: 'ECONOMY',
+      user: userId,
+      guild: guildId,
+      amount: totalReward,
+      detail: `Streak: ${newStreak} | Total Reward: ${totalReward} (Base: ${baseReward} + Streak Bonus: ${streakBonus})`
+    });
 
     return {
       success: true,
@@ -327,8 +333,13 @@ export async function transferCoins(fromUserId, toUserId, guild, amount, fromUse
     );
 
     if (senderUpdate.rowCount === 0) {
-      // B-09 FIX: Simplified — both branches returned the same error
       await client.query('ROLLBACK');
+      sysWarn('Balance Underflow Prevented', {
+        user: fromUserId,
+        guild: guildId,
+        amount,
+        detail: `Transfer of ${amount} coins aborted: insufficient balance`
+      });
       return { success: false, error: 'Insufficient balance' };
     }
 
@@ -363,6 +374,26 @@ export async function transferCoins(fromUserId, toUserId, guild, amount, fromUse
     );
 
     await client.query('COMMIT');
+
+    if (amount >= 5000) {
+      sysLog('High-Value Coin Transfer', {
+        tag: 'ECONOMY',
+        user: fromUserId,
+        target: toUserId,
+        guild: guildId,
+        amount,
+        detail: `Transferred ${amount} coins (Sender: ${fromUserId} -> Receiver: ${toUserId})`
+      });
+    } else {
+      sysLog('Coin Transfer Completed', {
+        tag: 'ECONOMY',
+        user: fromUserId,
+        target: toUserId,
+        guild: guildId,
+        amount,
+        detail: `Transferred ${amount} coins`
+      });
+    }
 
     const logName = fromUsername || fromUserId;
     sendLog(guild, 'economy', 'blue', '💸 Bank Transfer', `**${logName}** sent **${amount.toLocaleString()}** ${COIN_EMOJI} to **<@${toUserId}>**`);

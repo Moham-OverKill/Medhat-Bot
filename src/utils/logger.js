@@ -20,7 +20,23 @@ async function safeSend(guild, channelId, embed, configKey) {
         if (!channel) return;
 
         const permissions = channel.permissionsFor(guild.members.me);
-        if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) return;
+        if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
+            sysWarn('Channel Permission Missing for Log Dispatch', {
+                guild,
+                channel: channelId,
+                detail: `Missing ViewChannel or SendMessages for ${configKey || 'log channel'}`
+            });
+            return;
+        }
+
+        if (!permissions.has(PermissionFlagsBits.EmbedLinks)) {
+            sysWarn('Channel Permission Missing: EmbedLinks', {
+                guild,
+                channel: channelId,
+                detail: `Cannot post embeds to ${configKey || 'log channel'}`
+            });
+            return;
+        }
 
         await channel.send({ embeds: [embed] }).catch(err => {
             sysError('safeSend Failure', err, { guild });
