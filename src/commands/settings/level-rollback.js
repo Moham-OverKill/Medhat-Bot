@@ -1,12 +1,14 @@
 /**
- * Level Inflation Bug — One-Time Self-Healing Rollback
+ * Level Inflation Bug — One-Time Self-Healing Rollback (V2)
  *
  * Scans all guilds and users for unearned level rewards, balances, items, chests,
  * and milestone roles granted during the level increment configuration bug.
  *
  * Guarantees:
- * - Runs strictly once on next bot startup (tracked in bot_migrations table).
- * - Preserves all legitimately earned XP, levels, balances, and inventory.
+ * - Runs strictly once on next bot startup (tracked via 'level_bug_rollback_v2' in bot_migrations).
+ * - Heals any corrupt 0/missing battlepass_xp_increment in guild_configs table to 50.
+ * - Enforces minimum increment of 50 in mathematical level calculation.
+ * - Restores accounts to their legitimate earned levels (e.g., Level 94 for ~228,100 XP).
  * - Deducts only unearned coins from user_balances (bounded at 0).
  * - Removes only unearned items/chests from user_inventory (source = 'LEVEL' or 'BATTLEPASS').
  * - Purges invalid claims from user_pass_claims and user_pass_reward_claims.
@@ -14,12 +16,12 @@
  */
 
 import { getPool } from '../../storage/postgres.js';
-import { getGuildConfig } from '../../storage/config.js';
+import { getGuildConfig, configCache } from '../../storage/config.js';
 import { calculateLevelFromXp, alignMemberLevelRole } from './pass-engine.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 import { COIN_EMOJI } from '../../shared.js';
 
-export const ROLLBACK_MIGRATION_KEY = 'level_bug_rollback_v1';
+export const ROLLBACK_MIGRATION_KEY = 'level_bug_rollback_v2';
 
 /**
  * Executes the one-time self-healing rollback on startup.
@@ -53,6 +55,19 @@ export async function runLevelBugRollback(client) {
     detail: 'Starting one-time audit and rollback across all guilds and accounts'
   });
 
+  // 3. Proactively heal any corrupt 0 or negative battlepass_xp_increment in guild_configs
+  try {
+    await pool.query(`
+      UPDATE guild_configs
+      SET config = jsonb_set(config, '{battlepass_xp_increment}', '50'::jsonb)
+      WHERE (config ? 'battlepass_xp_increment' AND ((config->>'battlepass_xp_increment')::numeric <= 0 OR config->>'battlepass_xp_increment' IS NULL));
+    `);
+    // Clear in-memory config cache so healed configs are reloaded immediately
+    configCache.clear();
+  } catch (healErr) {
+    sysError('Self-Healing: Guild Configs Pre-Heal Failed', healErr);
+  }
+
   const overallStats = {
     guildsAudited: 0,
     usersAudited: 0,
@@ -66,7 +81,7 @@ export async function runLevelBugRollback(client) {
   };
 
   try {
-    // 3. Find all guilds with recorded battlepass claims or activity
+    // 4. Find all guilds with recorded battlepass claims or activity
     const guildsRes = await pool.query(`
       SELECT DISTINCT guild_id FROM (
         SELECT guild_id FROM user_pass_claims
@@ -85,8 +100,8 @@ export async function runLevelBugRollback(client) {
       let guildCoinsReversed = 0;
 
       const config = await getGuildConfig(guildId) || {};
-      const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-      const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+      const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+      const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
 
       // Find all users in this guild with claims
       const usersRes = await pool.query(`
@@ -109,7 +124,7 @@ export async function runLevelBugRollback(client) {
         const totalXp = parseFloat(actRes.rows[0]?.battlepass_xp || 0);
         const username = actRes.rows[0]?.username || userId;
 
-        // Calculate user's legitimate level
+        // Calculate user's legitimate level using verified quadratic progression
         const { level: trueLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
         // Check if user has any claims above their legitimate level
@@ -344,7 +359,7 @@ export async function runLevelBugRollback(client) {
       }
     }
 
-    // 4. Mark migration as permanently executed
+    // 5. Mark migration as permanently executed
     await pool.query(`
       INSERT INTO bot_migrations (migration_name, executed_at, details)
       VALUES ($1, NOW(), $2::jsonb)

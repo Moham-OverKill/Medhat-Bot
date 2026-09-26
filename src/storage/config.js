@@ -69,7 +69,7 @@ const CONFIG_SCHEMA = {
   // Battlepass / Level System Module
   battlepass_enabled: { type: 'boolean', required: false },
   battlepass_base_xp: { type: 'number', min: 1, max: 999999, required: false },
-  battlepass_xp_increment: { type: 'number', min: 0, max: 999999, required: false },
+  battlepass_xp_increment: { type: 'number', min: 1, max: 999999, required: false },
   battlepass_xp_per_level: { type: 'number', min: 1, max: 999999, required: false }, // legacy alias
   battlepass_msg_xp: { type: 'number', min: 0, max: 9999, required: false },
   battlepass_voice_xp: { type: 'number', min: 0, max: 9999, required: false },
@@ -120,6 +120,16 @@ export function applyConfigDefaults(config) {
     if (merged[key] === undefined || merged[key] === null || (typeof defaultVal === 'number' && isNaN(merged[key]))) {
       merged[key] = defaultVal;
     }
+  }
+  // Hard guards: level engine parameters must never be zero or negative
+  if (typeof merged.battlepass_xp_increment !== 'number' || merged.battlepass_xp_increment <= 0) {
+    merged.battlepass_xp_increment = 50;
+  }
+  if (typeof merged.battlepass_base_xp !== 'number' || merged.battlepass_base_xp <= 0) {
+    merged.battlepass_base_xp = 100;
+  }
+  if (typeof merged.battlepass_quest_xp !== 'number' || merged.battlepass_quest_xp <= 0) {
+    merged.battlepass_quest_xp = 150;
   }
   return merged;
 }

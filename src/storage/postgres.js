@@ -1170,6 +1170,13 @@ async function createTables() {
       );
     `);
 
+    // Self-healing migration: heal corrupt, missing, or zero battlepass_xp_increment in guild_configs
+    await pool.query(`
+      UPDATE guild_configs
+      SET config = jsonb_set(config, '{battlepass_xp_increment}', '50'::jsonb)
+      WHERE (config ? 'battlepass_xp_increment' AND ((config->>'battlepass_xp_increment')::numeric <= 0 OR config->>'battlepass_xp_increment' IS NULL));
+    `).catch(() => {});
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)

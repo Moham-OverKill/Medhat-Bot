@@ -64,8 +64,8 @@ export function validateRoleForAssignment(role, guild) {
 export function getTotalXpForLevel(level, base = 100, increment = 50) {
   if (level <= 0) return 0;
   const L = Math.floor(level);
-  const B = Math.max(1, parseInt(base ?? 100, 10));
-  const I = Math.max(0, parseInt(increment ?? 50, 10));
+  const B = Math.max(1, parseInt(base, 10) || 100);
+  const I = Math.max(1, parseInt(increment, 10) > 0 ? parseInt(increment, 10) : 50);
   return L * B + Math.floor((L * (L - 1) * I) / 2);
 }
 
@@ -76,24 +76,14 @@ export function getTotalXpForLevel(level, base = 100, increment = 50) {
  * - xpForNextLevel (XP needed to complete current level and reach next level)
  */
 export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
-  const B = Math.max(1, parseInt(base ?? 100, 10));
-  const I = Math.max(0, parseInt(increment ?? 50, 10));
+  const B = Math.max(1, parseInt(base, 10) || 100);
+  const I = Math.max(1, parseInt(increment, 10) > 0 ? parseInt(increment, 10) : 50);
   const xp = Math.max(0, parseFloat(totalXp || 0));
 
   if (xp === 0) {
     return {
       level: 0,
       xpIntoCurrentLevel: 0,
-      xpForNextLevel: B
-    };
-  }
-
-  if (I === 0) {
-    const level = Math.floor(xp / B);
-    const xpIntoCurrentLevel = Number((xp % B).toFixed(2));
-    return {
-      level,
-      xpIntoCurrentLevel,
       xpForNextLevel: B
     };
   }
@@ -233,8 +223,8 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
     const totalXp = parseFloat(xpResult.rows[0]?.battlepass_xp || 0);
     if (totalXp <= 0) return;
 
-    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+    const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+    const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
     const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
     if (currentLevel <= 0) return;
 
@@ -866,8 +856,8 @@ export async function getUserPassProgress(guildId, userId) {
 
   const { getGuildConfig } = await import('../../storage/config.js');
   const config = await getGuildConfig(guildId) || {};
-  const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-  const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+  const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+  const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
   const isEnabled = config.battlepass_enabled === true;
 
   // Get user XP
@@ -1011,8 +1001,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
     const { getGuildConfig } = await import('../../storage/config.js');
     const config = await getGuildConfig(guildId) || {};
 
-    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+    const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+    const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
 
     // 1. Fetch all configured rewards for this guild
     const allRewardsRes = await pool.query(

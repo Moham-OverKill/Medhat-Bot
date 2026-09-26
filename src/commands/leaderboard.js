@@ -368,8 +368,8 @@ export async function getTopLevelUsers(guildId, limit = 50) {
     const pool = getPool();
     const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(guildId) || {};
-    const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-    const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+    const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+    const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
     const { calculateLevelFromXp } = await import('./settings/pass-engine.js');
 
     const result = await pool.query(`
