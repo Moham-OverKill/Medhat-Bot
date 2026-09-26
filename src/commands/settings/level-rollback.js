@@ -21,7 +21,7 @@ import { calculateLevelFromXp, alignMemberLevelRole } from './pass-engine.js';
 import { sysLog, sysError, sendLog } from '../../utils/logger.js';
 import { COIN_EMOJI } from '../../shared.js';
 
-export const ROLLBACK_MIGRATION_KEY = 'level_bug_rollback_v2';
+export const ROLLBACK_MIGRATION_KEY = 'level_bug_rollback_v3';
 
 /**
  * Executes the one-time self-healing rollback on startup.
@@ -40,6 +40,11 @@ export async function runLevelBugRollback(client) {
       details JSONB
     );
   `);
+
+  // Clear legacy incomplete migration keys to guarantee full execution of v3
+  await pool.query(
+    "DELETE FROM bot_migrations WHERE migration_name IN ('level_bug_rollback_v1', 'level_bug_rollback_v2')"
+  ).catch(() => {});
 
   // 2. Check if this rollback has already executed
   const checkRes = await pool.query(
@@ -183,18 +188,18 @@ export async function runLevelBugRollback(client) {
               WHERE guild_id = $2 AND user_id = $3
             `, [invalidCoins, guildId, userId]);
 
-            // Insert audit transaction log
+            // Insert audit transaction log (pass -invalidCoins directly in JS to prevent SQL operator ambiguity)
             await dbClient.query(`
               INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description, reference_id)
-              SELECT $1, $2, -$3, balance, 'battlepass_rollback', $4, 'bp_rollback_lvl_bug'
+              SELECT $1, $2, $3::BIGINT, balance, 'battlepass_rollback', $4, 'bp_rollback_lvl_bug'
               FROM user_balances WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId, invalidCoins, `Rollback unearned level rewards above Level ${trueLevel}`]);
+            `, [userId, guildId, -invalidCoins, `Rollback unearned level rewards above Level ${trueLevel}`]);
 
             // Insert into transaction_history if exists
             await dbClient.query(`
               INSERT INTO transaction_history (guild_id, user_id, type, amount, description)
-              VALUES ($1, $2, 'battlepass_rollback', -$3, $4)
-            `, [guildId, userId, invalidCoins, `Rollback unearned level rewards above Level ${trueLevel}`]).catch(() => {});
+              VALUES ($1, $2, 'battlepass_rollback', $3::BIGINT, $4)
+            `, [guildId, userId, -invalidCoins, `Rollback unearned level rewards above Level ${trueLevel}`]).catch(() => {});
 
             guildCoinsReversed += invalidCoins;
             overallStats.totalCoinsReversed += invalidCoins;
@@ -359,16 +364,22 @@ export async function runLevelBugRollback(client) {
       }
     }
 
-    // 5. Mark migration as permanently executed
-    await pool.query(`
-      INSERT INTO bot_migrations (migration_name, executed_at, details)
-      VALUES ($1, NOW(), $2::jsonb)
-      ON CONFLICT (migration_name) DO UPDATE SET executed_at = NOW(), details = $2::jsonb
-    `, [ROLLBACK_MIGRATION_KEY, JSON.stringify(overallStats)]);
+    // 5. Mark migration as permanently executed if all accounts succeeded
+    if (overallStats.errors.length === 0) {
+      await pool.query(`
+        INSERT INTO bot_migrations (migration_name, executed_at, details)
+        VALUES ($1, NOW(), $2::jsonb)
+        ON CONFLICT (migration_name) DO UPDATE SET executed_at = NOW(), details = $2::jsonb
+      `, [ROLLBACK_MIGRATION_KEY, JSON.stringify(overallStats)]);
 
-    sysLog('Self-Healing: Level Bug Rollback Complete', {
-      detail: `Audited ${overallStats.guildsAudited} guilds, ${overallStats.usersAudited} users | Corrected ${overallStats.usersAffected} accounts | Reversed ${overallStats.totalCoinsReversed} coins | Purged ${overallStats.totalClaimsRemoved} claims`
-    });
+      sysLog('Self-Healing: Level Bug Rollback Complete', {
+        detail: `Audited ${overallStats.guildsAudited} guilds, ${overallStats.usersAudited} users | Corrected ${overallStats.usersAffected} accounts | Reversed ${overallStats.totalCoinsReversed} coins | Purged ${overallStats.totalClaimsRemoved} claims`
+      });
+    } else {
+      sysLog('Self-Healing: Level Bug Rollback Partial', {
+        detail: `Encountered ${overallStats.errors.length} error(s); remaining accounts will retry automatically on next startup`
+      });
+    }
 
     return { executed: true, stats: overallStats };
   } catch (err) {
