@@ -671,8 +671,8 @@ export async function handlePassComponent(interaction) {
       }
       const page = parseInt(customId.replace('pass_set_xp_threshold_pg_', ''), 10) || 0;
       const freshConfig = await getGuildConfig(guildId) || {};
-      const baseXp = parseInt(freshConfig.battlepass_base_xp ?? freshConfig.battlepass_xp_per_level ?? 100, 10);
-      const incrementXp = parseInt(freshConfig.battlepass_xp_increment ?? 50, 10);
+      const baseXp = Math.max(1, parseInt(freshConfig.battlepass_base_xp ?? freshConfig.battlepass_xp_per_level, 10) || 100);
+      const incrementXp = Math.max(1, parseInt(freshConfig.battlepass_xp_increment, 10) > 0 ? parseInt(freshConfig.battlepass_xp_increment, 10) : 50);
       const msgXp = parseInt(freshConfig.battlepass_msg_xp ?? 1, 10);
       const voiceXp = parseInt(freshConfig.battlepass_voice_xp ?? 1, 10);
       const questXp = parseInt(freshConfig.battlepass_quest_xp ?? 150, 10);
@@ -1350,8 +1350,8 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   const { userAssignments } = preview;
 
   const config = await getGuildConfig(guildId) || {};
-  const baseXp = parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level ?? 100, 10);
-  const incrementXp = parseInt(config.battlepass_xp_increment ?? 50, 10);
+  const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+  const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
 
   const { getTotalXpForLevel } = await import('./pass-engine.js');
   const pool = getPool();
@@ -1651,7 +1651,7 @@ export async function handlePassModal(interaction) {
       const questXp = questRaw === '' ? 150 : parseInt(questRaw, 10);
 
       if (isNaN(baseXp) || baseXp < 1) return interaction.reply({ content: '❌ Base XP must be at least 1.', flags: MessageFlags.Ephemeral });
-      if (isNaN(incrementXp) || incrementXp < 0) return interaction.reply({ content: '❌ XP Increment must be 0 or higher.', flags: MessageFlags.Ephemeral });
+      if (isNaN(incrementXp) || incrementXp < 1) return interaction.reply({ content: '❌ XP Increment must be at least 1.', flags: MessageFlags.Ephemeral });
       if (isNaN(msgXp) || msgXp < 0) return interaction.reply({ content: '❌ Message XP must be 0 or higher.', flags: MessageFlags.Ephemeral });
       if (isNaN(voiceXp) || voiceXp < 0) return interaction.reply({ content: '❌ Voice XP must be 0 or higher.', flags: MessageFlags.Ephemeral });
       if (isNaN(questXp) || questXp < 0) return interaction.reply({ content: '❌ Quest XP must be 0 or higher.', flags: MessageFlags.Ephemeral });
