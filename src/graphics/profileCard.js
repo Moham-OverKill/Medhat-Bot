@@ -265,7 +265,7 @@ function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
   ctx.font = `bold 11px ${fontStack}`;
   const textW = ctx.measureText(text).width;
   const badgeW = Math.round(textW + 16);
-  const badgeH = 22;
+  const badgeH = 24;
   const badgeY = Math.round(centerY - badgeH / 2);
 
   roundRect(ctx, x, badgeY, badgeW, badgeH, badgeH / 2);
@@ -414,7 +414,7 @@ export async function generateProfileCard(profileData) {
   const contentX = avatarX + avatarSize + 28;
   const contentWidth = width - contentX - 36;
   const headerCenterY = 40;
-  const badgeCenterY = Math.round(headerCenterY + 3.5);
+  const badgeCenterY = headerCenterY + 0.5;
 
   // Header: Username (@username) in Arcane style - prominent 32px font vertically centered
   ctx.textAlign = 'left';
