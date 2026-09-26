@@ -11,7 +11,8 @@ import {
     StringSelectMenuBuilder,
     ComponentType,
     PermissionFlagsBits,
-    InteractionType
+    InteractionType,
+    AttachmentBuilder
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
@@ -23,6 +24,7 @@ import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShop
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
 import { getCachedGuildConfig } from '../activity/tracker.js';
+import { renderTradeCard } from '../graphics/tradeCard.js';
 
 /**
  * ============================================================================
@@ -50,6 +52,71 @@ import { getCachedGuildConfig } from '../activity/tracker.js';
 // Define single transaction cap limit
 const SINGLE_TX_CAP = 100000;
 
+// Centralized trade timeouts map (Trade ID -> { timeoutId, intervalId })
+const TRADE_TIMEOUTS = new Map();
+
+/**
+ * Cleanly clear both timeout and interval timers for a trade
+ * @param {number|string} tradeId
+ */
+function clearTradeTimers(tradeId) {
+    const handle = TRADE_TIMEOUTS.get(tradeId);
+    if (handle) {
+        if (typeof handle === 'object') {
+            if (handle.timeoutId) clearTimeout(handle.timeoutId);
+            if (handle.intervalId) clearInterval(handle.intervalId);
+        } else {
+            clearTimeout(handle);
+        }
+        TRADE_TIMEOUTS.delete(tradeId);
+    }
+}
+
+/**
+ * Format participant data for canvas trade card rendering
+ * @param {import('discord.js').Guild} guild
+ * @param {string} userId
+ * @param {number} coins
+ * @param {Array|string} items
+ * @returns {Promise<Object>}
+ */
+async function getTradeParticipantCardData(guild, userId, coins, items = []) {
+    let member = null;
+    try {
+        if (guild && guild.members) {
+            member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+        }
+    } catch (_) {}
+
+    const username = member?.user?.username || 'User';
+    const displayName = member ? getUserDisplayName(member) : username;
+    const avatarUrl = member?.user?.displayAvatarURL ? member.user.displayAvatarURL({ extension: 'png', size: 128 }) : null;
+    const accentColor = (member && member.displayHexColor && member.displayHexColor !== '#000000') ? member.displayHexColor : '#3B82F6';
+
+    let normalizedItems = [];
+    if (Array.isArray(items)) {
+        normalizedItems = items;
+    } else if (typeof items === 'string') {
+        try {
+            normalizedItems = JSON.parse(items || '[]');
+        } catch (_) {
+            normalizedItems = [];
+        }
+    }
+
+    return {
+        username,
+        displayName,
+        avatarUrl,
+        coins: parseInt(coins, 10) || 0,
+        items: normalizedItems.map(i => ({
+            name: i.name || 'Item',
+            qty: parseInt(i.qty || i.quantity || 1, 10)
+        })),
+        accentColor
+    };
+}
+
 /**
  * STARTUP JANITOR: Recovers stale trades after a bot restart
  * Also schedules future timeouts for trades that are still alive!
@@ -59,7 +126,7 @@ export async function initializeTradeJanitor(client) {
         try {
             // 1. Cleanup ALREADY expired trades
             const staleRes = await query(
-                `SELECT id, guild_id, message_id, channel_id, sender_id, target_id, expires_at 
+                `SELECT id, guild_id, message_id, channel_id, sender_id, target_id, sender_coins, target_coins, sender_items, target_items, expires_at 
                  FROM trades 
                  WHERE status = 'pending' AND expires_at < NOW()`
             );
@@ -73,12 +140,30 @@ export async function initializeTradeJanitor(client) {
                     if (channel) {
                         const msg = await channel.messages.fetch(trade.message_id).catch(() => null);
                         if (msg) {
-                            const expiredEmbed = sanitizeEmbed(msg.embeds[0])
-                                .setColor(0x95A5A6)
-                                .setFooter({ text: 'Trade Expired (Recovery Audit)' })
-                                .setTimestamp();
+                            if (msg.embeds && msg.embeds.length > 0) {
+                                const expiredEmbed = sanitizeEmbed(msg.embeds[0])
+                                    .setColor(0x95A5A6)
+                                    .setFooter({ text: 'Trade Expired (Recovery Audit)' })
+                                    .setTimestamp();
 
-                            await msg.edit({ content: '', embeds: [expiredEmbed], components: [] }).catch(() => {});
+                                await msg.edit({ content: '', embeds: [expiredEmbed], components: [] }).catch(() => {});
+                            } else {
+                                const senderCard = await getTradeParticipantCardData(channel.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
+                                const targetCard = await getTradeParticipantCardData(channel.guild, trade.target_id, trade.target_coins, trade.target_items);
+                                const expiredCard = await renderTradeCard({
+                                    status: 'expired',
+                                    sender: senderCard,
+                                    target: targetCard
+                                });
+
+                                await msg.edit({
+                                    content: `<@${trade.sender_id}> — <@${trade.target_id}>`,
+                                    files: [new AttachmentBuilder(expiredCard, { name: 'trade.png' })],
+                                    attachments: [],
+                                    components: [],
+                                    embeds: []
+                                }).catch(() => {});
+                            }
                         }
                     }
                 }
@@ -101,7 +186,7 @@ export async function initializeTradeJanitor(client) {
                             await initializeTradeJanitor(client); // Just run a sweep when it's time
                         }, remainingMs);
                         
-                        TRADE_TIMEOUTS.set(trade.id, timeoutId);
+                        TRADE_TIMEOUTS.set(trade.id, { timeoutId });
                     }
                 }
             }
@@ -138,7 +223,6 @@ function calculateTradeTax(amount, isBooster = false) {
 // Memory for active trade SETUPS (ephemeral, pre-posting)
 // Key: GuildId_UserId (Sender)
 const ACTIVE_SETUPS = new Map();
-const TRADE_TIMEOUTS = new Map();
 
 /**
  * ─────────────────────────────────────────────────────
@@ -1211,23 +1295,15 @@ async function finalizeTradePosting(interaction, setup) {
 
         tradeId = res.rows[0].id;
 
-        // 2. Build Public Embed
-        const embed = new EmbedBuilder()
-            .setTitle('Trade Offer')
-            .addFields(
-                {
-                    name: `📤 ${getUserDisplayName(await interaction.guild.members.fetch(setup.senderId))} Offers`,
-                    value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
-                    inline: false
-                },
-                {
-                    name: `📥 Requested from ${getUserDisplayName(await interaction.guild.members.fetch(setup.targetId))}`,
-                    value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
-                    inline: false
-                }
-            )
-            .setColor(0xF1C40F) // Gold
-            .setTimestamp(expiryDate);
+        // 2. Build Trade Card Graphic
+        const senderCardData = await getTradeParticipantCardData(interaction.guild, setup.senderId, setup.senderCoins, setup.senderItems);
+        const targetCardData = await getTradeParticipantCardData(interaction.guild, setup.targetId, setup.targetCoins, setup.targetItems);
+        const initialCardBuffer = await renderTradeCard({
+            status: 'pending',
+            expiresText: 'Expires in 5m',
+            sender: senderCardData,
+            target: targetCardData
+        });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -1245,8 +1321,8 @@ async function finalizeTradePosting(interaction, setup) {
 
         // 3. Post Publicly
         const publicMsg = await interaction.channel.send({
-            content: `<@${setup.senderId}> ↔️ <@${setup.targetId}>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:R>`,
-            embeds: [embed],
+            content: `<@${setup.senderId}> — <@${setup.targetId}>`,
+            files: [new AttachmentBuilder(initialCardBuffer, { name: 'trade.png' })],
             components: [row]
         });
 
@@ -1285,37 +1361,61 @@ async function finalizeTradePosting(interaction, setup) {
             sysError('Trade DM Notification Failed', dmErr, { guild: setup.guildId, target: setup.targetId });
         }
 
-        // 5. Set Expiration Timeout (Garbage Collector)
+        // 5. Dynamic 1-Minute Countdown & Expiration (Garbage Collector)
         const channelId = interaction.channelId;
         const msgId = publicMsg.id;
-        
+        let minutesLeft = 5;
+
+        const intervalId = setInterval(async () => {
+            minutesLeft--;
+            if (minutesLeft <= 0) {
+                clearInterval(intervalId);
+                return;
+            }
+
+            try {
+                const check = await query('SELECT status FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, setup.guildId]);
+                if (check.rows.length === 0 || check.rows[0].status !== 'pending') {
+                    clearInterval(intervalId);
+                    return;
+                }
+
+                const updatedCardBuffer = await renderTradeCard({
+                    status: 'pending',
+                    expiresText: `Expires in ${minutesLeft}m`,
+                    sender: senderCardData,
+                    target: targetCardData
+                });
+
+                const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
+                if (channel) {
+                    const targetMsg = await channel.messages.fetch(msgId).catch(() => null);
+                    if (targetMsg) {
+                        await targetMsg.edit({
+                            content: `<@${setup.senderId}> — <@${setup.targetId}>`,
+                            files: [new AttachmentBuilder(updatedCardBuffer, { name: 'trade.png' })],
+                            attachments: []
+                        }).catch(() => {});
+                    }
+                }
+            } catch (_) {
+                // Ignore transient errors during countdown tick
+            }
+        }, 60000);
+
         const timeoutId = setTimeout(async () => {
+            clearInterval(intervalId);
             try {
                 // Check if still pending
                 const check = await query('SELECT status FROM trades WHERE id = $1 AND guild_id = $2', [tradeId, setup.guildId]);
                 if (check.rows.length > 0 && check.rows[0].status === 'pending') {
                     await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, setup.guildId]);
 
-                    // Edit original message to show expired state
-                    const expiredEmbed = sanitizeEmbed(embed)
-                        .setColor(0x95A5A6) // Gray
-                        .setFooter({ text: 'Trade Expired' })
-                        .setTimestamp();
-                    
-                    const disabledRow = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`expired_decline_${tradeId}`)
-                            .setLabel('Decline')
-                            .setEmoji('✖️')
-                            .setStyle(ButtonStyle.Danger)
-                            .setDisabled(true),
-                        new ButtonBuilder()
-                            .setCustomId(`expired_accept_${tradeId}`)
-                            .setLabel('Accept')
-                            .setEmoji('✅')
-                            .setStyle(ButtonStyle.Success)
-                            .setDisabled(true)
-                    );
+                    const expiredCardBuffer = await renderTradeCard({
+                        status: 'expired',
+                        sender: senderCardData,
+                        target: targetCardData
+                    });
 
                     // Fetch fresh message object to ensure edit succeeds
                     const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
@@ -1323,9 +1423,10 @@ async function finalizeTradePosting(interaction, setup) {
                         const targetMsg = await channel.messages.fetch(msgId).catch(() => null);
                         if (targetMsg) {
                             await targetMsg.edit({
-                                content: '',
-                                embeds: [expiredEmbed],
-                                components: []
+                                content: `<@${setup.senderId}> — <@${setup.targetId}>`,
+                                files: [new AttachmentBuilder(expiredCardBuffer, { name: 'trade.png' })],
+                                attachments: [],
+                                components: [] // Buttons disappear after trade is over!
                             }).catch((e) => sysError('Trade auto-expire edit fail', e));
                         }
                     }
@@ -1333,11 +1434,11 @@ async function finalizeTradePosting(interaction, setup) {
             } catch (err) {
                 sysError('Trade timeout error', err, { guild: setup.guildId, detail: `TradeID: ${tradeId}` });
             } finally {
-                TRADE_TIMEOUTS.delete(tradeId);
+                clearTradeTimers(tradeId);
             }
         }, 300000); // 5 minutes
 
-        TRADE_TIMEOUTS.set(tradeId, timeoutId);
+        TRADE_TIMEOUTS.set(tradeId, { timeoutId, intervalId });
 
         // 5. Finalize the ephemeral setup UI
         return interaction.editReply({ files: [], content: '✅ Trade offer has been posted to the channel!', embeds: [], components: [] });
@@ -1373,18 +1474,23 @@ export async function handleTradeExecution(interaction) {
     // Expiry Check (JIT Cleanup)
     if (new Date() > new Date(trade.expires_at)) {
         await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, interaction.guildId]);
+        clearTradeTimers(tradeId);
         
-        // Clean up the message visually so it doesn't look like a "Zombie"
         try {
-            const expiredEmbed = sanitizeEmbed(interaction.message.embeds[0])
-                .setColor(0x95A5A6)
-                .setFooter({ text: 'Trade Expired' })
-                .setTimestamp();
+            const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
+            const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
+            const expiredCard = await renderTradeCard({
+                status: 'expired',
+                sender: senderCard,
+                target: targetCard
+            });
 
             await interaction.update({
-                content: '',
-                embeds: [expiredEmbed],
-                components: []
+                content: `<@${trade.sender_id}> — <@${trade.target_id}>`,
+                files: [new AttachmentBuilder(expiredCard, { name: 'trade.png' })],
+                attachments: [],
+                components: [],
+                embeds: []
             }).catch(() => { });
         } catch (e) {
             return interaction.reply({ content: '❌ This trade offer has expired.', flags: MessageFlags.Ephemeral });
@@ -1392,33 +1498,41 @@ export async function handleTradeExecution(interaction) {
         return;
     }
 
-    // ONLY target can accept/decline
-    if (interaction.user.id !== trade.target_id) {
-        return interaction.reply({ content: '❌ Only the target user can respond to this offer.', flags: MessageFlags.Ephemeral });
+    // Permission check: Target can accept or decline; Sender can cancel/decline
+    if (interaction.user.id !== trade.target_id && interaction.user.id !== trade.sender_id) {
+        return interaction.reply({ content: '❌ Only the trade participants can respond to this offer.', flags: MessageFlags.Ephemeral });
     }
 
-    // DECLINE
+    // DECLINE / CANCEL
     if (customId.startsWith('trade_decline_')) {
         await interaction.deferUpdate().catch(() => { });
         await query('UPDATE trades SET status = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3', ['declined', tradeId, interaction.guildId]);
 
-        // Clear Garbage Collector
-        const timeoutId = TRADE_TIMEOUTS.get(tradeId);
-        if (timeoutId) { clearTimeout(timeoutId); TRADE_TIMEOUTS.delete(tradeId); }
+        clearTradeTimers(tradeId);
 
-        const declinedEmbed = interaction.message.embeds.length > 0
-            ? sanitizeEmbed(interaction.message.embeds[0]).setColor(0xEE4444)
-            : new EmbedBuilder().setColor(0xEE4444);
+        const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
+        const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
+        const declinedCard = await renderTradeCard({
+            status: 'declined',
+            sender: senderCard,
+            target: targetCard
+        });
 
-        await interaction.editReply({ files: [], content: '',
+        await interaction.editReply({
+            content: `<@${trade.sender_id}> — <@${trade.target_id}>`,
+            files: [new AttachmentBuilder(declinedCard, { name: 'trade.png' })],
+            attachments: [],
             components: [],
-            embeds: [declinedEmbed.setFooter({ text: 'Trade Declined' }).setTimestamp()]
+            embeds: []
         });
         return;
     }
 
-    // ACCEPT -> Execute immediately (no modal)
+    // ACCEPT -> Only target can accept
     if (customId.startsWith('trade_accept_')) {
+        if (interaction.user.id !== trade.target_id) {
+            return interaction.reply({ content: '❌ Only the target user can accept this offer.', flags: MessageFlags.Ephemeral });
+        }
         await interaction.deferUpdate().catch(() => { });
         return handleTradeFinalConfirmation(interaction, trade);
     }
@@ -1458,10 +1572,22 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         if (trade.expires_at && new Date(trade.expires_at) < new Date()) {
             await client.query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', tradeId]);
             await client.query('COMMIT');
+            clearTradeTimers(tradeId);
             
-            await interaction.editReply({ files: [], content: '',
+            const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
+            const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
+            const expiredCard = await renderTradeCard({
+                status: 'expired',
+                sender: senderCard,
+                target: targetCard
+            });
+
+            await interaction.editReply({
+                content: `<@${trade.sender_id}> — <@${trade.target_id}>`,
+                files: [new AttachmentBuilder(expiredCard, { name: 'trade.png' })],
+                attachments: [],
                 components: [],
-                embeds: [sanitizeEmbed(interaction.message.embeds[0]).setColor(0x95A5A6).setFooter({ text: 'Trade Expired' }).setTimestamp()]
+                embeds: []
             });
             return;
         }
@@ -1914,17 +2040,23 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         
         // Redundant fee details removed from content as per user request (already in embed or not needed)
 
-        await interaction.editReply({ files: [], content: '',
-            components: [],
-            embeds: [sanitizeEmbed(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: 'Trade Successful' }).setTimestamp()]
+        clearTradeTimers(tradeId);
+
+        const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
+        const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
+        const completedCard = await renderTradeCard({
+            status: 'completed',
+            sender: senderCard,
+            target: targetCard
         });
 
-        // 9. Clear Garbage Collector
-        const timeoutId = TRADE_TIMEOUTS.get(tradeId);
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-            TRADE_TIMEOUTS.delete(tradeId);
-        }
+        await interaction.editReply({
+            content: `<@${trade.sender_id}> — <@${trade.target_id}>`,
+            files: [new AttachmentBuilder(completedCard, { name: 'trade.png' })],
+            attachments: [],
+            components: [], // Buttons disappear after trade is over!
+            embeds: []
+        });
 
         // 10. Standardized Economy Log
         // 10. Standardized Economy Log
