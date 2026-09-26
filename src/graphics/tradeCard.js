@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { performance } from 'node:perf_hooks';
 import { sysError, sysWarn, sysLog } from '../utils/logger.js';
+import { extractDominantColor } from './profileCard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,11 @@ function roundRect(ctx, x, y, width, height, radius) {
 async function fetchImageSafe(url) {
   if (!url) return null;
   try {
+    if (Buffer.isBuffer(url)) return await loadImage(url);
+    if (typeof url === 'string' && (url.startsWith('/') || url.includes(':\\') || url.startsWith('file://'))) {
+      const cleanPath = url.replace('file://', '');
+      if (fs.existsSync(cleanPath)) return await loadImage(cleanPath);
+    }
     const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
     if (!res.ok) return null;
     const arrayBuffer = await res.arrayBuffer();
@@ -433,19 +439,15 @@ export async function renderTradeCard({
       ? panelX + 18
       : panelX + panelW - 18 - avatarSize;
 
-    // Glowing border ring
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(avatarX + avatarRadius, avatarY + avatarRadius, avatarRadius + 3, 0, Math.PI * 2);
-    ctx.strokeStyle = accentColor;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-    ctx.restore();
+    // Extract dominant color from avatar if possible, exactly like /profile
+    const dominantAvatarColor = extractDominantColor(avatarImg);
+    const userAccent = dominantAvatarColor || accentColor || (side === 'left' ? '#3B82F6' : '#8B5CF6');
 
     // Avatar clipped content
     ctx.save();
     ctx.beginPath();
     ctx.arc(avatarX + avatarRadius, avatarY + avatarRadius, avatarRadius, 0, Math.PI * 2);
+    ctx.closePath();
     ctx.clip();
 
     if (avatarImg) {
@@ -460,6 +462,17 @@ export async function renderTradeCard({
       const initial = (displayName && displayName[0]) ? displayName[0].toUpperCase() : 'U';
       ctx.fillText(initial, avatarX + avatarRadius, avatarY + avatarRadius);
     }
+    ctx.restore();
+
+    // Glowing avatar border ring matching dominant avatar color (just like /profile)
+    ctx.save();
+    ctx.shadowColor = userAccent;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(avatarX + avatarRadius, avatarY + avatarRadius, avatarRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = userAccent;
+    ctx.lineWidth = 3;
+    ctx.stroke();
     ctx.restore();
 
     // Symmetrical Username with auto-truncation ellipsis

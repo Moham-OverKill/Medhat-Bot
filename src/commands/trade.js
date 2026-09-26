@@ -109,7 +109,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
 
     const username = member?.user?.username || 'User';
     const displayName = member ? getUserDisplayName(member) : username;
-    const avatarUrl = member?.user?.displayAvatarURL ? member.user.displayAvatarURL({ extension: 'png', size: 256 }) : null;
+    const avatarUrl = member?.user?.displayAvatarURL ? member.user.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true }) : null;
     const accentColor = (member && member.displayHexColor && member.displayHexColor !== '#000000') ? member.displayHexColor : '#3B82F6';
 
     let normalizedItems = [];
