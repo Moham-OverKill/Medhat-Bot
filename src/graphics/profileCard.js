@@ -274,14 +274,18 @@ export async function generateProfileCard(profileData) {
   const dominantAvatarColor = extractDominantColor(avatarImg);
   const themeColor = dominantAvatarColor || accentColor || '#00E5FF';
 
-  // 2. Base Canvas Background (Deep Obsidian Gradient)
+  // 2. Base Canvas Background & Corner Clipping (Transparent rounded PNG)
+  const cardRadius = 18;
+  ctx.save();
+  roundRect(ctx, 0, 0, width, height, cardRadius);
+  ctx.clip();
+
   const bgGrad = ctx.createLinearGradient(0, 0, width, height);
   bgGrad.addColorStop(0, '#0B0F15');
   bgGrad.addColorStop(0.5, '#111722');
   bgGrad.addColorStop(1, '#151D2A');
   ctx.fillStyle = bgGrad;
-  roundRect(ctx, 0, 0, width, height, 16);
-  ctx.fill();
+  ctx.fillRect(0, 0, width, height);
 
   // Subtle ambient radial glow matched to avatar dominant color (behind avatar on left)
   const glowGrad = ctx.createRadialGradient(90, 85, 10, 90, 85, 230);
@@ -290,8 +294,10 @@ export async function generateProfileCard(profileData) {
   ctx.fillStyle = glowGrad;
   ctx.fillRect(0, 0, 450, 260);
 
-  // Outer border with soft rounded corners
-  roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 16);
+  ctx.restore();
+
+  // Outer border with soft rounded corners matching card radius
+  roundRect(ctx, 1, 1, width - 2, height - 2, cardRadius);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
