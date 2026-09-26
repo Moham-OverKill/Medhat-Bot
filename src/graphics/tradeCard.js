@@ -208,6 +208,69 @@ function drawExchangeIcon(ctx, centerX, centerY, status = 'pending') {
   ctx.restore();
 }
 
+const RARITY_COLORS = {
+  common: '#94A3B8',
+  uncommon: '#10B981',
+  rare: '#3B82F6',
+  epic: '#A855F7',
+  legendary: '#F59E0B',
+  mythic: '#EF4444'
+};
+
+/**
+ * Draw an individual item container with a dynamic rarity border
+ */
+function drawItemBox(ctx, x, y, width, height, item) {
+  const rarityColor = item.rarityColor || RARITY_COLORS[item.tier?.toLowerCase()] || '#3B82F6';
+
+  // Distinct item container with dynamic rarity border
+  roundRect(ctx, x, y, width, height, 10);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fill();
+  ctx.strokeStyle = rarityColor;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  let textStartX = x + 10;
+  const itemQty = parseInt(item.qty || 1, 10);
+
+  // Quantity pill (if > 1)
+  if (itemQty > 1) {
+    const qtyText = `${itemQty}x`;
+    ctx.font = `bold 11px ${fontStack}`;
+    const qtyW = ctx.measureText(qtyText).width + 10;
+    roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+    ctx.fill();
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#7DD3FC';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+    textStartX += qtyW + 8;
+  }
+
+  // Item Name (NO rarity text label per requirement)
+  const maxNameW = x + width - textStartX - 10;
+  let name = item.name || 'Unknown Item';
+  ctx.font = `bold 13px ${fontStack}`;
+  ctx.fillStyle = '#F8FAFC';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  if (ctx.measureText(name).width > maxNameW) {
+    while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
+      name = name.slice(0, -1);
+    }
+    name += '...';
+  }
+  ctx.fillText(name, textStartX, y + height / 2);
+}
+
 /**
  * Generate a high-resolution, 2x Retina trade settlement card
  * @param {Object} tradeData
@@ -228,10 +291,24 @@ export async function renderTradeCard({
   const senderItems = Array.isArray(sender.items) ? sender.items : [];
   const targetItems = Array.isArray(target.items) ? target.items : [];
 
-  // Calculate dynamic card height based on maximum items on either side
-  const maxItems = Math.max(senderItems.length, targetItems.length);
-  const extraItems = Math.max(0, maxItems - 1);
-  const baseHeight = 340 + extraItems * 48;
+  // Calculate dynamic card height based on 2-column grid layout
+  // Column 1 capacity is 4 items before spilling into Column 2
+  const maxPerCol = 4;
+  const calcRows = (count) => {
+    if (count <= 0) return 1;
+    if (count <= maxPerCol) return count;
+    return Math.max(maxPerCol, Math.ceil(count / 2));
+  };
+
+  const senderRows = calcRows(senderItems.length);
+  const targetRows = calcRows(targetItems.length);
+  const totalRows = Math.max(senderRows, targetRows);
+
+  const itemHeight = 38;
+  const itemGapY = 8;
+  const itemGapX = 8;
+  const extraRows = Math.max(0, totalRows - 1);
+  const baseHeight = 340 + extraRows * (itemHeight + itemGapY);
   const baseWidth = 960;
 
   // 2x Retina Super-Sampling: Renders at double pixel density for crisp, razor-sharp output
@@ -398,19 +475,28 @@ export async function renderTradeCard({
     }
     ctx.restore();
 
-    // Symmetrical Username
-    ctx.font = `bold 22px ${fontStack}`;
+    // Symmetrical Username with auto-truncation ellipsis
+    ctx.font = `bold 20px ${fontStack}`;
     ctx.fillStyle = '#FFFFFF';
     ctx.textBaseline = 'middle';
+
+    let handleText = `@${username}`;
+    const maxHandleWidth = 270;
+    if (ctx.measureText(handleText).width > maxHandleWidth) {
+      while (ctx.measureText(handleText + '...').width > maxHandleWidth && handleText.length > 0) {
+        handleText = handleText.slice(0, -1);
+      }
+      handleText += '...';
+    }
 
     if (side === 'left') {
       const textX = avatarX + avatarSize + 16;
       ctx.textAlign = 'left';
-      ctx.fillText(`@${username}`, textX, avatarY + avatarRadius);
+      ctx.fillText(handleText, textX, avatarY + avatarRadius);
     } else {
       const textX = avatarX - 16;
       ctx.textAlign = 'right';
-      ctx.fillText(`@${username}`, textX, avatarY + avatarRadius);
+      ctx.fillText(handleText, textX, avatarY + avatarRadius);
     }
 
     // Currency Box
@@ -440,7 +526,7 @@ export async function renderTradeCard({
     const parsedCoins = parseInt(coins, 10) || 0;
     ctx.fillText(`${parsedCoins.toLocaleString()} Coins`, coinIconX + coinIconSize + 12, coinBoxY + 21);
 
-    // Items Section
+    // Items Section (2-Column Grid Layout)
     const itemsY = coinBoxY + 52;
     ctx.font = `bold 12px ${fontStack}`;
     ctx.fillStyle = '#94A3B8';
@@ -448,74 +534,36 @@ export async function renderTradeCard({
     ctx.textBaseline = 'top';
     ctx.fillText(`ITEMS (${items.length})`, panelX + 20, itemsY);
 
+    const colW = (panelW - 32 - itemGapX) / 2; // 180px
+    const col1X = panelX + 16;
+    const col2X = panelX + 16 + colW + itemGapX;
+    const itemsStartY = itemsY + 20;
+
     if (items.length === 0) {
-      const emptyY = itemsY + 20;
-      roundRect(ctx, panelX + 16, emptyY, panelW - 32, 42, 12);
+      // Empty state (occupies 1 slot in col 1, col 2 not shown)
+      roundRect(ctx, col1X, itemsStartY, colW, itemHeight, 10);
       ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
       ctx.fill();
-      ctx.font = `italic 14px ${fontStack}`;
+      ctx.font = `italic 13px ${fontStack}`;
       ctx.fillStyle = '#64748B';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('None', panelX + panelW / 2, emptyY + 21);
+      ctx.fillText('None', col1X + colW / 2, itemsStartY + itemHeight / 2);
+    } else if (items.length <= maxPerCol) {
+      // All items in Column 1 (Column 2 is not drawn at all)
+      for (let i = 0; i < items.length; i++) {
+        const itemY = itemsStartY + i * (itemHeight + itemGapY);
+        drawItemBox(ctx, col1X, itemY, colW, itemHeight, items[i]);
+      }
     } else {
-      let curItemY = itemsY + 20;
-      for (const item of items) {
-        // Clean item capsule surface - NO distorted overlapping bar
-        roundRect(ctx, panelX + 16, curItemY, panelW - 32, 42, 12);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-        ctx.fill();
-        ctx.strokeStyle = item.rarityColor || 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-
-        let nameStartX = panelX + 30;
-        const itemQty = parseInt(item.qty || 1, 10);
-        if (itemQty > 1) {
-          const qtyText = `${itemQty}x`;
-          ctx.font = `bold 12px ${fontStack}`;
-          const qtyW = ctx.measureText(qtyText).width + 14;
-          roundRect(ctx, nameStartX, curItemY + 11, qtyW, 20, 6);
-          ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
-          ctx.fill();
-          ctx.strokeStyle = '#38BDF8';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.fillStyle = '#7DD3FC';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(qtyText, nameStartX + qtyW / 2, curItemY + 21);
-          nameStartX += qtyW + 10;
-        }
-
-        // Item Name (in Cairo font supporting Arabic and English)
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = `bold 16px ${fontStack}`;
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillText(item.name || 'Unknown Item', nameStartX, curItemY + 21);
-
-        // Optional Tier / Rarity Pill
-        if (item.tier) {
-          ctx.font = `bold 10px ${fontStack}`;
-          const tierText = String(item.tier).toUpperCase();
-          const tierW = ctx.measureText(tierText).width + 14;
-          const tierX = panelX + panelW - 24 - tierW;
-          roundRect(ctx, tierX, curItemY + 12, tierW, 18, 5);
-          ctx.fillStyle = hexToRgba(item.rarityColor || '#3B82F6', 0.15);
-          ctx.fill();
-          ctx.strokeStyle = item.rarityColor || '#3B82F6';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.fillStyle = item.rarityColor || '#3B82F6';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(tierText, tierX + tierW / 2, curItemY + 21);
-        }
-
-        curItemY += 48;
+      // Column 1 is full, Column 2 appears (don't show empty slots)
+      const rows = Math.max(maxPerCol, Math.ceil(items.length / 2));
+      for (let i = 0; i < items.length; i++) {
+        const col = i < rows ? 0 : 1;
+        const row = i < rows ? i : (i - rows);
+        const itemX = col === 0 ? col1X : col2X;
+        const itemY = itemsStartY + row * (itemHeight + itemGapY);
+        drawItemBox(ctx, itemX, itemY, colW, itemHeight, items[i]);
       }
     }
   }
