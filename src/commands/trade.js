@@ -73,6 +73,24 @@ function clearTradeTimers(tradeId) {
 }
 
 /**
+ * Resolve custom server coin emoji URL from guild configuration
+ * @param {string} guildId
+ * @returns {Promise<string|null>}
+ */
+async function getGuildCustomCoinUrl(guildId) {
+    try {
+        const { getGuildConfig } = await import('../storage/config.js');
+        const config = await getCachedGuildConfig(guildId) || await getGuildConfig(guildId).catch(() => null);
+        const coinEmojiStr = config?.coin_emoji || '';
+        const customEmojiMatch = coinEmojiStr.match(/<a?:\w+:(\d{17,20})>/);
+        if (customEmojiMatch && customEmojiMatch[1]) {
+            return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+        }
+    } catch (_) {}
+    return null;
+}
+
+/**
  * Format participant data for canvas trade card rendering
  * @param {import('discord.js').Guild} guild
  * @param {string} userId
@@ -90,7 +108,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
 
     const username = member?.user?.username || 'User';
     const displayName = member ? getUserDisplayName(member) : username;
-    const avatarUrl = member?.user?.displayAvatarURL ? member.user.displayAvatarURL({ extension: 'png', size: 128 }) : null;
+    const avatarUrl = member?.user?.displayAvatarURL ? member.user.displayAvatarURL({ extension: 'png', size: 256 }) : null;
     const accentColor = (member && member.displayHexColor && member.displayHexColor !== '#000000') ? member.displayHexColor : '#3B82F6';
 
     let normalizedItems = [];
@@ -148,10 +166,12 @@ export async function initializeTradeJanitor(client) {
 
                                 await msg.edit({ content: '', embeds: [expiredEmbed], components: [] }).catch(() => {});
                             } else {
+                                const customCoinUrl = await getGuildCustomCoinUrl(channel.guild?.id);
                                 const senderCard = await getTradeParticipantCardData(channel.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
                                 const targetCard = await getTradeParticipantCardData(channel.guild, trade.target_id, trade.target_coins, trade.target_items);
                                 const expiredCard = await renderTradeCard({
                                     status: 'expired',
+                                    customCoinUrl,
                                     sender: senderCard,
                                     target: targetCard
                                 });
@@ -1298,9 +1318,11 @@ async function finalizeTradePosting(interaction, setup) {
         // 2. Build Trade Card Graphic
         const senderCardData = await getTradeParticipantCardData(interaction.guild, setup.senderId, setup.senderCoins, setup.senderItems);
         const targetCardData = await getTradeParticipantCardData(interaction.guild, setup.targetId, setup.targetCoins, setup.targetItems);
+        const customCoinUrl = await getGuildCustomCoinUrl(setup.guildId);
         const initialCardBuffer = await renderTradeCard({
             status: 'pending',
             expiresText: 'Expires in 5m',
+            customCoinUrl,
             sender: senderCardData,
             target: targetCardData
         });
@@ -1383,6 +1405,7 @@ async function finalizeTradePosting(interaction, setup) {
                 const updatedCardBuffer = await renderTradeCard({
                     status: 'pending',
                     expiresText: `Expires in ${minutesLeft}m`,
+                    customCoinUrl,
                     sender: senderCardData,
                     target: targetCardData
                 });
@@ -1413,6 +1436,7 @@ async function finalizeTradePosting(interaction, setup) {
 
                     const expiredCardBuffer = await renderTradeCard({
                         status: 'expired',
+                        customCoinUrl,
                         sender: senderCardData,
                         target: targetCardData
                     });
@@ -1477,10 +1501,12 @@ export async function handleTradeExecution(interaction) {
         clearTradeTimers(tradeId);
         
         try {
+            const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
             const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
             const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
             const expiredCard = await renderTradeCard({
                 status: 'expired',
+                customCoinUrl,
                 sender: senderCard,
                 target: targetCard
             });
@@ -1510,10 +1536,12 @@ export async function handleTradeExecution(interaction) {
 
         clearTradeTimers(tradeId);
 
+        const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
         const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
         const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
         const declinedCard = await renderTradeCard({
             status: 'declined',
+            customCoinUrl,
             sender: senderCard,
             target: targetCard
         });
@@ -1574,10 +1602,12 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             await client.query('COMMIT');
             clearTradeTimers(tradeId);
             
+            const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
             const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
             const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
             const expiredCard = await renderTradeCard({
                 status: 'expired',
+                customCoinUrl,
                 sender: senderCard,
                 target: targetCard
             });
@@ -2042,10 +2072,12 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
 
         clearTradeTimers(tradeId);
 
+        const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
         const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
         const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
         const completedCard = await renderTradeCard({
             status: 'completed',
+            customCoinUrl,
             sender: senderCard,
             target: targetCard
         });
