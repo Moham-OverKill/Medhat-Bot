@@ -13,6 +13,7 @@ import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { sysLog, sysError } from '../utils/logger.js';
+import { COIN_EMOJI } from '../shared.js';
 
 export const profileCommand = new SlashCommandBuilder()
   .setName('profile')
@@ -129,8 +130,8 @@ export async function handleProfileCommand(interaction) {
 
     // Resolve server's custom coin image if configured as a custom Discord emoji
     let customCoinUrl = null;
-    const coinEmojiStr = config?.coin_emoji || '';
-    const customEmojiMatch = coinEmojiStr.match(/<a?:\w+:(\d{17,20})>/);
+    const coinEmojiStr = config?.coin_emoji || COIN_EMOJI.forGuild(guildId) || '';
+    const customEmojiMatch = String(coinEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
     if (customEmojiMatch && customEmojiMatch[1]) {
       customCoinUrl = `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
     }
