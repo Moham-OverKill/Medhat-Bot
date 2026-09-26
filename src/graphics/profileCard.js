@@ -278,7 +278,7 @@ function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
   ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + badgeW / 2, centerY + 0.5);
+  ctx.fillText(text, x + badgeW / 2, centerY);
 
   return badgeW;
 }
@@ -413,7 +413,7 @@ export async function generateProfileCard(profileData) {
   // 4. Content Area (To the right of Avatar)
   const contentX = avatarX + avatarSize + 28;
   const contentWidth = width - contentX - 36;
-  const headerCenterY = 44;
+  const headerCenterY = 40;
   const badgeCenterY = Math.round(headerCenterY + 3.5);
 
   // Header: Username (@username) in Arcane style - prominent 32px font vertically centered
@@ -429,7 +429,7 @@ export async function generateProfileCard(profileData) {
   if (isOwner) totalBadgesWidth += 62 + 8;
   if (isMvp) totalBadgesWidth += 48 + 8;
   if (isBooster) totalBadgesWidth += 68 + 8;
-  if (totalBadgesWidth > 0) totalBadgesWidth += 10;
+  if (totalBadgesWidth > 0) totalBadgesWidth += 8;
 
   const maxHandleWidth = Math.max(160, contentWidth - totalBadgesWidth);
   if (ctx.measureText(handleText).width > maxHandleWidth) {
@@ -441,7 +441,7 @@ export async function generateProfileCard(profileData) {
   ctx.fillText(handleText, contentX, headerCenterY);
 
   // Badges: Optically aligned with text baseline and cap-height, docked immediately next to name
-  let badgeX = contentX + Math.ceil(ctx.measureText(handleText).width) + 10;
+  let badgeX = contentX + Math.ceil(ctx.measureText(handleText).width) + 8;
 
   if (isOwner) {
     const bw = drawBadge(ctx, badgeX, badgeCenterY, 'OWNER', '#FF4455', 'rgba(255, 68, 85, 0.18)', 'rgba(255, 68, 85, 0.6)');
