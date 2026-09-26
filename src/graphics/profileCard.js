@@ -325,23 +325,27 @@ export async function generateProfileCard(profileData) {
 
   ctx.restore();
 
-  // Outer border with soft rounded corners matching card radius and state accent tint
-  roundRect(ctx, 1, 1, width - 2, height - 2, cardRadius);
-  ctx.strokeStyle = hexToRgba(themeColor, 0.35);
-  ctx.lineWidth = 1.5;
+  // Outer border with soft rounded corners matching card radius and state accent tint (Reinforced thickness)
+  const borderThickness = 4;
+  const halfBorder = borderThickness / 2;
+  roundRect(ctx, halfBorder, halfBorder, width - borderThickness, height - borderThickness, cardRadius - halfBorder);
+  ctx.strokeStyle = hexToRgba(themeColor, 0.6);
+  ctx.lineWidth = borderThickness;
   ctx.stroke();
 
   // Top Specular Highlight
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(cardRadius + 20, 1.5);
-  ctx.lineTo(width - cardRadius - 20, 1.5);
+  ctx.moveTo(cardRadius + 24, halfBorder);
+  ctx.lineTo(width - cardRadius - 24, halfBorder);
   const topLightGrad = ctx.createLinearGradient(cardRadius, 0, width - cardRadius, 0);
   topLightGrad.addColorStop(0, 'transparent');
-  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.25)');
+  topLightGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.25)');
+  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.7)');
+  topLightGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.25)');
   topLightGrad.addColorStop(1, 'transparent');
   ctx.strokeStyle = topLightGrad;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = Math.max(2, borderThickness - 1);
   ctx.stroke();
   ctx.restore();
 
