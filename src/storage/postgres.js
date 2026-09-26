@@ -1,6 +1,7 @@
 import pg from 'pg';
+import { performance } from 'node:perf_hooks';
 import { sanitizeError } from '../shared.js';
-import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
+import { logSystemEvent, sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 const { Pool } = pg;
 
@@ -166,6 +167,14 @@ function startHealthCheck() {
       if (!databaseConnected) {
         databaseConnected = true;
         sysLog('Database Connection Restored', { detail: 'Link re-established' });
+      }
+
+      const activeClients = (pool.totalCount || 0) - (pool.idleCount || 0);
+      const maxClients = pool.options?.max || 20;
+      if (activeClients >= maxClients * 0.8 || (pool.waitingCount || 0) > 0) {
+        sysWarn('Database Pool High Saturation', {
+          detail: `Active: ${activeClients}/${maxClients} | Idle: ${pool.idleCount} | Waiting: ${pool.waitingCount}`
+        });
       }
     } catch (error) {
       if (databaseConnected) {
@@ -1261,9 +1270,18 @@ export async function closeDatabase() {
  * Execute a query with error handling and automatic retry on transient connection resets
  */
 export async function query(text, params, retryCount = 0) {
+  const qStart = performance.now();
   try {
     const result = await pool.query(text, params);
     databaseConnected = true;
+    const duration = Math.round(performance.now() - qStart);
+    if (duration > 250) {
+      const cleanSql = String(text).replace(/\s+/g, ' ').trim().slice(0, 120);
+      sysWarn('Slow Database Query Detected', {
+        duration,
+        detail: `SQL: ${cleanSql}`
+      });
+    }
     return result;
   } catch (error) {
     const isTransient = error.code === 'ECONNRESET' ||

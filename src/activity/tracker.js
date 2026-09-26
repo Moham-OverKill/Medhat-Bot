@@ -565,6 +565,13 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
 
     // Battlepass XP hook for voice points — reads voice XP rate from guild config (default: 1)
     if (pointsToAward > 0) {
+      sysLog('Voice Session Completed', {
+        tag: 'VOICE',
+        user: userId,
+        guild: guildId,
+        detail: `Elapsed: ${Math.round(elapsedSeconds / 60)}m | Minutes Credited: ${pointsToAward}`
+      });
+
       // Record toward weekly activity summary
       import('../cron/weeklySummary.js')
         .then(({ recordWeeklyVoice }) => recordWeeklyVoice(guildId, userId, username, pointsToAward))
@@ -667,6 +674,13 @@ export async function voicePointsTick(client) {
         }
 
         if (voiceState.selfMute || voiceState.serverMute || voiceState.selfDeaf || voiceState.serverDeaf) {
+          const reason = (voiceState.serverDeaf || voiceState.selfDeaf) ? 'Deafened' : 'Muted';
+          sysLog('Voice Points Withheld', {
+            tag: 'VOICE',
+            user: row.user_id,
+            guild: row.guild_id,
+            detail: `Reason: ${reason}`
+          });
           await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
           return;
         }
