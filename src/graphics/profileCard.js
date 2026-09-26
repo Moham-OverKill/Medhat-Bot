@@ -2,7 +2,8 @@ import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sysError, sysLog } from '../utils/logger.js';
+import { performance } from 'node:perf_hooks';
+import { sysError, sysWarn, sysLog } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -284,6 +285,7 @@ function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
 }
 
 export async function generateProfileCard(profileData) {
+  const renderStart = performance.now();
   const baseWidth = 960;
   const baseHeight = 260;
   const scale = 2;
@@ -579,5 +581,13 @@ export async function generateProfileCard(profileData) {
   const xpDetailed = `${Math.floor(currentXp).toLocaleString()} / ${Math.floor(requiredXp).toLocaleString()} XP (${Math.round(progressRatio * 100)}%)`;
   ctx.fillText(xpDetailed, barX + barWidth - 4, textY);
 
-  return await canvas.encode('png');
+  const buffer = await canvas.encode('png');
+  const duration = Math.round(performance.now() - renderStart);
+  if (duration > 500) {
+    sysWarn('Slow Profile Card Render', { detail: `@${username}`, duration });
+  } else {
+    sysLog('Profile Card Rendered', { detail: `@${username}`, duration });
+  }
+
+  return buffer;
 }

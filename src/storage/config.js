@@ -1,6 +1,6 @@
 import { getPool, query } from './postgres.js';
 import { isValidSnowflake, sanitizeError as formatError } from '../shared.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 // Config schema validation
 const CONFIG_SCHEMA = {
@@ -123,6 +123,9 @@ export function applyConfigDefaults(config) {
   }
   // Hard guards: level engine parameters must never be zero or negative
   if (typeof merged.battlepass_xp_increment !== 'number' || merged.battlepass_xp_increment <= 0) {
+    sysWarn('Invalid Battlepass XP Increment In Config', {
+      detail: `Value was ${merged.battlepass_xp_increment}; reset to default 50`
+    });
     merged.battlepass_xp_increment = 50;
   }
   if (typeof merged.battlepass_base_xp !== 'number' || merged.battlepass_base_xp <= 0) {
