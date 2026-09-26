@@ -1161,6 +1161,15 @@ async function createTables() {
       WHERE config ? 'interface_title' OR config ? 'interface_emoji' OR config ? 'interface_color' OR config ? 'interface_image_url'
     `).catch(() => {});
 
+    // Table for tracking one-time bot migrations and self-healing operations
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bot_migrations (
+        migration_name VARCHAR(100) PRIMARY KEY,
+        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        details JSONB
+      );
+    `);
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)

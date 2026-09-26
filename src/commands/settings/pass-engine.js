@@ -328,7 +328,7 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
  *
  * Only operates on roles that are actually configured as level rewards.
  */
-async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
+export async function alignMemberLevelRole(guildId, userId, currentLevel, client) {
   try {
     if (!client) return;
     const guild = client.guilds?.cache?.get(guildId);
@@ -1136,7 +1136,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       const totalXp = parseFloat(u.battlepass_xp || 0);
       const xpLevel = calculateLevelFromXp(totalXp, baseXp, incrementXp).level;
       const maxClaimLevel = parseInt(u.max_claim_level || 0, 10);
-      const reachedLevel = Math.max(xpLevel, maxClaimLevel);
+      // Strictly bound to legitimate earned level based on accumulated XP
+      const reachedLevel = xpLevel;
       if (reachedLevel <= 0) {
         if (userId) {
           sysLog('Self-Healing: User Level Inactive', {
