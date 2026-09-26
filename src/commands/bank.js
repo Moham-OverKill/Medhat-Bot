@@ -143,6 +143,12 @@ function buildBankUI(userData, member) {
       { name: '⏰ Next Daily', value: nextDailyText, inline: true }
     );
 
+  const historyButton = new ButtonBuilder()
+    .setCustomId('bank_history')
+    .setLabel('History')
+    .setEmoji('📜')
+    .setStyle(ButtonStyle.Secondary);
+
   const dailyButton = new ButtonBuilder()
     .setCustomId('bank_daily')
     .setLabel('Daily')
@@ -150,22 +156,8 @@ function buildBankUI(userData, member) {
     .setStyle(isDailyAvailable ? ButtonStyle.Success : ButtonStyle.Secondary)
     .setDisabled(!isDailyAvailable);
 
-
-
-  const historyButton = new ButtonBuilder()
-    .setCustomId('bank_history')
-    .setLabel('History')
-    .setEmoji('📜')
-    .setStyle(ButtonStyle.Secondary);
-
-  const refreshButton = new ButtonBuilder()
-    .setCustomId('bank_refresh')
-    .setLabel('Refresh')
-    .setEmoji('🔄')
-    .setStyle(ButtonStyle.Secondary);
-
   const row = new ActionRowBuilder()
-    .addComponents(dailyButton, historyButton, refreshButton);
+    .addComponents(historyButton, dailyButton);
 
   return { embed, components: [row] };
 }
