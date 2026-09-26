@@ -332,28 +332,12 @@ export async function renderTradeCard({
   ctx.textBaseline = 'middle';
   ctx.fillText(titleText, 480, titlePillY + titlePillH / 2);
 
-  // Center Exchange Hub
+  // Center Exchange Hub (Icon vertically centered between participant panels, subtext pill removed)
   const hubX = 480;
   const hubY = 64 + (baseHeight - 64 - 24) / 2;
 
   // Center Icon (Arrows, Cross, or Clock)
-  drawExchangeIcon(ctx, hubX, hubY - 10, status);
-
-  // Subtext / Countdown pill under center icon
-  const timerPillW = Math.max(114, ctx.measureText(centerSubtext).width + 24);
-  const timerPillH = 26;
-  roundRect(ctx, hubX - timerPillW / 2, hubY + 18, timerPillW, timerPillH, 13);
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.font = `bold 12px ${fontStack}`;
-  ctx.fillStyle = status === 'pending' ? '#94A3B8' : themeColor;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(centerSubtext, hubX, hubY + 31);
+  drawExchangeIcon(ctx, hubX, hubY, status);
 
   // 4. Participant Panels (Left & Right)
   function drawParticipantPanel({

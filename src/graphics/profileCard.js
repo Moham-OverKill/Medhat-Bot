@@ -31,7 +31,7 @@ try {
   sysError('Font Registration Error', err);
 }
 
-const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
+const fontStack = '"Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
 
 /**
  * Format numbers with compact suffixes (e.g., 1.5K, 2.3M) or standard commas
@@ -257,6 +257,32 @@ function extractDominantColor(img) {
  * @param {string} [profileData.accentColor='#00E5FF']
  * @returns {Promise<Buffer>}
  */
+
+/**
+ * Draw a pill badge vertically centered on a specific Y axis
+ */
+function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
+  ctx.font = `bold 11px ${fontStack}`;
+  const textW = ctx.measureText(text).width;
+  const badgeW = Math.round(textW + 16);
+  const badgeH = 22;
+  const badgeY = Math.round(centerY - badgeH / 2);
+
+  roundRect(ctx, x, badgeY, badgeW, badgeH, badgeH / 2);
+  ctx.fillStyle = bgColor;
+  ctx.fill();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + badgeW / 2, centerY + 0.5);
+
+  return badgeW;
+}
+
 export async function generateProfileCard(profileData) {
   const baseWidth = 960;
   const baseHeight = 260;
@@ -389,21 +415,22 @@ export async function generateProfileCard(profileData) {
   // 4. Content Area (To the right of Avatar)
   const contentX = avatarX + avatarSize + 28;
   const contentWidth = width - contentX - 36;
+  const headerCenterY = 44;
 
-  // Header: Username (@username) in Arcane style - prominent 36px font
+  // Header: Username (@username) in Arcane style - prominent 32px font vertically centered
   ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
+  ctx.textBaseline = 'middle';
 
   const userHandle = `@${username}`;
-  ctx.font = `bold 36px ${fontStack}`;
+  ctx.font = `bold 32px ${fontStack}`;
   ctx.fillStyle = '#FFFFFF';
 
   let handleText = userHandle;
   let totalBadgesWidth = 0;
-  if (isOwner) totalBadgesWidth += 68 + 8;
-  if (isMvp) totalBadgesWidth += 54 + 8;
-  if (isBooster) totalBadgesWidth += 76 + 8;
-  if (totalBadgesWidth > 0) totalBadgesWidth += 16;
+  if (isOwner) totalBadgesWidth += 62 + 8;
+  if (isMvp) totalBadgesWidth += 48 + 8;
+  if (isBooster) totalBadgesWidth += 68 + 8;
+  if (totalBadgesWidth > 0) totalBadgesWidth += 10;
 
   const maxHandleWidth = Math.max(160, contentWidth - totalBadgesWidth);
   if (ctx.measureText(handleText).width > maxHandleWidth) {
@@ -412,64 +439,28 @@ export async function generateProfileCard(profileData) {
     }
     handleText += '...';
   }
-  ctx.fillText(handleText, contentX, 28);
+  ctx.fillText(handleText, contentX, headerCenterY);
 
-  // Badges (Owner, MVP, Booster)
-  let badgeX = contentX + ctx.measureText(handleText).width + 16;
+  // Badges: Vertically centered on the exact same axis as the username text, tightly coupled next to name
+  let badgeX = contentX + Math.ceil(ctx.measureText(handleText).width) + 10;
 
   if (isOwner) {
-    const badgeW = 68;
-    const badgeH = 26;
-    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
-    ctx.fillStyle = 'rgba(255, 68, 85, 0.18)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 68, 85, 0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#FF4455';
-    ctx.font = `bold 12px ${fontStack}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('OWNER', badgeX + badgeW / 2, 40);
-    badgeX += badgeW + 8;
+    const bw = drawBadge(ctx, badgeX, headerCenterY, 'OWNER', '#FF4455', 'rgba(255, 68, 85, 0.18)', 'rgba(255, 68, 85, 0.6)');
+    badgeX += bw + 8;
   }
 
   if (isMvp) {
-    const badgeW = 54;
-    const badgeH = 26;
-    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
-    ctx.fillStyle = 'rgba(255, 215, 0, 0.18)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#FFD700';
-    ctx.font = `bold 12px ${fontStack}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('MVP', badgeX + badgeW / 2, 40);
-    badgeX += badgeW + 8;
+    const bw = drawBadge(ctx, badgeX, headerCenterY, 'MVP', '#FFD700', 'rgba(255, 215, 0, 0.18)', 'rgba(255, 215, 0, 0.6)');
+    badgeX += bw + 8;
   }
 
   if (isBooster) {
-    const badgeW = 76;
-    const badgeH = 26;
-    roundRect(ctx, badgeX, 34, badgeW, badgeH, 13);
-    ctx.fillStyle = 'rgba(244, 127, 255, 0.2)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(244, 127, 255, 0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#F47FFF';
-    ctx.font = `bold 12px ${fontStack}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('BOOSTER', badgeX + badgeW / 2, 40);
-    badgeX += badgeW + 8;
+    const bw = drawBadge(ctx, badgeX, headerCenterY, 'BOOSTER', '#F47FFF', 'rgba(244, 127, 255, 0.2)', 'rgba(244, 127, 255, 0.6)');
+    badgeX += bw + 8;
   }
 
-  // Accent Underline spanning across content area
-  const underlineY = 78;
+  // Accent Underline spanning across content area (Y = 80 provides clear margin below descenders)
+  const underlineY = 80;
   ctx.beginPath();
   ctx.moveTo(contentX, underlineY);
   ctx.lineTo(contentX + contentWidth, underlineY);
@@ -507,7 +498,7 @@ export async function generateProfileCard(profileData) {
 
   const totalStatsW = measured.reduce((acc, m) => acc + m.width, 0);
   const gap = Math.max(16, (contentWidth - totalStatsW) / (measured.length - 1));
-  const statsY = 98;
+  const statsY = 100;
   let curX = contentX;
 
   measured.forEach((st) => {
