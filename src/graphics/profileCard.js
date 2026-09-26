@@ -50,7 +50,7 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
   ctx.lineTo(x + radius.bl, y + height);
   ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-  ctx.lineTo(x + radius.tl);
+  ctx.lineTo(x, y + radius.tl);
   ctx.quadraticCurveTo(x, y, x + radius.tl, y);
   ctx.closePath();
 }
@@ -275,7 +275,7 @@ export async function generateProfileCard(profileData) {
   const themeColor = dominantAvatarColor || accentColor || '#00E5FF';
 
   // 2. Base Canvas Background & Corner Clipping (Transparent rounded PNG)
-  const cardRadius = 18;
+  const cardRadius = 22;
   ctx.save();
   roundRect(ctx, 0, 0, width, height, cardRadius);
   ctx.clip();
