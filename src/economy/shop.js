@@ -4,7 +4,7 @@ import { sanitizeError, COIN_EMOJI, getUserLogName } from '../shared.js';
 import { updateBalance } from './service.js';
 // D-04 FIX: Removed unused imports (logAudit, createRefund, getBoosterLossPolicy)
 import { isMemberBooster } from '../commands/colors.js';
-import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
+import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 /**
  * Get the display image for a shop item.
@@ -1195,7 +1195,13 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
 
         if (deductRes.rowCount === 0) {
           await client.query('ROLLBACK');
-          sysLog('Purchase Rejection', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Atomic balance fault check (insufficient balance)` });
+          sysWarn('Balance Underflow Prevented', {
+            user: userId,
+            guild: guildId,
+            item: item.name,
+            amount: totalCost,
+            detail: `Purchase of ${qty}x ${item.name} aborted: insufficient balance`
+          });
           return { success: false, error: 'Transaction rejected: Insufficient balance.' };
         }
 

@@ -739,11 +739,25 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
     await client.query('COMMIT');
 
-    sysLog('INVENTORY Event', { 
+    const highRarityPrizes = awardedPrizes.filter(p => p.type === 'item' && ['legendary', 'mythic', 'epic'].includes((p.rarity || '').toLowerCase()));
+    if (highRarityPrizes.length > 0) {
+      for (const prize of highRarityPrizes) {
+        sysLog('Rare Lootbox Drop Dispatched', {
+          tag: 'LOOTBOX',
+          user: userId,
+          guild: guildId,
+          item: prize.itemName,
+          detail: `Box: ${box.name} | Rarity: ${prize.rarity} | ItemID: ${prize.itemId}`
+        });
+      }
+    }
+
+    sysLog('Chest Opened', { 
+      tag: 'LOOTBOX',
       user: userId, 
       guild: guildId, 
       item: lootBoxId, 
-      detail: `Opened ${box.name} -> Won ${awardedPrizes.length} prizes (Coins: ${totalCoinsAwarded})` 
+      detail: `Box: ${box.name} -> Won ${awardedPrizes.length} prizes (Coins: ${totalCoinsAwarded})` 
     });
 
     return {
