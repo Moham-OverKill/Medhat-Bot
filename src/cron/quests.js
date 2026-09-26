@@ -45,7 +45,8 @@ async function checkQuests(client, forceCheck = false) {
     if (!forceCheck && checkQuests.lastRunMap.get(guildHourKey)) continue;
 
     const refreshes = config.quests_refreshes_per_day || 1;
-    const targetAmount = parseInt(config.quests_per_refresh) || 1;
+    const allGuildQuests = await getQuests(guildId);
+    const targetAmount = Math.min(parseInt(config.quests_per_refresh, 10) || 3, allGuildQuests.length);
     let shouldRefresh = false;
 
     // Strict independent schedule check
@@ -56,7 +57,7 @@ async function checkQuests(client, forceCheck = false) {
     // Force check (startup): rotate if missing, if count mismatch, or if overdue for today
     if (forceCheck) {
        const activeIds = config.active_quest_ids || [];
-       if (activeIds.length === 0 || activeIds.length !== targetAmount) {
+       if (allGuildQuests.length > 0 && (activeIds.length === 0 || activeIds.length !== targetAmount)) {
          shouldRefresh = true;
        } else if (!config.last_quest_rotated_date || config.last_quest_rotated_date !== todayCairo) {
          shouldRefresh = true;
@@ -147,7 +148,7 @@ async function checkQuests(client, forceCheck = false) {
  */
 export async function rotateGuildQuests(guildId, config, pool, client = null, options = {}) {
     const { skipNotifications = false } = options;
-    const amount = parseInt(config.quests_per_refresh) || 1;
+    const amount = parseInt(config.quests_per_refresh, 10) || 3;
     const allQuests = await getQuests(guildId);
     
     if (allQuests.length === 0) {
