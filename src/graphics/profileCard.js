@@ -31,6 +31,8 @@ try {
   sysError('Font Registration Error', err);
 }
 
+const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
+
 /**
  * Format numbers with compact suffixes (e.g., 1.5K, 2.3M) or standard commas
  * @param {number} num
@@ -50,17 +52,30 @@ export function formatCompactNumber(num) {
 function roundRect(ctx, x, y, width, height, radius) {
   if (typeof radius === 'number') {
     radius = { tl: radius, tr: radius, br: radius, bl: radius };
+  } else {
+    radius = {
+      tl: radius?.tl || 0,
+      tr: radius?.tr || 0,
+      br: radius?.br || 0,
+      bl: radius?.bl || 0
+    };
   }
+  const maxR = Math.min(width / 2, height / 2);
+  const tl = Math.max(0, Math.min(radius.tl, maxR));
+  const tr = Math.max(0, Math.min(radius.tr, maxR));
+  const br = Math.max(0, Math.min(radius.br, maxR));
+  const bl = Math.max(0, Math.min(radius.bl, maxR));
+
   ctx.beginPath();
-  ctx.moveTo(x + radius.tl, y);
-  ctx.lineTo(x + width - radius.tr, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-  ctx.lineTo(x + width, y + height - radius.br);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-  ctx.lineTo(x + radius.bl, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-  ctx.lineTo(x, y + radius.tl);
-  ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + width - tr, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + tr);
+  ctx.lineTo(x + width, y + height - br);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - br, y + height);
+  ctx.lineTo(x + bl, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - bl);
+  ctx.lineTo(x, y + tl);
+  ctx.quadraticCurveTo(x, y, x + tl, y);
   ctx.closePath();
 }
 
@@ -115,7 +130,7 @@ function drawVectorCoin(ctx, x, y, radius) {
 
   // Coin star/dollar symbol in center
   ctx.fillStyle = '#FFF8DB';
-  ctx.font = `bold ${Math.round(radius * 1.05)}px "Roboto", "Segoe UI", Arial, sans-serif`;
+  ctx.font = `bold ${Math.round(radius * 1.05)}px ${fontStack}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('$', x, y + 0.5);
@@ -243,12 +258,17 @@ function extractDominantColor(img) {
  * @returns {Promise<Buffer>}
  */
 export async function generateProfileCard(profileData) {
-  const width = 960;
-  const height = 260;
-  const canvas = createCanvas(width, height);
+  const baseWidth = 960;
+  const baseHeight = 260;
+  const scale = 2;
+  const canvas = createCanvas(baseWidth * scale, baseHeight * scale);
   const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+
+  const width = baseWidth;
+  const height = baseHeight;
 
   const {
     displayName = 'User',
@@ -284,7 +304,7 @@ export async function generateProfileCard(profileData) {
   const themeColor = dominantAvatarColor || accentColor || '#00E5FF';
 
   // 2. Base Canvas Background & Corner Clipping (Transparent rounded PNG)
-  const cardRadius = 22;
+  const cardRadius = 24;
   ctx.save();
   roundRect(ctx, 0, 0, width, height, cardRadius);
   ctx.clip();
@@ -305,11 +325,25 @@ export async function generateProfileCard(profileData) {
 
   ctx.restore();
 
-  // Outer border with soft rounded corners matching card radius
+  // Outer border with soft rounded corners matching card radius and state accent tint
   roundRect(ctx, 1, 1, width - 2, height - 2, cardRadius);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.strokeStyle = hexToRgba(themeColor, 0.35);
   ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // Top Specular Highlight
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cardRadius + 20, 1.5);
+  ctx.lineTo(width - cardRadius - 20, 1.5);
+  const topLightGrad = ctx.createLinearGradient(cardRadius, 0, width - cardRadius, 0);
+  topLightGrad.addColorStop(0, 'transparent');
+  topLightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.25)');
+  topLightGrad.addColorStop(1, 'transparent');
+  ctx.strokeStyle = topLightGrad;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
 
   // 3. User Avatar (Circular portrait with glowing accent border)
   const avatarX = 36;
