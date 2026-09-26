@@ -8,10 +8,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const fontsDir = path.resolve(__dirname, '../assets/fonts');
 
-// Register bundled Roboto fonts for consistent font rendering across all platforms and Docker
+// Register bundled fonts for consistent font rendering across all platforms and Docker
 try {
+  const cairoPath = path.join(fontsDir, 'Cairo.ttf');
+  const notoPath = path.join(fontsDir, 'NotoSansArabic.ttf');
   const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
   const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
+
+  if (fs.existsSync(cairoPath)) {
+    GlobalFonts.registerFromPath(cairoPath, 'Cairo');
+  }
+  if (fs.existsSync(notoPath)) {
+    GlobalFonts.registerFromPath(notoPath, 'Noto Sans Arabic');
+  }
   if (fs.existsSync(boldPath)) {
     GlobalFonts.registerFromPath(boldPath, 'Roboto');
   }
@@ -262,7 +271,7 @@ export async function generateProfileCard(profileData) {
     accentColor = '#00E5FF'
   } = profileData;
 
-  const fontStack = '"Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
+  const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
 
   // 1. Fetch images concurrently (Avatar & Custom Coin)
   const [avatarImg, customCoinImg] = await Promise.all([
