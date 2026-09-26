@@ -80,6 +80,50 @@ const CONFIG_SCHEMA = {
   interface_message_id: { type: 'string', validate: isValidSnowflake, required: false }
 };
 
+export const CONFIG_DEFAULTS = {
+  enabled: false,
+  intervalNumber: 24,
+  intervalUnit: 'hours',
+  winnersCount: 1,
+  mvpRewardAmount: 100,
+  booster_multiplier: 1.5,
+  daily_streak_bonus: 5,
+  daily_base_reward: 25,
+  daily_streak_cap: 20,
+  quests_enabled: false,
+  quests_refreshes_per_day: 1,
+  quests_per_refresh: 3,
+  vote_reward_amount: 0,
+  tag_reward_amount: 0,
+  anti_cheat_account_age_gate: false,
+  anti_cheat_join_date_gate: false,
+  richest_role_enabled: false,
+  richest_role_winners: 1,
+  streak_role_enabled: false,
+  streak_role_winners: 1,
+  battlepass_enabled: false,
+  battlepass_base_xp: 100,
+  battlepass_xp_increment: 0,
+  battlepass_xp_per_level: 100,
+  battlepass_msg_xp: 1,
+  battlepass_voice_xp: 1,
+  battlepass_quest_xp: 25
+};
+
+/**
+ * Merges defaults into a configuration object, ensuring primitive values never fall back to undefined
+ */
+export function applyConfigDefaults(config) {
+  if (!config || typeof config !== 'object') return { ...CONFIG_DEFAULTS };
+  const merged = { ...CONFIG_DEFAULTS, ...config };
+  for (const [key, defaultVal] of Object.entries(CONFIG_DEFAULTS)) {
+    if (merged[key] === undefined || merged[key] === null || (typeof defaultVal === 'number' && isNaN(merged[key]))) {
+      merged[key] = defaultVal;
+    }
+  }
+  return merged;
+}
+
 export const configCache = new Map();
 
 import { registerEmojiResolver } from '../shared.js';
@@ -145,9 +189,9 @@ function validateConfig(config) {
     }
   }
 
-  // Preserve any additional top-level keys that may exist in JSON
+  // Preserve any additional top-level keys that may exist in JSON and are not part of CONFIG_SCHEMA
   for (const [key, val] of Object.entries(config)) {
-    if (sanitized[key] === undefined && val !== undefined) {
+    if (!(key in CONFIG_SCHEMA) && sanitized[key] === undefined && val !== undefined) {
       sanitized[key] = val;
     }
   }
@@ -184,7 +228,7 @@ export async function loadGuildConfigs() {
       const config = row.config;
       
       if (isValidSnowflake(guildId) && config && typeof config === 'object') {
-        const validated = validateConfig(config);
+        const validated = applyConfigDefaults(validateConfig(config));
         validConfigs[guildId] = validated;
         configCache.set(guildId, validated);
       }
@@ -216,7 +260,7 @@ export async function saveGuildConfigs(configs) {
              RETURNING config`,
             [guildId, JSON.stringify(sanitized)]
           );
-          const fullConfig = validateConfig(res.rows[0]?.config || {});
+          const fullConfig = applyConfigDefaults(validateConfig(res.rows[0]?.config || {}));
           configCache.set(guildId, fullConfig);
         }
       }
@@ -242,7 +286,7 @@ export async function getGuildConfig(guildId) {
   }
   
   if (configCache.has(guildId)) {
-    return configCache.get(guildId);
+    return applyConfigDefaults(configCache.get(guildId));
   }
   
   try {
@@ -253,11 +297,13 @@ export async function getGuildConfig(guildId) {
     );
     
     if (result.rows.length === 0) {
-      return null;
+      const defaultConfig = applyConfigDefaults({});
+      configCache.set(guildId, defaultConfig);
+      return defaultConfig;
     }
     
     const config = result.rows[0].config;
-    const validated = validateConfig(config || {});
+    const validated = applyConfigDefaults(validateConfig(config || {}));
     configCache.set(guildId, validated);
     return validated;
   } catch (error) {
@@ -290,8 +336,15 @@ export async function setGuildConfig(guildId, config) {
       [guildId, JSON.stringify(sanitized)]
     );
     
-    const fullConfig = validateConfig(result.rows[0]?.config || {});
+    const fullConfig = applyConfigDefaults(validateConfig(result.rows[0]?.config || {}));
     configCache.set(guildId, fullConfig);
+
+    // Invalidate activity tracker config cache to ensure immediate synchronization across systems
+    try {
+      const { invalidateConfigCache } = await import('../activity/index.js');
+      invalidateConfigCache(guildId);
+    } catch (_) {}
+
     return fullConfig;
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Setting guild config', error: formatError(error) });
