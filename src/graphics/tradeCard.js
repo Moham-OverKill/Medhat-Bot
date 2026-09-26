@@ -39,17 +39,30 @@ const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "Tahoma", 
 function roundRect(ctx, x, y, width, height, radius) {
   if (typeof radius === 'number') {
     radius = { tl: radius, tr: radius, br: radius, bl: radius };
+  } else {
+    radius = {
+      tl: radius?.tl || 0,
+      tr: radius?.tr || 0,
+      br: radius?.br || 0,
+      bl: radius?.bl || 0
+    };
   }
+  const maxR = Math.min(width / 2, height / 2);
+  const tl = Math.max(0, Math.min(radius.tl, maxR));
+  const tr = Math.max(0, Math.min(radius.tr, maxR));
+  const br = Math.max(0, Math.min(radius.br, maxR));
+  const bl = Math.max(0, Math.min(radius.bl, maxR));
+
   ctx.beginPath();
-  ctx.moveTo(x + radius.tl, y);
-  ctx.lineTo(x + width - radius.tr, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-  ctx.lineTo(x + width, y + height - radius.br);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-  ctx.lineTo(x + radius.bl, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-  ctx.lineTo(x + radius.tl);
-  ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + width - tr, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + tr);
+  ctx.lineTo(x + width, y + height - br);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - br, y + height);
+  ctx.lineTo(x + bl, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - bl);
+  ctx.lineTo(x, y + tl);
+  ctx.quadraticCurveTo(x, y, x + tl, y);
   ctx.closePath();
 }
 
