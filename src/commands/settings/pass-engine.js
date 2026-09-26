@@ -12,7 +12,7 @@
  */
 import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
-import { sysLog, sysError, sendLog } from '../../utils/logger.js';
+import { sysLog, sysWarn, sysError, sendLog } from '../../utils/logger.js';
 
 // Dangerous permissions that must never be awarded via the level system
 const DANGEROUS_PERMS = [
@@ -76,8 +76,14 @@ export function getTotalXpForLevel(level, base = 100, increment = 50) {
  * - xpForNextLevel (XP needed to complete current level and reach next level)
  */
 export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
+  const rawInc = parseInt(increment, 10);
+  if (isNaN(rawInc) || rawInc <= 0) {
+    sysWarn('Level Math Calculation Fallback', {
+      detail: `Configured increment was ${increment}; applied hard minimum of 50`
+    });
+  }
   const B = Math.max(1, parseInt(base, 10) || 100);
-  const I = Math.max(1, parseInt(increment, 10) > 0 ? parseInt(increment, 10) : 50);
+  const I = Math.max(1, rawInc > 0 ? rawInc : 50);
   const xp = Math.max(0, parseFloat(totalXp || 0));
 
   if (xp === 0) {
@@ -270,6 +276,20 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
 
     const toClaim = levelsResult.rows.filter(r => !alreadyClaimedLevels.has(r.level) || levelsWithPendingRewards.has(r.level));
     if (toClaim.length === 0) return;
+
+    if (toClaim.length > 10) {
+      sysWarn('Large Level Progression Jump Detected', {
+        user: userId,
+        guild: guildId,
+        detail: `User reached Level ${currentLevel} with ${toClaim.length} levels to claim simultaneously | Total XP: ${totalXp.toLocaleString()} | Increment: ${incrementXp}`
+      });
+    } else {
+      sysLog('Level Progression Claim Triggered', {
+        user: userId,
+        guild: guildId,
+        detail: `Reached Level ${currentLevel} | Pending levels to claim: ${toClaim.length} | Total XP: ${totalXp.toLocaleString()}`
+      });
+    }
 
     const isBulk = toClaim.length > 5;
     const claimedLevels = [];
@@ -1513,7 +1533,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             [guildId, uid, entry.boxId, reachedLevel]
           ).catch(() => {});
 
-          sysLog('Self-Healing: Reconciled Level Chest Deficit', {
+          sysLog('Reconciled Level Chest Deficit', {
+            tag: 'SELF-HEALING',
             user: uid,
             guild: guildId,
             detail: `Added ${deficit}x ${entry.name} (Expected: ${entry.expectedQty}, Held: ${heldQty}, Opened: ${openedQty})`
@@ -1522,7 +1543,8 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       }
 
       if (userId) {
-        sysLog('Self-Healing: User Level Audit Complete', {
+        sysLog('Level Rewards Verified', {
+          tag: 'AUDIT',
           user: uid,
           guild: guildId,
           detail: `Level: ${reachedLevel} | Missing Reconciled: ${missingRewards.length} | Configured Chests Audited: ${configuredChestsMap.size}`

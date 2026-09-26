@@ -165,39 +165,212 @@ export function logSystemError(error, action = 'System Error') {
     sysError(action, error);
 }
 
+export const LOG_TAGS = {
+    STARTUP: 'STARTUP',
+    DATABASE: 'DATABASE',
+    SERVER: 'SERVER',
+    COMMAND: 'COMMAND',
+    ECONOMY: 'ECONOMY',
+    SHOP: 'SHOP',
+    TRADE: 'TRADE',
+    LOOTBOX: 'LOOTBOX',
+    LEVEL: 'LEVEL',
+    QUEST: 'QUEST',
+    VOICE: 'VOICE',
+    CHAT: 'CHAT',
+    RENDER: 'RENDER',
+    VERIFY: 'VERIFY',
+    SELF_HEALING: 'SELF-HEALING',
+    AUDIT: 'AUDIT',
+    CRON: 'CRON',
+    SECURITY: 'SECURITY',
+    CONFIG: 'CONFIG',
+    WARN: 'WARN',
+    ERROR: 'ERROR'
+};
+
+function resolveTag(action, explicitTag) {
+    if (explicitTag && typeof explicitTag === 'string') {
+        const clean = explicitTag.toUpperCase().replace(/[\s_]+/g, '-');
+        if (Object.values(LOG_TAGS).includes(clean)) return clean;
+    }
+    if (!action || typeof action !== 'string') return 'SERVER';
+
+    const lower = action.toLowerCase();
+    if (lower.startsWith('phase:') || lower.includes('client ready') || lower.includes('client authenticat') || lower.includes('starting bot') || lower.includes('startup') || lower.includes('dependencies ready')) {
+        return 'STARTUP';
+    }
+    if (lower.includes('database') || lower.includes('pool') || lower.includes('postgres') || lower.includes('migration') || lower.includes('schema')) {
+        return 'DATABASE';
+    }
+    if (lower.includes('user level audit') || lower.includes('user level inactive') || lower.includes('inventory in-sync') || lower.includes('verified') || lower.includes('audit complete')) {
+        return 'AUDIT';
+    }
+    if (lower.startsWith('self-healing') || lower.includes('reconciled') || lower.includes('rollback') || lower.includes('healed')) {
+        return 'SELF-HEALING';
+    }
+    if (lower.includes('trade')) {
+        return 'TRADE';
+    }
+    if (lower.includes('shop') || lower.includes('inventory') || lower.includes('item purchase') || lower.includes('stock')) {
+        return 'SHOP';
+    }
+    if (lower.includes('lootbox') || lower.includes('chest') || lower.includes('box opened') || lower.includes('drop')) {
+        return 'LOOTBOX';
+    }
+    if (lower.includes('level') || lower.includes('battlepass') || lower.includes('xp') || lower.includes('progression')) {
+        return 'LEVEL';
+    }
+    if (lower.includes('quest') || lower.includes('mission')) {
+        return 'QUEST';
+    }
+    if (lower.includes('voice')) {
+        return 'VOICE';
+    }
+    if (lower.includes('chat') || lower.includes('message point')) {
+        return 'CHAT';
+    }
+    if (lower.includes('render') || lower.includes('profile card') || lower.includes('trade card')) {
+        return 'RENDER';
+    }
+    if (lower.includes('command') || lower.includes('interaction') || lower.startsWith('/')) {
+        return 'COMMAND';
+    }
+    if (lower.includes('verify') || lower.includes('permission') || lower.includes('validate') || lower.includes('check')) {
+        return 'VERIFY';
+    }
+    if (lower.includes('cron') || lower.includes('scheduler') || lower.includes('midnight') || lower.includes('streak reset')) {
+        return 'CRON';
+    }
+    if (lower.includes('security') || lower.includes('cooldown') || lower.includes('cheat') || lower.includes('unauthorized') || lower.includes('rate limit')) {
+        return 'SECURITY';
+    }
+    if (lower.includes('config') || lower.includes('setting')) {
+        return 'CONFIG';
+    }
+    if (lower.includes('warn') || lower.includes('warning') || lower.includes('fallback') || lower.includes('anomaly')) {
+        return 'WARN';
+    }
+    if (lower.includes('economy') || lower.includes('coin') || lower.includes('balance') || lower.includes('transfer')) {
+        return 'ECONOMY';
+    }
+    return 'SERVER';
+}
+
+function cleanActionTitle(action) {
+    if (!action || typeof action !== 'string') return '';
+    return stripLog(action)
+        .replace(/^\[[A-Z0-9_\-\s]+\]\s*/i, '') // Remove existing brackets
+        .replace(/^(Self-Healing:\s*)/i, '')
+        .replace(/^(Phase:\s*)/i, '')
+        .replace(/^\[CLEAN\]\s*/i, '')
+        .replace(/^(ECONOMY Event\s*)/i, 'Economy Event')
+        .trim();
+}
+
 /**
- * Core logging utility for the "God-Mode" Audit System.
- * Enforces NO-PREFIX and ID-ONLY standards for console logs.
+ * Unified single-tag console logger
  */
-export function sysLog(action, { user, guild, target, role, item, channel, message, detail } = {}) {
+export function sysLog(action, { user, guild, target, role, item, channel, message, detail, tag: explicitTag, duration, latency, amount } = {}) {
     const userId = user?.id || user || 'System';
     const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
     
-    const cleanAction = stripLog(action);
-    const parts = [`${cleanAction}`, `User: ${userId}`, `Guild: ${guildId}`];
+    const tag = resolveTag(action, explicitTag);
+    const cleanAction = cleanActionTitle(action);
+    const parts = [`[${tag}] ${cleanAction}`, `User: ${userId}`, `Guild: ${guildId}`];
     
     if (target) parts.push(`Target: ${target?.id || target}`);
     if (role) parts.push(`Role: ${role?.id || role}`);
     if (item) parts.push(`Item: ${item?.id || item}`);
     if (channel) parts.push(`Channel: ${channel?.id || channel}`);
+    if (amount !== undefined) parts.push(`Amount: ${amount}`);
+    if (duration !== undefined) parts.push(`Duration: ${duration}ms`);
+    if (latency !== undefined) parts.push(`Latency: ${latency}ms`);
     if (message) parts.push(`Message: ${message?.id || message}`);
     if (detail) parts.push(`Detail: ${stripLog(detail)}`);
     
     console.log(parts.join(' | '));
 }
 
-export function sysError(action, error, { user, guild, target, role, item, channel, message } = {}) {
+/**
+ * Unified single-tag warning logger
+ */
+export function sysWarn(action, { user, guild, target, role, item, channel, message, detail, duration, latency, amount } = {}) {
     const userId = user?.id || user || 'System';
     const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
-    const errorMessage = error?.message || error || 'Unknown Error';
     
-    const parts = [`${stripLog(action)}`, `User: ${userId}`, `Guild: ${guildId}`];
+    const cleanAction = cleanActionTitle(action);
+    const parts = [`[WARN] ${cleanAction}`, `User: ${userId}`, `Guild: ${guildId}`];
+    
     if (target) parts.push(`Target: ${target?.id || target}`);
     if (role) parts.push(`Role: ${role?.id || role}`);
     if (item) parts.push(`Item: ${item?.id || item}`);
     if (channel) parts.push(`Channel: ${channel?.id || channel}`);
+    if (amount !== undefined) parts.push(`Amount: ${amount}`);
+    if (duration !== undefined) parts.push(`Duration: ${duration}ms`);
+    if (latency !== undefined) parts.push(`Latency: ${latency}ms`);
     if (message) parts.push(`Message: ${message?.id || message}`);
+    if (detail) parts.push(`Detail: ${stripLog(detail)}`);
+    
+    console.warn(parts.join(' | '));
+}
+
+/**
+ * Unified single-tag error logger with indented stack traces
+ */
+export function sysError(action, error, { user, guild, target, role, item, channel, message, detail, duration } = {}) {
+    const userId = user?.id || user || 'System';
+    const guildId = guild?.id || (guild && guild !== 'Global' ? guild : 'Global');
+    const errorMessage = error?.message || error || 'Unknown Error';
+    
+    const cleanAction = cleanActionTitle(action);
+    const parts = [`[ERROR] ${cleanAction}`, `User: ${userId}`, `Guild: ${guildId}`];
+    if (target) parts.push(`Target: ${target?.id || target}`);
+    if (role) parts.push(`Role: ${role?.id || role}`);
+    if (item) parts.push(`Item: ${item?.id || item}`);
+    if (channel) parts.push(`Channel: ${channel?.id || channel}`);
+    if (duration !== undefined) parts.push(`Duration: ${duration}ms`);
+    if (message) parts.push(`Message: ${message?.id || message}`);
+    if (detail) parts.push(`Detail: ${stripLog(detail)}`);
     parts.push(`Error: ${stripLog(errorMessage)}`);
     
     console.error(parts.join(' | '));
+
+    if (error?.stack) {
+        const stackFrames = error.stack
+            .split('\n')
+            .slice(1, 4)
+            .map(line => '        ' + line.trim())
+            .join('\n');
+        if (stackFrames) {
+            console.error(stackFrames);
+        }
+    }
 }
+
+/**
+ * High-level category-specific log helper
+ */
+export const log = {
+    startup: (action, ctx) => sysLog(action, { ...ctx, tag: 'STARTUP' }),
+    database: (action, ctx) => sysLog(action, { ...ctx, tag: 'DATABASE' }),
+    server: (action, ctx) => sysLog(action, { ...ctx, tag: 'SERVER' }),
+    command: (action, ctx) => sysLog(action, { ...ctx, tag: 'COMMAND' }),
+    economy: (action, ctx) => sysLog(action, { ...ctx, tag: 'ECONOMY' }),
+    shop: (action, ctx) => sysLog(action, { ...ctx, tag: 'SHOP' }),
+    trade: (action, ctx) => sysLog(action, { ...ctx, tag: 'TRADE' }),
+    lootbox: (action, ctx) => sysLog(action, { ...ctx, tag: 'LOOTBOX' }),
+    level: (action, ctx) => sysLog(action, { ...ctx, tag: 'LEVEL' }),
+    quest: (action, ctx) => sysLog(action, { ...ctx, tag: 'QUEST' }),
+    voice: (action, ctx) => sysLog(action, { ...ctx, tag: 'VOICE' }),
+    chat: (action, ctx) => sysLog(action, { ...ctx, tag: 'CHAT' }),
+    render: (action, ctx) => sysLog(action, { ...ctx, tag: 'RENDER' }),
+    verify: (action, ctx) => sysLog(action, { ...ctx, tag: 'VERIFY' }),
+    selfHealing: (action, ctx) => sysLog(action, { ...ctx, tag: 'SELF-HEALING' }),
+    audit: (action, ctx) => sysLog(action, { ...ctx, tag: 'AUDIT' }),
+    cron: (action, ctx) => sysLog(action, { ...ctx, tag: 'CRON' }),
+    security: (action, ctx) => sysLog(action, { ...ctx, tag: 'SECURITY' }),
+    config: (action, ctx) => sysLog(action, { ...ctx, tag: 'CONFIG' }),
+    warn: (action, ctx) => sysWarn(action, ctx),
+    error: (action, err, ctx) => sysError(action, err, ctx)
+};

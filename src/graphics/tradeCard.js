@@ -2,7 +2,8 @@ import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sysError } from '../utils/logger.js';
+import { performance } from 'node:perf_hooks';
+import { sysError, sysWarn, sysLog } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -288,6 +289,7 @@ export async function renderTradeCard({
   sender = {},
   target = {}
 }) {
+  const renderStart = performance.now();
   const senderItems = Array.isArray(sender.items) ? sender.items : [];
   const targetItems = Array.isArray(target.items) ? target.items : [];
 
@@ -568,5 +570,13 @@ export async function renderTradeCard({
     avatarImg: targetAvatarImg
   });
 
-  return canvas.toBuffer('image/png');
+  const buffer = canvas.toBuffer('image/png');
+  const duration = Math.round(performance.now() - renderStart);
+  if (duration > 500) {
+    sysWarn('Slow Trade Card Render', { detail: `Status: ${status} | Total Rows: ${totalRows}`, duration });
+  } else {
+    sysLog('Trade Card Rendered', { detail: `Status: ${status} | Total Rows: ${totalRows}`, duration });
+  }
+
+  return buffer;
 }

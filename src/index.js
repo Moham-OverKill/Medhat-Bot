@@ -19,7 +19,7 @@ import { startExpirationScheduler } from './cron/expirations.js';
 import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
-import { sendLog, logSystemEvent, sysLog, sysError } from './utils/logger.js';
+import { sendLog, logSystemEvent, sysLog, sysWarn, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep, healAllActiveTemporaryItemsOnStartup } from './economy/shop.js';
 import { initializeTradeJanitor } from './commands/trade.js';
@@ -107,7 +107,7 @@ function emitPhase(key, message, metadata = {}) {
     .map(([k, v]) => `${k}: ${v}`)
     .join(' | ');
 
-  sysLog(`Phase: ${message}`, { detail: details || key });
+  sysLog(message, { tag: 'STARTUP', detail: details || key });
 }
 
 function tryEmitDeps() {
@@ -275,7 +275,11 @@ keepAliveServer.listen(keepalivePort, () => {
 sysLog('Client Authenticating', { detail: 'Attempting Discord login' });
 
 client.once(Events.ClientReady, async () => {
-  sysLog('Client Ready', { user: client.user.id });
+  sysLog('Client Ready', {
+    tag: 'STARTUP',
+    user: client.user.id,
+    detail: `Serving ${client.guilds.cache.size} guilds | WebSocket Ping: ${client.ws.ping}ms`
+  });
 
   try {
     // Initialize database (MUST BE FIRST)
@@ -634,20 +638,49 @@ client.on(Events.InteractionCreate, async (interaction) => {
   return runInGuildContext(interaction.guildId, async () => {
     if (!interaction.isChatInputCommand()) return;
 
+    const cmdStart = performance.now();
+    const cmdName = interaction.commandName;
+    const subCmd = interaction.options?.getSubcommand(false);
+    const fullCmdName = subCmd ? `/${cmdName} ${subCmd}` : `/${cmdName}`;
+
     // Check if bot is fully ready
     if (!depsState.storage) {
+      sysWarn(`Command Deferred During Startup: ${fullCmdName}`, {
+        user: interaction.user.id,
+        guild: interaction.guildId
+      });
       return interaction.reply({
-        content: '⏳ The bot is currently starting up and connecting to the database. Please try again in a few seconds.',
+        content: 'The bot is currently starting up and connecting to the database. Please try again in a few seconds.',
         flags: MessageFlags.Ephemeral
       });
     }
 
     try {
       await handleSlashCommand(interaction);
+      const duration = Math.round(performance.now() - cmdStart);
+      if (duration > 1500) {
+        sysWarn(`Slow Command Execution: ${fullCmdName}`, {
+          user: interaction.user.id,
+          guild: interaction.guildId,
+          duration
+        });
+      } else {
+        sysLog(`Command Executed: ${fullCmdName}`, {
+          tag: 'COMMAND',
+          user: interaction.user.id,
+          guild: interaction.guildId,
+          duration
+        });
+      }
     } catch (error) {
+      const duration = Math.round(performance.now() - cmdStart);
       // Only log if it's not a standard Discord timeout/unknown interaction error bubbling up
       if (error.code !== 10062) {
-        sysError('Interaction Processing Failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        sysError(`Command Execution Failed: ${fullCmdName}`, error, {
+          user: interaction.user.id,
+          guild: interaction.guildId,
+          duration
+        });
       }
 
       try {
