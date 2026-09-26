@@ -283,18 +283,12 @@ export async function generateProfileCard(profileData) {
   roundRect(ctx, 0, 0, width, height, 16);
   ctx.fill();
 
-  // Subtle ambient radial glow matched to avatar dominant color
+  // Subtle ambient radial glow matched to avatar dominant color (behind avatar on left)
   const glowGrad = ctx.createRadialGradient(90, 85, 10, 90, 85, 230);
   glowGrad.addColorStop(0, hexToRgba(themeColor, 0.22));
   glowGrad.addColorStop(1, 'transparent');
   ctx.fillStyle = glowGrad;
   ctx.fillRect(0, 0, 450, 260);
-
-  const glowRight = ctx.createRadialGradient(width - 120, 60, 10, width - 120, 60, 240);
-  glowRight.addColorStop(0, hexToRgba(themeColor, 0.12));
-  glowRight.addColorStop(1, 'transparent');
-  ctx.fillStyle = glowRight;
-  ctx.fillRect(width - 450, 0, 450, 260);
 
   // Outer border with soft rounded corners
   roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 16);
