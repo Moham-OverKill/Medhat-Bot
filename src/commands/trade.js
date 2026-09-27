@@ -603,6 +603,33 @@ export async function handleTradeCommand(interaction) {
 }
 
 /**
+ * Format an individual trade item for the setup embed
+ */
+function formatTradeSetupItem(item) {
+    const qty = parseInt(item.quantity || 1, 10);
+    const isChest = Boolean(
+        item.item_type === 'loot_box' ||
+        item.loot_box_id ||
+        (typeof item.role_id === 'string' && item.role_id.startsWith('CHEST_'))
+    );
+    const hasValidRoleId = item.role_id && /^\d{17,20}$/.test(String(item.role_id));
+
+    if (!isChest && hasValidRoleId) {
+        return qty > 1 ? `**${qty}x** <@&${item.role_id}>` : `<@&${item.role_id}>`;
+    }
+    return qty > 1 ? `**${qty}x ${item.name}**` : `**${item.name}**`;
+}
+
+/**
+ * Format a list of items on individual lines for trade setup
+ */
+function formatTradeSetupItemList(items) {
+    if (!items || items.length === 0) return '• **Items:** None';
+    const lines = items.map(i => `  • ${formatTradeSetupItem(i)}`);
+    return `• **Items:**\n${lines.join('\n')}`;
+}
+
+/**
  * Show the ephemeral trade configuration UI
  */
 export async function showTradeSetup(interaction, setupInfo = null, ...extraComponents) {
@@ -629,12 +656,12 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
         .addFields(
             {
                 name: '📤 You Give',
-                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.senderItems.length === 0 ? 'None' : setup.senderItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
+                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.senderItems)}`,
                 inline: true
             },
             {
                 name: '📥 You Request',
-                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n• **Items:** ${setup.targetItems.length === 0 ? 'None' : setup.targetItems.map(i => (parseInt(i.quantity || 1) > 1 ? `**${i.quantity}x ${i.name}**` : `**${i.name}**`)).join(', ')}`,
+                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.targetItems)}`,
                 inline: true
             }
         )
@@ -1308,8 +1335,8 @@ async function finalizeTradePosting(interaction, setup) {
                 setup.targetId,
                 setup.senderCoins,
                 setup.targetCoins,
-                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1) }))),
-                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1) }))),
+                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id }))),
+                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id }))),
                 expiryDate
             ]
         );
