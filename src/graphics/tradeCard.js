@@ -580,7 +580,8 @@ export async function renderTradeCard({
       ctx.textBaseline = 'middle';
       ctx.font = `bold 16px ${fontStack}`;
       ctx.fillStyle = '#FDE68A';
-      ctx.fillText(`${parsedCoins.toLocaleString()} Coins`, coinIconX + coinIconSize + 12, cursorY + 21);
+      const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
+      ctx.fillText(coinText, coinIconX + coinIconSize + 12, cursorY + 21);
 
       cursorY += 42 + 12;
     }
