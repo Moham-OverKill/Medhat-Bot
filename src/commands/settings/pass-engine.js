@@ -188,7 +188,7 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
        ON CONFLICT (user_id, guild_id)
        DO UPDATE SET
          battlepass_xp = user_activity.battlepass_xp + $4,
-         username = $3`,
+         username = COALESCE($3, user_activity.username)`,
       [userId, guildId, username, finalXp]
     );
 
@@ -414,25 +414,19 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
   try {
     await client2.query('BEGIN');
 
-    // A. Check if the level base claim (coins) is already locked
-    const lockCheck = await client2.query(
-      `SELECT 1 FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed = $3`,
-      [guildId, userId, levelRow.level]
+    // A. Attempt to record base level claim atomically
+    const claimInsertRes = await client2.query(
+      `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, guild_id, level_claimed) DO NOTHING
+       RETURNING level_claimed`,
+      [userId, guildId, levelRow.level]
     );
-    const levelAlreadyClaimed = lockCheck.rows.length > 0;
+    const isNewBaseClaim = claimInsertRes.rowCount > 0;
 
-    // B. Insert base claim record if not yet claimed
-    if (!levelAlreadyClaimed) {
-      await client2.query(
-        `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed) VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
-        [userId, guildId, levelRow.level]
-      );
-    }
-
-    // C. Award coins ONLY if this level was NOT previously claimed
+    // B. Award coins ONLY if this transaction successfully established the base claim
     let coins = 0;
-    if (!levelAlreadyClaimed) {
+    if (isNewBaseClaim) {
       coins = parseInt(levelRow.reward_coins || 0, 10);
       if (coins > 0) {
         await client2.query(
@@ -454,7 +448,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       }
     }
 
-    // D. Fetch and award configured items/chests from battlepass_rewards (Phase 3 multi-reward)
+    // C. Fetch and award configured items/chests from battlepass_rewards (Phase 3 multi-reward)
     const rewardsResult = await client2.query(
       `SELECT br.id as reward_id, br.reward_type, br.shop_item_id, br.loot_box_id, br.quantity,
               si.name as item_name, si.role_id as item_role_id, si.is_active as item_is_active, si.item_type,
@@ -469,7 +463,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
     const grantedRewards = [];
 
     // Fallback if no multi-rewards were found: check legacy single columns on battlepass_config (only if level not previously claimed)
-    if (rewardsResult.rows.length === 0 && !levelAlreadyClaimed) {
+    if (rewardsResult.rows.length === 0 && isNewBaseClaim) {
       if (levelRow.reward_item_id) {
         rewardsResult.rows.push({
           reward_id: null,
@@ -497,12 +491,22 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       let qty = Math.min(100, Math.max(1, parseInt(reward.quantity || 1, 10)));
       // Check if this specific reward has already been claimed (including partial quantity checks)
       if (reward.reward_id) {
+        await client2.query(
+          `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+           VALUES ($1, $2, $3, $4, 0)
+           ON CONFLICT (guild_id, user_id, reward_id) DO NOTHING`,
+          [guildId, userId, levelRow.level, reward.reward_id]
+        );
+
         const rewardClaimCheck = await client2.query(
-          `SELECT quantity_claimed FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND reward_id = $3`,
+          `SELECT quantity_claimed FROM user_pass_reward_claims 
+           WHERE guild_id = $1 AND user_id = $2 AND reward_id = $3
+           FOR UPDATE`,
           [guildId, userId, reward.reward_id]
         );
+
         if (rewardClaimCheck.rows.length > 0) {
-          const claimedQty = parseInt(rewardClaimCheck.rows[0]?.quantity_claimed || 1, 10);
+          const claimedQty = parseInt(rewardClaimCheck.rows[0]?.quantity_claimed || 0, 10);
           if (claimedQty >= qty) {
             continue; // Already fully claimed, skip
           }
@@ -515,11 +519,10 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
         if (!reward.shop_item_id || !reward.item_role_id || reward.item_is_active !== true || reward.item_type === 'pack') {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, userId, levelRow.level, reward.reward_id, qty]
+              `UPDATE user_pass_reward_claims
+               SET quantity_claimed = quantity_claimed + $1
+               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+              [qty, guildId, userId, reward.reward_id]
             );
           }
           continue;
@@ -536,11 +539,10 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
                 sysError('Battlepass Level Reward Blocked: Dangerous Role', new Error(secErr), { guild: guildId, user: userId, role: reward.item_role_id });
                 if (reward.reward_id) {
                   await client2.query(
-                    `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-                     VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (guild_id, user_id, reward_id)
-                     DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-                    [guildId, userId, levelRow.level, reward.reward_id, qty]
+                    `UPDATE user_pass_reward_claims
+                     SET quantity_claimed = quantity_claimed + $1
+                     WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+                    [qty, guildId, userId, reward.reward_id]
                   );
                 }
                 continue;
@@ -577,11 +579,10 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
         if (reward.reward_id) {
           await client2.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (guild_id, user_id, reward_id)
-             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-            [guildId, userId, levelRow.level, reward.reward_id, qty]
+            `UPDATE user_pass_reward_claims
+             SET quantity_claimed = quantity_claimed + $1
+             WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+            [qty, guildId, userId, reward.reward_id]
           );
         }
       } else if (reward.reward_type === 'chest') {
@@ -589,11 +590,10 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
         if (!reward.loot_box_id || !reward.valid_box_id) {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, userId, levelRow.level, reward.reward_id, qty]
+              `UPDATE user_pass_reward_claims
+               SET quantity_claimed = quantity_claimed + $1
+               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+              [qty, guildId, userId, reward.reward_id]
             );
           }
           continue;
@@ -654,21 +654,19 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, userId, levelRow.level, reward.reward_id, qty]
+              `UPDATE user_pass_reward_claims
+               SET quantity_claimed = quantity_claimed + $1
+               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+              [qty, guildId, userId, reward.reward_id]
             );
           }
         } else {
           if (reward.reward_id) {
             await client2.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, userId, levelRow.level, reward.reward_id, qty]
+              `UPDATE user_pass_reward_claims
+               SET quantity_claimed = quantity_claimed + $1
+               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
+              [qty, guildId, userId, reward.reward_id]
             );
           }
         }
