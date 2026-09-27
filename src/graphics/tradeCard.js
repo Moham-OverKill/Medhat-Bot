@@ -153,7 +153,7 @@ function drawVectorCoin(ctx, x, y, radius) {
 /**
  * Draw central vector status symbol
  */
-function drawExchangeIcon(ctx, centerX, centerY, status = 'pending') {
+function drawExchangeIcon(ctx, centerX, centerY, status = 'pending', direction = 'both') {
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -184,32 +184,59 @@ function drawExchangeIcon(ctx, centerX, centerY, status = 'pending') {
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
 
-    const len = 20;
-    const arrowHead = 7;
+    const len = 22;
+    const arrowHead = 8;
 
-    const topY = centerY - 8;
-    ctx.beginPath();
-    ctx.moveTo(centerX - len, topY);
-    ctx.lineTo(centerX + len, topY);
-    ctx.stroke();
+    if (direction === 'right') {
+      // One-way transfer: Left -> Right
+      ctx.beginPath();
+      ctx.moveTo(centerX - len, centerY);
+      ctx.lineTo(centerX + len, centerY);
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.moveTo(centerX + len - arrowHead, topY - arrowHead);
-    ctx.lineTo(centerX + len, topY);
-    ctx.lineTo(centerX + len - arrowHead, topY + arrowHead);
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(centerX + len - arrowHead, centerY - arrowHead);
+      ctx.lineTo(centerX + len, centerY);
+      ctx.lineTo(centerX + len - arrowHead, centerY + arrowHead);
+      ctx.stroke();
+    } else if (direction === 'left') {
+      // One-way transfer: Right -> Left
+      ctx.beginPath();
+      ctx.moveTo(centerX + len, centerY);
+      ctx.lineTo(centerX - len, centerY);
+      ctx.stroke();
 
-    const botY = centerY + 8;
-    ctx.beginPath();
-    ctx.moveTo(centerX + len, botY);
-    ctx.lineTo(centerX - len, botY);
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(centerX - len + arrowHead, centerY - arrowHead);
+      ctx.lineTo(centerX - len, centerY);
+      ctx.lineTo(centerX - len + arrowHead, centerY + arrowHead);
+      ctx.stroke();
+    } else {
+      // Bidirectional mutual exchange
+      const topY = centerY - 8;
+      ctx.beginPath();
+      ctx.moveTo(centerX - len, topY);
+      ctx.lineTo(centerX + len, topY);
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.moveTo(centerX - len + arrowHead, botY - arrowHead);
-    ctx.lineTo(centerX - len, botY);
-    ctx.lineTo(centerX - len + arrowHead, botY + arrowHead);
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(centerX + len - arrowHead, topY - arrowHead);
+      ctx.lineTo(centerX + len, topY);
+      ctx.lineTo(centerX + len - arrowHead, topY + arrowHead);
+      ctx.stroke();
+
+      const botY = centerY + 8;
+      ctx.beginPath();
+      ctx.moveTo(centerX + len, botY);
+      ctx.lineTo(centerX - len, botY);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX - len + arrowHead, botY - arrowHead);
+      ctx.lineTo(centerX - len, botY);
+      ctx.lineTo(centerX - len + arrowHead, botY + arrowHead);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -298,26 +325,50 @@ export async function renderTradeCard({
   const renderStart = performance.now();
   const senderItems = Array.isArray(sender.items) ? sender.items : [];
   const targetItems = Array.isArray(target.items) ? target.items : [];
+  const senderCoins = parseInt(sender.coins, 10) || 0;
+  const targetCoins = parseInt(target.coins, 10) || 0;
+  const senderHasOffer = senderCoins > 0 || senderItems.length > 0;
+  const targetHasOffer = targetCoins > 0 || targetItems.length > 0;
 
-  // Calculate dynamic card height based on 2-column grid layout
-  // Column 1 capacity is 4 items before spilling into Column 2
+  // Determine transfer direction (one-way for free gifts / requests, bidirectional for mutual trades)
+  let direction = 'both';
+  if (senderHasOffer && !targetHasOffer) {
+    direction = 'right'; // Left gives to Right for free
+  } else if (!senderHasOffer && targetHasOffer) {
+    direction = 'left';  // Right gives to Left
+  } else {
+    direction = 'both';  // Mutual exchange
+  }
+
+  // Calculate dynamic card height based on items and currency
   const maxPerCol = 4;
-  const calcRows = (count) => {
-    if (count <= 0) return 1;
-    if (count <= maxPerCol) return count;
-    return Math.max(maxPerCol, Math.ceil(count / 2));
-  };
-
-  const senderRows = calcRows(senderItems.length);
-  const targetRows = calcRows(targetItems.length);
-  const totalRows = Math.max(senderRows, targetRows);
-
   const itemHeight = 38;
   const itemGapY = 8;
   const itemGapX = 8;
-  const extraRows = Math.max(0, totalRows - 1);
-  const baseHeight = 340 + extraRows * (itemHeight + itemGapY);
+
+  const calcContentHeight = (coins, itemsCount) => {
+    const hasCoins = coins > 0;
+    const hasItems = itemsCount > 0;
+    const rows = hasItems ? (itemsCount <= maxPerCol ? itemsCount : Math.max(maxPerCol, Math.ceil(itemsCount / 2))) : 0;
+    if (hasCoins && hasItems) {
+      return 42 + 12 + 20 + rows * (itemHeight + itemGapY);
+    } else if (hasCoins && !hasItems) {
+      return 42;
+    } else if (!hasCoins && hasItems) {
+      return 20 + rows * (itemHeight + itemGapY);
+    } else {
+      return 42;
+    }
+  };
+
+  const senderContentH = calcContentHeight(senderCoins, senderItems.length);
+  const targetContentH = calcContentHeight(targetCoins, targetItems.length);
+  const maxContentH = Math.max(senderContentH, targetContentH);
+
+  const contentY = 64;
+  const baseHeight = Math.max(244, contentY + 88 + maxContentH + 24 + 24);
   const baseWidth = 960;
+  const panelH = baseHeight - contentY - 24;
 
   // 2x Retina Super-Sampling: Renders at double pixel density for crisp, razor-sharp output
   const scale = 2;
@@ -378,7 +429,6 @@ export async function renderTradeCard({
   ctx.lineWidth = borderThickness;
   ctx.stroke();
 
-
   // 3. Main Title Pill centered at top
   const titlePillW = 180;
   const titlePillH = 34;
@@ -398,12 +448,12 @@ export async function renderTradeCard({
   ctx.textBaseline = 'middle';
   ctx.fillText(titleText, 480, titlePillY + titlePillH / 2);
 
-  // Center Exchange Hub (Icon vertically centered between participant panels, subtext pill removed)
+  // Center Exchange Hub (Icon vertically centered between participant panels)
   const hubX = 480;
   const hubY = 64 + (baseHeight - 64 - 24) / 2;
 
-  // Center Icon (Arrows, Cross, or Clock)
-  drawExchangeIcon(ctx, hubX, hubY, status);
+  // Center Icon (Directional Arrows, Cross, or Clock)
+  drawExchangeIcon(ctx, hubX, hubY, status, direction);
 
   // 4. Participant Panels (Left & Right)
   function drawParticipantPanel({
@@ -413,7 +463,8 @@ export async function renderTradeCard({
     coins = 0,
     items = [],
     accentColor = '#3B82F6',
-    avatarImg = null
+    avatarImg = null,
+    otherHasOffer = true
   }) {
     const panelW = 400;
     const panelX = side === 'left' ? 32 : 528;
@@ -499,72 +550,86 @@ export async function renderTradeCard({
       ctx.fillText(handleText, textX, avatarY + avatarRadius);
     }
 
-    // Currency Box
-    const coinBoxY = contentY + 88;
-    roundRect(ctx, panelX + 16, coinBoxY, panelW - 32, 42, 12);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    const parsedCoins = parseInt(coins, 10) || 0;
+    const itemsList = Array.isArray(items) ? items : [];
+    const hasCoins = parsedCoins > 0;
+    const hasItems = itemsList.length > 0;
 
-    // Custom Server Coin Icon or Embossed Vector Coin
-    const coinIconSize = 24;
-    const coinIconX = panelX + 28;
-    const coinIconY = coinBoxY + (42 - coinIconSize) / 2;
+    let cursorY = contentY + 88;
 
-    if (customCoinImg) {
-      ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-    } else {
-      drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+    // 1. Currency Box (Only rendered if coins > 0)
+    if (hasCoins) {
+      roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 12);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const coinIconSize = 24;
+      const coinIconX = panelX + 28;
+      const coinIconY = cursorY + (42 - coinIconSize) / 2;
+
+      if (customCoinImg) {
+        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
+      } else {
+        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold 16px ${fontStack}`;
+      ctx.fillStyle = '#FDE68A';
+      ctx.fillText(`${parsedCoins.toLocaleString()} Coins`, coinIconX + coinIconSize + 12, cursorY + 21);
+
+      cursorY += 42 + 12;
     }
 
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.font = `bold 16px ${fontStack}`;
-    ctx.fillStyle = '#FDE68A';
-    const parsedCoins = parseInt(coins, 10) || 0;
-    ctx.fillText(`${parsedCoins.toLocaleString()} Coins`, coinIconX + coinIconSize + 12, coinBoxY + 21);
+    // 2. Items Section (Only rendered if items.length > 0)
+    if (hasItems) {
+      ctx.font = `bold 12px ${fontStack}`;
+      ctx.fillStyle = '#94A3B8';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`ITEMS (${itemsList.length})`, panelX + 20, cursorY);
 
-    // Items Section (2-Column Grid Layout)
-    const itemsY = coinBoxY + 52;
-    ctx.font = `bold 12px ${fontStack}`;
-    ctx.fillStyle = '#94A3B8';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`ITEMS (${items.length})`, panelX + 20, itemsY);
+      const colW = (panelW - 32 - itemGapX) / 2; // 180px
+      const col1X = panelX + 16;
+      const col2X = panelX + 16 + colW + itemGapX;
+      const itemsStartY = cursorY + 20;
 
-    const colW = (panelW - 32 - itemGapX) / 2; // 180px
-    const col1X = panelX + 16;
-    const col2X = panelX + 16 + colW + itemGapX;
-    const itemsStartY = itemsY + 20;
-
-    if (items.length === 0) {
-      // Empty state (occupies 1 slot in col 1, col 2 not shown)
-      roundRect(ctx, col1X, itemsStartY, colW, itemHeight, 10);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      if (itemsList.length <= maxPerCol) {
+        // All items in Column 1 (Column 2 is not drawn at all)
+        for (let i = 0; i < itemsList.length; i++) {
+          const itemY = itemsStartY + i * (itemHeight + itemGapY);
+          drawItemBox(ctx, col1X, itemY, colW, itemHeight, itemsList[i]);
+        }
+      } else {
+        // Column 1 is full, Column 2 appears (don't show empty slots)
+        const rows = Math.max(maxPerCol, Math.ceil(itemsList.length / 2));
+        for (let i = 0; i < itemsList.length; i++) {
+          const col = i < rows ? 0 : 1;
+          const row = i < rows ? i : (i - rows);
+          const itemX = col === 0 ? col1X : col2X;
+          const itemY = itemsStartY + row * (itemHeight + itemGapY);
+          drawItemBox(ctx, itemX, itemY, colW, itemHeight, itemsList[i]);
+        }
+      }
+    } else if (!hasCoins) {
+      // 3. Neither coins nor items offered: Clean minimal placeholder
+      roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 12);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
       ctx.fill();
-      ctx.font = `italic 13px ${fontStack}`;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const placeholderText = otherHasOffer ? 'No Offer (Receiving)' : 'No Offer';
+      ctx.font = `italic 14px ${fontStack}`;
       ctx.fillStyle = '#64748B';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('None', col1X + colW / 2, itemsStartY + itemHeight / 2);
-    } else if (items.length <= maxPerCol) {
-      // All items in Column 1 (Column 2 is not drawn at all)
-      for (let i = 0; i < items.length; i++) {
-        const itemY = itemsStartY + i * (itemHeight + itemGapY);
-        drawItemBox(ctx, col1X, itemY, colW, itemHeight, items[i]);
-      }
-    } else {
-      // Column 1 is full, Column 2 appears (don't show empty slots)
-      const rows = Math.max(maxPerCol, Math.ceil(items.length / 2));
-      for (let i = 0; i < items.length; i++) {
-        const col = i < rows ? 0 : 1;
-        const row = i < rows ? i : (i - rows);
-        const itemX = col === 0 ? col1X : col2X;
-        const itemY = itemsStartY + row * (itemHeight + itemGapY);
-        drawItemBox(ctx, itemX, itemY, colW, itemHeight, items[i]);
-      }
+      ctx.fillText(placeholderText, panelX + panelW / 2, cursorY + 21);
     }
   }
 
@@ -573,22 +638,25 @@ export async function renderTradeCard({
     side: 'left',
     ...sender,
     items: senderItems,
-    avatarImg: senderAvatarImg
+    avatarImg: senderAvatarImg,
+    otherHasOffer: targetHasOffer
   });
 
   drawParticipantPanel({
     side: 'right',
     ...target,
     items: targetItems,
-    avatarImg: targetAvatarImg
+    avatarImg: targetAvatarImg,
+    otherHasOffer: senderHasOffer
   });
 
   const buffer = canvas.toBuffer('image/png');
   const duration = Math.round(performance.now() - renderStart);
+  const detailStr = `Status: ${status} | Direction: ${direction} | H: ${baseHeight}px`;
   if (duration > 500) {
-    sysWarn('Slow Trade Card Render', { detail: `Status: ${status} | Total Rows: ${totalRows}`, duration });
+    sysWarn('Slow Trade Card Render', { detail: detailStr, duration });
   } else {
-    sysLog('Trade Card Rendered', { detail: `Status: ${status} | Total Rows: ${totalRows}`, duration });
+    sysLog('Trade Card Rendered', { detail: detailStr, duration });
   }
 
   return buffer;
