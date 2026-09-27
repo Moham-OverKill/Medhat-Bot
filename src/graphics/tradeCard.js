@@ -180,7 +180,7 @@ function drawExchangeIcon(ctx, centerX, centerY, status = 'pending', direction =
     ctx.lineTo(centerX + 6, centerY);
     ctx.stroke();
   } else {
-    const color = status === 'completed' ? '#10B981' : '#F59E0B';
+    const color = (status === 'completed' || status === 'accepted') ? '#10B981' : '#F59E0B';
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
 
@@ -342,7 +342,7 @@ export async function renderTradeCard({
 
   // Calculate dynamic card height based on items and currency
   const maxPerCol = 4;
-  const itemHeight = 38;
+  const itemHeight = 42;
   const itemGapY = 8;
   const itemGapX = 8;
 
@@ -350,12 +350,13 @@ export async function renderTradeCard({
     const hasCoins = coins > 0;
     const hasItems = itemsCount > 0;
     const rows = hasItems ? (itemsCount <= maxPerCol ? itemsCount : Math.max(maxPerCol, Math.ceil(itemsCount / 2))) : 0;
+    const itemsH = rows > 0 ? (rows * itemHeight + (rows - 1) * itemGapY) : 0;
     if (hasCoins && hasItems) {
-      return 42 + 12 + 20 + rows * (itemHeight + itemGapY);
+      return 42 + 12 + itemsH;
     } else if (hasCoins && !hasItems) {
       return 42;
     } else if (!hasCoins && hasItems) {
-      return 20 + rows * (itemHeight + itemGapY);
+      return itemsH;
     } else {
       return 42;
     }
@@ -382,7 +383,7 @@ export async function renderTradeCard({
   let themeColor = '#F59E0B'; // Pending (Amber Gold)
   let titleText = 'PENDING OFFER';
 
-  if (status === 'completed') {
+  if (status === 'completed' || status === 'accepted') {
     themeColor = '#10B981'; // Emerald Green
     titleText = 'TRADE COMPLETED';
   } else if (status === 'declined') {
@@ -588,16 +589,10 @@ export async function renderTradeCard({
 
     // 2. Items Section (Only rendered if items.length > 0)
     if (hasItems) {
-      ctx.font = `bold 12px ${fontStack}`;
-      ctx.fillStyle = '#94A3B8';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`ITEMS (${itemsList.length})`, panelX + 20, cursorY);
-
       const colW = (panelW - 32 - itemGapX) / 2; // 180px
       const col1X = panelX + 16;
       const col2X = panelX + 16 + colW + itemGapX;
-      const itemsStartY = cursorY + 20;
+      const itemsStartY = cursorY;
 
       if (itemsList.length <= maxPerCol) {
         // All items in Column 1 (Column 2 is not drawn at all)
