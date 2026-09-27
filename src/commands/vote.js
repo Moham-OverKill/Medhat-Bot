@@ -43,11 +43,10 @@ export async function handleVoteCommand(interaction) {
 
 export async function handleVoteWebhook(client, userId, weight = 1) {
   try {
-    // 1. Fetch all guild configurations from the database
-    const { query } = await import('../storage/postgres.js');
-    const guildConfigs = await query('SELECT guild_id, config FROM guild_configs');
+    const { getPool } = await import('../storage/postgres.js');
+    const pool = getPool();
+    const guildConfigs = await pool.query('SELECT guild_id, config FROM guild_configs');
 
-    // 2. Loop through each guild config to see if they have vote reward enabled (> 0)
     for (const row of guildConfigs.rows) {
       const guildId = row.guild_id;
       const config = row.config || {};
@@ -55,7 +54,6 @@ export async function handleVoteWebhook(client, userId, weight = 1) {
 
       if (voteReward <= 0) continue;
 
-      // Check if the user is a member of this guild
       const guild = client.guilds.cache.get(guildId);
       if (!guild) continue;
 
@@ -63,31 +61,68 @@ export async function handleVoteWebhook(client, userId, weight = 1) {
         const member = await guild.members.fetch(userId).catch(() => null);
         if (!member) continue; // Not in this guild
 
-        // 3. Check if they already claimed their vote reward in the last 12 hours in this guild
-        const checkClaim = await query(
-          `SELECT created_at FROM transactions 
-           WHERE user_id = $1 AND guild_id = $2 AND type = 'vote_reward' 
-           ORDER BY created_at DESC LIMIT 1`,
-          [userId, guildId]
-        );
+        const dbClient = await pool.connect();
+        try {
+          await dbClient.query('BEGIN');
 
-        if (checkClaim.rows.length > 0) {
-          const lastClaim = new Date(checkClaim.rows[0].created_at).getTime();
-          const now = Date.now();
-          const cooldown = 12 * 60 * 60 * 1000; // 12 hours
-          if (now - lastClaim < cooldown) {
-            sysLog('Vote webhook duplicate claim skipped', { guildId, userId });
-            continue;
+          // Row lock to serialize duplicate concurrent webhook calls
+          await dbClient.query(
+            `INSERT INTO user_balances (user_id, guild_id, balance)
+             VALUES ($1, $2, 0)
+             ON CONFLICT (user_id, guild_id) DO UPDATE SET updated_at = NOW()`,
+            [userId, guildId]
+          );
+          await dbClient.query(
+            'SELECT balance FROM user_balances WHERE user_id = $1 AND guild_id = $2 FOR UPDATE',
+            [userId, guildId]
+          );
+
+          // Check if claimed in last 12h within the locked transaction
+          const checkClaim = await dbClient.query(
+            `SELECT created_at FROM transactions 
+             WHERE user_id = $1 AND guild_id = $2 AND type = 'vote_reward' 
+             ORDER BY created_at DESC LIMIT 1`,
+            [userId, guildId]
+          );
+
+          if (checkClaim.rows.length > 0) {
+            const lastClaim = new Date(checkClaim.rows[0].created_at).getTime();
+            const now = Date.now();
+            const cooldown = 12 * 60 * 60 * 1000;
+            if (now - lastClaim < cooldown) {
+              await dbClient.query('ROLLBACK');
+              sysLog('Vote webhook duplicate claim skipped', { guildId, userId });
+              continue;
+            }
           }
-        }
 
-        // 4. Award the coins (ignoring the Top.gg weekend multiplier to keep rewards consistent)
-        const finalReward = voteReward;
-        const result = await updateBalance(userId, guildId, finalReward, 'vote_reward', 'Voted on Top.gg');
-        if (result.success) {
-          sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: finalReward });
+          const balUpdate = await dbClient.query(
+            `UPDATE user_balances
+             SET balance = balance + $1,
+                 total_earned = total_earned + $1,
+                 updated_at = NOW()
+             WHERE user_id = $2 AND guild_id = $3
+             RETURNING balance`,
+            [voteReward, userId, guildId]
+          );
+          const newBal = parseInt(balUpdate.rows[0]?.balance || 0, 10);
+
+          await dbClient.query(
+            `INSERT INTO transactions (user_id, guild_id, amount, balance_after, type, description)
+             VALUES ($1, $2, $3, $4, 'vote_reward', 'Voted on Top.gg')`,
+            [userId, guildId, voteReward, newBal]
+          );
+
+          await dbClient.query('COMMIT');
+
+          sysLog('Vote reward auto-awarded via Webhook', { guildId, userId, amount: voteReward });
           const { sendLog } = await import('../utils/logger.js');
-          sendLog(guild, 'economy', 'green', '🗳️ Vote Reward Claimed', `**<@${userId}>** automatically claimed **${finalReward.toLocaleString()}** ${COIN_EMOJI} for voting on Top.gg!`);
+          sendLog(guild, 'economy', 'green', 'Vote Reward Claimed', `**<@${userId}>** automatically claimed **${voteReward.toLocaleString()}** ${COIN_EMOJI} for voting on Top.gg.`);
+        } catch (txErr) {
+          await dbClient.query('ROLLBACK').catch(() => {});
+          throw txErr;
+        } finally {
+          dbClient.release();
         }
       } catch (memberErr) {
         sysError('Error checking member or awarding vote reward', memberErr, { guildId, userId });

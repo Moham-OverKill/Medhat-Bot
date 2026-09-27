@@ -1520,7 +1520,15 @@ export async function handleTradeExecution(interaction) {
     // DECLINE / CANCEL
     if (customId.startsWith('trade_decline_')) {
         await interaction.deferUpdate().catch(() => { });
-        await query('UPDATE trades SET status = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3', ['declined', tradeId, interaction.guildId]);
+        const declineRes = await query(
+            'UPDATE trades SET status = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3 AND status = $4',
+            ['declined', tradeId, interaction.guildId, 'pending']
+        );
+
+        if (declineRes.rowCount === 0) {
+            // Trade has already been completed, expired, or declined
+            return;
+        }
 
         clearTradeTimers(tradeId);
 
