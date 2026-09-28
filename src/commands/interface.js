@@ -54,12 +54,13 @@ export async function buildHubEmbed(guild, config = null) {
   // Active Quests Section
   const questsEnabled = guildConfig.quests_enabled ?? guildConfig.missions_enabled ?? false;
   let activeQuests = Array.isArray(guildConfig.active_quest_snapshot) ? guildConfig.active_quest_snapshot : [];
+  let poolQuests = [];
 
   // Self-healing: If pool has available quests but active snapshot has fewer than targetCount, synchronize immediately
   if (questsEnabled) {
     const { getQuests } = await import('../quests/quests.js');
-    const poolQuests = await getQuests(guildId);
-    const targetCount = Math.min(guildConfig.quests_per_refresh || 3, poolQuests.length);
+    poolQuests = await getQuests(guildId);
+    const targetCount = Math.min(parseInt(guildConfig.quests_per_refresh, 10) || 3, poolQuests.length);
     if (poolQuests.length > 0 && activeQuests.length < targetCount) {
       const { rotateGuildQuests } = await import('../cron/quests.js');
       const { getPool } = await import('../storage/postgres.js');
@@ -75,6 +76,10 @@ export async function buildHubEmbed(guild, config = null) {
   const nextMidnightDate = getNextCairoMidnight();
   const nextMidnightTs = Math.floor(nextMidnightDate.getTime() / 1000);
 
+  const configuredCount = parseInt(guildConfig.quests_per_refresh, 10) || 3;
+  const nextCycleCount = poolQuests.length > 0 ? Math.min(configuredCount, poolQuests.length) : configuredCount;
+  const nextQuestLabel = nextCycleCount === 1 ? 'Next Quest' : 'Next Quests';
+
   let questContent = '';
   if (questsEnabled && activeQuests.length > 0) {
     const questLines = activeQuests.map(q => {
@@ -82,9 +87,9 @@ export async function buildHubEmbed(guild, config = null) {
       const reward = parseInt(q.reward_coins, 10) || 0;
       return `• ${taskText}: +**${reward.toLocaleString()}** ${coinEmoji}`;
     });
-    questContent = questLines.join('\n') + `\n\nNext Quests <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
+    questContent = questLines.join('\n') + `\n\n${nextQuestLabel} <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
   } else if (questsEnabled) {
-    questContent = `_No active quests currently._\n\nNext Quests <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
+    questContent = `_No active quests currently._\n\n${nextQuestLabel} <t:${nextQuestTs}:R>\nNext Daily <t:${nextMidnightTs}:R>`;
   } else {
     questContent = `_Daily quests are currently paused._\n\nNext Daily <t:${nextMidnightTs}:R>`;
   }
