@@ -196,44 +196,7 @@ async function showEconomyDashboard(interaction, view) {
             'admin_adjust'
         ];
 
-        // 1. Fetch user earnings across all faucets for cohort calculations
-        const earningsRes = await pool.query(`
-            SELECT user_id, SUM(amount) as earned 
-            FROM transactions 
-            WHERE guild_id = $1 
-              AND amount > 0 
-              AND type = ANY($2::text[])
-              AND created_at >= NOW() - INTERVAL '${intervalStr}'
-            GROUP BY user_id
-            ORDER BY earned DESC
-        `, [guildId, faucetTypes]);
-
-        let totalPrinted = 0;
-        const userEarnings = earningsRes.rows.map(r => parseInt(r.earned, 10));
-        for (const amt of userEarnings) {
-            totalPrinted += amt;
-        }
-
-        const numUsers = userEarnings.length;
-        const top1Count = Math.max(1, Math.floor(numUsers * 0.01));
-        
-        // Cohort Averages
-        let top1Avg = 0;
-        let normalAvg = 0;
-
-        if (numUsers > 0) {
-            const top1Earnings = userEarnings.slice(0, top1Count).reduce((a, b) => a + b, 0);
-            const normalEarnings = userEarnings.slice(top1Count).reduce((a, b) => a + b, 0);
-            
-            top1Avg = Math.floor(top1Earnings / top1Count);
-            if (numUsers > top1Count) {
-                normalAvg = Math.floor(normalEarnings / (numUsers - top1Count));
-            } else {
-                normalAvg = top1Avg; // Everyone is top 1% if count <= 1
-            }
-        }
-
-        // 2. Fetch breakdown by faucet type
+        // 1. Fetch breakdown by faucet type
         const breakdownRes = await pool.query(`
             SELECT type, SUM(amount) as total 
             FROM transactions 
@@ -256,9 +219,12 @@ async function showEconomyDashboard(interaction, view) {
             { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
         ];
 
+        let totalPrinted = 0;
         const rawTotals = {};
         for (const row of breakdownRes.rows) {
-            rawTotals[row.type] = parseInt(row.total, 10);
+            const amt = parseInt(row.total, 10);
+            rawTotals[row.type] = amt;
+            totalPrinted += amt;
         }
 
         // Aggregate aliases (e.g. mission_reward + quest_reward, mvp_bonus + mvp_reward)
@@ -279,7 +245,7 @@ async function showEconomyDashboard(interaction, view) {
             breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${coinEmoji} (${percent}%)\n`;
         }
 
-        // 3. Fetch Currency Sinks (Coins Burned / Destroyed)
+        // 2. Fetch Currency Sinks (Coins Burned / Destroyed)
         const sinksRes = await pool.query(`
             SELECT 
                 COALESCE(SUM(CASE WHEN type = 'purchase' THEN ABS(amount) ELSE 0 END), 0) as shop_gross,
@@ -317,11 +283,6 @@ async function showEconomyDashboard(interaction, view) {
                     `• **Coins Burned:** -${totalBurned.toLocaleString()} ${coinEmoji}`,
                     `• **Net Flow:** **${flowSign}${netFlow.toLocaleString()}** ${coinEmoji} _(${flowLabel})_`
                 ].join('\n'),
-                inline: false
-            },
-            {
-                name: `👥 Average Earnings (${numUsers.toLocaleString()} Active Earners)`,
-                value: `• **Top 1% Grinders** (${top1Count.toLocaleString()} user${top1Count > 1 ? 's' : ''}): ${top1Avg.toLocaleString()} ${coinEmoji}\n• **Standard Earners** (${(Math.max(0, numUsers - top1Count)).toLocaleString()} user${(numUsers - top1Count) !== 1 ? 's' : ''}): ${normalAvg.toLocaleString()} ${coinEmoji}`,
                 inline: false
             },
             {
