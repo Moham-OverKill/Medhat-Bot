@@ -72,27 +72,57 @@ async function showEconomyDashboard(interaction, view) {
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
         const questDailyEst = questsEnabled ? (avgQuest * totalQuestsPerDay) : 0;
 
-        // 1. Lazy User (Base Daily Only)
-        const lazyIncome = baseDaily;
-
-        // 2. Casual User (Daily with Active Streak + ALL configured quests + Tag Reward + 1x Vote Reward)
+        // Retrieve real server streak percentiles for Lazy, Casual, and Grinder personas
+        let lazyStreak = 0;
         let casualStreak = 0;
+        let grinderStreak = 0;
+
         if (streakBonus > 0 && streakCap > 0) {
             const streakRes = await pool.query(
-                `SELECT COALESCE(ROUND(AVG(daily_streak)), 0) as avg_streak 
+                `SELECT 
+                    COUNT(*)::int as count,
+                    COALESCE(PERCENTILE_DISC(0.10) WITHIN GROUP (ORDER BY daily_streak), 1)::int as p10,
+                    COALESCE(PERCENTILE_DISC(0.50) WITHIN GROUP (ORDER BY daily_streak), 3)::int as p50,
+                    COALESCE(MAX(daily_streak), 10)::int as max_streak
                  FROM user_balances 
                  WHERE guild_id = $1 AND daily_streak > 0`,
                 [guildId]
             );
-            const serverAvgStreak = parseInt(streakRes.rows[0]?.avg_streak || 0, 10);
-            casualStreak = Math.min(streakCap, Math.max(Math.floor(streakCap / 2), serverAvgStreak));
+
+            const row = streakRes.rows[0];
+            const activeCount = parseInt(row?.count || 0, 10);
+
+            if (activeCount === 0) {
+                lazyStreak = 0;
+                casualStreak = Math.min(streakCap, 3);
+                grinderStreak = Math.min(streakCap, 14);
+            } else if (activeCount === 1) {
+                const singleStreak = Math.min(streakCap, parseInt(row.max_streak || 1, 10));
+                lazyStreak = Math.min(singleStreak, 1);
+                casualStreak = singleStreak;
+                grinderStreak = Math.min(streakCap, Math.max(singleStreak, 7));
+            } else {
+                const p10 = Math.min(streakCap, Math.max(0, parseInt(row.p10 || 1, 10)));
+                const p50 = Math.min(streakCap, Math.max(p10, parseInt(row.p50 || 1, 10)));
+                const pMax = Math.min(streakCap, Math.max(p50, parseInt(row.max_streak || 1, 10)));
+
+                lazyStreak = p10;
+                casualStreak = p50;
+                grinderStreak = pMax;
+            }
         }
+
+        // 1. Lazy User (Base Daily + Server P10 Streak)
+        const lazyDaily = baseDaily + (lazyStreak * streakBonus);
+        const lazyIncome = lazyDaily;
+
+        // 2. Casual User (Daily with Server Median Streak + ALL configured quests + Tag Reward + 1x Vote Reward)
         const casualDaily = baseDaily + (casualStreak * streakBonus);
         const casualIncome = casualDaily + questDailyEst + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins)
-        const grinderDailyMax = baseDaily + (streakBonus * streakCap);
-        const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
+        // 3. Grinder User (Boosted Daily with Server Max Streak + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins)
+        const grinderDaily = baseDaily + (grinderStreak * streakBonus);
+        const grinderDailyBoosted = Math.floor(grinderDaily * boosterMult);
         // Active grinders compete throughout the day, winning multiple hourly MVP cycles (estimated 6 active wins)
         const mvpGrinderDaily = mvpReward * 6;
         const grinderIncome = grinderDailyBoosted + questDailyEst + tagReward + (voteReward * 2) + mvpGrinderDaily;
@@ -105,6 +135,14 @@ async function showEconomyDashboard(interaction, view) {
         const tagStatusText = tagReward > 0 ? `${tagReward} ${coinEmoji}/day` : 'Disabled';
         const voteStatusText = voteReward > 0 ? `${voteReward} ${coinEmoji}/vote` : 'Disabled';
         const mvpStatusText = mvpReward > 0 ? `${mvpReward} ${coinEmoji}/hour (${config.winnersCount || 5} winners/hr)` : 'Disabled';
+
+        const lazyStreakLabel = lazyStreak > 0 ? ` [${lazyStreak}d streak]` : '';
+        const casualStreakLabel = casualStreak > 0 ? ` [${casualStreak}d streak]` : '';
+        const grinderStreakLabel = grinderStreak > 0 ? ` [${grinderStreak}d streak]` : '';
+
+        const lazySubtext = lazyStreak > 0 ? `_Daily (${lazyDaily})${lazyStreakLabel}_` : `_Base claim only_`;
+        const casualSubtext = `_Daily (${casualDaily})${casualStreakLabel} + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`;
+        const grinderSubtext = `_Boosted Daily (${grinderDailyBoosted})${grinderStreakLabel} + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily})_`;
 
         embed.addFields(
             {
@@ -124,13 +162,13 @@ async function showEconomyDashboard(interaction, view) {
                 name: '📈 Estimated Daily Income',
                 value: [
                     `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Base claim only_`,
+                    lazySubtext,
                     ``,
                     `💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Daily (${casualDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
+                    casualSubtext,
                     ``,
                     `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily})_`
+                    grinderSubtext
                 ].join('\n'),
                 inline: false
             },
