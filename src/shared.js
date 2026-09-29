@@ -593,3 +593,62 @@ export function safeSetButtonEmoji(button, emojiInput, clientOrGuild = null, fal
   }
   return button;
 }
+
+/**
+ * Safely defers a component interaction update (deferUpdate).
+ * Ensures interaction.deferred is properly marked true even if Discord API returns 40060 (already acknowledged).
+ * Returns true if the interaction is acknowledged and ready for subsequent updates.
+ * Returns false if the interaction token has expired (10062) or cannot be acknowledged.
+ *
+ * @param {import('discord.js').Interaction} interaction
+ * @returns {Promise<boolean>}
+ */
+export async function safeDeferUpdate(interaction) {
+  if (!interaction) return false;
+  if (interaction.deferred || interaction.replied) return true;
+  try {
+    await interaction.deferUpdate();
+    return true;
+  } catch (err) {
+    const code = err?.code;
+    const msg = err?.message || '';
+    if (code === 40060 || msg.includes('already been acknowledged')) {
+      interaction.deferred = true;
+      return true;
+    }
+    if (code === 10062 || msg.includes('Unknown interaction')) {
+      return false;
+    }
+    return false;
+  }
+}
+
+/**
+ * Safely defers an interaction reply (deferReply).
+ * Ensures interaction.deferred is properly marked true even if Discord API returns 40060 (already acknowledged).
+ * Returns true if the interaction is acknowledged and ready for subsequent responses.
+ * Returns false if the interaction token has expired (10062) or cannot be acknowledged.
+ *
+ * @param {import('discord.js').Interaction} interaction
+ * @param {object} [options]
+ * @returns {Promise<boolean>}
+ */
+export async function safeDeferReply(interaction, options = {}) {
+  if (!interaction) return false;
+  if (interaction.deferred || interaction.replied) return true;
+  try {
+    await interaction.deferReply(options);
+    return true;
+  } catch (err) {
+    const code = err?.code;
+    const msg = err?.message || '';
+    if (code === 40060 || msg.includes('already been acknowledged')) {
+      interaction.deferred = true;
+      return true;
+    }
+    if (code === 10062 || msg.includes('Unknown interaction')) {
+      return false;
+    }
+    return false;
+  }
+}

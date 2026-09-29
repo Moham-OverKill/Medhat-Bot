@@ -660,15 +660,22 @@ export function setupComponentHandlers(client) {
 
     } catch (error) {
       const errorMsg = error?.message || String(error);
-      if (errorMsg.includes('already been sent') || error?.code === 10062) {
+      const isExpectedLifecycle =
+        error?.code === 10062 ||
+        error?.code === 40060 ||
+        errorMsg.includes('already been sent') ||
+        errorMsg.includes('already been acknowledged') ||
+        errorMsg.includes('has not been sent or deferred');
+
+      if (isExpectedLifecycle) {
         sysLog('Interaction Notice', { 
-          user: interaction.user.id, 
-          guild: interaction.guildId, 
+          user: interaction?.user?.id, 
+          guild: interaction?.guildId, 
           detail: `Handled: ${errorMsg}` 
         });
       } else {
-        sysError('Interaction Handler Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'InteractionCreate event' });
-        await handleInteractionError(interaction, error, `Component Handler (${interaction.customId || 'Unknown'})`);
+        sysError('Interaction Handler Failure', error, { user: interaction?.user?.id, guild: interaction?.guildId, detail: 'InteractionCreate event' });
+        await handleInteractionError(interaction, error, `Component Handler (${interaction?.customId || 'Unknown'})`);
       }
     } finally {
       clearTimeout(watchdog);

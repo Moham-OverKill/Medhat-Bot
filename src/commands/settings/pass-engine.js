@@ -1007,12 +1007,33 @@ export async function getUserPassProgress(guildId, userId) {
  * Reconcile missing milestone rewards (items/chests) for reached levels.
  * Highly optimized: uses set-based querying and in-memory diffing.
  * Can be run for a specific user (on inventory view) or globally for all users.
+ */
+const userReconciliationCache = new Map();
+
+/**
+ * Reconciles any missing milestone rewards for reached levels on inventory view
  *
  * @param {string} guildId
  * @param {string|null} userId
  */
 export async function reconcileMissingLevelRewards(guildId, userId = null) {
   if (!guildId) return;
+
+  if (userId) {
+    const cacheKey = `${guildId}_${userId}`;
+    const lastReconcile = userReconciliationCache.get(cacheKey);
+    if (lastReconcile && (Date.now() - lastReconcile < 60000)) {
+      return;
+    }
+    userReconciliationCache.set(cacheKey, Date.now());
+    if (userReconciliationCache.size > 2000) {
+      const cutoff = Date.now() - 300000;
+      for (const [k, ts] of userReconciliationCache.entries()) {
+        if (ts < cutoff) userReconciliationCache.delete(k);
+      }
+    }
+  }
+
   const pool = getPool();
 
   try {
