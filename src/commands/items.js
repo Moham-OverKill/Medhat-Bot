@@ -229,8 +229,13 @@ export async function handleItemsCommand(interaction) {
 export async function handleItemsComponent(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate();
+      await interaction.deferUpdate().catch(err => {
+        if (err.code === 10062 || err.code === 40060) return;
+        throw err;
+      });
     }
+
+    if (!interaction.deferred && !interaction.replied) return;
 
     let targetCatId = null;
     let targetPage = 1;
@@ -260,17 +265,20 @@ export async function handleItemsComponent(interaction) {
       components: result.rows
     });
   } catch (error) {
+    if (error.code === 10062 || error.code === 40060) return;
     sysError('Items component interaction failure', error, {
       user: interaction.user.id,
       guild: interaction.guildId,
       customId: interaction.customId
     });
     try {
-      await interaction.editReply({
-        content: 'An error occurred while loading items.',
-        embeds: [],
-        components: []
-      });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: 'An error occurred while loading items.',
+          embeds: [],
+          components: []
+        }).catch(() => {});
+      }
     } catch (_) {}
   }
 }
