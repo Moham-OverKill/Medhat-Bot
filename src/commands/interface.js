@@ -294,7 +294,7 @@ export function normalizeSlotColors(raw) {
  * @param {number} fontSize 
  * @param {number} strokeWidth 
  */
-function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 5) {
+function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 10) {
   if (!strokeWidth || strokeWidth <= 0) {
     targetCtx.font = `${fontSize}px "Segoe UI Emoji", sans-serif`;
     targetCtx.textAlign = 'center';
@@ -303,7 +303,7 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 5
     return;
   }
 
-  const pad = strokeWidth * 2 + 10;
+  const pad = strokeWidth * 2 + 16;
   const tempW = Math.ceil(fontSize + pad * 2);
   const tempH = Math.ceil(fontSize + pad * 2);
 
@@ -322,12 +322,16 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 5
   silCtx.fillRect(0, 0, tempW, tempH);
 
   targetCtx.save();
-  const steps = 16;
-  for (let i = 0; i < steps; i++) {
-    const angle = (i * 2 * Math.PI) / steps;
-    const ox = Math.round(Math.cos(angle) * strokeWidth);
-    const oy = Math.round(Math.sin(angle) * strokeWidth);
-    targetCtx.drawImage(silCanvas, cx - tempW / 2 + ox, cy - tempH / 2 + oy);
+  // Multi-ring concentric dilation with subpixel floating-point anti-aliased coordinates
+  const stepSize = Math.max(1.2, strokeWidth / 8);
+  for (let r = stepSize; r <= strokeWidth; r += stepSize) {
+    const ringSteps = Math.max(16, Math.ceil(2 * Math.PI * r));
+    for (let i = 0; i < ringSteps; i++) {
+      const angle = (i * 2 * Math.PI) / ringSteps;
+      const ox = Math.cos(angle) * r;
+      const oy = Math.sin(angle) * r;
+      targetCtx.drawImage(silCanvas, cx - tempW / 2 + ox, cy - tempH / 2 + oy);
+    }
   }
   targetCtx.drawImage(silCanvas, cx - tempW / 2, cy - tempH / 2);
   targetCtx.drawImage(colorCanvas, cx - tempW / 2, cy - tempH / 2);
@@ -347,7 +351,7 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 5
  */
 function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   const radius = Math.round(cardH * 0.08);
-  const borderWidth = Math.max(3, Math.round(cardH * 0.014));
+  const borderWidth = Math.max(6, Math.round(cardH * 0.024));
   const strokeColor = '#ffffff';
 
   ctx.save();
@@ -360,22 +364,22 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji — prominent in center (60% of card height, positioned at 44%) with crisp black outline
+  // 1. Emoji — prominent in center (60% of card height, positioned at 44%) with thick, smooth black outline
   const emojiSize = Math.round(cardH * 0.60);
-  const emojiStrokeWidth = Math.max(3, Math.round(cardH * 0.012));
+  const emojiStrokeWidth = Math.max(9, Math.round(cardH * 0.030));
   drawEmojiWithStroke(ctx, meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
 
-  // 2. Label Text — bold, uppercase, positioned at 83% with solid black outline
+  // 2. Label Text — bold, uppercase, positioned at 83% with thick, smooth rounded black outline
   let labelFontSize = Math.round(cardH * 0.135);
   const label = (meta.label || meta.name || 'SHORTCUT').toUpperCase();
   ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
-  const maxWidth = cardW - 32;
+  const maxWidth = cardW - 40;
   while (ctx.measureText(label).width > maxWidth && labelFontSize > 18) {
     labelFontSize -= 2;
     ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
   }
 
-  const textStrokeWidth = Math.max(4, Math.round(labelFontSize * 0.12));
+  const textStrokeWidth = Math.max(8, Math.round(labelFontSize * 0.22));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -383,6 +387,7 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   ctx.lineWidth = textStrokeWidth;
   ctx.strokeStyle = '#000000';
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   ctx.miterLimit = 2;
   ctx.strokeText(label, x + cardW / 2, y + cardH * 0.83);
 
@@ -437,20 +442,21 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
 
   let cardW, cardH, marginX, marginY, gapX, gapY;
 
+  // Render at Ultra-HD resolution (1.35x scale) for razor-sharp display in Discord
   if (maxCols >= 4) {
-    cardW = 390;
-    cardH = 327;
-    marginX = 30;
-    marginY = 25;
-    gapX = 36;
-    gapY = 35;
+    cardW = 527; // 390 * 1.35
+    cardH = 441; // 327 * 1.35
+    marginX = 41; // 30 * 1.35
+    marginY = 34; // 25 * 1.35
+    gapX = 49;    // 36 * 1.35
+    gapY = 47;    // 35 * 1.35
   } else {
-    cardW = 524;
-    cardH = 440;
-    marginX = 40;
-    marginY = 20;
-    gapX = 48;
-    gapY = 33;
+    cardW = 707; // 524 * 1.35
+    cardH = 594; // 440 * 1.35
+    marginX = 54; // 40 * 1.35
+    marginY = 27; // 20 * 1.35
+    gapX = 65;    // 48 * 1.35
+    gapY = 45;    // 33 * 1.35
   }
 
   const canvasW = maxCols * cardW + (maxCols - 1) * gapX + 2 * marginX;
