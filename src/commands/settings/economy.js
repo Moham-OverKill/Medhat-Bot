@@ -95,10 +95,10 @@ async function showEconomyDashboard(interaction, view) {
         // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
         const casualIncome = baseDaily + questDailyEst + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + KotH Hourly Wins + Battlepass)
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins + Battlepass)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
-        // Active grinders compete throughout the day, winning multiple hourly KotH cycles (estimated 6 active wins)
+        // Active grinders compete throughout the day, winning multiple hourly MVP cycles (estimated 6 active wins)
         const mvpGrinderDaily = mvpReward * 6;
         const grinderIncome = grinderDailyBoosted + questDailyEst + tagReward + (voteReward * 2) + mvpGrinderDaily + bpDailyEst;
 
@@ -139,7 +139,7 @@ async function showEconomyDashboard(interaction, view) {
                     `_Daily (${baseDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
                     ``,
                     `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + KotH (${mvpGrinderDaily}) + Pass (${bpDailyEst})_`
+                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily}) + Pass (${bpDailyEst})_`
                 ].join('\n'),
                 inline: false
             },

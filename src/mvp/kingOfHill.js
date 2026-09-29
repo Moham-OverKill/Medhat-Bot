@@ -132,7 +132,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
 
         // Remove MVP role
         if (mvpRole && member.roles.cache.has(mvpRole.id)) {
-          await member.roles.remove(mvpRole, 'Dropped out of Top N (KotH Dethronement)').catch(e => {
+          await member.roles.remove(mvpRole, 'Dropped out of Top N (MVP Dethronement)').catch(e => {
             sysLog('KotH Role Remove Warning', { guild: guildId, user: userId, detail: e.message });
           });
         }
@@ -173,7 +173,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
         if (mvpRole) {
           if (!member.roles.cache.has(mvpRole.id)) {
             await executeWithRetry(
-              () => member.roles.add(mvpRole, 'Top N (KotH Cycle Enforcement)'),
+              () => member.roles.add(mvpRole, 'Top N (MVP Cycle Enforcement)'),
               { label: `Add MVP to ${member.user.tag}`, maxAttempts: 4 }
             ).catch(e => {
               sysLog('KotH Role Add Warning', { guild: guildId, user: userId, detail: e.message });
@@ -226,7 +226,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
     if (paid.length > 0) logLines.push(`${COIN_EMOJI} **Paid:** ${paid.length} MVP(s) — \`+${rewardAmount}\` each`);
 
     if (logLines.length > 0) {
-      sendLog(guildObj, 'economy', 'orange', '⚔️ KotH Hourly Cycle', logLines.join('\n'));
+      sendLog(guildObj, 'economy', 'orange', '⚔️ MVP Hourly Cycle', logLines.join('\n'));
     }
 
     sysLog('KotH Cycle Complete', {
