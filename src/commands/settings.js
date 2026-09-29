@@ -207,6 +207,63 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
+ * Show the Tag Rewards Management Panel
+ */
+export async function showTagRewardPanel(interaction, statusNotice = null) {
+    const guildId = interaction.guildId;
+    const { getGuildConfig } = await import('../storage/config.js');
+    const config = await getGuildConfig(guildId) || {};
+    const amount = parseInt(config.tag_reward_amount, 10) || 0;
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
+
+    const descLines = [
+        'Reward guild members who have the server\'s official Discord tag active on their profile.',
+        ''
+    ];
+    if (statusNotice) {
+        descLines.push(`> ${statusNotice}`, '');
+    }
+    descLines.push(
+        `• **Reward Amount:** ${amount > 0 ? `**${amount.toLocaleString()}** ${coinEmoji} / day` : '*Disabled (0 coins)*'}`,
+        '• **Schedule:** Automated scan runs daily at Cairo midnight (00:00).',
+        '• **Requirement:** Discord profile identity tag active for this guild.'
+    );
+
+    const embed = new EmbedBuilder()
+        .setTitle('Server Tag Rewards')
+        .setDescription(descLines.join('\n'))
+        .setColor(0x2F3136);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_tag_edit')
+            .setLabel('Set Amount')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_tag_scan_now')
+            .setLabel('Run Scan Now')
+            .setStyle(ButtonStyle.Primary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_coins')
+            .setLabel('Back')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
  * Show the Other Sub-Menu (Customize, Organize, Logs, Leaderboards, Economy)
  */
 export async function showOtherSubMenu(interaction) {
@@ -387,6 +444,11 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_tag_reward') {
+            await showTagRewardPanel(interaction);
+            return;
+        }
+
+        if (customId === 'settings_tag_edit') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
             const modal = new ModalBuilder().setCustomId(`settings_tag_modal_${Date.now()}`).setTitle('Tag Reward');
@@ -399,6 +461,19 @@ export async function handleSettingsComponent(interaction) {
                 .setRequired(false);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             await interaction.showModal(modal);
+            return;
+        }
+
+        if (customId === 'settings_tag_scan_now') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
+            const { runTagRewardsCycle } = await import('../cron/tagRewards.js');
+            const scanResult = await runTagRewardsCycle(interaction.client, interaction.guildId);
+            const notice = scanResult.success
+                ? `Scan completed: rewarded ${scanResult.paidCount.toLocaleString()} member(s) (${scanResult.totalCoins.toLocaleString()} coins distributed).`
+                : `Scan stopped: ${scanResult.error || 'Unknown error'}`;
+            await showTagRewardPanel(interaction, notice);
             return;
         }
 
@@ -448,7 +523,7 @@ export async function handleSettingsComponent(interaction) {
                 `**New Value:** \`${amount.toLocaleString()}\` coins`
             );
 
-            await showCoinsSubMenu(interaction);
+            await showTagRewardPanel(interaction, `Reward amount set to ${amount.toLocaleString()} coins/day.`);
             return;
         }
 
