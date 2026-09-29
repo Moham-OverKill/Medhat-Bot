@@ -198,7 +198,7 @@ export function normalizeShortcutOrder(order) {
 }
 
 export const INTERFACE_CARD_COLORS = [
-  { id: 'black', hex: '#000000', name: 'Black (Default)', emoji: '🖤', description: 'Classic black card background' },
+  { id: 'black', hex: '#000000', name: 'Black', emoji: '🖤', description: 'Black card background' },
   { id: 'red', hex: '#e02443', name: 'Red', emoji: '❤️', description: 'Red card background' },
   { id: 'orange', hex: '#f4900c', name: 'Orange', emoji: '🧡', description: 'Orange card background' },
   { id: 'yellow', hex: '#e5a700', name: 'Yellow', emoji: '💛', description: 'Yellow card background' },
@@ -286,10 +286,10 @@ export function normalizeSlotColors(raw) {
 }
 
 export const DISCORD_BUTTON_COLORS = [
-  { id: 'primary', name: 'Blue', emoji: '💙', style: ButtonStyle.Primary, description: 'Primary blue button' },
-  { id: 'success', name: 'Green', emoji: '💚', style: ButtonStyle.Success, description: 'Success green button' },
-  { id: 'danger', name: 'Red', emoji: '❤️', style: ButtonStyle.Danger, description: 'Alert red button' },
-  { id: 'secondary', name: 'Gray (Default)', emoji: '🩶', style: ButtonStyle.Secondary, description: 'Neutral gray button (default)' }
+  { id: 'primary', name: 'Blue', emoji: '💙', style: ButtonStyle.Primary, description: 'Blue button' },
+  { id: 'success', name: 'Green', emoji: '💚', style: ButtonStyle.Success, description: 'Green button' },
+  { id: 'danger', name: 'Red', emoji: '❤️', style: ButtonStyle.Danger, description: 'Red button' },
+  { id: 'secondary', name: 'Gray', emoji: '🩶', style: ButtonStyle.Secondary, description: 'Gray button' }
 ];
 
 export function normalizeSlotButtonColors(raw) {
