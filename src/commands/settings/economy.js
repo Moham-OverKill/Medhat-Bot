@@ -92,8 +92,20 @@ async function showEconomyDashboard(interaction, view) {
         // 1. Lazy User (Base Daily Only)
         const lazyIncome = baseDaily;
 
-        // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
-        const casualIncome = baseDaily + questDailyEst + tagReward + voteReward;
+        // 2. Casual User (Daily with Active Streak + ALL configured quests + Tag Reward + 1x Vote Reward)
+        let casualStreak = 0;
+        if (streakBonus > 0 && streakCap > 0) {
+            const streakRes = await pool.query(
+                `SELECT COALESCE(ROUND(AVG(daily_streak)), 0) as avg_streak 
+                 FROM user_balances 
+                 WHERE guild_id = $1 AND daily_streak > 0`,
+                [guildId]
+            );
+            const serverAvgStreak = parseInt(streakRes.rows[0]?.avg_streak || 0, 10);
+            casualStreak = Math.min(streakCap, Math.max(Math.floor(streakCap / 2), serverAvgStreak));
+        }
+        const casualDaily = baseDaily + (casualStreak * streakBonus);
+        const casualIncome = casualDaily + questDailyEst + tagReward + voteReward;
 
         // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins + Battlepass)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
@@ -136,7 +148,7 @@ async function showEconomyDashboard(interaction, view) {
                     `_Base claim only_`,
                     ``,
                     `💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Daily (${baseDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
+                    `_Daily (${casualDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
                     ``,
                     `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
                     `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily}) + Pass (${bpDailyEst})_`
