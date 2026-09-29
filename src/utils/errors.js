@@ -134,8 +134,17 @@ export function diagnoseRolePermissions(guild, role, botMember) {
  * Handle interaction errors uniformly with smart permission diagnostics
  */
 export async function handleInteractionError(interaction, error, context = 'Action Handler', options = {}) {
-  // 10062 is "Unknown interaction" (token expired).
-  if (error?.code !== 10062) {
+  const rawErrorMessage = error?.message || String(error);
+  const errorCode = error?.code;
+
+  const isLifecycleError = 
+    errorCode === 10062 || 
+    errorCode === 40060 || 
+    rawErrorMessage.includes('already been acknowledged') || 
+    rawErrorMessage.includes('already been sent') ||
+    rawErrorMessage.includes('has not been sent or deferred');
+
+  if (!isLifecycleError) {
     sysError('Interaction Audit Failure', error, { 
       user: interaction?.user?.id, 
       guild: interaction?.guildId, 
@@ -143,10 +152,7 @@ export async function handleInteractionError(interaction, error, context = 'Acti
     });
   }
 
-  if (!interaction) return;
-
-  const rawErrorMessage = error?.message || String(error);
-  const errorCode = error?.code;
+  if (!interaction || isLifecycleError) return;
 
   const isPermissionError = 
     errorCode === 50013 || 
