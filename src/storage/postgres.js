@@ -1186,6 +1186,31 @@ async function createTables() {
       WHERE (config ? 'battlepass_xp_increment' AND ((config->>'battlepass_xp_increment')::numeric <= 0 OR config->>'battlepass_xp_increment' IS NULL));
     `).catch(() => {});
 
+    // Server Community Interface Configuration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_interface_config (
+        guild_id VARCHAR(32) PRIMARY KEY,
+        is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        shortcut_order JSONB NOT NULL DEFAULT '["level", "quests", "daily", "inventory", "vote", "notifications"]'::jsonb,
+        target_channel_id VARCHAR(32),
+        message_id VARCHAR(32),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_interface_config_channel ON server_interface_config(target_channel_id);
+    `);
+
+    // Self-healing migration: Populate server_interface_config from existing guild_configs
+    await pool.query(`
+      INSERT INTO server_interface_config (guild_id, target_channel_id, message_id)
+      SELECT guild_id, (config->>'interface_channel_id'), (config->>'interface_message_id')
+      FROM guild_configs
+      WHERE config->>'interface_channel_id' IS NOT NULL
+      ON CONFLICT (guild_id) DO UPDATE SET
+        target_channel_id = COALESCE(server_interface_config.target_channel_id, EXCLUDED.target_channel_id),
+        message_id = COALESCE(server_interface_config.message_id, EXCLUDED.message_id);
+    `).catch(() => {});
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
