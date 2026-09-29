@@ -1,7 +1,6 @@
 import {
   SlashCommandBuilder,
   AttachmentBuilder,
-  EmbedBuilder,
   MessageFlags
 } from 'discord.js';
 import { generateProfileCard } from '../graphics/profileCard.js';
@@ -139,6 +138,8 @@ export async function handleProfileCommand(interaction) {
 
     // 2. Generate Arcane-style Profile Image Buffer
     const imageBuffer = await generateProfileCard({
+      guildId,
+      userId,
       displayName: targetMember?.displayName || targetUser.displayName || targetUser.username,
       username: targetUser.username,
       avatarUrl,
@@ -162,16 +163,8 @@ export async function handleProfileCommand(interaction) {
     const filename = `profile-${targetUser.username}.png`;
     const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
 
-    const embedColor = roleColor && roleColor.startsWith('#')
-      ? parseInt(roleColor.replace('#', ''), 16)
-      : 0x00E5FF;
-
-    const embed = new EmbedBuilder()
-      .setColor(embedColor)
-      .setImage(`attachment://${filename}`);
-
     await interaction.editReply({
-      embeds: [embed],
+      embeds: [],
       files: [attachment]
     });
 

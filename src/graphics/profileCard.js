@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { performance } from 'node:perf_hooks';
 import { sysError, sysWarn, sysLog } from '../utils/logger.js';
+import crypto from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -300,7 +301,70 @@ function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
   return badgeW;
 }
 
+const profileCardBufferCache = new Map();
+const PROFILE_BUFFER_CACHE_MAX = 500;
+
+/**
+ * Computes a deterministic SHA-256 hash from all visual profile state attributes.
+ * Any change in user metrics, badges, names, or appearance yields a completely new hash.
+ * @param {object} data
+ * @returns {string} SHA-256 hash string
+ */
+export function computeProfileStateHash(data) {
+  const payload = [
+    data.guildId || '',
+    data.userId || data.username || '',
+    data.displayName || '',
+    data.username || '',
+    data.avatarUrl || '',
+    data.currentLevel ?? 0,
+    data.rank ?? 0,
+    data.xpIntoCurrentLevel ?? 0,
+    data.xpForNextLevel ?? 0,
+    data.totalXp ?? 0,
+    data.balance ?? 0,
+    data.streak ?? 0,
+    data.questsDone ?? 0,
+    data.itemCount ?? 0,
+    data.customCoinUrl || '',
+    Boolean(data.isOwner),
+    Boolean(data.isBooster),
+    Boolean(data.isMvp),
+    data.boostPct ?? 0,
+    data.accentColor || ''
+  ].join('|');
+
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}
+
+/**
+ * Invalidate the cached profile card for a user if manually needed.
+ * @param {string} guildId
+ * @param {string} userId
+ */
+export function invalidateProfileCardCache(guildId, userId) {
+  if (!guildId || !userId) return;
+  profileCardBufferCache.delete(`${guildId}_${userId}`);
+}
+
 export async function generateProfileCard(profileData) {
+  const userKey = (profileData.guildId && profileData.userId)
+    ? `${profileData.guildId}_${profileData.userId}`
+    : (profileData.userId || profileData.username || 'default');
+
+  const stateHash = computeProfileStateHash(profileData);
+  const cached = profileCardBufferCache.get(userKey);
+
+  if (cached && cached.stateHash === stateHash) {
+    // Exact state match: metrics have not changed. Re-insert for LRU freshness and return buffer instantly.
+    profileCardBufferCache.delete(userKey);
+    profileCardBufferCache.set(userKey, cached);
+    sysLog('Profile Card Served from State Cache', {
+      detail: `@${profileData.username || userKey} (State unchanged: ${stateHash.slice(0, 8)})`
+    });
+    return cached.buffer;
+  }
+
   const renderStart = performance.now();
   const baseWidth = 960;
   const baseHeight = 260;
@@ -604,6 +668,12 @@ export async function generateProfileCard(profileData) {
   } else {
     sysLog('Profile Card Rendered', { detail: `@${username}`, duration });
   }
+
+  if (profileCardBufferCache.size >= PROFILE_BUFFER_CACHE_MAX) {
+    const oldestKey = profileCardBufferCache.keys().next().value;
+    profileCardBufferCache.delete(oldestKey);
+  }
+  profileCardBufferCache.set(userKey, { stateHash, buffer });
 
   return buffer;
 }
