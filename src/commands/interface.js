@@ -771,14 +771,14 @@ export async function showInterfaceSetup(interaction) {
       const slotId = slots[idx];
       const meta = getShortcutMeta(slotId);
 
-      const label = meta ? meta.name : '+';
       const button = new ButtonBuilder()
         .setCustomId(`interface_slot_${idx}`)
-        .setLabel(label)
         .setStyle(ButtonStyle.Secondary);
 
       if (meta && meta.emoji) {
         button.setEmoji(meta.emoji);
+      } else {
+        button.setLabel('+');
       }
 
       row.addComponents(button);
