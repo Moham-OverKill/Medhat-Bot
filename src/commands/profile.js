@@ -1,6 +1,7 @@
 import {
   SlashCommandBuilder,
   AttachmentBuilder,
+  EmbedBuilder,
   MessageFlags
 } from 'discord.js';
 import { generateProfileCard } from '../graphics/profileCard.js';
@@ -121,7 +122,7 @@ export async function handleProfileCommand(interaction) {
       || (mvpResult.rows.length > 0)
       || Boolean(config?.mvp_role_id && targetMember?.roles?.cache?.has(config.mvp_role_id));
 
-    const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+    const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true });
 
     // Derive accent color from member's highest role with color, default to cyan #00E5FF
     const roleColor = targetMember?.displayColor
@@ -158,11 +159,19 @@ export async function handleProfileCommand(interaction) {
       accentColor: roleColor
     });
 
-    const attachment = new AttachmentBuilder(imageBuffer, {
-      name: `profile-${targetUser.username}.png`
-    });
+    const filename = `profile-${targetUser.username}.png`;
+    const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
+
+    const embedColor = roleColor && roleColor.startsWith('#')
+      ? parseInt(roleColor.replace('#', ''), 16)
+      : 0x00E5FF;
+
+    const embed = new EmbedBuilder()
+      .setColor(embedColor)
+      .setImage(`attachment://${filename}`);
 
     await interaction.editReply({
+      embeds: [embed],
       files: [attachment]
     });
 
