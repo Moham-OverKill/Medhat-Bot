@@ -286,8 +286,57 @@ export function normalizeSlotColors(raw) {
 }
 
 /**
+ * Draw an emoji glyph with a solid black silhouette outline/stroke
+ * @param {import('@napi-rs/canvas').SKRSContext2D} targetCtx 
+ * @param {string} emoji 
+ * @param {number} cx 
+ * @param {number} cy 
+ * @param {number} fontSize 
+ * @param {number} strokeWidth 
+ */
+function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 5) {
+  if (!strokeWidth || strokeWidth <= 0) {
+    targetCtx.font = `${fontSize}px "Segoe UI Emoji", sans-serif`;
+    targetCtx.textAlign = 'center';
+    targetCtx.textBaseline = 'middle';
+    targetCtx.fillText(emoji, cx, cy);
+    return;
+  }
+
+  const pad = strokeWidth * 2 + 10;
+  const tempW = Math.ceil(fontSize + pad * 2);
+  const tempH = Math.ceil(fontSize + pad * 2);
+
+  const colorCanvas = createCanvas(tempW, tempH);
+  const colorCtx = colorCanvas.getContext('2d');
+  colorCtx.font = `${fontSize}px "Segoe UI Emoji", sans-serif`;
+  colorCtx.textAlign = 'center';
+  colorCtx.textBaseline = 'middle';
+  colorCtx.fillText(emoji, tempW / 2, tempH / 2);
+
+  const silCanvas = createCanvas(tempW, tempH);
+  const silCtx = silCanvas.getContext('2d');
+  silCtx.drawImage(colorCanvas, 0, 0);
+  silCtx.globalCompositeOperation = 'source-in';
+  silCtx.fillStyle = '#000000';
+  silCtx.fillRect(0, 0, tempW, tempH);
+
+  targetCtx.save();
+  const steps = 16;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i * 2 * Math.PI) / steps;
+    const ox = Math.round(Math.cos(angle) * strokeWidth);
+    const oy = Math.round(Math.sin(angle) * strokeWidth);
+    targetCtx.drawImage(silCanvas, cx - tempW / 2 + ox, cy - tempH / 2 + oy);
+  }
+  targetCtx.drawImage(silCanvas, cx - tempW / 2, cy - tempH / 2);
+  targetCtx.drawImage(colorCanvas, cx - tempW / 2, cy - tempH / 2);
+  targetCtx.restore();
+}
+
+/**
  * Render an individual shortcut card tile
- * Features a solid colored card base, crisp border, prominent centered emoji (60% height), and bold bottom label.
+ * Features a solid colored card base, crisp border, prominent centered emoji with black outline, and bold bottom label with black outline.
  * @param {import('@napi-rs/canvas').SKRSContext2D} ctx 
  * @param {number} x 
  * @param {number} y 
@@ -299,8 +348,7 @@ export function normalizeSlotColors(raw) {
 function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   const radius = Math.round(cardH * 0.08);
   const borderWidth = Math.max(3, Math.round(cardH * 0.014));
-  const fgColor = getContrastColor(bgColor);
-  const strokeColor = fgColor === '#111214' ? '#111214' : '#ffffff';
+  const strokeColor = '#ffffff';
 
   ctx.save();
   ctx.beginPath();
@@ -312,14 +360,12 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji — prominent in center (60% of card height, positioned at 44%)
+  // 1. Emoji — prominent in center (60% of card height, positioned at 44%) with crisp black outline
   const emojiSize = Math.round(cardH * 0.60);
-  ctx.font = `${emojiSize}px "Segoe UI Emoji", sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.44);
+  const emojiStrokeWidth = Math.max(3, Math.round(cardH * 0.012));
+  drawEmojiWithStroke(ctx, meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
 
-  // 2. Label Text — bold, uppercase, positioned at 83% to balance margins and eliminate dead space
+  // 2. Label Text — bold, uppercase, positioned at 83% with solid black outline
   let labelFontSize = Math.round(cardH * 0.135);
   const label = (meta.label || meta.name || 'SHORTCUT').toUpperCase();
   ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
@@ -329,9 +375,19 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
     ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
   }
 
-  ctx.fillStyle = fgColor;
+  const textStrokeWidth = Math.max(4, Math.round(labelFontSize * 0.12));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
+  // Black outline/stroke
+  ctx.lineWidth = textStrokeWidth;
+  ctx.strokeStyle = '#000000';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.strokeText(label, x + cardW / 2, y + cardH * 0.83);
+
+  // White text fill
+  ctx.fillStyle = '#ffffff';
   ctx.fillText(label, x + cardW / 2, y + cardH * 0.83);
 
   ctx.restore();
