@@ -120,6 +120,18 @@ async function runHourlyRefresh(client, isStartup = false) {
         });
     }
 
+    // ── STEP 3.5: Run Tag Rewards cycle for each guild (Hourly & Startup Catch-up) ──
+    for (const guildId of guildIds) {
+        await runInGuildContext(guildId, async () => {
+            try {
+                const { runTagRewardsCycle } = await import('./tagRewards.js');
+                await runTagRewardsCycle(client, guildId);
+            } catch (err) {
+                sysError('Tag Rewards Cycle Failed', err, { guild: guildId });
+            }
+        });
+    }
+
     // ── MIDNIGHT STEP 4: Reset activity AFTER KotH pays out final scores ──
     for (const guildId of guildIds) {
         await runInGuildContext(guildId, async () => {
@@ -129,14 +141,6 @@ async function runHourlyRefresh(client, isStartup = false) {
                 const needsReset = lastReset !== todayStr;
 
                 if (needsReset) {
-                    // ── STEP 3.5: Run Tag Rewards cycle (daily) before reset ──
-                    try {
-                        const { runTagRewardsCycle } = await import('./tagRewards.js');
-                        await runTagRewardsCycle(client, guildId);
-                    } catch (err) {
-                        sysError('Tag Rewards Cycle Failed', err, { guild: guildId });
-                    }
-
                     const { resetGuildActivity } = await import('../activity/tracker.js');
                     await resetGuildActivity(guildId);
                     
