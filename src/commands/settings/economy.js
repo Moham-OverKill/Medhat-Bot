@@ -7,7 +7,7 @@ import { sysLog } from '../../utils/logger.js';
 export async function handleEconomySettings(interaction) {
     // Prevent "interaction failed" on slow SQL queries by deferring the button update immediately
     if (interaction.isButton() && !interaction.deferred && !interaction.replied) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        await interaction.deferUpdate();
     }
 
     const customId = interaction.customId;
@@ -16,15 +16,14 @@ export async function handleEconomySettings(interaction) {
     if (customId === 'eco_week') view = 'week';
     if (customId === 'eco_month') view = 'month';
     if (customId === 'eco_prices') view = 'prices';
+    if (customId === 'eco_day') view = 'day';
 
     await showEconomyDashboard(interaction, view);
 }
 
 async function showEconomyDashboard(interaction, view) {
     const guildId = interaction.guildId;
-    const guildName = interaction.guild?.name || 'Unknown Server';
-    const userName = interaction.user.displayName || interaction.user.username;
-    const userTag = interaction.user.username;
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
     
     sysLog('Economy Dashboard Opened', { user: interaction.user.id, guild: guildId, detail: `View: ${view}` });
     
@@ -71,65 +70,111 @@ async function showEconomyDashboard(interaction, view) {
         const questRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM quests WHERE guild_id = $1`, [guildId]);
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
 
+        // Battlepass Configuration
+        let bpDailyEst = 0;
+        if (config.battlepass_enabled === true) {
+            const bpRes = await pool.query(
+                `SELECT COALESCE(AVG(reward_coins), 0) as avg, COUNT(*) as count 
+                 FROM battlepass_config 
+                 WHERE guild_id = $1 AND reward_coins > 0`,
+                [guildId]
+            );
+            const avgBpCoins = parseInt(bpRes.rows[0]?.avg || 0, 10);
+            const bpLevelCount = parseInt(bpRes.rows[0]?.count || 0, 10);
+            if (bpLevelCount > 0 && avgBpCoins > 0) {
+                // A grinder typically unlocks ~1 battlepass level per day of continuous activity
+                bpDailyEst = Math.floor(avgBpCoins);
+            }
+        }
+
         // 1. Lazy User (Base Daily Only)
         const lazyIncome = baseDaily;
 
         // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
         const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay) + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + Weekly MVP share)
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + Weekly MVP share + Battlepass)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
-        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + Math.floor(mvpReward / 7);
+        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + Math.floor(mvpReward / 7) + bpDailyEst;
+
+        const bpStatusText = config.battlepass_enabled === true
+            ? (bpDailyEst > 0 ? `+${bpDailyEst} ${coinEmoji}/day` : 'Active (No coin tiers)')
+            : 'Disabled';
 
         embed.addFields(
             {
                 name: '💰 Reward Configuration',
-                value: `• **Daily Base:** ${baseDaily} ${COIN_EMOJI}\n• **Streak Bonus:** +${streakBonus} ${COIN_EMOJI}/day\n• **Boost Bonus:** ${boosterMult}x\n• **Quests:** ${avgQuest * totalQuestsPerDay} ${COIN_EMOJI}/day\n• **Tag Reward:** ${tagReward} ${COIN_EMOJI}/day\n• **Vote Reward:** ${voteReward} ${COIN_EMOJI}/vote\n• **MVP Prize:** ${mvpReward} ${COIN_EMOJI}/hour`,
+                value: [
+                    `• **Daily Base:** ${baseDaily} ${coinEmoji}`,
+                    `• **Streak Bonus:** +${streakBonus} ${coinEmoji}/day`,
+                    `• **Boost Bonus:** ${boosterMult}x`,
+                    `• **Quests:** ${avgQuest * totalQuestsPerDay} ${coinEmoji}/day`,
+                    `• **Tag Reward:** ${tagReward} ${coinEmoji}/day`,
+                    `• **Vote Reward:** ${voteReward} ${coinEmoji}/vote`,
+                    `• **MVP Prize:** ${mvpReward} ${coinEmoji}/hour`,
+                    `• **Battlepass:** ${bpStatusText}`
+                ].join('\n'),
                 inline: false
             },
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${COIN_EMOJI} / day\n💠 **Casual User:** ${casualIncome.toLocaleString()} ${COIN_EMOJI} / day\n♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${COIN_EMOJI} / day`,
+                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${coinEmoji} / day\n💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day\n♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
                 inline: false
             },
             {
                 name: '📦 Common Items (2 Days Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 2).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 2).toLocaleString()} ${coinEmoji}\n💠 **Casual User:** ${(casualIncome * 2).toLocaleString()} ${coinEmoji}\n♦️ **Grinder User:** ${(grinderIncome * 2).toLocaleString()} ${coinEmoji}`,
                 inline: false
             },
             {
                 name: '✨ Rare Items (1 Week Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 7).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 7).toLocaleString()} ${coinEmoji}\n💠 **Casual User:** ${(casualIncome * 7).toLocaleString()} ${coinEmoji}\n♦️ **Grinder User:** ${(grinderIncome * 7).toLocaleString()} ${coinEmoji}`,
                 inline: false
             },
             {
                 name: '👑 Legendary Items (1 Month Work)',
-                value: `🔹 **Lazy User:** ${(lazyIncome * 30).toLocaleString()} ${COIN_EMOJI}\n💠 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${COIN_EMOJI}\n♦️ **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${COIN_EMOJI}`,
+                value: `🔹 **Lazy User:** ${(lazyIncome * 30).toLocaleString()} ${coinEmoji}\n💠 **Casual User:** ${(casualIncome * 30).toLocaleString()} ${coinEmoji}\n♦️ **Grinder User:** ${(grinderIncome * 30).toLocaleString()} ${coinEmoji}`,
                 inline: false
             }
         );
 
     } else {
         // --- ANALYTICS VIEW ---
-        let intervals = {
+        const intervals = {
             'day': '1 day',
             'week': '7 days',
             'month': '30 days'
         };
-        const intervalStr = intervals[view];
+        const intervalStr = intervals[view] || '1 day';
 
-        // Fetch earnings per user type
+        // All positive currency minting channels (Faucets)
+        const faucetTypes = [
+            'mvp_reward',
+            'mvp_bonus',
+            'daily',
+            'quest_reward',
+            'mission_reward',
+            'battlepass_reward',
+            'loot_box_reward',
+            'tag_reward',
+            'vote_reward',
+            'admin_grant',
+            'admin_adjust',
+            'refund'
+        ];
+
+        // 1. Fetch user earnings across all faucets for cohort calculations
         const earningsRes = await pool.query(`
             SELECT user_id, SUM(amount) as earned 
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'tag_reward', 'vote_reward')
+              AND type = ANY($2::text[])
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY user_id
             ORDER BY earned DESC
-        `, [guildId]);
+        `, [guildId, faucetTypes]);
 
         let totalPrinted = 0;
         const userEarnings = earningsRes.rows.map(r => parseInt(r.earned, 10));
@@ -140,7 +185,7 @@ async function showEconomyDashboard(interaction, view) {
         const numUsers = userEarnings.length;
         const top1Count = Math.max(1, Math.floor(numUsers * 0.01));
         
-        // Averages
+        // Cohort Averages
         let top1Avg = 0;
         let normalAvg = 0;
 
@@ -152,29 +197,32 @@ async function showEconomyDashboard(interaction, view) {
             if (numUsers > top1Count) {
                 normalAvg = Math.floor(normalEarnings / (numUsers - top1Count));
             } else {
-                normalAvg = top1Avg; // Everyone is top 1% if there's only 1 user
+                normalAvg = top1Avg; // Everyone is top 1% if count <= 1
             }
         }
 
-        // Fetch breakdown by type
+        // 2. Fetch breakdown by faucet type
         const breakdownRes = await pool.query(`
             SELECT type, SUM(amount) as total 
             FROM transactions 
             WHERE guild_id = $1 
               AND amount > 0 
-              AND type IN ('mvp_reward', 'mvp_bonus', 'daily', 'quest_reward', 'mission_reward', 'admin_grant', 'admin_adjust', 'tag_reward', 'vote_reward')
+              AND type = ANY($2::text[])
               AND created_at >= NOW() - INTERVAL '${intervalStr}'
             GROUP BY type
             ORDER BY total DESC
-        `, [guildId]);
+        `, [guildId, faucetTypes]);
 
         const typesToDisplay = [
             { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
             { id: 'daily', aliases: [], label: 'Daily Claims' },
             { id: 'quest_reward', aliases: ['mission_reward'], label: 'Quest Rewards' },
+            { id: 'battlepass_reward', aliases: [], label: 'Battlepass Rewards' },
+            { id: 'loot_box_reward', aliases: [], label: 'Chest Rewards' },
             { id: 'tag_reward', aliases: [], label: 'Tag Rewards' },
             { id: 'vote_reward', aliases: [], label: 'Vote Rewards' },
-            { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
+            { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' },
+            { id: 'refund', aliases: [], label: 'Refunds' }
         ];
 
         const rawTotals = {};
@@ -182,7 +230,7 @@ async function showEconomyDashboard(interaction, view) {
             rawTotals[row.type] = parseInt(row.total, 10);
         }
 
-        // Aggregate aliases (e.g. mission_reward + quest_reward)
+        // Aggregate aliases (e.g. mission_reward + quest_reward, mvp_bonus + mvp_reward)
         const aggregatedTotals = {};
         for (const t of typesToDisplay) {
             let sum = rawTotals[t.id] || 0;
@@ -192,38 +240,86 @@ async function showEconomyDashboard(interaction, view) {
             aggregatedTotals[t.id] = sum;
         }
 
+        // Sort descending so the most impactful revenue drivers appear first
+        const sortedTypes = [...typesToDisplay].sort((a, b) => {
+            return (aggregatedTotals[b.id] || 0) - (aggregatedTotals[a.id] || 0);
+        });
+
         let breakdownStr = '';
-        for (const t of typesToDisplay) {
+        for (const t of sortedTypes) {
             const amt = aggregatedTotals[t.id] || 0;
             const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
-            breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${COIN_EMOJI} (${percent}%)\n`;
+            breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${coinEmoji} (${percent}%)\n`;
         }
 
+        // 3. Fetch Currency Sinks (Coins Burned / Destroyed)
+        const sinksRes = await pool.query(`
+            SELECT 
+                COALESCE(SUM(CASE WHEN type = 'purchase' THEN ABS(amount) ELSE 0 END), 0) as shop_gross,
+                COALESCE(SUM(CASE WHEN type = 'sale' THEN amount ELSE 0 END), 0) as marketplace_payouts,
+                COALESCE(SUM(CASE WHEN type = 'fee' THEN ABS(amount) ELSE 0 END), 0) as trade_fees,
+                COALESCE(SUM(CASE WHEN (type = 'battlepass_rollback' OR (type = 'admin_adjust' AND amount < 0)) THEN ABS(amount) ELSE 0 END), 0) as admin_burns
+            FROM transactions 
+            WHERE guild_id = $1 
+              AND created_at >= NOW() - INTERVAL '${intervalStr}'
+        `, [guildId]);
+
+        const shopGross = parseInt(sinksRes.rows[0]?.shop_gross || 0, 10);
+        const marketplacePayouts = parseInt(sinksRes.rows[0]?.marketplace_payouts || 0, 10);
+        const shopBurn = Math.max(0, shopGross - marketplacePayouts);
+        const tradeFees = parseInt(sinksRes.rows[0]?.trade_fees || 0, 10);
+        const adminBurns = parseInt(sinksRes.rows[0]?.admin_burns || 0, 10);
+        const totalBurned = shopBurn + tradeFees + adminBurns;
+
+        const netFlow = totalPrinted - totalBurned;
+        const flowLabel = netFlow > 0 ? 'Inflationary' : netFlow < 0 ? 'Deflationary' : 'Neutral';
+        const flowSign = netFlow > 0 ? '+' : '';
 
         const periodLabel = view === 'day' ? 'Daily' : view === 'week' ? 'Weekly' : 'Monthly';
 
-        embed.addFields(
+        const embedFields = [
             {
-                name: `💰 Total Server Wealth: ${totalWealth.toLocaleString()} ${COIN_EMOJI}`,
-                value: `Average Balance: **${avgWealth.toLocaleString()}** ${COIN_EMOJI}`,
+                name: `💰 Total Server Wealth: ${totalWealth.toLocaleString()} ${coinEmoji}`,
+                value: `Average Balance: **${avgWealth.toLocaleString()}** ${coinEmoji} across **${activeUsers.toLocaleString()}** active accounts`,
                 inline: false
             },
             {
-                name: `🖨️ ${periodLabel} Print Overview`,
-                value: `Total Coins Added: **+${totalPrinted.toLocaleString()}** ${COIN_EMOJI}`,
+                name: `🖨️ ${periodLabel} Circulation Overview`,
+                value: [
+                    `• **Coins Printed:** +${totalPrinted.toLocaleString()} ${coinEmoji}`,
+                    `• **Coins Burned:** -${totalBurned.toLocaleString()} ${coinEmoji}`,
+                    `• **Net Flow:** **${flowSign}${netFlow.toLocaleString()}** ${coinEmoji} _(${flowLabel})_`
+                ].join('\n'),
                 inline: false
             },
             {
                 name: '👥 Average Earnings per User',
-                value: `• **Top 1% Grinders**: ${top1Avg.toLocaleString()} ${COIN_EMOJI}\n• **Normal Users**: ${normalAvg.toLocaleString()} ${COIN_EMOJI}`,
+                value: `• **Top 1% Grinders**: ${top1Avg.toLocaleString()} ${coinEmoji}\n• **Normal Users**: ${normalAvg.toLocaleString()} ${coinEmoji}`,
                 inline: false
             },
             {
-                name: '📊 Source Breakdown',
+                name: '📊 Source Breakdown (Minted)',
                 value: breakdownStr,
                 inline: false
             }
-        );
+        ];
+
+        // 4. Append Sink Breakdown field if coins were destroyed in this window
+        if (totalBurned > 0) {
+            const sinkLines = [
+                `• **Shop & Chest Buys:** ${shopBurn.toLocaleString()} ${coinEmoji}`,
+                `• **Trade Taxes:** ${tradeFees.toLocaleString()} ${coinEmoji}`,
+                adminBurns > 0 ? `• **Admin Deductions:** ${adminBurns.toLocaleString()} ${coinEmoji}` : null
+            ].filter(Boolean);
+
+            embedFields.push({
+                name: '🔥 Sink Breakdown (Burned)',
+                value: sinkLines.join('\n'),
+                inline: false
+            });
+        }
+
+        embed.addFields(embedFields);
     }
 
     const navRow = new ActionRowBuilder().addComponents(
