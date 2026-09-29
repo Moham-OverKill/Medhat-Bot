@@ -93,10 +93,12 @@ async function showEconomyDashboard(interaction, view) {
         // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
         const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay) + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + Weekly MVP share + Battlepass)
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + KotH Hourly Wins + Battlepass)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
-        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + Math.floor(mvpReward / 7) + bpDailyEst;
+        // Active grinders compete throughout the day, winning multiple hourly KotH cycles (estimated 6 active wins)
+        const mvpGrinderDaily = mvpReward * 6;
+        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + mvpGrinderDaily + bpDailyEst;
 
         const bpStatusText = config.battlepass_enabled === true
             ? (bpDailyEst > 0 ? `+${bpDailyEst} ${coinEmoji}/day` : 'Active (No coin tiers)')
@@ -112,7 +114,7 @@ async function showEconomyDashboard(interaction, view) {
                     `• **Quests:** ${avgQuest * totalQuestsPerDay} ${coinEmoji}/day`,
                     `• **Tag Reward:** ${tagReward} ${coinEmoji}/day`,
                     `• **Vote Reward:** ${voteReward} ${coinEmoji}/vote`,
-                    `• **MVP Prize:** ${mvpReward} ${coinEmoji}/hour`,
+                    `• **MVP Prize:** ${mvpReward} ${coinEmoji}/hour (${config.winnersCount || 5} winners/hr)`,
                     `• **Battlepass:** ${bpStatusText}`
                 ].join('\n'),
                 inline: false
@@ -293,8 +295,8 @@ async function showEconomyDashboard(interaction, view) {
                 inline: false
             },
             {
-                name: '👥 Average Earnings per User',
-                value: `• **Top 1% Grinders**: ${top1Avg.toLocaleString()} ${coinEmoji}\n• **Normal Users**: ${normalAvg.toLocaleString()} ${coinEmoji}`,
+                name: `👥 Average Earnings (${numUsers.toLocaleString()} Active Earners)`,
+                value: `• **Top 1% Grinders** (${top1Count.toLocaleString()} user${top1Count > 1 ? 's' : ''}): ${top1Avg.toLocaleString()} ${coinEmoji}\n• **Standard Earners** (${(Math.max(0, numUsers - top1Count)).toLocaleString()} user${(numUsers - top1Count) !== 1 ? 's' : ''}): ${normalAvg.toLocaleString()} ${coinEmoji}`,
                 inline: false
             },
             {

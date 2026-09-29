@@ -1,65 +1,69 @@
 import { getGuildConfig } from '../storage/config.js';
 import { query } from '../storage/postgres.js';
 import { updateBalance } from '../economy/service.js';
-import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { COIN_EMOJI } from '../shared.js';
 
 /**
  * Scans all guild members, identifies who has the server's official Server Tag enabled,
  * and awards them daily coins (once per Cairo calendar day).
  * 
- * @param {Client} client - Discord client instance
+ * @param {import('discord.js').Client} client - Discord client instance
  * @param {string} guildId - Target guild ID
+ * @param {Object} [options={}] - Execution options
+ * @returns {Promise<{success: boolean, paidCount: number, totalCoins: number, error?: string}>}
  */
-export async function runTagRewardsCycle(client, guildId) {
+export async function runTagRewardsCycle(client, guildId, options = {}) {
   try {
     const config = await getGuildConfig(guildId);
-    if (!config) return;
+    if (!config) return { success: false, paidCount: 0, totalCoins: 0, error: 'No configuration found' };
 
     const rewardAmount = parseInt(config.tag_reward_amount, 10);
 
     if (isNaN(rewardAmount) || rewardAmount <= 0) {
       sysLog('Tag Rewards Skipped', { guild: guildId, detail: 'Tag rewards disabled or reward amount not set' });
-      return;
+      return { success: false, paidCount: 0, totalCoins: 0, error: 'Tag rewards disabled or reward amount is 0' };
     }
 
     const guildObj = await client.guilds.fetch(guildId).catch(() => null);
     if (!guildObj) {
       sysLog('Tag Rewards Skipped', { guild: guildId, detail: 'Guild not found by client' });
-      return;
+      return { success: false, paidCount: 0, totalCoins: 0, error: 'Guild not accessible' };
     }
 
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
     sysLog('Tag Rewards Scan Started', { guild: guildId, rewardAmount });
 
-    // Fetch all guild members from Discord API
-    const members = await guildObj.members.fetch({ force: true }).catch((err) => {
-      sysError('Tag Rewards Member Fetch Failed', err, { guild: guildId });
-      return new Map();
-    });
+    // Robust member collection: try fetch with 20s timeout and graceful fallback to cache
+    let members;
+    try {
+      members = await Promise.race([
+        guildObj.members.fetch(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Gateway members fetch timed out')), 20000))
+      ]);
+    } catch (fetchErr) {
+      sysWarn('Tag Rewards Member Fetch Fallback', { guild: guildId, detail: fetchErr.message });
+      members = guildObj.members.cache;
+    }
 
-    if (members.size === 0) {
+    if (!members || members.size === 0) {
+      members = guildObj.members.cache;
+    }
+
+    if (!members || members.size === 0) {
       sysLog('Tag Rewards Scan Aborted', { guild: guildId, detail: 'No members retrieved' });
-      return;
+      return { success: false, paidCount: 0, totalCoins: 0, error: 'No members available in cache or fetch' };
     }
 
     let paidUsersCount = 0;
     const now = new Date();
+    const nowIso = now.toISOString();
 
     for (const [memberId, member] of members) {
-      if (member.user.bot) continue;
+      if (!member || member.user?.bot) continue;
 
       try {
-        let primaryGuild = member.user.primaryGuild;
-
-        // Fallback: If primaryGuild is undefined, fetch the full user object via REST to populate it
-        if (primaryGuild === undefined) {
-          try {
-            const freshUser = await client.users.fetch(member.id, { force: true });
-            primaryGuild = freshUser.primaryGuild;
-          } catch (fetchErr) {
-            sysError('Stale user fetch failed', fetchErr, { guild: guildId, user: member.id });
-          }
-        }
+        const primaryGuild = member.user.primaryGuild;
 
         const hasOfficialTag = primaryGuild && 
                                primaryGuild.identityGuildId === guildId && 
@@ -71,8 +75,8 @@ export async function runTagRewardsCycle(client, guildId) {
         const checkPayout = await query(
           `SELECT 1 FROM transactions 
            WHERE user_id = $1 AND guild_id = $2 AND type = 'tag_reward'
-             AND (created_at AT TIME ZONE 'Africa/Cairo')::date = ($3 AT TIME ZONE 'Africa/Cairo')::date`,
-          [member.id, guildId, now]
+             AND (created_at AT TIME ZONE 'Africa/Cairo')::date = ($3::timestamptz AT TIME ZONE 'Africa/Cairo')::date`,
+          [member.id, guildId, nowIso]
         );
 
         if (checkPayout.rows.length > 0) {
@@ -82,7 +86,7 @@ export async function runTagRewardsCycle(client, guildId) {
 
         // Payout the coins
         const result = await updateBalance(member.id, guildId, rewardAmount, 'tag_reward', 'Server Tag Reward');
-        if (result.success) {
+        if (result?.success) {
           paidUsersCount++;
         }
       } catch (err) {
@@ -96,13 +100,20 @@ export async function runTagRewardsCycle(client, guildId) {
       sendLog(guildObj, 'economy', 'green', '🏷️ Daily Tag Rewards Distributed', 
         `**Action:** \`Daily Tag Scan\`\n` +
         `**Server Tag:** \`Active Server Tag\`\n` +
-        `**Reward Value:** \`${rewardAmount.toLocaleString()}\` ${COIN_EMOJI} per member\n` +
+        `**Reward Value:** \`${rewardAmount.toLocaleString()}\` ${coinEmoji} per member\n` +
         `**Members Rewarded:** \`${paidUsersCount.toLocaleString()}\`\n` +
-        `**Total Distributed:** \`${(paidUsersCount * rewardAmount).toLocaleString()}\` ${COIN_EMOJI}`
+        `**Total Distributed:** \`${(paidUsersCount * rewardAmount).toLocaleString()}\` ${coinEmoji}`
       );
     }
 
+    return {
+      success: true,
+      paidCount: paidUsersCount,
+      totalCoins: paidUsersCount * rewardAmount
+    };
+
   } catch (error) {
     sysError('Tag Rewards Cycle Critical Failure', error, { guild: guildId });
+    return { success: false, paidCount: 0, totalCoins: 0, error: error.message };
   }
 }
