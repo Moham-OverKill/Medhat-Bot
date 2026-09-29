@@ -198,33 +198,72 @@ export function normalizeShortcutOrder(order) {
 }
 
 export const INTERFACE_CARD_COLORS = [
-  { id: 'black', hex: '#000000', name: 'Default (Black)', emoji: '⬛', description: 'Standard sleek black background' },
-  { id: 'slate', hex: '#1e293b', name: 'Dark Slate', emoji: '⬛', description: 'Deep slate gray background' },
-  { id: 'blurple', hex: '#5865f2', name: 'Blurple', emoji: '🟦', description: 'Discord blurple accent background' },
-  { id: 'blue', hex: '#1d4ed8', name: 'Royal Blue', emoji: '🟦', description: 'Vibrant royal blue background' },
-  { id: 'cyan', hex: '#0891b2', name: 'Teal / Cyan', emoji: '🟦', description: 'Modern cyan / teal background' },
-  { id: 'green', hex: '#15803d', name: 'Emerald Green', emoji: '🟩', description: 'Rich emerald green background' },
-  { id: 'forest', hex: '#14532d', name: 'Forest Green', emoji: '🟩', description: 'Deep forest green background' },
-  { id: 'red', hex: '#b91c1c', name: 'Crimson Red', emoji: '🟥', description: 'Bold crimson red background' },
-  { id: 'wine', hex: '#881337', name: 'Wine Red', emoji: '🟥', description: 'Deep burgundy wine background' },
-  { id: 'purple', hex: '#7e22ce', name: 'Purple', emoji: '🟪', description: 'Regal violet purple background' },
-  { id: 'indigo', hex: '#4338ca', name: 'Indigo', emoji: '🟪', description: 'Deep indigo background' },
-  { id: 'gold', hex: '#b45309', name: 'Gold / Amber', emoji: '🟨', description: 'Warm amber gold background' },
-  { id: 'orange', hex: '#c2410c', name: 'Vibrant Orange', emoji: '🟧', description: 'Energetic vibrant orange background' },
-  { id: 'brown', hex: '#78350f', name: 'Bronze', emoji: '🟫', description: 'Earthy bronze brown background' },
-  { id: 'pink', hex: '#be185d', name: 'Pink', emoji: '🟪', description: 'Bright pink accent background' }
+  { id: 'black', hex: '#000000', name: 'Black (Default)', emoji: '🖤', description: 'Classic black card background' },
+  { id: 'red', hex: '#e02443', name: 'Red', emoji: '❤️', description: 'Red card background' },
+  { id: 'orange', hex: '#f4900c', name: 'Orange', emoji: '🧡', description: 'Orange card background' },
+  { id: 'yellow', hex: '#e5a700', name: 'Yellow', emoji: '💛', description: 'Yellow card background' },
+  { id: 'green', hex: '#43b581', name: 'Green', emoji: '💚', description: 'Green card background' },
+  { id: 'lightblue', hex: '#29b6f6', name: 'Light Blue', emoji: '🩵', description: 'Light blue card background' },
+  { id: 'blue', hex: '#2374e1', name: 'Blue', emoji: '💙', description: 'Blue card background' },
+  { id: 'purple', hex: '#8a4bf6', name: 'Purple', emoji: '💜', description: 'Purple card background' },
+  { id: 'pink', hex: '#eb459e', name: 'Pink', emoji: '🩷', description: 'Pink card background' },
+  { id: 'brown', hex: '#8c564b', name: 'Brown', emoji: '🤎', description: 'Brown card background' },
+  { id: 'grey', hex: '#636e72', name: 'Grey', emoji: '🩶', description: 'Grey card background' },
+  { id: 'white', hex: '#f1f2f6', name: 'White', emoji: '🤍', description: 'White card background' }
 ];
 
 export function getCardColorMeta(hexOrId) {
-  if (!hexOrId) return INTERFACE_CARD_COLORS[0];
+  if (!hexOrId || hexOrId === '#000000' || hexOrId === 'black') return INTERFACE_CARD_COLORS[0];
   const target = String(hexOrId).toLowerCase();
-  return INTERFACE_CARD_COLORS.find(c => c.hex.toLowerCase() === target || c.id.toLowerCase() === target) || {
+  const found = INTERFACE_CARD_COLORS.find(c => c.hex.toLowerCase() === target || c.id.toLowerCase() === target);
+  if (found) return found;
+
+  // Graceful fallback for legacy colors
+  if (target.includes('blue') || target === '#5865f2' || target === '#1d4ed8' || target === '#0891b2') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'blue');
+  }
+  if (target.includes('red') || target === '#b91c1c' || target === '#881337') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'red');
+  }
+  if (target.includes('green') || target === '#15803d' || target === '#14532d') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'green');
+  }
+  if (target.includes('purple') || target === '#7e22ce' || target === '#4338ca') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'purple');
+  }
+  if (target.includes('orange') || target === '#c2410c') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'orange');
+  }
+  if (target.includes('gold') || target === '#b45309') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'yellow');
+  }
+  if (target.includes('pink') || target === '#be185d') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'pink');
+  }
+  if (target.includes('brown') || target === '#78350f') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'brown');
+  }
+  if (target.includes('slate') || target === '#1e293b') {
+    return INTERFACE_CARD_COLORS.find(c => c.id === 'grey');
+  }
+
+  return {
     id: 'custom',
     hex: hexOrId,
     name: hexOrId.toUpperCase(),
-    emoji: '🎨',
-    description: 'Custom box background color'
+    emoji: '🤍',
+    description: 'Custom card background color'
   };
+}
+
+function getContrastColor(hex) {
+  if (!hex || hex === '#000000') return '#ffffff';
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16) || 0;
+  const g = parseInt(clean.substring(2, 4), 16) || 0;
+  const b = parseInt(clean.substring(4, 6), 16) || 0;
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 180 ? '#111214' : '#ffffff';
 }
 
 export function normalizeSlotColors(raw) {
@@ -248,7 +287,7 @@ export function normalizeSlotColors(raw) {
 
 /**
  * Render an individual shortcut card tile
- * Features a solid colored card base, crisp white border, prominent centered emoji (60% height), and bold bottom label.
+ * Features a solid colored card base, crisp border, prominent centered emoji (60% height), and bold bottom label.
  * @param {import('@napi-rs/canvas').SKRSContext2D} ctx 
  * @param {number} x 
  * @param {number} y 
@@ -260,6 +299,8 @@ export function normalizeSlotColors(raw) {
 function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   const radius = Math.round(cardH * 0.08);
   const borderWidth = Math.max(3, Math.round(cardH * 0.014));
+  const fgColor = getContrastColor(bgColor);
+  const strokeColor = fgColor === '#111214' ? '#111214' : '#ffffff';
 
   ctx.save();
   ctx.beginPath();
@@ -267,7 +308,7 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   ctx.fillStyle = bgColor || '#000000';
   ctx.fill();
   ctx.lineWidth = borderWidth;
-  ctx.strokeStyle = '#ffffff';
+  ctx.strokeStyle = strokeColor;
   ctx.stroke();
   ctx.clip();
 
@@ -288,7 +329,7 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
     ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
   }
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = fgColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x + cardW / 2, y + cardH * 0.83);
@@ -956,7 +997,8 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
     value: c.hex,
     description: c.description,
     emoji: c.emoji,
-    default: currentColorHex.toLowerCase() === c.hex.toLowerCase()
+    default: currentColorHex.toLowerCase() === c.hex.toLowerCase() ||
+             (c.id === 'black' && (!currentColorHex || currentColorHex === '#000000'))
   }));
 
   const colorSelect = new StringSelectMenuBuilder()
