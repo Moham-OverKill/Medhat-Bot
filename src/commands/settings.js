@@ -88,7 +88,7 @@ export async function showMainMenu(interaction) {
         new ButtonBuilder()
             .setCustomId('settings_shop')
             .setLabel('Items')
-            .setEmoji('🛒')
+            .setEmoji('📦')
             .setStyle(ButtonStyle.Secondary)
     );
 
