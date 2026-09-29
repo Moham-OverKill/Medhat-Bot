@@ -2,7 +2,7 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sysError, sysLog } from '../utils/logger.js';
+import { sysError } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,17 +89,21 @@ export const DEFAULT_SHORTCUT_ORDER = [
   'daily',
   'inventory',
   'vote',
-  'notifications'
+  'notifications',
+  'bank',
+  'items'
 ];
 
-export const INTERFACE_SLOTS = [
-  { x: 29, y: 15, w: 524, h: 434 },
-  { x: 611, y: 15, w: 524, h: 434 },
-  { x: 1195, y: 15, w: 524, h: 434 },
-  { x: 29, y: 492, w: 524, h: 445 },
-  { x: 611, y: 492, w: 524, h: 445 },
-  { x: 1195, y: 492, w: 524, h: 445 }
-];
+export const GRID_CONFIG = {
+  cols: 4,
+  cardW: 408,
+  cardH: 338,
+  marginX: 30,
+  marginY: 25,
+  gapX: 36,
+  gapY: 35,
+  canvasW: 1800
+};
 
 export function getShortcutMeta(id) {
   if (id && SHORTCUT_REGISTRY[id]) {
@@ -109,19 +113,25 @@ export function getShortcutMeta(id) {
 }
 
 export function normalizeShortcutOrder(order) {
-  if (!Array.isArray(order)) {
+  if (!Array.isArray(order) || order.length === 0) {
     return [...DEFAULT_SHORTCUT_ORDER];
   }
 
   const result = [];
-  for (let i = 0; i < 6; i++) {
+  const maxSlots = Math.min(order.length, 12);
+  for (let i = 0; i < maxSlots; i++) {
     const rawId = order[i];
     if (rawId && SHORTCUT_REGISTRY[rawId]) {
       result.push(rawId);
     } else {
-      result.push(DEFAULT_SHORTCUT_ORDER[i] || 'level');
+      result.push(DEFAULT_SHORTCUT_ORDER[i % DEFAULT_SHORTCUT_ORDER.length] || 'level');
     }
   }
+
+  if (result.length === 0) {
+    return [...DEFAULT_SHORTCUT_ORDER];
+  }
+
   return result;
 }
 
@@ -143,7 +153,7 @@ async function loadTileImage(tilePath) {
 
 function drawFallbackTile(ctx, slot, shortcutMeta) {
   const { x, y, w, h } = slot;
-  const radius = 32;
+  const radius = 26;
 
   ctx.save();
   ctx.beginPath();
@@ -163,23 +173,23 @@ function drawFallbackTile(ctx, slot, shortcutMeta) {
   ctx.stroke();
 
   // Icon
-  ctx.font = '64px sans-serif';
+  ctx.font = '54px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
   ctx.fillText(shortcutMeta?.emoji || '⭐', x + w / 2, y + h * 0.4);
 
   // Label Box
-  const boxH = 70;
-  const boxY = y + h - boxH - 30;
+  const boxH = 58;
+  const boxY = y + h - boxH - 24;
   ctx.fillStyle = '#151722';
-  ctx.roundRect(x + 30, boxY, w - 60, boxH, 16);
+  ctx.roundRect(x + 24, boxY, w - 48, boxH, 14);
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#5865f2';
   ctx.stroke();
 
-  ctx.font = 'bold 28px sans-serif';
+  ctx.font = 'bold 22px sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.fillText((shortcutMeta?.name || 'SHORTCUT').toUpperCase(), x + w / 2, boxY + boxH / 2);
 
@@ -187,19 +197,30 @@ function drawFallbackTile(ctx, slot, shortcutMeta) {
 }
 
 /**
- * Generates a composite PNG image buffer of the interface banner based on shortcut order
+ * Generates a dynamic composite PNG image buffer of the interface banner
+ * 4 slots per row, supporting up to 12 slots across 1 to 3 rows
  * @param {string[]} [shortcutOrder] 
  * @returns {Promise<Buffer>}
  */
 export async function generateInterfaceBanner(shortcutOrder) {
   const normalized = normalizeShortcutOrder(shortcutOrder);
-  const canvas = createCanvas(1748, 953);
+  const totalSlots = normalized.length;
+  const { cols, cardW, cardH, marginX, marginY, gapX, gapY, canvasW } = GRID_CONFIG;
+  const rows = Math.max(1, Math.ceil(totalSlots / cols));
+  const canvasH = marginY * 2 + rows * cardH + (rows - 1) * gapY;
+
+  const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  for (let i = 0; i < 6; i++) {
-    const slot = INTERFACE_SLOTS[i];
+  for (let i = 0; i < totalSlots; i++) {
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    const x = marginX + col * (cardW + gapX);
+    const y = marginY + row * (cardH + gapY);
+
+    const slot = { x, y, w: cardW, h: cardH };
     const shortcutId = normalized[i];
-    const meta = SHORTCUT_REGISTRY[shortcutId] || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i]];
+    const meta = SHORTCUT_REGISTRY[shortcutId] || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i % DEFAULT_SHORTCUT_ORDER.length]];
 
     let drawn = false;
     if (meta?.tileFile) {
@@ -207,7 +228,7 @@ export async function generateInterfaceBanner(shortcutOrder) {
       try {
         const img = await loadTileImage(tilePath);
         if (img) {
-          ctx.drawImage(img, slot.x, slot.y, slot.w, slot.h);
+          ctx.drawImage(img, x, y, cardW, cardH);
           drawn = true;
         }
       } catch (err) {
