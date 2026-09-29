@@ -121,7 +121,7 @@ export const SHORTCUT_REGISTRY = {
     name: 'Items',
     label: 'ITEMS',
     description: 'Browse available items and catalog',
-    emoji: '🛒',
+    emoji: '📦',
     buttonCustomId: 'hub_btn_items',
     tileFile: 'items.png'
   },
@@ -139,7 +139,7 @@ export const SHORTCUT_REGISTRY = {
     name: 'Invite',
     label: 'INVITE',
     description: 'Get the bot invite link and support info',
-    emoji: '🔗',
+    emoji: '➕',
     buttonCustomId: 'hub_btn_invite',
     tileFile: 'invite.png'
   }
