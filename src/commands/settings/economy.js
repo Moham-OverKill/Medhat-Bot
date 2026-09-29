@@ -62,6 +62,7 @@ async function showEconomyDashboard(interaction, view) {
         const voteReward = config.vote_reward_amount !== undefined ? parseInt(config.vote_reward_amount, 10) : 100;
 
         // Fetch Quest Configuration
+        const questsEnabled = config.quests_enabled === true;
         const questRefreshes = config.quests_refreshes_per_day || 1;
         const questsPerRefresh = config.quests_per_refresh || 1;
         const totalQuestsPerDay = questRefreshes * questsPerRefresh;
@@ -69,6 +70,7 @@ async function showEconomyDashboard(interaction, view) {
         // Fetch Average Quest Reward (from current active pool)
         const questRes = await pool.query(`SELECT COALESCE(AVG(reward_coins), 0) as avg FROM quests WHERE guild_id = $1`, [guildId]);
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
+        const questDailyEst = questsEnabled ? (avgQuest * totalQuestsPerDay) : 0;
 
         // Battlepass Configuration
         let bpDailyEst = 0;
@@ -91,15 +93,23 @@ async function showEconomyDashboard(interaction, view) {
         const lazyIncome = baseDaily;
 
         // 2. Casual User (Base Daily + ALL configured quests + Tag Reward + 1x Vote Reward)
-        const casualIncome = baseDaily + (avgQuest * totalQuestsPerDay) + tagReward + voteReward;
+        const casualIncome = baseDaily + questDailyEst + tagReward + voteReward;
 
         // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + KotH Hourly Wins + Battlepass)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
         // Active grinders compete throughout the day, winning multiple hourly KotH cycles (estimated 6 active wins)
         const mvpGrinderDaily = mvpReward * 6;
-        const grinderIncome = grinderDailyBoosted + (avgQuest * totalQuestsPerDay) + tagReward + (voteReward * 2) + mvpGrinderDaily + bpDailyEst;
+        const grinderIncome = grinderDailyBoosted + questDailyEst + tagReward + (voteReward * 2) + mvpGrinderDaily + bpDailyEst;
 
+        const streakStatusText = streakBonus > 0
+            ? `+${streakBonus} ${coinEmoji}/day (cap: ${streakCap} days = +${streakBonus * streakCap} max)`
+            : 'Disabled';
+        const boostStatusText = boosterMult > 1.0 ? `${boosterMult}x` : 'None (1.0x)';
+        const questStatusText = questsEnabled ? `${questDailyEst} ${coinEmoji}/day (${totalQuestsPerDay} quests)` : 'Disabled';
+        const tagStatusText = tagReward > 0 ? `${tagReward} ${coinEmoji}/day` : 'Disabled';
+        const voteStatusText = voteReward > 0 ? `${voteReward} ${coinEmoji}/vote` : 'Disabled';
+        const mvpStatusText = mvpReward > 0 ? `${mvpReward} ${coinEmoji}/hour (${config.winnersCount || 5} winners/hr)` : 'Disabled';
         const bpStatusText = config.battlepass_enabled === true
             ? (bpDailyEst > 0 ? `+${bpDailyEst} ${coinEmoji}/day` : 'Active (No coin tiers)')
             : 'Disabled';
@@ -109,19 +119,28 @@ async function showEconomyDashboard(interaction, view) {
                 name: '💰 Reward Configuration',
                 value: [
                     `• **Daily Base:** ${baseDaily} ${coinEmoji}`,
-                    `• **Streak Bonus:** +${streakBonus} ${coinEmoji}/day`,
-                    `• **Boost Bonus:** ${boosterMult}x`,
-                    `• **Quests:** ${avgQuest * totalQuestsPerDay} ${coinEmoji}/day`,
-                    `• **Tag Reward:** ${tagReward} ${coinEmoji}/day`,
-                    `• **Vote Reward:** ${voteReward} ${coinEmoji}/vote`,
-                    `• **MVP Prize:** ${mvpReward} ${coinEmoji}/hour (${config.winnersCount || 5} winners/hr)`,
+                    `• **Streak Bonus:** ${streakStatusText}`,
+                    `• **Boost Bonus:** ${boostStatusText}`,
+                    `• **Quests:** ${questStatusText}`,
+                    `• **Tag Reward:** ${tagStatusText}`,
+                    `• **Vote Reward:** ${voteStatusText}`,
+                    `• **MVP Prize:** ${mvpStatusText}`,
                     `• **Battlepass:** ${bpStatusText}`
                 ].join('\n'),
                 inline: false
             },
             {
                 name: '📈 Estimated Daily Income',
-                value: `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${coinEmoji} / day\n💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day\n♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
+                value: [
+                    `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${coinEmoji} / day`,
+                    `_Base claim only_`,
+                    ``,
+                    `💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day`,
+                    `_Daily (${baseDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
+                    ``,
+                    `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
+                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + KotH (${mvpGrinderDaily}) + Pass (${bpDailyEst})_`
+                ].join('\n'),
                 inline: false
             },
             {
