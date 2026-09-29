@@ -34,7 +34,7 @@ const TILES_DIR = path.resolve(__dirname, '../../assets/tiles');
 export const LOCAL_BANNER_PATH = path.join(__dirname, '../../assets/interface.png');
 export const INTERFACE_BANNER_IMAGE = 'https://media.discordapp.net/attachments/1537838869570002994/1538293185070235668/RGWP2LQ.png?ex=6a8226ab&is=6a80d52b&hm=b96ca59f431d7c3a08a1981505efb337516294c4485beb56fe8e783c39e02a5e&animated=true';
 
-// Register bundled emoji font for consistent high-res rendering
+// Register bundled fonts for consistent high-res rendering
 try {
   const localEmojiFont = path.resolve(__dirname, '../assets/fonts/seguiemj.ttf');
   const winEmojiFont = 'C:/Windows/Fonts/seguiemj.ttf';
@@ -43,8 +43,13 @@ try {
   } else if (fs.existsSync(winEmojiFont)) {
     GlobalFonts.registerFromPath(winEmojiFont, 'Segoe UI Emoji');
   }
+
+  const localRobotoBold = path.resolve(__dirname, '../assets/fonts/Roboto-Bold.ttf');
+  if (fs.existsSync(localRobotoBold)) {
+    GlobalFonts.registerFromPath(localRobotoBold, 'Roboto-Bold');
+  }
 } catch (fontErr) {
-  sysError('Failed to register emoji font', fontErr);
+  sysError('Failed to register fonts', fontErr);
 }
 
 export const SHORTCUT_REGISTRY = {
@@ -216,27 +221,27 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta) {
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji — prominent in center (54% of card height)
-  const emojiSize = Math.round(cardH * 0.54);
+  // 1. Emoji — prominent in center (60% of card height, positioned at 44%)
+  const emojiSize = Math.round(cardH * 0.60);
   ctx.font = `${emojiSize}px "Segoe UI Emoji", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.41);
+  ctx.fillText(meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.44);
 
-  // 2. Label Text — bold, uppercase, filling bottom portion
-  let labelFontSize = Math.round(cardH * 0.115);
+  // 2. Label Text — bold, uppercase, positioned at 83% to balance margins and eliminate dead space
+  let labelFontSize = Math.round(cardH * 0.135);
   const label = (meta.label || meta.name || 'SHORTCUT').toUpperCase();
-  ctx.font = `900 ${labelFontSize}px "Roboto", "Segoe UI", Arial, sans-serif`;
+  ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
   const maxWidth = cardW - 32;
   while (ctx.measureText(label).width > maxWidth && labelFontSize > 18) {
     labelFontSize -= 2;
-    ctx.font = `900 ${labelFontSize}px "Roboto", "Segoe UI", Arial, sans-serif`;
+    ctx.font = `bold ${labelFontSize}px "Roboto-Bold", "Arial Black", "Segoe UI", sans-serif`;
   }
 
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + cardW / 2, y + cardH - cardH * 0.12);
+  ctx.fillText(label, x + cardW / 2, y + cardH * 0.83);
 
   ctx.restore();
 }
