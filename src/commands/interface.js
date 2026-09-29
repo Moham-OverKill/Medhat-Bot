@@ -197,24 +197,74 @@ export function normalizeShortcutOrder(order) {
   return result;
 }
 
+export const INTERFACE_CARD_COLORS = [
+  { id: 'black', hex: '#000000', name: 'Default (Black)', emoji: '⬛', description: 'Standard sleek black background' },
+  { id: 'slate', hex: '#1e293b', name: 'Dark Slate', emoji: '⬛', description: 'Deep slate gray background' },
+  { id: 'blurple', hex: '#5865f2', name: 'Blurple', emoji: '🟦', description: 'Discord blurple accent background' },
+  { id: 'blue', hex: '#1d4ed8', name: 'Royal Blue', emoji: '🟦', description: 'Vibrant royal blue background' },
+  { id: 'cyan', hex: '#0891b2', name: 'Teal / Cyan', emoji: '🟦', description: 'Modern cyan / teal background' },
+  { id: 'green', hex: '#15803d', name: 'Emerald Green', emoji: '🟩', description: 'Rich emerald green background' },
+  { id: 'forest', hex: '#14532d', name: 'Forest Green', emoji: '🟩', description: 'Deep forest green background' },
+  { id: 'red', hex: '#b91c1c', name: 'Crimson Red', emoji: '🟥', description: 'Bold crimson red background' },
+  { id: 'wine', hex: '#881337', name: 'Wine Red', emoji: '🟥', description: 'Deep burgundy wine background' },
+  { id: 'purple', hex: '#7e22ce', name: 'Purple', emoji: '🟪', description: 'Regal violet purple background' },
+  { id: 'indigo', hex: '#4338ca', name: 'Indigo', emoji: '🟪', description: 'Deep indigo background' },
+  { id: 'gold', hex: '#b45309', name: 'Gold / Amber', emoji: '🟨', description: 'Warm amber gold background' },
+  { id: 'orange', hex: '#c2410c', name: 'Vibrant Orange', emoji: '🟧', description: 'Energetic vibrant orange background' },
+  { id: 'brown', hex: '#78350f', name: 'Bronze', emoji: '🟫', description: 'Earthy bronze brown background' },
+  { id: 'pink', hex: '#be185d', name: 'Pink', emoji: '🟪', description: 'Bright pink accent background' }
+];
+
+export function getCardColorMeta(hexOrId) {
+  if (!hexOrId) return INTERFACE_CARD_COLORS[0];
+  const target = String(hexOrId).toLowerCase();
+  return INTERFACE_CARD_COLORS.find(c => c.hex.toLowerCase() === target || c.id.toLowerCase() === target) || {
+    id: 'custom',
+    hex: hexOrId,
+    name: hexOrId.toUpperCase(),
+    emoji: '🎨',
+    description: 'Custom box background color'
+  };
+}
+
+export function normalizeSlotColors(raw) {
+  const result = new Array(12).fill('#000000');
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < Math.min(raw.length, 12); i++) {
+      if (typeof raw[i] === 'string' && raw[i].startsWith('#')) {
+        result[i] = raw[i];
+      }
+    }
+  } else if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      const idx = parseInt(k, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < 12 && typeof v === 'string' && v.startsWith('#')) {
+        result[idx] = v;
+      }
+    }
+  }
+  return result;
+}
+
 /**
  * Render an individual shortcut card tile
- * Features a solid dark card base, crisp white border, prominent centered emoji (54% height), and bold bottom label.
+ * Features a solid colored card base, crisp white border, prominent centered emoji (60% height), and bold bottom label.
  * @param {import('@napi-rs/canvas').SKRSContext2D} ctx 
  * @param {number} x 
  * @param {number} y 
  * @param {number} cardW 
  * @param {number} cardH 
  * @param {object} meta 
+ * @param {string} [bgColor]
  */
-function drawShortcutCard(ctx, x, y, cardW, cardH, meta) {
+function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   const radius = Math.round(cardH * 0.08);
   const borderWidth = Math.max(3, Math.round(cardH * 0.014));
 
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(x, y, cardW, cardH, radius);
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = bgColor || '#000000';
   ctx.fill();
   ctx.lineWidth = borderWidth;
   ctx.strokeStyle = '#ffffff';
@@ -251,23 +301,26 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta) {
  * Dynamically resizes canvas and scales buttons based on active shortcuts and their row locations.
  * Completely eliminates empty spaces, blank top/bottom margins, and dead column padding.
  * @param {string[]} shortcutOrder 
- * @param {{ showEmptySlots?: boolean }} [options] 
+ * @param {{ showEmptySlots?: boolean, slotColors?: string[] }} [options] 
  * @returns {Promise<Buffer>}
  */
 export async function generateInterfaceBanner(shortcutOrder, options = {}) {
   const normalized = normalizeShortcutOrder(shortcutOrder);
+  const slotColors = normalizeSlotColors(
+    Array.isArray(options) ? options : (options?.slotColors || options?.slot_colors || [])
+  );
 
-  // Group slots into 3 configured rows of 4 slots each
+  // Group slots into 3 configured rows of 4 slots each with their original slot index (0-11)
   const configuredRows = [
-    normalized.slice(0, 4),
-    normalized.slice(4, 8),
-    normalized.slice(8, 12)
+    [0, 1, 2, 3].map(i => ({ id: normalized[i], slotIndex: i })),
+    [4, 5, 6, 7].map(i => ({ id: normalized[i], slotIndex: i })),
+    [8, 9, 10, 11].map(i => ({ id: normalized[i], slotIndex: i }))
   ];
 
   // For each row, extract active (non-empty) shortcuts
   const activeRows = [];
   for (const row of configuredRows) {
-    const activeInRow = row.filter(id => id && id !== 'empty' && SHORTCUT_REGISTRY[id]);
+    const activeInRow = row.filter(item => item.id && item.id !== 'empty' && SHORTCUT_REGISTRY[item.id]);
     if (activeInRow.length > 0) {
       activeRows.push(activeInRow);
     }
@@ -276,8 +329,8 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
   // Fallback to default 2 rows of 3 buttons if nothing is configured
   if (activeRows.length === 0) {
     activeRows.push(
-      ['level', 'quests', 'daily'],
-      ['inventory', 'vote', 'notifications']
+      [{ id: 'level', slotIndex: 0 }, { id: 'quests', slotIndex: 1 }, { id: 'daily', slotIndex: 2 }],
+      [{ id: 'inventory', slotIndex: 4 }, { id: 'vote', slotIndex: 5 }, { id: 'notifications', slotIndex: 6 }]
     );
   }
 
@@ -310,18 +363,19 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
   const ctx = canvas.getContext('2d');
 
   for (let r = 0; r < rowCount; r++) {
-    const rowShortcuts = activeRows[r];
-    const k = rowShortcuts.length;
+    const rowItems = activeRows[r];
+    const k = rowItems.length;
     const rowW = k * cardW + (k - 1) * gapX;
     const rowMarginX = (canvasW - rowW) / 2;
     const y = marginY + r * (cardH + gapY);
 
     for (let c = 0; c < k; c++) {
-      const id = rowShortcuts[c];
+      const item = rowItems[c];
       const x = rowMarginX + c * (cardW + gapX);
-      const meta = SHORTCUT_REGISTRY[id];
+      const meta = SHORTCUT_REGISTRY[item.id];
+      const bgColor = slotColors[item.slotIndex] || '#000000';
       if (meta) {
-        drawShortcutCard(ctx, x, y, cardW, cardH, meta);
+        drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor);
       }
     }
   }
@@ -338,11 +392,22 @@ export async function getInterfaceConfig(guildId) {
   try {
     const pool = getPool();
     const res = await pool.query(
-      `SELECT guild_id, is_enabled, shortcut_order, target_channel_id, message_id 
+      `SELECT guild_id, is_enabled, shortcut_order, slot_colors, target_channel_id, message_id 
        FROM server_interface_config 
        WHERE guild_id = $1`,
       [guildId]
-    );
+    ).catch(async (queryErr) => {
+      if (queryErr.code === '42703' || String(queryErr.message).includes('slot_colors')) {
+        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+        return pool.query(
+          `SELECT guild_id, is_enabled, shortcut_order, slot_colors, target_channel_id, message_id 
+           FROM server_interface_config 
+           WHERE guild_id = $1`,
+          [guildId]
+        );
+      }
+      throw queryErr;
+    });
 
     if (res.rows.length > 0) {
       const row = res.rows[0];
@@ -350,6 +415,7 @@ export async function getInterfaceConfig(guildId) {
         guild_id: row.guild_id,
         is_enabled: Boolean(row.is_enabled),
         shortcut_order: normalizeShortcutOrder(row.shortcut_order),
+        slot_colors: normalizeSlotColors(row.slot_colors),
         target_channel_id: row.target_channel_id || null,
         message_id: row.message_id || null
       };
@@ -364,6 +430,7 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
+      slot_colors: new Array(12).fill('#000000'),
       target_channel_id: fallbackChannel,
       message_id: fallbackMessage
     };
@@ -373,6 +440,7 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
+      slot_colors: new Array(12).fill('#000000'),
       target_channel_id: null,
       message_id: null
     };
@@ -383,29 +451,43 @@ export async function getInterfaceConfig(guildId) {
  * Save interface configuration for a server to PostgreSQL
  * @param {string} guildId 
  * @param {Object} data 
- * @returns {Promise<{ guild_id: string, is_enabled: boolean, shortcut_order: string[], target_channel_id: string|null, message_id: string|null }>}
+ * @returns {Promise<{ guild_id: string, is_enabled: boolean, shortcut_order: string[], slot_colors: string[], target_channel_id: string|null, message_id: string|null }>}
  */
 export async function saveInterfaceConfig(guildId, data) {
   try {
     const pool = getPool();
     const normalizedOrder = normalizeShortcutOrder(data.shortcut_order);
+    const normalizedColors = normalizeSlotColors(data.slot_colors);
     const isEnabled = data.is_enabled !== undefined ? Boolean(data.is_enabled) : true;
     const channelId = data.target_channel_id !== undefined ? (data.target_channel_id || null) : null;
     const messageId = data.message_id !== undefined ? (data.message_id || null) : null;
 
-    const res = await pool.query(
-      `INSERT INTO server_interface_config (guild_id, is_enabled, shortcut_order, target_channel_id, message_id, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (guild_id)
-       DO UPDATE SET
-         is_enabled = EXCLUDED.is_enabled,
-         shortcut_order = EXCLUDED.shortcut_order,
-         target_channel_id = EXCLUDED.target_channel_id,
-         message_id = EXCLUDED.message_id,
-         updated_at = NOW()
-       RETURNING guild_id, is_enabled, shortcut_order, target_channel_id, message_id`,
-      [guildId, isEnabled, JSON.stringify(normalizedOrder), channelId, messageId]
-    );
+    const queryStr = `
+      INSERT INTO server_interface_config (guild_id, is_enabled, shortcut_order, slot_colors, target_channel_id, message_id, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (guild_id)
+      DO UPDATE SET
+        is_enabled = EXCLUDED.is_enabled,
+        shortcut_order = EXCLUDED.shortcut_order,
+        slot_colors = EXCLUDED.slot_colors,
+        target_channel_id = EXCLUDED.target_channel_id,
+        message_id = EXCLUDED.message_id,
+        updated_at = NOW()
+      RETURNING guild_id, is_enabled, shortcut_order, slot_colors, target_channel_id, message_id
+    `;
+    const params = [guildId, isEnabled, JSON.stringify(normalizedOrder), JSON.stringify(normalizedColors), channelId, messageId];
+
+    let res;
+    try {
+      res = await pool.query(queryStr, params);
+    } catch (saveErr) {
+      if (saveErr.code === '42703' || String(saveErr.message).includes('slot_colors')) {
+        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+        res = await pool.query(queryStr, params);
+      } else {
+        throw saveErr;
+      }
+    }
 
     // Keep legacy guild_configs synchronized for backwards compatibility
     try {
@@ -422,6 +504,7 @@ export async function saveInterfaceConfig(guildId, data) {
       guild_id: row.guild_id,
       is_enabled: Boolean(row.is_enabled),
       shortcut_order: normalizeShortcutOrder(row.shortcut_order),
+      slot_colors: normalizeSlotColors(row.slot_colors),
       target_channel_id: row.target_channel_id || null,
       message_id: row.message_id || null
     };
@@ -577,7 +660,10 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       return false;
     }
 
-    const bannerBuffer = await generateInterfaceBanner(interfaceConfig.shortcut_order, { showEmptySlots: false });
+    const bannerBuffer = await generateInterfaceBanner(interfaceConfig.shortcut_order, {
+      showEmptySlots: false,
+      slotColors: interfaceConfig.slot_colors
+    });
     const attachment = new AttachmentBuilder(bannerBuffer, { name: 'interface.png' });
 
     const guildConfig = await getGuildConfig(guildId) || {};
@@ -756,9 +842,10 @@ export async function showInterfaceSetup(interaction) {
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeShortcutOrder(config.shortcut_order);
+  const slotColors = normalizeSlotColors(config.slot_colors);
 
   // 1. Generate real-time preview of the layout
-  const bannerBuffer = await generateInterfaceBanner(slots);
+  const bannerBuffer = await generateInterfaceBanner(slots, { slotColors });
   const attachment = new AttachmentBuilder(bannerBuffer, { name: 'preview.png' });
 
   const embed = new EmbedBuilder()
@@ -822,15 +909,19 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeShortcutOrder(config.shortcut_order);
+  const slotColors = normalizeSlotColors(config.slot_colors);
 
   const currentId = slots[slotIndex];
   const currentMeta = getShortcutMeta(currentId);
-  const currentLabel = currentMeta ? `${currentMeta.emoji} ${currentMeta.name}` : 'Empty';
+  const currentLabel = currentMeta ? `${currentMeta.emoji} ${currentMeta.name}` : 'None';
+
+  const currentColorHex = slotColors[slotIndex] || '#000000';
+  const colorMeta = getCardColorMeta(currentColorHex);
+  const currentColorLabel = `${colorMeta.emoji} ${colorMeta.name}`;
 
   const desc = [
-    `Select what you want to place in **Slot ${slotIndex + 1}**.\n`,
     `• **Current Feature:** ${currentLabel}`,
-    '\nSelecting a feature or clearing the slot will instantly update the interface preview in real time.'
+    `• **Box Color:** ${currentColorLabel}`
   ].join('\n');
 
   const embed = new EmbedBuilder()
@@ -838,7 +929,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
     .setDescription(desc)
     .setColor(0x5865F2);
 
-  const selectOptions = [
+  const featureOptions = [
     ...Object.values(SHORTCUT_REGISTRY).map(item => ({
       label: item.name,
       value: item.id,
@@ -858,10 +949,24 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
   const featureSelect = new StringSelectMenuBuilder()
     .setCustomId(`interface_set_feature_${slotIndex}`)
     .setPlaceholder(`Choose a feature for Slot ${slotIndex + 1}...`)
-    .addOptions(selectOptions);
+    .addOptions(featureOptions);
+
+  const colorOptions = INTERFACE_CARD_COLORS.map(c => ({
+    label: c.name,
+    value: c.hex,
+    description: c.description,
+    emoji: c.emoji,
+    default: currentColorHex.toLowerCase() === c.hex.toLowerCase()
+  }));
+
+  const colorSelect = new StringSelectMenuBuilder()
+    .setCustomId(`interface_set_color_${slotIndex}`)
+    .setPlaceholder(`Choose a box color for Slot ${slotIndex + 1}...`)
+    .addOptions(colorOptions);
 
   const row1 = new ActionRowBuilder().addComponents(featureSelect);
-  const row2 = new ActionRowBuilder().addComponents(
+  const row2 = new ActionRowBuilder().addComponents(colorSelect);
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('interface_setup_btn')
       .setLabel('Back to Setup')
@@ -869,7 +974,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  const components = [row1, row2];
+  const components = [row1, row2, row3];
 
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferUpdate().catch(() => {});
@@ -949,14 +1054,30 @@ export async function handleInterfaceComponent(interaction) {
       config.shortcut_order = slots;
       await saveInterfaceConfig(guildId, config);
 
-      return showInterfaceSetup(interaction);
+      return showInterfaceSlotAssign(interaction, slotIndex);
     }
 
-    // 6. Reset Defaults
+    // 6. Select Menu: Assign Background Color for Slot Box
+    if (customId.startsWith('interface_set_color_')) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const slotIndex = parseInt(customId.replace('interface_set_color_', ''), 10);
+      const selectedColor = interaction.values[0];
+
+      const config = await getInterfaceConfig(guildId);
+      const slotColors = normalizeSlotColors(config.slot_colors);
+      slotColors[slotIndex] = selectedColor;
+      config.slot_colors = slotColors;
+      await saveInterfaceConfig(guildId, config);
+
+      return showInterfaceSlotAssign(interaction, slotIndex);
+    }
+
+    // 7. Reset Defaults
     if (customId === 'interface_reset_defaults') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
       config.shortcut_order = [...DEFAULT_SHORTCUT_ORDER];
+      config.slot_colors = new Array(12).fill('#000000');
       await saveInterfaceConfig(guildId, config);
 
       return showInterfaceSetup(interaction);
