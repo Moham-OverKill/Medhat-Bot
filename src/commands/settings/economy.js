@@ -181,8 +181,7 @@ async function showEconomyDashboard(interaction, view) {
             'tag_reward',
             'vote_reward',
             'admin_grant',
-            'admin_adjust',
-            'refund'
+            'admin_adjust'
         ];
 
         // 1. Fetch user earnings across all faucets for cohort calculations
@@ -242,8 +241,7 @@ async function showEconomyDashboard(interaction, view) {
             { id: 'loot_box_reward', aliases: [], label: 'Chest Rewards' },
             { id: 'tag_reward', aliases: [], label: 'Tag Rewards' },
             { id: 'vote_reward', aliases: [], label: 'Vote Rewards' },
-            { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' },
-            { id: 'refund', aliases: [], label: 'Refunds' }
+            { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
         ];
 
         const rawTotals = {};
@@ -269,6 +267,7 @@ async function showEconomyDashboard(interaction, view) {
         let breakdownStr = '';
         for (const t of sortedTypes) {
             const amt = aggregatedTotals[t.id] || 0;
+            if (t.id === 'admin_grant' && amt === 0) continue;
             const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
             breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${coinEmoji} (${percent}%)\n`;
         }
