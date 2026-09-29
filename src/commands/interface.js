@@ -737,7 +737,7 @@ export async function showInterfaceSettings(interaction) {
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
-  await interaction[method]({ embeds: [embed], components, content: '' });
+  await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
 }
 
 /**
@@ -771,16 +771,17 @@ export async function showInterfaceSetup(interaction) {
       const slotId = slots[idx];
       const meta = getShortcutMeta(slotId);
 
-      const label = meta ? `Slot ${idx + 1}: ${meta.name}` : `Slot ${idx + 1}: Empty`;
-      const emoji = meta ? meta.emoji : '➕';
+      const label = meta ? meta.name : '+';
+      const button = new ButtonBuilder()
+        .setCustomId(`interface_slot_${idx}`)
+        .setLabel(label)
+        .setStyle(ButtonStyle.Secondary);
 
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`interface_slot_${idx}`)
-          .setLabel(label)
-          .setEmoji(emoji)
-          .setStyle(ButtonStyle.Secondary)
-      );
+      if (meta && meta.emoji) {
+        button.setEmoji(meta.emoji);
+      }
+
+      row.addComponents(button);
     }
     rows.push(row);
   }
@@ -869,7 +870,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
     await interaction.deferUpdate().catch(() => {});
   }
 
-  await interaction.editReply({ embeds: [embed], components, files: [] });
+  await interaction.editReply({ embeds: [embed], components, files: [], attachments: [] });
 }
 
 /**
