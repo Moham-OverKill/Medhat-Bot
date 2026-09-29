@@ -72,23 +72,6 @@ async function showEconomyDashboard(interaction, view) {
         const avgQuest = parseInt(questRes.rows[0]?.avg || 0, 10) || 50; // Fallback to 50 if zero quests
         const questDailyEst = questsEnabled ? (avgQuest * totalQuestsPerDay) : 0;
 
-        // Battlepass Configuration
-        let bpDailyEst = 0;
-        if (config.battlepass_enabled === true) {
-            const bpRes = await pool.query(
-                `SELECT COALESCE(AVG(reward_coins), 0) as avg, COUNT(*) as count 
-                 FROM battlepass_config 
-                 WHERE guild_id = $1 AND reward_coins > 0`,
-                [guildId]
-            );
-            const avgBpCoins = parseInt(bpRes.rows[0]?.avg || 0, 10);
-            const bpLevelCount = parseInt(bpRes.rows[0]?.count || 0, 10);
-            if (bpLevelCount > 0 && avgBpCoins > 0) {
-                // A grinder typically unlocks ~1 battlepass level per day of continuous activity
-                bpDailyEst = Math.floor(avgBpCoins);
-            }
-        }
-
         // 1. Lazy User (Base Daily Only)
         const lazyIncome = baseDaily;
 
@@ -107,12 +90,12 @@ async function showEconomyDashboard(interaction, view) {
         const casualDaily = baseDaily + (casualStreak * streakBonus);
         const casualIncome = casualDaily + questDailyEst + tagReward + voteReward;
 
-        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins + Battlepass)
+        // 3. Grinder User (Max Daily w/ Booster + ALL configured quests + Tag Reward + 2x Vote Reward + MVP Hourly Wins)
         const grinderDailyMax = baseDaily + (streakBonus * streakCap);
         const grinderDailyBoosted = Math.floor(grinderDailyMax * boosterMult);
         // Active grinders compete throughout the day, winning multiple hourly MVP cycles (estimated 6 active wins)
         const mvpGrinderDaily = mvpReward * 6;
-        const grinderIncome = grinderDailyBoosted + questDailyEst + tagReward + (voteReward * 2) + mvpGrinderDaily + bpDailyEst;
+        const grinderIncome = grinderDailyBoosted + questDailyEst + tagReward + (voteReward * 2) + mvpGrinderDaily;
 
         const streakStatusText = streakBonus > 0
             ? `+${streakBonus} ${coinEmoji}/day (cap: ${streakCap} days = +${streakBonus * streakCap} max)`
@@ -122,9 +105,6 @@ async function showEconomyDashboard(interaction, view) {
         const tagStatusText = tagReward > 0 ? `${tagReward} ${coinEmoji}/day` : 'Disabled';
         const voteStatusText = voteReward > 0 ? `${voteReward} ${coinEmoji}/vote` : 'Disabled';
         const mvpStatusText = mvpReward > 0 ? `${mvpReward} ${coinEmoji}/hour (${config.winnersCount || 5} winners/hr)` : 'Disabled';
-        const bpStatusText = config.battlepass_enabled === true
-            ? (bpDailyEst > 0 ? `+${bpDailyEst} ${coinEmoji}/day` : 'Active (No coin tiers)')
-            : 'Disabled';
 
         embed.addFields(
             {
@@ -136,8 +116,7 @@ async function showEconomyDashboard(interaction, view) {
                     `• **Quests:** ${questStatusText}`,
                     `• **Tag Reward:** ${tagStatusText}`,
                     `• **Vote Reward:** ${voteStatusText}`,
-                    `• **MVP Prize:** ${mvpStatusText}`,
-                    `• **Battlepass:** ${bpStatusText}`
+                    `• **MVP Prize:** ${mvpStatusText}`
                 ].join('\n'),
                 inline: false
             },
@@ -151,7 +130,7 @@ async function showEconomyDashboard(interaction, view) {
                     `_Daily (${casualDaily}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Vote (${voteReward})_`,
                     ``,
                     `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
-                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily}) + Pass (${bpDailyEst})_`
+                    `_Boosted Daily (${grinderDailyBoosted}) + Quests (${questDailyEst}) + Tag (${tagReward}) + Votes (${voteReward * 2}) + MVP (${mvpGrinderDaily})_`
                 ].join('\n'),
                 inline: false
             },
