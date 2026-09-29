@@ -146,10 +146,8 @@ async function showEconomyDashboard(interaction, view) {
                 value: [
                     `🔹 **Lazy User:** ${lazyIncome.toLocaleString()} ${coinEmoji} / day`,
                     lazySubtext,
-                    ``,
                     `💠 **Casual User:** ${casualIncome.toLocaleString()} ${coinEmoji} / day`,
                     casualSubtext,
-                    ``,
                     `♦️ **Grinder User:** ${grinderIncome.toLocaleString()} ${coinEmoji} / day`,
                     grinderSubtext
                 ].join('\n'),
