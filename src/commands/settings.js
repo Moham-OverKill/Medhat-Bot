@@ -68,7 +68,7 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors / Levels / Coins / Shop
+    // Row 1: Colors / Levels / Coins / Items
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_colors')
@@ -87,7 +87,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_shop')
-            .setLabel('Shop')
+            .setLabel('Items')
             .setEmoji('🛒')
             .setStyle(ButtonStyle.Secondary)
     );

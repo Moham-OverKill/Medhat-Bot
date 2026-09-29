@@ -137,8 +137,8 @@ export async function handleShopSetup(interaction) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle('Shop Configuration')
-      .setDescription('Manage categories and items in your server shop.')
+      .setTitle('Items Configuration')
+      .setDescription('Manage categories and items in your server catalog.')
       .addFields(
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
         { name: '📦 Packs', value: `${packCount}`, inline: true },

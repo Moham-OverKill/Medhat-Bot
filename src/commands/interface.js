@@ -118,9 +118,9 @@ export const SHORTCUT_REGISTRY = {
   },
   items: {
     id: 'items',
-    name: 'Shop Items',
-    label: 'SHOP',
-    description: 'Browse items available in the shop',
+    name: 'Items',
+    label: 'ITEMS',
+    description: 'Browse available items and catalog',
     emoji: '🛒',
     buttonCustomId: 'hub_btn_items',
     tileFile: 'items.png'
