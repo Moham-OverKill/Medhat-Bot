@@ -106,6 +106,14 @@ export const SHORTCUT_REGISTRY = {
     emoji: '👤',
     buttonCustomId: 'hub_btn_profile',
     tileFile: 'profile.png'
+  },
+  invite: {
+    id: 'invite',
+    name: 'Invite',
+    description: 'Get the bot invite link and support info',
+    emoji: '🔗',
+    buttonCustomId: 'hub_btn_invite',
+    tileFile: 'invite.png'
   }
 };
 
@@ -759,7 +767,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
       default: item.id === currentId
     })),
     {
-      label: 'Empty Slot (Clear)',
+      label: 'None',
       value: 'empty',
       description: 'Leave this slot empty',
       emoji: '🚫',
@@ -1069,6 +1077,34 @@ export async function handleHubShortcut(interaction) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const { handleProfileCommand } = await import('./profile.js');
       return handleProfileCommand(interaction);
+    }
+
+    // 10. Invite Shortcut (🔗)
+    if (customId === 'hub_btn_invite') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const clientId = interaction.client.user?.id || '815148891598356502';
+      const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${clientId}`;
+      const topGgUrl = `https://top.gg/bot/${clientId}`;
+
+      const embed = new EmbedBuilder()
+        .setDescription('**ADD MEDHAT BOT TO YOUR OWN SERVER!! 🤩**')
+        .setColor('#5865F2');
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('❤️ TOP.GG')
+          .setStyle(ButtonStyle.Link)
+          .setURL(topGgUrl),
+        new ButtonBuilder()
+          .setLabel('➕ INVITE')
+          .setStyle(ButtonStyle.Link)
+          .setURL(inviteUrl)
+      );
+
+      return interaction.editReply({
+        embeds: [embed],
+        components: [row]
+      });
     }
 
   } catch (error) {
