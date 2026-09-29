@@ -205,31 +205,39 @@ export async function buildHubEmbed(guild, config = null) {
 }
 
 /**
- * Build the 6 shortcut buttons for the Hub message across 2 action rows (matching the 2x3 grid)
+ * Build the shortcut buttons for the Hub message (4 buttons per action row, all gray)
+ * Supports up to 12 buttons across up to 3 action rows
  * @param {import('discord.js').Client} client 
  * @param {string[]} [shortcutOrder]
  * @returns {ActionRowBuilder[]}
  */
 export function buildHubButtons(client, shortcutOrder = null) {
   const normalized = normalizeShortcutOrder(shortcutOrder);
-  const row1 = new ActionRowBuilder();
-  const row2 = new ActionRowBuilder();
+  const totalSlots = normalized.length;
+  const rows = [];
+  const rowCount = Math.max(1, Math.ceil(totalSlots / 4));
 
-  for (let i = 0; i < 6; i++) {
-    const meta = getShortcutMeta(normalized[i]) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i]];
-    const btn = new ButtonBuilder()
-      .setCustomId(meta.buttonCustomId)
-      .setEmoji(meta.emoji)
-      .setStyle(ButtonStyle.Secondary);
+  for (let r = 0; r < rowCount; r++) {
+    const actionRow = new ActionRowBuilder();
+    const startIdx = r * 4;
+    const endIdx = Math.min(startIdx + 4, totalSlots);
 
-    if (i < 3) {
-      row1.addComponents(btn);
-    } else {
-      row2.addComponents(btn);
+    for (let i = startIdx; i < endIdx; i++) {
+      const meta = getShortcutMeta(normalized[i]) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i % DEFAULT_SHORTCUT_ORDER.length]];
+      const btn = new ButtonBuilder()
+        .setCustomId(meta.buttonCustomId)
+        .setEmoji(meta.emoji)
+        .setStyle(ButtonStyle.Secondary);
+
+      actionRow.addComponents(btn);
+    }
+
+    if (actionRow.components.length > 0) {
+      rows.push(actionRow);
     }
   }
 
-  return [row1, row2];
+  return rows;
 }
 
 // Mutex lock to prevent concurrent duplicate hub message updates
@@ -276,7 +284,7 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
       return false;
     }
 
-    // Dynamically render the composite interface banner buffer matching the server's shortcut layout
+    // Dynamically render the composite interface banner buffer matching the server's shortcut layout (4 slots/row, up to 12 slots)
     const bannerBuffer = await generateInterfaceBanner(interfaceConfig.shortcut_order);
     const attachment = new AttachmentBuilder(bannerBuffer, { name: 'interface.png' });
 
@@ -285,7 +293,7 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
     const buttonRows = buildHubButtons(client, interfaceConfig.shortcut_order);
     const payload = {
       embeds: [embed],
-      components: Array.isArray(buttonRows) ? buttonRows : [buttonRows],
+      components: buttonRows,
       files: [attachment]
     };
 
@@ -348,6 +356,7 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
 
 /**
  * Render the Admin Interface Configuration Panel in /settings -> Users -> Interface
+ * All buttons styled gray (ButtonStyle.Secondary)
  * Layout:
  * - Row 0: Target Channel Selector
  * - Row 1: [ Enable / Disable ] | [ Update ]
@@ -372,18 +381,24 @@ export async function showInterfaceSettings(interaction) {
     }
   }
 
-  const shortcutsSummary = config.shortcut_order.map((id, index) => {
-    const meta = getShortcutMeta(id) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[index]];
-    return `**Slot ${index + 1}:** ${meta.emoji} ${meta.name}`;
-  });
+  const rowCount = Math.ceil(config.shortcut_order.length / 4);
+  const rowsSummary = [];
+  for (let r = 0; r < rowCount; r++) {
+    const rowSlots = config.shortcut_order.slice(r * 4, (r + 1) * 4).map((id, idx) => {
+      const globalIdx = r * 4 + idx;
+      const meta = getShortcutMeta(id) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[globalIdx % DEFAULT_SHORTCUT_ORDER.length]];
+      return `**${globalIdx + 1}.** ${meta.emoji} ${meta.name}`;
+    });
+    rowsSummary.push(`• **Row ${r + 1}:** ${rowSlots.join('  |  ')}`);
+  }
 
   const desc = [
     'Configure the public Community Interface message with active quests, countdown timers, and quick shortcuts.\n',
     `• **Target Channel:** ${currentChannel}`,
-    `• **Status:** ${statusText}\n`,
+    `• **Status:** ${statusText}`,
+    `• **Active Slots:** ${config.shortcut_order.length} / 12 (4 slots per row)\n`,
     '**Configured Shortcuts:**',
-    `Row 1: ${shortcutsSummary[0]}  •  ${shortcutsSummary[1]}  •  ${shortcutsSummary[2]}`,
-    `Row 2: ${shortcutsSummary[3]}  •  ${shortcutsSummary[4]}  •  ${shortcutsSummary[5]}`
+    rowsSummary.join('\n')
   ].join('\n');
 
   const embed = new EmbedBuilder()
@@ -401,29 +416,29 @@ export async function showInterfaceSettings(interaction) {
     channelSelect.setDefaultChannels([config.target_channel_id]);
   }
 
-  // Row 1: [ Enable / Disable ] | [ Update ]
+  // Row 1: [ Enable / Disable ] | [ Update ] (all gray buttons)
   const toggleBtn = config.is_enabled
     ? new ButtonBuilder()
         .setCustomId('interface_disable_btn')
         .setLabel('Disable')
         .setEmoji('🔴')
-        .setStyle(ButtonStyle.Danger)
+        .setStyle(ButtonStyle.Secondary)
     : new ButtonBuilder()
         .setCustomId('interface_enable_btn')
         .setLabel('Enable')
         .setEmoji('🟢')
-        .setStyle(ButtonStyle.Success);
+        .setStyle(ButtonStyle.Secondary);
 
   const updateBtn = new ButtonBuilder()
     .setCustomId('interface_publish_btn')
     .setLabel(isPublished ? 'Update' : 'Publish')
     .setEmoji('🔄')
-    .setStyle(ButtonStyle.Primary)
+    .setStyle(ButtonStyle.Secondary)
     .setDisabled(!config.target_channel_id);
 
   const row1 = new ActionRowBuilder().addComponents(toggleBtn, updateBtn);
 
-  // Row 2: [ Back ] | [ Setup ]
+  // Row 2: [ Back ] | [ Setup ] (all gray buttons)
   const backBtn = new ButtonBuilder()
     .setCustomId('settings_users')
     .setLabel('Back')
@@ -434,7 +449,7 @@ export async function showInterfaceSettings(interaction) {
     .setCustomId('interface_setup_btn')
     .setLabel('Setup')
     .setEmoji('🛠️')
-    .setStyle(ButtonStyle.Primary);
+    .setStyle(ButtonStyle.Secondary);
 
   const row2 = new ActionRowBuilder().addComponents(backBtn, setupBtn);
 
@@ -452,115 +467,177 @@ export async function showInterfaceSettings(interaction) {
 }
 
 /**
- * Render the Shortcut Setup Panel
- * - If activeSlot is null: Shows the 6 slot buttons and Reset Defaults button
- * - If activeSlot is set (0-5): Shows the StringSelectMenu to assign a feature to that slot
+ * Render the Shortcut Setup Overview Panel (Row selection mode)
+ * All buttons gray (ButtonStyle.Secondary)
  * @param {import('discord.js').Interaction} interaction 
- * @param {number|null} [activeSlot=null]
  */
-export async function showInterfaceSetup(interaction, activeSlot = null) {
+export async function showInterfaceSetup(interaction) {
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
+  const totalSlots = config.shortcut_order.length;
+  const rowCount = Math.max(1, Math.ceil(totalSlots / 4));
 
-  if (activeSlot === null || activeSlot === undefined) {
-    // Overview Mode: Displays current layout grid with slot selector buttons
-    const slots = config.shortcut_order.map((id, index) => {
-      const meta = getShortcutMeta(id) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[index]];
-      return { index, meta };
-    });
+  const rowSections = [];
+  for (let r = 0; r < rowCount; r++) {
+    const startIdx = r * 4;
+    const endIdx = Math.min(startIdx + 4, totalSlots);
+    const rowSlots = [];
 
-    const desc = [
-      'Customize the 6 interactive shortcut tiles displayed on the Community Interface.\n',
-      '**Current Slot Configuration:**',
-      `• **Slot 1:** ${slots[0].meta.emoji} ${slots[0].meta.name}`,
-      `• **Slot 2:** ${slots[1].meta.emoji} ${slots[1].meta.name}`,
-      `• **Slot 3:** ${slots[2].meta.emoji} ${slots[2].meta.name}`,
-      `• **Slot 4:** ${slots[3].meta.emoji} ${slots[3].meta.name}`,
-      `• **Slot 5:** ${slots[4].meta.emoji} ${slots[4].meta.name}`,
-      `• **Slot 6:** ${slots[5].meta.emoji} ${slots[5].meta.name}\n`,
-      'Click a slot button below to assign a feature to that position.'
-    ].join('\n');
+    for (let i = startIdx; i < endIdx; i++) {
+      const meta = getShortcutMeta(config.shortcut_order[i]) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i % DEFAULT_SHORTCUT_ORDER.length]];
+      rowSlots.push(`  • **Slot ${i + 1}:** ${meta.emoji} ${meta.name}`);
+    }
 
-    const embed = new EmbedBuilder()
-      .setTitle('Interface Shortcut Setup')
-      .setDescription(desc)
-      .setColor(0x5865F2);
-
-    // Row 1: Slots 1, 2, 3
-    const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('interface_slot_0')
-        .setLabel(`Slot 1: ${slots[0].meta.name}`)
-        .setEmoji(slots[0].meta.emoji)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('interface_slot_1')
-        .setLabel(`Slot 2: ${slots[1].meta.name}`)
-        .setEmoji(slots[1].meta.emoji)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('interface_slot_2')
-        .setLabel(`Slot 3: ${slots[2].meta.name}`)
-        .setEmoji(slots[2].meta.emoji)
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Slots 4, 5, 6
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('interface_slot_3')
-        .setLabel(`Slot 4: ${slots[3].meta.name}`)
-        .setEmoji(slots[3].meta.emoji)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('interface_slot_4')
-        .setLabel(`Slot 5: ${slots[4].meta.name}`)
-        .setEmoji(slots[4].meta.emoji)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('interface_slot_5')
-        .setLabel(`Slot 6: ${slots[5].meta.name}`)
-        .setEmoji(slots[5].meta.emoji)
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 3: Navigation and Reset
-    const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('interface_back_to_main')
-        .setLabel('Back to Interface')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('interface_reset_defaults')
-        .setLabel('Reset Defaults')
-        .setEmoji('🔄')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    const components = [row1, row2, row3];
-
-    const method = (interaction.deferred || interaction.replied)
-      ? 'editReply'
-      : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-
-    await interaction[method]({ embeds: [embed], components, content: '' });
-    return;
+    rowSections.push(`**Row ${r + 1} (Slots ${startIdx + 1}–${endIdx}):**\n${rowSlots.join('\n')}`);
   }
 
-  // Slot Assignment Mode: Admin selected a specific slot to customize
-  const currentShortcutId = config.shortcut_order[activeSlot] || DEFAULT_SHORTCUT_ORDER[activeSlot];
-  const currentMeta = getShortcutMeta(currentShortcutId) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[activeSlot]];
-
   const desc = [
-    `Select a feature from the menu below to place in **Slot ${activeSlot + 1}**.\n`,
-    `• **Current Feature:** ${currentMeta.emoji} **${currentMeta.name}**`,
-    `• **Description:** ${currentMeta.description}\n`,
-    'Selecting a feature will immediately update the slot and refresh the public Interface.'
+    'Customize up to 12 interactive shortcut tiles organized into 4 slots per row.\n',
+    rowSections.join('\n\n'),
+    '\nSelect a row below to manage its slots, or adjust the total slot count.'
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(`Assign Feature — Slot ${activeSlot + 1}`)
+    .setTitle('Interface Shortcut Setup')
+    .setDescription(desc)
+    .setColor(0x5865F2);
+
+  // Row 1: Row Selector Buttons (all gray)
+  const rowSelectButtons = [];
+  for (let r = 0; r < rowCount; r++) {
+    const startIdx = r * 4 + 1;
+    const endIdx = Math.min((r + 1) * 4, totalSlots);
+    rowSelectButtons.push(
+      new ButtonBuilder()
+        .setCustomId(`interface_row_${r}`)
+        .setLabel(`Row ${r + 1} (Slots ${startIdx}–${endIdx})`)
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+  const row1 = new ActionRowBuilder().addComponents(rowSelectButtons);
+
+  // Row 2: Slot Count Adjustments (Add / Remove Slot, all gray)
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('interface_add_slot')
+      .setLabel(`Add Slot (${totalSlots}/12)`)
+      .setEmoji('➕')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(totalSlots >= 12),
+    new ButtonBuilder()
+      .setCustomId('interface_remove_slot')
+      .setLabel('Remove Slot')
+      .setEmoji('➖')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(totalSlots <= 1)
+  );
+
+  // Row 3: Navigation and Reset Defaults (all gray)
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('interface_back_to_main')
+      .setLabel('Back to Interface')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('interface_reset_defaults')
+      .setLabel('Reset Defaults')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const components = [row1, row2, row3];
+
+  const method = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[method]({ embeds: [embed], components, content: '' });
+}
+
+/**
+ * Render the Slot Manager for a specific Row
+ * All buttons gray (ButtonStyle.Secondary)
+ * @param {import('discord.js').Interaction} interaction 
+ * @param {number} rowIndex 
+ */
+export async function showInterfaceRow(interaction, rowIndex) {
+  const guildId = interaction.guildId;
+  const config = await getInterfaceConfig(guildId);
+  const totalSlots = config.shortcut_order.length;
+
+  const startIdx = rowIndex * 4;
+  const endIdx = Math.min(startIdx + 4, totalSlots);
+
+  const slotLines = [];
+  const slotButtons = [];
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const meta = getShortcutMeta(config.shortcut_order[i]) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[i % DEFAULT_SHORTCUT_ORDER.length]];
+    slotLines.push(`• **Slot ${i + 1}:** ${meta.emoji} **${meta.name}** — ${meta.description}`);
+
+    slotButtons.push(
+      new ButtonBuilder()
+        .setCustomId(`interface_slot_${i}`)
+        .setLabel(`Slot ${i + 1}: ${meta.name}`)
+        .setEmoji(meta.emoji)
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+
+  const desc = [
+    `Managing **Row ${rowIndex + 1}** (Slots ${startIdx + 1} through ${endIdx}):\n`,
+    slotLines.join('\n'),
+    '\nClick a slot button below to assign a different feature to that position.'
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Row ${rowIndex + 1} Shortcut Management`)
+    .setDescription(desc)
+    .setColor(0x5865F2);
+
+  const row1 = new ActionRowBuilder().addComponents(slotButtons);
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('interface_setup_btn')
+      .setLabel('Back to Setup Overview')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const components = [row1, row2];
+
+  const method = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[method]({ embeds: [embed], components, content: '' });
+}
+
+/**
+ * Render the Feature Selector for a specific Slot
+ * All buttons gray (ButtonStyle.Secondary)
+ * @param {import('discord.js').Interaction} interaction 
+ * @param {number} slotIndex 
+ */
+export async function showInterfaceSlotAssign(interaction, slotIndex) {
+  const guildId = interaction.guildId;
+  const config = await getInterfaceConfig(guildId);
+
+  const currentShortcutId = config.shortcut_order[slotIndex] || DEFAULT_SHORTCUT_ORDER[slotIndex % DEFAULT_SHORTCUT_ORDER.length];
+  const currentMeta = getShortcutMeta(currentShortcutId) || SHORTCUT_REGISTRY[DEFAULT_SHORTCUT_ORDER[slotIndex % DEFAULT_SHORTCUT_ORDER.length]];
+  const rowIndex = Math.floor(slotIndex / 4);
+
+  const desc = [
+    `Select a feature from the menu below to place in **Slot ${slotIndex + 1}** (Row ${rowIndex + 1}, Position ${(slotIndex % 4) + 1}).\n`,
+    `• **Current Feature:** ${currentMeta.emoji} **${currentMeta.name}**`,
+    `• **Description:** ${currentMeta.description}\n`,
+    'Selecting a feature will update the slot immediately and refresh the public Interface.'
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Assign Feature — Slot ${slotIndex + 1}`)
     .setDescription(desc)
     .setColor(0x5865F2);
 
@@ -573,21 +650,25 @@ export async function showInterfaceSetup(interaction, activeSlot = null) {
   }));
 
   const featureSelect = new StringSelectMenuBuilder()
-    .setCustomId(`interface_set_feature_${activeSlot}`)
-    .setPlaceholder(`Choose a feature for Slot ${activeSlot + 1}...`)
+    .setCustomId(`interface_set_feature_${slotIndex}`)
+    .setPlaceholder(`Choose a feature for Slot ${slotIndex + 1}...`)
     .addOptions(selectOptions);
 
-  const selectRow = new ActionRowBuilder().addComponents(featureSelect);
+  const row1 = new ActionRowBuilder().addComponents(featureSelect);
 
-  const backRow = new ActionRowBuilder().addComponents(
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`interface_row_${rowIndex}`)
+      .setLabel(`Back to Row ${rowIndex + 1}`)
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('interface_setup_btn')
-      .setLabel('Back to Setup')
-      .setEmoji('⬅️')
+      .setLabel('Setup Overview')
       .setStyle(ButtonStyle.Secondary)
   );
 
-  const components = [selectRow, backRow];
+  const components = [row1, row2];
 
   const method = (interaction.deferred || interaction.replied)
     ? 'editReply'
@@ -639,10 +720,10 @@ export async function handleInterfaceComponent(interaction) {
       return showInterfaceSettings(interaction);
     }
 
-    // 2. Open Setup Panel
+    // 2. Open Setup Overview
     if (customId === 'interface_setup_btn') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-      return showInterfaceSetup(interaction, null);
+      return showInterfaceSetup(interaction);
     }
 
     // 3. Back to Main Interface Panel
@@ -651,14 +732,21 @@ export async function handleInterfaceComponent(interaction) {
       return showInterfaceSettings(interaction);
     }
 
-    // 4. Click a Slot Button (0 to 5) to assign feature
+    // 4. Select a Row to Manage
+    if (customId.startsWith('interface_row_')) {
+      const rowIndex = parseInt(customId.replace('interface_row_', ''), 10);
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      return showInterfaceRow(interaction, rowIndex);
+    }
+
+    // 5. Select a Slot to Assign Feature
     if (customId.startsWith('interface_slot_')) {
       const slotIndex = parseInt(customId.replace('interface_slot_', ''), 10);
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-      return showInterfaceSetup(interaction, slotIndex);
+      return showInterfaceSlotAssign(interaction, slotIndex);
     }
 
-    // 5. Select Menu: Assign Feature to Slot
+    // 6. Select Menu: Assign Feature to Slot
     if (customId.startsWith('interface_set_feature_')) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const slotIndex = parseInt(customId.replace('interface_set_feature_', ''), 10);
@@ -678,10 +766,71 @@ export async function handleInterfaceComponent(interaction) {
         flags: MessageFlags.Ephemeral
       }).catch(() => {});
 
-      return showInterfaceSetup(interaction, null);
+      const rowIndex = Math.floor(slotIndex / 4);
+      return showInterfaceRow(interaction, rowIndex);
     }
 
-    // 6. Reset Defaults
+    // 7. Add Slot (up to 12)
+    if (customId === 'interface_add_slot') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+
+      if (config.shortcut_order.length >= 12) {
+        return interaction.followUp({
+          content: 'Maximum limit of 12 slots reached.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const allKeys = Object.keys(SHORTCUT_REGISTRY);
+      const currentKeys = new Set(config.shortcut_order);
+      const unusedKey = allKeys.find(k => !currentKeys.has(k)) || allKeys[config.shortcut_order.length % allKeys.length];
+
+      config.shortcut_order.push(unusedKey);
+      await saveInterfaceConfig(guildId, config);
+
+      if (config.is_enabled && config.target_channel_id && config.message_id) {
+        await publishOrUpdateHub(interaction.client, guildId).catch(() => {});
+      }
+
+      const newMeta = getShortcutMeta(unusedKey);
+      await interaction.followUp({
+        content: `Added Slot ${config.shortcut_order.length} (**${newMeta?.name || unusedKey}**). Total slots: ${config.shortcut_order.length}/12.`,
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+
+      return showInterfaceSetup(interaction);
+    }
+
+    // 8. Remove Slot (down to 1)
+    if (customId === 'interface_remove_slot') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+
+      if (config.shortcut_order.length <= 1) {
+        return interaction.followUp({
+          content: 'Minimum of 1 slot required.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const removedId = config.shortcut_order.pop();
+      await saveInterfaceConfig(guildId, config);
+
+      if (config.is_enabled && config.target_channel_id && config.message_id) {
+        await publishOrUpdateHub(interaction.client, guildId).catch(() => {});
+      }
+
+      const removedMeta = getShortcutMeta(removedId);
+      await interaction.followUp({
+        content: `Removed Slot ${config.shortcut_order.length + 1} (**${removedMeta?.name || removedId}**). Total slots: ${config.shortcut_order.length}/12.`,
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+
+      return showInterfaceSetup(interaction);
+    }
+
+    // 9. Reset Defaults
     if (customId === 'interface_reset_defaults') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
@@ -693,14 +842,14 @@ export async function handleInterfaceComponent(interaction) {
       }
 
       await interaction.followUp({
-        content: 'Interface shortcuts have been reset to default configuration.',
+        content: 'Interface shortcuts have been reset to default configuration (8 slots, 2 rows).',
         flags: MessageFlags.Ephemeral
       }).catch(() => {});
 
-      return showInterfaceSetup(interaction, null);
+      return showInterfaceSetup(interaction);
     }
 
-    // 7. Enable Interface
+    // 10. Enable Interface
     if (customId === 'interface_enable_btn') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
@@ -719,7 +868,7 @@ export async function handleInterfaceComponent(interaction) {
       return showInterfaceSettings(interaction);
     }
 
-    // 8. Disable Interface
+    // 11. Disable Interface
     if (customId === 'interface_disable_btn') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
@@ -745,7 +894,7 @@ export async function handleInterfaceComponent(interaction) {
       return showInterfaceSettings(interaction);
     }
 
-    // 9. Publish / Update Hub
+    // 12. Publish / Update Hub
     if (customId === 'interface_publish_btn') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
