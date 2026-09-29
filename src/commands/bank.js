@@ -17,7 +17,7 @@ import { handleInteractionError, diagnoseChannelPermissions } from '../utils/err
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
@@ -733,6 +733,8 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
  */
 export async function handleShopBuyModalSubmit(interaction) {
   try {
+    if (!await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral })) return;
+
     if (interaction.message) {
       verifyAndHealMessageImages(interaction.message);
     }
@@ -744,17 +746,15 @@ export async function handleShopBuyModalSubmit(interaction) {
     const overridePriceStr = parts[7] || null;
     const overridePrice = (overridePriceStr !== null && overridePriceStr !== '') ? parseInt(overridePriceStr) : null;
 
-    const rawQty = interaction.fields.getTextInputValue('buy_quantity');
+    const rawQty = interaction.fields?.getTextInputValue('buy_quantity');
     const qty = parseInt(rawQty, 10);
 
     if (isNaN(qty) || qty < 1 || qty > 999) {
-      return interaction.reply({
-        content: '\u274C Please enter a valid quantity between 1 and 999.',
-        flags: MessageFlags.Ephemeral
+      return interaction.editReply({
+        content: '❌ Please enter a valid quantity between 1 and 999.',
+        components: []
       });
     }
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const userId = interaction.user.id;
     const guildId = interaction.guildId;
@@ -778,7 +778,7 @@ export async function handleShopBuyModalSubmit(interaction) {
     if (!result.success) {
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
       return interaction.editReply({
-        content: isCapOrOwned ? `\u2755 ${result.error}` : `\u274C ${result.error}`,
+        content: isCapOrOwned ? `❔ ${result.error}` : `❌ ${result.error}`,
         components: []
       });
     }
@@ -794,19 +794,21 @@ export async function handleShopBuyModalSubmit(interaction) {
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
     let msg;
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     } else {
-      msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
     return interaction.editReply({ files: [], content: msg, components: [] });
 
   } catch (error) {
-    sysError('BuyModalSubmit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('BuyModalSubmit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ files: [], content: '\u274C An error occurred. Please try again.', components: [] });
-      } else {
-        await interaction.reply({ content: '\u274C An error occurred.', flags: MessageFlags.Ephemeral });
+        await interaction.editReply({ files: [], content: '❌ An error occurred. Please try again.', components: [] });
       }
     } catch (_) { }
   }
@@ -834,9 +836,9 @@ export async function handleInventoryButton(interaction) {
     const isSlashCommand = interaction.isChatInputCommand();
     if (!interaction.deferred && !interaction.replied) {
       if (isSlashCommand) {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        if (!await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral })) return;
       } else {
-        await interaction.deferUpdate();
+        if (!await safeDeferUpdate(interaction)) return;
       }
     }
 
@@ -990,9 +992,7 @@ export async function handleInventoryButton(interaction) {
 // VIEW 2: Category Content View
 export async function handleInventoryCategorySelect(interaction, targetPage = 1, overrideCatId = null) {
   try {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => { });
-    }
+    if (!await safeDeferUpdate(interaction)) return;
 
     let catIdStr;
     if (overrideCatId !== null && overrideCatId !== undefined) {
@@ -1174,12 +1174,14 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
     });
 
   } catch (error) {
-    sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('Category view expansion failure', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
     try {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ files: [], content: '❌ Error loading category.', components: [] });
-      } else {
-        await interaction.reply({ content: '❌ Error loading category.', flags: MessageFlags.Ephemeral });
       }
     } catch (_) { }
   }
@@ -1190,9 +1192,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
  */
 export async function handleInventorySortButton(interaction) {
   try {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    if (!await safeDeferUpdate(interaction)) return;
 
     const parts = interaction.customId.split('_');
     const targetType = parts[3];
@@ -1215,7 +1215,11 @@ export async function handleInventorySortButton(interaction) {
 
     await handleInventoryCategorySelect(interaction, 1, catIdStr);
   } catch (error) {
-    sysError('Inventory Sort Button Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('Inventory Sort Button Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
   }
 }
 
@@ -1223,9 +1227,7 @@ export async function handleInventorySortButton(interaction) {
 export async function handleInventoryItemSelect(interaction) {
   try {
     // 1. Force immediate acknowledgment to prevent "Interaction Failed"
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => { });
-    }
+    if (!await safeDeferUpdate(interaction)) return;
 
     // Parse interaction data
     // From select menu: value = "invId_index", customId = "bank_inv_item_select_categoryId"
@@ -1632,12 +1634,14 @@ export async function handleInventoryItemSelect(interaction) {
     });
 
   } catch (error) {
-    sysError('Item Manage Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('Item Manage Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
     try {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ files: [], content: '❌ Error loading item.', components: [] });
-      } else {
-        await interaction.reply({ content: '❌ Error loading item.', flags: MessageFlags.Ephemeral });
       }
     } catch (_) { }
   }
@@ -1660,13 +1664,16 @@ export async function handleInventoryAction(interaction) {
       currentIndex = parseInt(parts[5]) || 0;
     }
 
+    // Modal action: 'drop' opens a modal, so it CANNOT be deferred with deferUpdate
+    if (action !== 'drop') {
+      if (!await safeDeferUpdate(interaction)) return;
+    }
+
     // --- 0. OPEN LOOT BOX ACTION ---
     if (action === 'open') {
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-
       const result = await openLootBox(interaction.user.id, interaction.guildId, invId, interaction.member);
       if (!result.success) {
-        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: `❌ ${result.error}`, embeds: [], components: [] });
       }
 
       const boxName = result.box?.name || 'Loot Box';
@@ -2064,12 +2071,16 @@ export async function handleInventoryAction(interaction) {
     }
 
   } catch (error) {
-    sysError('Inventory Action Error', error, { user: interaction.user.id, guild: interaction.guildId });
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
-    } else {
-      await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('Inventory Action Error', error, { user: interaction.user.id, guild: interaction.guildId });
     }
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+    } catch (_) { }
   }
 }
 
@@ -2398,6 +2409,8 @@ export async function cleanupExpiredDrops(client) {
  */
 export async function handleInventoryDropModalSubmit(interaction) {
   try {
+    if (!await safeDeferUpdate(interaction)) return;
+
     const parts = interaction.customId.split('_');
     // bank(0) inv(1) drop(2) qty(3) [invId](4) [catIdStr](5) [currentIndex](6)
     let invId, catIdStr, currentIndex;
@@ -2411,11 +2424,11 @@ export async function handleInventoryDropModalSubmit(interaction) {
       currentIndex = parseInt(parts[6]) || 0;
     }
 
-    const rawQty = interaction.fields.getTextInputValue('drop_quantity');
+    const rawQty = interaction.fields?.getTextInputValue('drop_quantity');
     const qty = parseInt(rawQty, 10);
 
     if (isNaN(qty) || qty < 1 || qty > 999) {
-      return interaction.reply({
+      return interaction.followUp({
         content: '❌ Please enter a valid quantity (1 or more).',
         flags: MessageFlags.Ephemeral
       });
@@ -2428,15 +2441,10 @@ export async function handleInventoryDropModalSubmit(interaction) {
       [interaction.user.id, interaction.guildId]
     );
     if (tradeCheck.rows.length > 0) {
-      return interaction.reply({
+      return interaction.followUp({
         content: '❌ You cannot drop items while you have a pending trade.',
         flags: MessageFlags.Ephemeral
       });
-    }
-
-    // Defer update on original inventory message directly (no new ephemeral message)
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => { });
     }
 
     // Verify bot has permissions to post in channel before deducting item
@@ -2499,12 +2507,14 @@ export async function handleInventoryDropModalSubmit(interaction) {
     return handleInventoryItemSelect(interaction);
 
   } catch (error) {
-    sysError('Drop Modal Submit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    const code = error?.code;
+    const msg = error?.message || '';
+    if (code !== 10062 && code !== 40060 && !msg.includes('already been acknowledged') && !msg.includes('has not been sent or deferred')) {
+      sysError('Drop Modal Submit Error', error, { user: interaction.user.id, guild: interaction.guildId });
+    }
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
-      } else {
-        await interaction.reply({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral });
+        await interaction.followUp({ content: `❌ Error: ${error.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     } catch (_) { }
   }
