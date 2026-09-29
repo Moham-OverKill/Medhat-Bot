@@ -44,7 +44,7 @@ export async function handleProfileCommand(interaction) {
       await interaction.deferReply();
     }
 
-    const targetUser = interaction.options.getUser('user') || interaction.user;
+    const targetUser = interaction.options?.getUser?.('user') || interaction.user;
     const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
     const guildId = guild.id;
