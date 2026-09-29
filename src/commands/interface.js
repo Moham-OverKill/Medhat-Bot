@@ -121,10 +121,10 @@ export const DEFAULT_SHORTCUT_ORDER = [
   'level',
   'quests',
   'daily',
+  'empty',
   'inventory',
   'vote',
   'notifications',
-  'empty',
   'empty',
   'empty',
   'empty',
@@ -141,17 +141,28 @@ export function getShortcutMeta(id) {
 
 export function normalizeShortcutOrder(order) {
   const result = new Array(12).fill('empty');
-  if (Array.isArray(order)) {
-    for (let i = 0; i < Math.min(order.length, 12); i++) {
-      const id = order[i];
-      if (id && SHORTCUT_REGISTRY[id]) {
-        result[i] = id;
-      } else if (id === 'empty' || id === null) {
-        result[i] = 'empty';
+  if (Array.isArray(order) && order.length > 0) {
+    if (order.length === 6 && order[0] === 'level' && order[3] === 'inventory') {
+      result[0] = order[0] || 'level';
+      result[1] = order[1] || 'quests';
+      result[2] = order[2] || 'daily';
+      result[3] = 'empty';
+      result[4] = order[3] || 'inventory';
+      result[5] = order[4] || 'vote';
+      result[6] = order[5] || 'notifications';
+      result[7] = 'empty';
+    } else {
+      for (let i = 0; i < Math.min(order.length, 12); i++) {
+        const id = order[i];
+        if (id && SHORTCUT_REGISTRY[id]) {
+          result[i] = id;
+        } else {
+          result[i] = 'empty';
+        }
       }
     }
   } else {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
       result[i] = DEFAULT_SHORTCUT_ORDER[i];
     }
   }
@@ -182,58 +193,83 @@ async function loadTileImage(tileName) {
 
 /**
  * Generate composite interface banner image buffer
- * 4 columns, up to 12 slots across up to 3 rows
+ * Dynamically resizes canvas and scales buttons based on active shortcuts and their row locations.
+ * Completely eliminates empty spaces, blank top/bottom margins, and dead column padding.
  * @param {string[]} shortcutOrder 
  * @param {{ showEmptySlots?: boolean }} [options] 
  * @returns {Promise<Buffer>}
  */
 export async function generateInterfaceBanner(shortcutOrder, options = {}) {
-  const { showEmptySlots = false } = options;
   const normalized = normalizeShortcutOrder(shortcutOrder);
 
-  const cardW = 408;
-  const cardH = 338;
-  const marginX = 30;
-  const marginY = 25;
-  const gapX = 36;
-  const gapY = 35;
-  const cols = 4;
+  // Group slots into 3 configured rows of 4 slots each
+  const configuredRows = [
+    normalized.slice(0, 4),
+    normalized.slice(4, 8),
+    normalized.slice(8, 12)
+  ];
 
-  let rows = 3;
-  if (!showEmptySlots) {
-    let lastFilled = -1;
-    for (let i = 11; i >= 0; i--) {
-      if (normalized[i] && normalized[i] !== 'empty') {
-        lastFilled = i;
-        break;
-      }
+  // For each row, extract active (non-empty) shortcuts
+  const activeRows = [];
+  for (const row of configuredRows) {
+    const activeInRow = row.filter(id => id && id !== 'empty' && SHORTCUT_REGISTRY[id]);
+    if (activeInRow.length > 0) {
+      activeRows.push(activeInRow);
     }
-    rows = lastFilled >= 0 ? Math.max(1, Math.ceil((lastFilled + 1) / cols)) : 2;
   }
 
-  const canvasW = 1800;
-  const canvasH = marginY * 2 + rows * cardH + (rows - 1) * gapY;
+  // Fallback to default 2 rows of 3 buttons if nothing is configured
+  if (activeRows.length === 0) {
+    activeRows.push(
+      ['level', 'quests', 'daily'],
+      ['inventory', 'vote', 'notifications']
+    );
+  }
+
+  // Determine maximum columns across active rows (at least 1, max 4)
+  const maxCols = Math.min(4, Math.max(...activeRows.map(r => r.length)));
+  const rowCount = activeRows.length;
+
+  let cardW, cardH, marginX, marginY, gapX, gapY;
+
+  if (maxCols >= 4) {
+    cardW = 390;
+    cardH = 327;
+    marginX = 30;
+    marginY = 25;
+    gapX = 36;
+    gapY = 35;
+  } else {
+    cardW = 524;
+    cardH = 440;
+    marginX = 40;
+    marginY = 20;
+    gapX = 48;
+    gapY = 33;
+  }
+
+  const canvasW = maxCols * cardW + (maxCols - 1) * gapX + 2 * marginX;
+  const canvasH = rowCount * cardH + (rowCount - 1) * gapY + 2 * marginY;
+
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  const slotsToDraw = rows * cols;
-  for (let i = 0; i < slotsToDraw; i++) {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-    const x = marginX + c * (cardW + gapX);
+  for (let r = 0; r < rowCount; r++) {
+    const rowShortcuts = activeRows[r];
+    const k = rowShortcuts.length;
+    const rowW = k * cardW + (k - 1) * gapX;
+    const rowMarginX = (canvasW - rowW) / 2;
     const y = marginY + r * (cardH + gapY);
 
-    const slotId = normalized[i];
-    const isSlotEmpty = !slotId || slotId === 'empty';
-
-    if (isSlotEmpty && !showEmptySlots) {
-      continue;
-    }
-
-    const tileFile = isSlotEmpty ? 'empty' : (SHORTCUT_REGISTRY[slotId]?.tileFile?.replace('.png', '') || 'empty');
-    const img = await loadTileImage(tileFile);
-    if (img) {
-      ctx.drawImage(img, x, y, cardW, cardH);
+    for (let c = 0; c < k; c++) {
+      const id = rowShortcuts[c];
+      const x = rowMarginX + c * (cardW + gapX);
+      const meta = SHORTCUT_REGISTRY[id];
+      const tileFile = meta?.tileFile?.replace('.png', '') || id;
+      const img = await loadTileImage(tileFile);
+      if (img) {
+        ctx.drawImage(img, x, y, cardW, cardH);
+      }
     }
   }
 
@@ -406,7 +442,7 @@ export async function buildHubEmbed(guild, config = null) {
 }
 
 /**
- * Build the shortcut buttons for the Hub message (4 buttons per row for active slots, all gray)
+ * Build the shortcut buttons for the Hub message (matches image rows, all gray)
  * @param {import('discord.js').Client} [client]
  * @param {string[]} [shortcutOrder]
  * @returns {ActionRowBuilder[]}
@@ -414,25 +450,15 @@ export async function buildHubEmbed(guild, config = null) {
 export function buildHubButtons(client = null, shortcutOrder = null) {
   const order = normalizeShortcutOrder(shortcutOrder);
   const rows = [];
-  const cols = 4;
+  const configuredRows = [
+    order.slice(0, 4),
+    order.slice(4, 8),
+    order.slice(8, 12)
+  ];
 
-  let lastFilled = -1;
-  for (let i = 11; i >= 0; i--) {
-    if (order[i] && order[i] !== 'empty') {
-      lastFilled = i;
-      break;
-    }
-  }
-
-  const activeRows = lastFilled >= 0 ? Math.ceil((lastFilled + 1) / cols) : 2;
-
-  for (let r = 0; r < activeRows; r++) {
+  for (const row of configuredRows) {
     const actionRow = new ActionRowBuilder();
-    const start = r * cols;
-    const end = start + cols;
-
-    for (let i = start; i < end; i++) {
-      const id = order[i];
+    for (const id of row) {
       if (id && id !== 'empty') {
         const meta = SHORTCUT_REGISTRY[id];
         if (meta) {
@@ -678,8 +704,8 @@ export async function showInterfaceSetup(interaction) {
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeShortcutOrder(config.shortcut_order);
 
-  // 1. Generate real-time preview of the 12-slot layout
-  const bannerBuffer = await generateInterfaceBanner(slots, { showEmptySlots: true });
+  // 1. Generate real-time preview of the layout
+  const bannerBuffer = await generateInterfaceBanner(slots);
   const attachment = new AttachmentBuilder(bannerBuffer, { name: 'preview.png' });
 
   const embed = new EmbedBuilder()
@@ -869,10 +895,6 @@ export async function handleInterfaceComponent(interaction) {
       config.shortcut_order = slots;
       await saveInterfaceConfig(guildId, config);
 
-      if (config.is_enabled && config.target_channel_id && config.message_id) {
-        await publishOrUpdateHub(interaction.client, guildId).catch(() => {});
-      }
-
       return showInterfaceSetup(interaction);
     }
 
@@ -882,10 +904,6 @@ export async function handleInterfaceComponent(interaction) {
       const config = await getInterfaceConfig(guildId);
       config.shortcut_order = [...DEFAULT_SHORTCUT_ORDER];
       await saveInterfaceConfig(guildId, config);
-
-      if (config.is_enabled && config.target_channel_id && config.message_id) {
-        await publishOrUpdateHub(interaction.client, guildId).catch(() => {});
-      }
 
       return showInterfaceSetup(interaction);
     }
