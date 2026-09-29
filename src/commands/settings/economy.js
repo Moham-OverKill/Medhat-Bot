@@ -234,13 +234,13 @@ async function showEconomyDashboard(interaction, view) {
         `, [guildId, faucetTypes]);
 
         const typesToDisplay = [
-            { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
             { id: 'daily', aliases: [], label: 'Daily Claims' },
             { id: 'quest_reward', aliases: ['mission_reward'], label: 'Quest Rewards' },
-            { id: 'battlepass_reward', aliases: [], label: 'Battlepass Rewards' },
-            { id: 'loot_box_reward', aliases: [], label: 'Chest Rewards' },
             { id: 'tag_reward', aliases: [], label: 'Tag Rewards' },
             { id: 'vote_reward', aliases: [], label: 'Vote Rewards' },
+            { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
+            { id: 'battlepass_reward', aliases: [], label: 'Battlepass Rewards' },
+            { id: 'loot_box_reward', aliases: [], label: 'Chest Rewards' },
             { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
         ];
 
@@ -259,15 +259,10 @@ async function showEconomyDashboard(interaction, view) {
             aggregatedTotals[t.id] = sum;
         }
 
-        // Sort descending so the most impactful revenue drivers appear first
-        const sortedTypes = [...typesToDisplay].sort((a, b) => {
-            return (aggregatedTotals[b.id] || 0) - (aggregatedTotals[a.id] || 0);
-        });
-
+        // Maintain consistent fixed line order across Day, Week, and Month views
         let breakdownStr = '';
-        for (const t of sortedTypes) {
+        for (const t of typesToDisplay) {
             const amt = aggregatedTotals[t.id] || 0;
-            if (t.id === 'admin_grant' && amt === 0) continue;
             const percent = totalPrinted > 0 ? Math.round((amt / totalPrinted) * 100) : 0;
             breakdownStr += `• **${t.label}**: ${amt.toLocaleString()} ${coinEmoji} (${percent}%)\n`;
         }
@@ -324,20 +319,18 @@ async function showEconomyDashboard(interaction, view) {
             }
         ];
 
-        // 4. Append Sink Breakdown field if coins were destroyed in this window
-        if (totalBurned > 0) {
-            const sinkLines = [
-                `• **Shop & Chest Buys:** ${shopBurn.toLocaleString()} ${coinEmoji}`,
-                `• **Trade Taxes:** ${tradeFees.toLocaleString()} ${coinEmoji}`,
-                adminBurns > 0 ? `• **Admin Deductions:** ${adminBurns.toLocaleString()} ${coinEmoji}` : null
-            ].filter(Boolean);
+        // 4. Append Sink Breakdown field (consistently displayed across all timeframe views)
+        const sinkLines = [
+            `• **Shop & Chest Buys:** ${shopBurn.toLocaleString()} ${coinEmoji}`,
+            `• **Trade Taxes:** ${tradeFees.toLocaleString()} ${coinEmoji}`,
+            `• **Admin Deductions:** ${adminBurns.toLocaleString()} ${coinEmoji}`
+        ];
 
-            embedFields.push({
-                name: '🔥 Sink Breakdown (Burned)',
-                value: sinkLines.join('\n'),
-                inline: false
-            });
-        }
+        embedFields.push({
+            name: '🔥 Sink Breakdown (Burned)',
+            value: sinkLines.join('\n'),
+            inline: false
+        });
 
         embed.addFields(embedFields);
     }
