@@ -1192,11 +1192,13 @@ async function createTables() {
         guild_id VARCHAR(32) PRIMARY KEY,
         is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         shortcut_order JSONB NOT NULL DEFAULT '["level", "quests", "daily", "inventory", "vote", "notifications"]'::jsonb,
+        slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb,
         target_channel_id VARCHAR(32),
         message_id VARCHAR(32),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb;
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_channel ON server_interface_config(target_channel_id);
     `);
 
