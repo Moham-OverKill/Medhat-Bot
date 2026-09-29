@@ -93,7 +93,7 @@ export const CONFIG_DEFAULTS = {
   quests_enabled: false,
   quests_refreshes_per_day: 1,
   quests_per_refresh: 3,
-  vote_reward_amount: 0,
+  vote_reward_amount: 100,
   tag_reward_amount: 0,
   anti_cheat_account_age_gate: false,
   anti_cheat_join_date_gate: false,
