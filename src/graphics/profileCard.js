@@ -80,18 +80,34 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
+const assetImageCache = new Map();
+const ASSET_CACHE_MAX = 300;
+const ASSET_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
 /**
- * Safely fetch an external image with timeout and buffer fallback
+ * Safely fetch an external image with in-memory caching, timeout, and buffer fallback
  * @param {string} url
  * @returns {Promise<import('@napi-rs/canvas').Image|null>}
  */
 async function fetchImageSafe(url) {
   if (!url) return null;
+  const now = Date.now();
+  const cached = assetImageCache.get(url);
+  if (cached && (now - cached.timestamp < ASSET_CACHE_TTL)) {
+    return cached.img;
+  }
+
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
     if (!res.ok) return null;
     const arrayBuffer = await res.arrayBuffer();
-    return await loadImage(Buffer.from(arrayBuffer));
+    const img = await loadImage(Buffer.from(arrayBuffer));
+    if (assetImageCache.size >= ASSET_CACHE_MAX) {
+      const oldestKey = assetImageCache.keys().next().value;
+      assetImageCache.delete(oldestKey);
+    }
+    assetImageCache.set(url, { img, timestamp: now });
+    return img;
   } catch (_) {
     return null;
   }
@@ -288,8 +304,8 @@ export async function generateProfileCard(profileData) {
   const renderStart = performance.now();
   const baseWidth = 960;
   const baseHeight = 260;
-  const scale = 2;
-  const canvas = createCanvas(baseWidth * scale, baseHeight * scale);
+  const scale = 1.25;
+  const canvas = createCanvas(Math.round(baseWidth * scale), Math.round(baseHeight * scale));
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
   ctx.imageSmoothingEnabled = true;
