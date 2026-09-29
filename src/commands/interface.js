@@ -13,7 +13,7 @@ import {
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { getNextQuestRefresh, getNextCairoMidnight } from '../utils/time.js';
@@ -34,10 +34,24 @@ const TILES_DIR = path.resolve(__dirname, '../../assets/tiles');
 export const LOCAL_BANNER_PATH = path.join(__dirname, '../../assets/interface.png');
 export const INTERFACE_BANNER_IMAGE = 'https://media.discordapp.net/attachments/1537838869570002994/1538293185070235668/RGWP2LQ.png?ex=6a8226ab&is=6a80d52b&hm=b96ca59f431d7c3a08a1981505efb337516294c4485beb56fe8e783c39e02a5e&animated=true';
 
+// Register bundled emoji font for consistent high-res rendering
+try {
+  const localEmojiFont = path.resolve(__dirname, '../assets/fonts/seguiemj.ttf');
+  const winEmojiFont = 'C:/Windows/Fonts/seguiemj.ttf';
+  if (fs.existsSync(localEmojiFont)) {
+    GlobalFonts.registerFromPath(localEmojiFont, 'Segoe UI Emoji');
+  } else if (fs.existsSync(winEmojiFont)) {
+    GlobalFonts.registerFromPath(winEmojiFont, 'Segoe UI Emoji');
+  }
+} catch (fontErr) {
+  sysError('Failed to register emoji font', fontErr);
+}
+
 export const SHORTCUT_REGISTRY = {
   level: {
     id: 'level',
     name: 'Level',
+    label: 'LEVEL',
     description: 'Check level, XP, and rank progress',
     emoji: '⭐',
     buttonCustomId: 'hub_btn_level',
@@ -46,6 +60,7 @@ export const SHORTCUT_REGISTRY = {
   quests: {
     id: 'quests',
     name: 'Quests',
+    label: 'QUESTS',
     description: 'View active quests and claim rewards',
     emoji: '🎯',
     buttonCustomId: 'hub_btn_quests',
@@ -54,6 +69,7 @@ export const SHORTCUT_REGISTRY = {
   daily: {
     id: 'daily',
     name: 'Claim Daily',
+    label: 'CLAIM DAILY',
     description: 'Claim daily coins and streak bonuses',
     emoji: '💰',
     buttonCustomId: 'hub_btn_daily',
@@ -62,6 +78,7 @@ export const SHORTCUT_REGISTRY = {
   inventory: {
     id: 'inventory',
     name: 'Inventory',
+    label: 'INVENTORY',
     description: 'Manage items and equipped roles',
     emoji: '🎒',
     buttonCustomId: 'hub_btn_inventory',
@@ -70,6 +87,7 @@ export const SHORTCUT_REGISTRY = {
   vote: {
     id: 'vote',
     name: 'Vote',
+    label: 'VOTE',
     description: 'Vote for the server and get rewards',
     emoji: '🗳️',
     buttonCustomId: 'hub_btn_vote',
@@ -78,6 +96,7 @@ export const SHORTCUT_REGISTRY = {
   notifications: {
     id: 'notifications',
     name: 'Notifications',
+    label: 'NOTIFICATIONS',
     description: 'Toggle DM notification preferences',
     emoji: '🔔',
     buttonCustomId: 'hub_btn_notifications',
@@ -86,6 +105,7 @@ export const SHORTCUT_REGISTRY = {
   bank: {
     id: 'bank',
     name: 'Bank',
+    label: 'BANK',
     description: 'Open the bank and wallet manager',
     emoji: '🏦',
     buttonCustomId: 'hub_btn_bank',
@@ -94,6 +114,7 @@ export const SHORTCUT_REGISTRY = {
   items: {
     id: 'items',
     name: 'Shop Items',
+    label: 'SHOP',
     description: 'Browse items available in the shop',
     emoji: '🛒',
     buttonCustomId: 'hub_btn_items',
@@ -102,6 +123,7 @@ export const SHORTCUT_REGISTRY = {
   profile: {
     id: 'profile',
     name: 'Profile',
+    label: 'PROFILE',
     description: 'View your arcane profile card',
     emoji: '👤',
     buttonCustomId: 'hub_btn_profile',
@@ -110,6 +132,7 @@ export const SHORTCUT_REGISTRY = {
   invite: {
     id: 'invite',
     name: 'Invite',
+    label: 'INVITE',
     description: 'Get the bot invite link and support info',
     emoji: '🔗',
     buttonCustomId: 'hub_btn_invite',
@@ -169,26 +192,53 @@ export function normalizeShortcutOrder(order) {
   return result;
 }
 
-const tileImageCache = new Map();
+/**
+ * Render an individual shortcut card tile
+ * Features a solid dark card base, crisp white border, prominent centered emoji (54% height), and bold bottom label.
+ * @param {import('@napi-rs/canvas').SKRSContext2D} ctx 
+ * @param {number} x 
+ * @param {number} y 
+ * @param {number} cardW 
+ * @param {number} cardH 
+ * @param {object} meta 
+ */
+function drawShortcutCard(ctx, x, y, cardW, cardH, meta) {
+  const radius = Math.round(cardH * 0.08);
+  const borderWidth = Math.max(3, Math.round(cardH * 0.014));
 
-async function loadTileImage(tileName) {
-  const filename = `${tileName}.png`;
-  if (tileImageCache.has(filename)) {
-    return tileImageCache.get(filename);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, cardW, cardH, radius);
+  ctx.fillStyle = '#000000';
+  ctx.fill();
+  ctx.lineWidth = borderWidth;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.clip();
+
+  // 1. Emoji — prominent in center (54% of card height)
+  const emojiSize = Math.round(cardH * 0.54);
+  ctx.font = `${emojiSize}px "Segoe UI Emoji", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.41);
+
+  // 2. Label Text — bold, uppercase, filling bottom portion
+  let labelFontSize = Math.round(cardH * 0.115);
+  const label = (meta.label || meta.name || 'SHORTCUT').toUpperCase();
+  ctx.font = `900 ${labelFontSize}px "Roboto", "Segoe UI", Arial, sans-serif`;
+  const maxWidth = cardW - 32;
+  while (ctx.measureText(label).width > maxWidth && labelFontSize > 18) {
+    labelFontSize -= 2;
+    ctx.font = `900 ${labelFontSize}px "Roboto", "Segoe UI", Arial, sans-serif`;
   }
 
-  const tilePath = path.join(TILES_DIR, filename);
-  if (fs.existsSync(tilePath)) {
-    try {
-      const img = await loadImage(tilePath);
-      tileImageCache.set(filename, img);
-      return img;
-    } catch (err) {
-      sysError('Failed to load tile image', err, { tilePath });
-    }
-  }
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + cardW / 2, y + cardH - cardH * 0.12);
 
-  return null;
+  ctx.restore();
 }
 
 /**
@@ -265,10 +315,8 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
       const id = rowShortcuts[c];
       const x = rowMarginX + c * (cardW + gapX);
       const meta = SHORTCUT_REGISTRY[id];
-      const tileFile = meta?.tileFile?.replace('.png', '') || id;
-      const img = await loadTileImage(tileFile);
-      if (img) {
-        ctx.drawImage(img, x, y, cardW, cardH);
+      if (meta) {
+        drawShortcutCard(ctx, x, y, cardW, cardH, meta);
       }
     }
   }
