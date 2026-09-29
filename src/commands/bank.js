@@ -185,11 +185,17 @@ export async function handleBankDaily(interaction) {
   // FORCE REFRESH: Ensuring interaction is deferred immediately to prevent 'InteractionNotReplied' errors.
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => { });
+      await interaction.deferUpdate().catch(err => {
+        if (err.code === 10062 || err.code === 40060) return;
+        sysLog('Interaction Warning', { detail: `DeferUpdate failed: ${err.message}` });
+      });
     }
   } catch (err) {
+    if (err.code === 10062 || err.code === 40060) return;
     sysLog('Interaction Warning', { detail: `DeferUpdate failed: ${err.message}` });
   }
+
+  if (!interaction.deferred && !interaction.replied) return;
 
   try {
     const guildId = interaction.guildId;
@@ -247,12 +253,15 @@ export async function handleBankDaily(interaction) {
     });
 
   } catch (error) {
+    if (error.code === 10062 || error.code === 40060) return;
     sysError('Daily claim processing failure', error, { user: interaction.user.id, guild: interaction.guildId });
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ Failed to process daily claim.', flags: MessageFlags.Ephemeral });
-    } else {
-      await interaction.followUp({ content: '❌ Failed to process daily claim.', flags: MessageFlags.Ephemeral });
-    }
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Failed to process daily claim.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      } else {
+        await interaction.followUp({ content: '❌ Failed to process daily claim.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+    } catch (_) {}
   }
 }
 
