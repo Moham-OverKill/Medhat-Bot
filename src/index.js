@@ -421,12 +421,9 @@ client.on(Events.Error, (error) => {
   sysError('Discord Client Error', error);
 });
 
-// Monitor Discord REST API rate limits
-client.rest.on('rateLimited', (rateLimitInfo) => {
-  sysWarn('Discord REST Rate Limit Encountered', {
-    detail: `Route: ${rateLimitInfo.route || rateLimitInfo.url || 'unknown'} | Method: ${rateLimitInfo.method || 'GET'} | RetryAfter: ${rateLimitInfo.timeToReset || 0}ms | Global: ${rateLimitInfo.global || false}`
-  });
-});
+// Discord REST rate limits are handled automatically by discord.js (queued + retried).
+// No listener needed — logging them at warn level causes Railway to flag them as errors.
+
 
 // Handle reactions for quest tracking (Optimized Watch-mode)
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
