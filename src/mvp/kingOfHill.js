@@ -105,13 +105,16 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
     let membersWithRole = [];
     if (mvpRole) {
       try {
-        await guildObj.members.fetch().catch(() => null);
+        // Use cache only — firing a full members.fetch() here triggers Gateway opcode 8
+        // across all guilds simultaneously during the hourly cycle, causing rate limits.
+        // mvpRole.members reflects all cached role-holders accurately.
         const roleHolders = mvpRole.members || guildObj.members.cache.filter(m => m.roles.cache.has(mvpRole.id));
         membersWithRole = Array.from(roleHolders.values());
       } catch (e) {
         sysLog('KotH Role Fetch Failed', { guild: guildId, detail: e.message });
       }
     }
+
 
     // Combine Historical Loser IDs (from DB) with Current Role-Holders who aren't winners
     const sweepSet = new Set(losers);
