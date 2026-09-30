@@ -92,6 +92,44 @@ async function getGuildCustomCoinUrl(guildId) {
 }
 
 /**
+ * Resolves the server's configured chest/lootbox emoji into a renderable image URL
+ * Supports Discord custom emojis (<:name:id>), raw emoji snowflakes, and Unicode emojis via Twemoji CDN
+ * @param {string} guildId
+ * @returns {Promise<string|null>}
+ */
+export async function getGuildChestEmojiUrl(guildId) {
+    if (!guildId) return null;
+    try {
+        const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+        const chestEmojiStr = await getLootBoxCategoryEmoji(guildId);
+        if (!chestEmojiStr) return null;
+
+        // 1. Custom Discord Emoji: <:name:ID> or <a:name:ID>
+        const customEmojiMatch = String(chestEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
+        if (customEmojiMatch && customEmojiMatch[1]) {
+            return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+        }
+
+        // 2. Raw snowflake ID: \d{17,20}
+        if (/^\d{17,20}$/.test(chestEmojiStr.trim())) {
+            return `https://cdn.discordapp.com/emojis/${chestEmojiStr.trim()}.png?size=128&quality=lossless`;
+        }
+
+        // 3. Unicode emoji: convert code points to Twemoji PNG URL
+        const codePoints = [];
+        for (const sym of chestEmojiStr.trim()) {
+            codePoints.push(sym.codePointAt(0).toString(16));
+        }
+        const filtered = codePoints.filter(c => c !== 'fe0f');
+        const code = (filtered.length > 0 ? filtered : codePoints).join('-');
+        if (code && code.length > 0) {
+            return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
+        }
+    } catch (_) {}
+    return null;
+}
+
+/**
  * Format participant data for canvas trade card rendering
  * @param {import('discord.js').Guild} guild
  * @param {string} userId
@@ -158,11 +196,15 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
 
     const imageMap = new Map();
     const rarityMap = new Map();
+    const chestSet = new Set();
+    const guildId = guild?.id;
+    const chestEmojiUrl = await getGuildChestEmojiUrl(guildId);
+
     if (shopItemIdsToFetch.size > 0) {
         try {
             const pool = getPool();
             const res = await pool.query(
-                `SELECT s.id, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url
+                `SELECT s.id, s.item_type, s.loot_box_id, s.role_id, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url
                  FROM shop_items s
                  LEFT JOIN loot_boxes lb ON s.loot_box_id = lb.id
                  WHERE s.id = ANY($1::int[])`,
@@ -171,6 +213,9 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
             for (const row of res.rows) {
                 if (row.image_url) imageMap.set(row.id, row.image_url);
                 if (row.rarity) rarityMap.set(row.id, row.rarity.toLowerCase().trim());
+                if (row.item_type === 'loot_box' || row.loot_box_id || (typeof row.role_id === 'string' && (row.role_id.startsWith('CHEST_') || row.role_id.startsWith('LOOT_BOX_')))) {
+                    chestSet.add(row.id);
+                }
             }
         } catch (_) {}
     }
@@ -183,7 +228,13 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         items: normalizedItems.map(i => {
             const invId = i.id ? parseInt(i.id, 10) : null;
             const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : (invId && invToShopMap.has(invId) ? invToShopMap.get(invId) : null);
-            const resolvedImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || null;
+            const isChestItem = Boolean(
+                i.item_type === 'loot_box' ||
+                i.loot_box_id ||
+                (typeof i.role_id === 'string' && (i.role_id.startsWith('CHEST_') || i.role_id.startsWith('LOOT_BOX_'))) ||
+                (shopId && chestSet.has(shopId))
+            );
+            const resolvedImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || (isChestItem ? chestEmojiUrl : null) || null;
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
             const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
             return {
@@ -193,7 +244,8 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 qty: parseInt(i.qty || i.quantity || 1, 10),
                 image_url: resolvedImg,
                 rarity: resolvedRarity,
-                tier: resolvedRarity
+                tier: resolvedRarity,
+                item_type: isChestItem ? 'loot_box' : (i.item_type || null)
             };
         }),
         accentColor
@@ -1449,8 +1501,8 @@ async function finalizeTradePosting(interaction, setup) {
                 setup.targetId,
                 setup.senderCoins,
                 setup.targetCoins,
-                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
-                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
+                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, item_type: i.item_type || null, loot_box_id: i.loot_box_id || null, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
+                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, item_type: i.item_type || null, loot_box_id: i.loot_box_id || null, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
                 expiryDate
             ]
         );
