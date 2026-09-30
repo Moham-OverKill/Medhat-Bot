@@ -75,7 +75,7 @@ async function fetchImageSafe(url) {
   if (!url) return null;
   try {
     if (Buffer.isBuffer(url)) return await loadImage(url);
-    if (typeof url === 'string' && (url.startsWith('/') || url.includes(':\\') || url.startsWith('file://'))) {
+    if (typeof url === 'string' && (url.startsWith('/') || url.includes(':\\') || url.includes(':/') || url.startsWith('file://'))) {
       const cleanPath = url.replace('file://', '');
       if (fs.existsSync(cleanPath)) return await loadImage(cleanPath);
     }
@@ -114,6 +114,45 @@ function shiftColorBrightness(hex, percent) {
   const g = Math.min(255, Math.max(0, Math.round(((num >> 8) & 255) * (1 + percent))));
   const b = Math.min(255, Math.max(0, Math.round((num & 255) * (1 + percent))));
   return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Extract dominant vibrant color from custom coin icon with fallback to gold
+ */
+export function extractCoinColor(img, fallback = '#F59E0B') {
+  if (!img) return fallback;
+  try {
+    const dominant = extractDominantColor(img);
+    if (dominant) return dominant;
+
+    // Fallback: If extractDominantColor filtered out low-saturation/monochromatic pixels,
+    // sample average RGB of non-transparent pixels
+    const size = 32;
+    const offCanvas = createCanvas(size, size);
+    const offCtx = offCanvas.getContext('2d');
+    offCtx.drawImage(img, 0, 0, size, size);
+    const { data } = offCtx.getImageData(0, 0, size, size);
+
+    let rSum = 0, gSum = 0, bSum = 0, count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      if (a < 128) continue;
+      rSum += data[i];
+      gSum += data[i + 1];
+      bSum += data[i + 2];
+      count++;
+    }
+
+    if (count > 0) {
+      const r = Math.round(rSum / count);
+      const g = Math.round(gSum / count);
+      const b = Math.round(bSum / count);
+      return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (err) {
+    sysWarn('Failed to extract coin color, using fallback', err);
+  }
+  return fallback;
 }
 
 /**
@@ -605,7 +644,8 @@ export async function renderTradeCard({
     itemImgs = [],
     accentColor = '#3B82F6',
     avatarImg = null,
-    otherHasOffer = true
+    otherHasOffer = true,
+    coinBorderColor = '#F59E0B'
   }) {
     const panelW = 400;
     const panelX = side === 'left' ? 32 : 528;
@@ -700,11 +740,11 @@ export async function renderTradeCard({
 
     // 1. Currency Box (Only rendered if coins > 0)
     if (hasCoins) {
-      roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 12);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 10);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = coinBorderColor;
+      ctx.lineWidth = 1.4;
       ctx.stroke();
 
       const coinIconSize = 24;
@@ -784,6 +824,9 @@ export async function renderTradeCard({
     }
   }
 
+  // Extract dynamic dominant color from custom coin image with gold fallback
+  const coinBorderColor = extractCoinColor(customCoinImg, '#F59E0B');
+
   // Draw Participants
   drawParticipantPanel({
     side: 'left',
@@ -791,7 +834,8 @@ export async function renderTradeCard({
     items: senderItems,
     itemImgs: senderItemImgs,
     avatarImg: senderAvatarImg,
-    otherHasOffer: targetHasOffer
+    otherHasOffer: targetHasOffer,
+    coinBorderColor
   });
 
   drawParticipantPanel({
@@ -800,7 +844,8 @@ export async function renderTradeCard({
     items: targetItems,
     itemImgs: targetItemImgs,
     avatarImg: targetAvatarImg,
-    otherHasOffer: senderHasOffer
+    otherHasOffer: senderHasOffer,
+    coinBorderColor
   });
 
   const buffer = canvas.toBuffer('image/png');
