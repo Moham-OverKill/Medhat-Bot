@@ -162,14 +162,13 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         await guild.roles.fetch().catch(() => null);
     }
 
-    // Resolve missing image URLs or rarity from database if needed
+    // Resolve rarity from database for items that don't have it stored in the trade JSON
     const shopItemIdsToFetch = new Set();
     const invIdsToResolve = new Set();
 
     for (const item of normalizedItems) {
-        const hasImg = Boolean(item.image_url || item.imageUrl || item.default_image_url);
         const hasRarity = Boolean(item.rarity || item.tier);
-        if (!hasImg || !hasRarity) {
+        if (!hasRarity) {
             if (item.shop_item_id) {
                 shopItemIdsToFetch.add(parseInt(item.shop_item_id, 10));
             } else if (item.id) {
@@ -195,30 +194,16 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         } catch (_) {}
     }
 
-    const imageMap = new Map();
     const rarityMap = new Map();
-    const roleMap = new Map();
-    const chestSet = new Set();
-    const guildId = typeof guild === 'string' ? guild : (guild?.id || null);
-    const chestEmojiUrl = await getGuildChestEmojiUrl(guildId);
-
     if (shopItemIdsToFetch.size > 0) {
         try {
             const pool = getPool();
             const res = await pool.query(
-                `SELECT s.id, s.item_type, s.loot_box_id, s.role_id, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url
-                 FROM shop_items s
-                 LEFT JOIN loot_boxes lb ON s.loot_box_id = lb.id
-                 WHERE s.id = ANY($1::int[])`,
+                `SELECT id, COALESCE(rarity, 'common') as rarity FROM shop_items WHERE id = ANY($1::int[])`,
                 [Array.from(shopItemIdsToFetch)]
             );
             for (const row of res.rows) {
-                if (row.image_url) imageMap.set(row.id, row.image_url);
                 if (row.rarity) rarityMap.set(row.id, row.rarity.toLowerCase().trim());
-                if (row.role_id) roleMap.set(row.id, row.role_id);
-                if (row.item_type === 'loot_box' || row.loot_box_id || (typeof row.role_id === 'string' && (row.role_id.startsWith('CHEST_') || row.role_id.startsWith('LOOT_BOX_')))) {
-                    chestSet.add(row.id);
-                }
             }
         } catch (_) {}
     }
@@ -231,82 +216,6 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         items: normalizedItems.map(i => {
             const invId = i.id ? parseInt(i.id, 10) : null;
             const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : (invId && invToShopMap.has(invId) ? invToShopMap.get(invId) : null);
-            const nameLower = String(i.name || '').toLowerCase();
-            const isChestItem = Boolean(
-                i.item_type === 'loot_box' ||
-                i.item_type === 'chest' ||
-                i.loot_box_id ||
-                (typeof i.role_id === 'string' && (i.role_id.startsWith('CHEST_') || i.role_id.startsWith('LOOT_BOX_'))) ||
-                (shopId && chestSet.has(shopId)) ||
-                nameLower.includes('chest') ||
-                nameLower.includes('صندوق')
-            );
-            let rawImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || null;
-            let resolvedImg = rawImg ? (normalizeToImageUrl(rawImg) || rawImg) : null;
-            let resolutionSource = resolvedImg ? 'shop_item' : null;
-
-            // Fallback 1: Discord Role Icon or Role Unicode Emoji
-            if (!resolvedImg && guild && guild.roles) {
-                const roleId = (i.role_id || (shopId ? roleMap.get(shopId) : null) || '').split(/[,\s]+/)[0];
-                if (roleId) {
-                    const role = guild.roles.cache.get(roleId);
-                    if (role) {
-                        if (typeof role.iconURL === 'function' && role.icon) {
-                            resolvedImg = role.iconURL({ extension: 'png', size: 128 });
-                            resolutionSource = 'role_icon';
-                        } else if (role.unicodeEmoji) {
-                            resolvedImg = normalizeToImageUrl(role.unicodeEmoji);
-                            resolutionSource = 'role_unicode_emoji';
-                        }
-                    }
-                }
-            }
-
-            // Fallback 2: Discord Guild Custom Emoji matching the item's name
-            if (!resolvedImg && guild && guild.emojis) {
-                const cleanName = String(i.name || '').toLowerCase().trim();
-                const strippedName = cleanName.replace(/[^a-z0-9_]/g, '');
-                // Guard: skip the stripped-name comparison if stripping produced an empty string
-                // (e.g. fully Arabic/non-ASCII names) — an empty string would match emojis with empty names
-                const guildEmoji = guild.emojis.cache.find(e => {
-                    const eName = e.name.toLowerCase();
-                    return eName === cleanName ||
-                        eName === cleanName.replace(/\s+/g, '_') ||
-                        (strippedName.length > 0 && eName === strippedName);
-                });
-                if (guildEmoji) {
-                    resolvedImg = `https://cdn.discordapp.com/emojis/${guildEmoji.id}.png?size=128&quality=lossless`;
-                    resolutionSource = 'guild_custom_emoji';
-                }
-            }
-
-            // Fallback 3: Unicode Emoji in Item Name
-            if (!resolvedImg) {
-                const emojiMatch = String(i.name || '').match(/(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u);
-                if (emojiMatch && emojiMatch[0]) {
-                    resolvedImg = normalizeToImageUrl(emojiMatch[0]);
-                    resolutionSource = 'name_unicode_emoji';
-                }
-            }
-
-            // Fallback 4: Chest category emoji
-            if (!resolvedImg && isChestItem) {
-                resolvedImg = chestEmojiUrl;
-                resolutionSource = 'chest_category_emoji';
-            }
-
-            sysLog('Trade Card Item Resolution', {
-                guild: guildId,
-                userId,
-                name: i.name,
-                shopId,
-                invId,
-                rawImg,
-                resolvedImg,
-                resolutionSource: resolutionSource || 'none_text_only',
-                isChest: isChestItem
-            });
-
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
             const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
             return {
@@ -314,10 +223,10 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 shop_item_id: shopId,
                 name: i.name || 'Item',
                 qty: parseInt(i.qty || i.quantity || 1, 10),
-                image_url: resolvedImg,
+                image_url: null,
                 rarity: resolvedRarity,
                 tier: resolvedRarity,
-                item_type: isChestItem ? 'loot_box' : (i.item_type || null)
+                item_type: i.item_type || null
             };
         }),
         accentColor

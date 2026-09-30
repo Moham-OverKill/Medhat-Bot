@@ -734,45 +734,15 @@ export async function renderTradeCard({
     titleText = 'TRADE EXPIRED';
   }
 
-  const resolveItemImgUrl = (item) => {
-    const raw = item.image_url || item.imageUrl || item.default_image_url;
-    if (raw) {
-      return normalizeToImageUrl(raw) || raw;
-    }
-    const nameLower = String(item.name || '').toLowerCase();
-    const isChest = Boolean(
-      item.item_type === 'loot_box' ||
-      item.item_type === 'chest' ||
-      item.loot_box_id ||
-      (typeof item.role_id === 'string' && (item.role_id.startsWith('CHEST_') || item.role_id.startsWith('LOOT_BOX_'))) ||
-      nameLower.includes('chest') ||
-      nameLower.includes('صندوق')
-    );
-    if (isChest && chestEmojiUrl) {
-      return normalizeToImageUrl(chestEmojiUrl) || chestEmojiUrl;
-    }
-    // Check if item name contains a unicode emoji
-    const emojiMatch = String(item.name || '').match(/(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u);
-    if (emojiMatch && emojiMatch[0]) {
-      return normalizeToImageUrl(emojiMatch[0]);
-    }
-    return null;
-  };
-
-  // Concurrently fetch participant avatars, custom coin icon, and item images
-  const [senderAvatarImg, targetAvatarImg, customCoinImg, senderItemImgs, targetItemImgs] = await Promise.all([
+  // Items are always rendered text-only. No image URLs are resolved or fetched for items.
+  // Only participant avatars and the custom coin icon are fetched.
+  const [senderAvatarImg, targetAvatarImg, customCoinImg] = await Promise.all([
     fetchImageSafe(sender.avatarUrl),
     fetchImageSafe(target.avatarUrl),
-    fetchImageSafe(customCoinUrl),
-    Promise.all(senderItems.map(item => {
-      const url = resolveItemImgUrl(item);
-      return url ? fetchImageSafe(url) : Promise.resolve(null);
-    })),
-    Promise.all(targetItems.map(item => {
-      const url = resolveItemImgUrl(item);
-      return url ? fetchImageSafe(url) : Promise.resolve(null);
-    }))
+    fetchImageSafe(customCoinUrl)
   ]);
+  const senderItemImgs = senderItems.map(() => null);
+  const targetItemImgs = targetItems.map(() => null);
 
   // 1. Transparent Rounded Card Background
   const cardRadius = 24;
