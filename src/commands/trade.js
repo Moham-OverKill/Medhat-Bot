@@ -99,25 +99,34 @@ async function getGuildCustomCoinUrl(guildId) {
  */
 export async function getGuildChestEmojiUrl(guildId) {
     if (!guildId) return null;
+    const cleanGuildId = typeof guildId === 'string' ? guildId : (guildId?.id || null);
+    if (!cleanGuildId) return null;
     try {
         const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
-        const chestEmojiStr = await getLootBoxCategoryEmoji(guildId);
+        const chestEmojiStr = await getLootBoxCategoryEmoji(cleanGuildId);
         if (!chestEmojiStr) return null;
 
-        // 1. Custom Discord Emoji: <:name:ID> or <a:name:ID>
-        const customEmojiMatch = String(chestEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
+        const trimmed = String(chestEmojiStr).trim();
+
+        // 1. Direct Image URL: http:// or https://
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            return trimmed;
+        }
+
+        // 2. Custom Discord Emoji: <:name:ID> or <a:name:ID>
+        const customEmojiMatch = trimmed.match(/<a?:[a-zA-Z0-9_]+:(\d+)>/);
         if (customEmojiMatch && customEmojiMatch[1]) {
             return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
         }
 
-        // 2. Raw snowflake ID: \d{17,20}
-        if (/^\d{17,20}$/.test(chestEmojiStr.trim())) {
-            return `https://cdn.discordapp.com/emojis/${chestEmojiStr.trim()}.png?size=128&quality=lossless`;
+        // 3. Raw snowflake ID: \d{17,22}
+        if (/^\d{17,22}$/.test(trimmed)) {
+            return `https://cdn.discordapp.com/emojis/${trimmed}.png?size=128&quality=lossless`;
         }
 
-        // 3. Unicode emoji: convert code points to Twemoji PNG URL
+        // 4. Unicode emoji: convert code points to Twemoji PNG URL
         const codePoints = [];
-        for (const sym of chestEmojiStr.trim()) {
+        for (const sym of trimmed) {
             codePoints.push(sym.codePointAt(0).toString(16));
         }
         const filtered = codePoints.filter(c => c !== 'fe0f');
@@ -197,7 +206,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
     const imageMap = new Map();
     const rarityMap = new Map();
     const chestSet = new Set();
-    const guildId = guild?.id;
+    const guildId = typeof guild === 'string' ? guild : (guild?.id || null);
     const chestEmojiUrl = await getGuildChestEmojiUrl(guildId);
 
     if (shopItemIdsToFetch.size > 0) {
@@ -228,11 +237,15 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         items: normalizedItems.map(i => {
             const invId = i.id ? parseInt(i.id, 10) : null;
             const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : (invId && invToShopMap.has(invId) ? invToShopMap.get(invId) : null);
+            const nameLower = String(i.name || '').toLowerCase();
             const isChestItem = Boolean(
                 i.item_type === 'loot_box' ||
+                i.item_type === 'chest' ||
                 i.loot_box_id ||
                 (typeof i.role_id === 'string' && (i.role_id.startsWith('CHEST_') || i.role_id.startsWith('LOOT_BOX_'))) ||
-                (shopId && chestSet.has(shopId))
+                (shopId && chestSet.has(shopId)) ||
+                nameLower.includes('chest') ||
+                nameLower.includes('صندوق')
             );
             const resolvedImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || (isChestItem ? chestEmojiUrl : null) || null;
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
@@ -284,11 +297,13 @@ export async function initializeTradeJanitor(client) {
                                 await msg.edit({ content: '', embeds: [expiredEmbed], components: [] }).catch(() => {});
                             } else {
                                 const customCoinUrl = await getGuildCustomCoinUrl(channel.guild?.id);
+                                const chestEmojiUrl = await getGuildChestEmojiUrl(channel.guild?.id);
                                 const senderCard = await getTradeParticipantCardData(channel.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
                                 const targetCard = await getTradeParticipantCardData(channel.guild, trade.target_id, trade.target_coins, trade.target_items);
                                 const expiredCard = await renderTradeCard({
                                     status: 'expired',
                                     customCoinUrl,
+                                    chestEmojiUrl,
                                     sender: senderCard,
                                     target: targetCard
                                 });
@@ -1513,10 +1528,12 @@ async function finalizeTradePosting(interaction, setup) {
         const senderCardData = await getTradeParticipantCardData(interaction.guild, setup.senderId, setup.senderCoins, setup.senderItems);
         const targetCardData = await getTradeParticipantCardData(interaction.guild, setup.targetId, setup.targetCoins, setup.targetItems);
         const customCoinUrl = await getGuildCustomCoinUrl(setup.guildId);
+        const chestEmojiUrl = await getGuildChestEmojiUrl(setup.guildId);
         const initialCardBuffer = await renderTradeCard({
             status: 'pending',
             expiresText: 'Expires in 5m',
             customCoinUrl,
+            chestEmojiUrl,
             sender: senderCardData,
             target: targetCardData
         });
@@ -1591,6 +1608,7 @@ async function finalizeTradePosting(interaction, setup) {
                     const expiredCardBuffer = await renderTradeCard({
                         status: 'expired',
                         customCoinUrl,
+                        chestEmojiUrl,
                         sender: senderCardData,
                         target: targetCardData
                     });
@@ -1656,11 +1674,13 @@ export async function handleTradeExecution(interaction) {
         
         try {
             const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
+            const chestEmojiUrl = await getGuildChestEmojiUrl(interaction.guildId);
             const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
             const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
             const expiredCard = await renderTradeCard({
                 status: 'expired',
                 customCoinUrl,
+                chestEmojiUrl,
                 sender: senderCard,
                 target: targetCard
             });
@@ -1699,11 +1719,13 @@ export async function handleTradeExecution(interaction) {
         clearTradeTimers(tradeId);
 
         const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
+        const chestEmojiUrl = await getGuildChestEmojiUrl(interaction.guildId);
         const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
         const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
         const declinedCard = await renderTradeCard({
             status: 'declined',
             customCoinUrl,
+            chestEmojiUrl,
             sender: senderCard,
             target: targetCard
         });
@@ -1774,11 +1796,13 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             clearTradeTimers(tradeId);
             
             const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
+            const chestEmojiUrl = await getGuildChestEmojiUrl(interaction.guildId);
             const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
             const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
             const expiredCard = await renderTradeCard({
                 status: 'expired',
                 customCoinUrl,
+                chestEmojiUrl,
                 sender: senderCard,
                 target: targetCard
             });
@@ -2244,11 +2268,13 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         clearTradeTimers(tradeId);
 
         const customCoinUrl = await getGuildCustomCoinUrl(interaction.guildId);
+        const chestEmojiUrl = await getGuildChestEmojiUrl(interaction.guildId);
         const senderCard = await getTradeParticipantCardData(interaction.guild, trade.sender_id, trade.sender_coins, trade.sender_items);
         const targetCard = await getTradeParticipantCardData(interaction.guild, trade.target_id, trade.target_coins, trade.target_items);
         const completedCard = await renderTradeCard({
             status: 'completed',
             customCoinUrl,
+            chestEmojiUrl,
             sender: senderCard,
             target: targetCard
         });
