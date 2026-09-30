@@ -1411,17 +1411,13 @@ export async function handleHubShortcut(interaction) {
       const { breakdown } = result;
       const claimEmbed = new EmbedBuilder()
         .setColor(0xFFD700)
-        .setTitle('Daily Reward')
+        .setTitle(`Total: ${result.amount.toLocaleString()} ${coinEmoji}`)
         .setDescription(
+          `────────────────\n` +
           `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
           `🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
-          `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**\n` +
-          `────────────────\n` +
-          `${coinEmoji} Total: **${result.amount.toLocaleString()}**`
-        )
-        .setFooter({
-          text: `Daily Streak: ${result.streak} day${result.streak === 1 ? '' : 's'}`
-        });
+          `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**`
+        );
 
       return interaction.editReply({ files: [], content: '', embeds: [claimEmbed] });
     }
