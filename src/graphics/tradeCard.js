@@ -381,6 +381,77 @@ const RARITY_COLORS = {
 };
 
 /**
+ * Draw a generic item placeholder icon using canvas-native vector primitives.
+ * Used when no image URL is configured for an item — no external fetch required.
+ * The icon respects the item's rarity color as an accent.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} x - Top-left x of the icon bounding box
+ * @param {number} y - Top-left y of the icon bounding box
+ * @param {number} size - Width and height of the bounding box
+ * @param {string} rarityColor - Hex color string for the rarity accent
+ */
+function drawGenericItemIcon(ctx, x, y, size, rarityColor = '#94A3B8') {
+  ctx.save();
+
+  // Clipping container
+  roundRect(ctx, x, y, size, size, 6);
+  ctx.clip();
+
+  // Background — very dark with a subtle rarity tint
+  const bg = ctx.createLinearGradient(x, y, x + size, y + size);
+  bg.addColorStop(0, 'rgba(15, 20, 30, 0.85)');
+  bg.addColorStop(1, hexToRgba(rarityColor, 0.14));
+  ctx.fillStyle = bg;
+  ctx.fillRect(x, y, size, size);
+
+  // Center a diamond / gem shape
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const hw = size * 0.3;   // half-width
+  const hh = size * 0.34;  // half-height
+
+  const gemGrad = ctx.createLinearGradient(cx, cy - hh, cx, cy + hh);
+  gemGrad.addColorStop(0, hexToRgba(rarityColor, 0.9));
+  gemGrad.addColorStop(0.5, hexToRgba(rarityColor, 0.55));
+  gemGrad.addColorStop(1, hexToRgba(rarityColor, 0.25));
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - hh);      // top
+  ctx.lineTo(cx + hw, cy);      // right
+  ctx.lineTo(cx, cy + hh);      // bottom
+  ctx.lineTo(cx - hw, cy);      // left
+  ctx.closePath();
+  ctx.fillStyle = gemGrad;
+  ctx.fill();
+
+  // Highlight edge on top-left facet
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - hh);
+  ctx.lineTo(cx + hw, cy);
+  ctx.strokeStyle = hexToRgba(rarityColor, 0.7);
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - hh);
+  ctx.lineTo(cx - hw, cy);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Outer border matching rarity (consistent with item box border style)
+  ctx.save();
+  roundRect(ctx, x, y, size, size, 6);
+  ctx.strokeStyle = hexToRgba(rarityColor, 0.4);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+
+/**
  * Draw an aspect-ratio preserved, cleanly clipped image inside a rounded container
  */
 function drawContainedImage(ctx, img, x, y, size, radius = 6) {
@@ -433,11 +504,15 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   const pad = 7;
   const imgY = y + (height - imgSize) / 2;
 
+  // Always show the icon slot — either the loaded image or the generic placeholder
+  const hasVisual = Boolean(loadedImg);
+
   let name = item.name || 'Unknown Item';
-  if (loadedImg) {
-    const stripped = name.replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu, '').trim();
-    if (stripped.length > 0) name = stripped;
-  }
+  // Strip emoji characters from display name whenever an icon occupies the slot
+  // (true for real images AND for the generic placeholder, since the visual replaces the emoji)
+  const strippedName = name.replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu, '').trim();
+  if (strippedName.length > 0) name = strippedName;
+
   ctx.font = `bold 13px ${fontStack}`;
   ctx.fillStyle = '#F8FAFC';
   ctx.textBaseline = 'middle';
@@ -446,55 +521,37 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
     let textStartX = x + 10;
     let maxNameW = x + width - textStartX - 10;
 
-    if (loadedImg) {
-      // Left Panel: Item image on the far right
-      const imgX = x + width - pad - imgSize;
+    // Left Panel: icon slot on the far right
+    const imgX = x + width - pad - imgSize;
+    if (hasVisual) {
       drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
-
-      // Quantity pill (if > 1) on the left
-      if (itemQty > 1) {
-        const qtyText = `${itemQty}x`;
-        ctx.font = `bold 11px ${fontStack}`;
-        const qtyW = ctx.measureText(qtyText).width + 10;
-        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = '#38BDF8';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.fillStyle = '#7DD3FC';
-        ctx.textAlign = 'center';
-        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
-
-        textStartX += qtyW + 6;
-      }
-
-      maxNameW = (imgX - 6) - textStartX;
     } else {
-      // No image configured: Clean text-only display
-      if (itemQty > 1) {
-        const qtyText = `${itemQty}x`;
-        ctx.font = `bold 11px ${fontStack}`;
-        const qtyW = ctx.measureText(qtyText).width + 10;
-        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = '#38BDF8';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.fillStyle = '#7DD3FC';
-        ctx.textAlign = 'center';
-        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
-
-        textStartX += qtyW + 8;
-      }
-
-      maxNameW = x + width - textStartX - 10;
+      drawGenericItemIcon(ctx, imgX, imgY, imgSize, rarityColor);
     }
 
+    // Quantity pill (if > 1) on the left
+    if (itemQty > 1) {
+      const qtyText = `${itemQty}x`;
+      ctx.font = `bold 11px ${fontStack}`;
+      const qtyW = ctx.measureText(qtyText).width + 10;
+      roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.fill();
+      ctx.strokeStyle = '#38BDF8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#7DD3FC';
+      ctx.textAlign = 'center';
+      ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+      textStartX += qtyW + 6;
+    }
+
+    maxNameW = (imgX - 6) - textStartX;
+
     ctx.font = `bold 13px ${fontStack}`;
+    ctx.fillStyle = '#F8FAFC';
     ctx.textAlign = 'left';
     if (ctx.measureText(name).width > maxNameW) {
       while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
@@ -504,60 +561,41 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
     }
     ctx.fillText(name, textStartX, y + height / 2);
   } else {
-    // Right Panel (Exact opposite of left): Item image on far left, text/quantity on far right
+    // Right Panel: icon slot on the far left, text/quantity on the far right
     let textEndX = x + width - 10;
     let maxNameW = textEndX - (x + 10);
 
-    if (loadedImg) {
-      const imgX = x + pad;
+    const imgX = x + pad;
+    if (hasVisual) {
       drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
-
-      // Quantity pill (if > 1) on the far right
-      if (itemQty > 1) {
-        const qtyText = `${itemQty}x`;
-        ctx.font = `bold 11px ${fontStack}`;
-        const qtyW = ctx.measureText(qtyText).width + 10;
-        const qtyX = textEndX - qtyW;
-        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = '#38BDF8';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.fillStyle = '#7DD3FC';
-        ctx.textAlign = 'center';
-        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
-
-        textEndX = qtyX - 6;
-      }
-
-      maxNameW = textEndX - (imgX + imgSize + 6);
     } else {
-      // No image configured: text aligned to the right
-      if (itemQty > 1) {
-        const qtyText = `${itemQty}x`;
-        ctx.font = `bold 11px ${fontStack}`;
-        const qtyW = ctx.measureText(qtyText).width + 10;
-        const qtyX = textEndX - qtyW;
-        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = '#38BDF8';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.fillStyle = '#7DD3FC';
-        ctx.textAlign = 'center';
-        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
-
-        textEndX = qtyX - 8;
-      }
-
-      maxNameW = textEndX - (x + 10);
+      drawGenericItemIcon(ctx, imgX, imgY, imgSize, rarityColor);
     }
 
+    // Quantity pill (if > 1) on the far right
+    if (itemQty > 1) {
+      const qtyText = `${itemQty}x`;
+      ctx.font = `bold 11px ${fontStack}`;
+      const qtyW = ctx.measureText(qtyText).width + 10;
+      const qtyX = textEndX - qtyW;
+      roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.fill();
+      ctx.strokeStyle = '#38BDF8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#7DD3FC';
+      ctx.textAlign = 'center';
+      ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
+
+      textEndX = qtyX - 6;
+    }
+
+    maxNameW = textEndX - (imgX + imgSize + 6);
+
     ctx.font = `bold 13px ${fontStack}`;
+    ctx.fillStyle = '#F8FAFC';
     ctx.textAlign = 'right';
     if (ctx.measureText(name).width > maxNameW) {
       while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
@@ -568,6 +606,7 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
     ctx.fillText(name, textEndX, y + height / 2);
   }
 }
+
 
 /**
  * Generate a high-resolution, 2x Retina trade settlement card

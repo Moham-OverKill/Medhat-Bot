@@ -265,9 +265,14 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
             // Fallback 2: Discord Guild Custom Emoji matching the item's name
             if (!resolvedImg && guild && guild.emojis) {
                 const cleanName = String(i.name || '').toLowerCase().trim();
+                const strippedName = cleanName.replace(/[^a-z0-9_]/g, '');
+                // Guard: skip the stripped-name comparison if stripping produced an empty string
+                // (e.g. fully Arabic/non-ASCII names) — an empty string would match emojis with empty names
                 const guildEmoji = guild.emojis.cache.find(e => {
                     const eName = e.name.toLowerCase();
-                    return eName === cleanName || eName === cleanName.replace(/\s+/g, '_') || eName === cleanName.replace(/[^a-z0-9_]/g, '');
+                    return eName === cleanName ||
+                        eName === cleanName.replace(/\s+/g, '_') ||
+                        (strippedName.length > 0 && eName === strippedName);
                 });
                 if (guildEmoji) {
                     resolvedImg = `https://cdn.discordapp.com/emojis/${guildEmoji.id}.png?size=128&quality=lossless`;
