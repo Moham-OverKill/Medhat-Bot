@@ -251,6 +251,18 @@ export async function dispatchWeeklyActivitySummaries(client) {
     let dispatchedCount = 0;
 
     for (const record of records) {
+      // Guard: Skip users with zero activity across all tracked metrics
+      const totalActivity =
+        Number(record.messages_count || 0) +
+        Number(record.voice_minutes || 0) +
+        Number(record.voice_calls_count || 0) +
+        Number(record.media_count || 0) +
+        Number(record.reactions_count || 0) +
+        Number(record.reactions_received_count || 0) +
+        Number(record.total_xp_gained || 0);
+
+      if (totalActivity <= 0) continue;
+
       const guild = client.guilds.cache.get(record.guild_id);
       if (!guild) continue;
 
