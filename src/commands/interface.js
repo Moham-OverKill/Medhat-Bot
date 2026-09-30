@@ -1413,10 +1413,10 @@ export async function handleHubShortcut(interaction) {
         .setColor(0xFFD700)
         .setTitle('Daily Reward')
         .setDescription(
-          `You received **${result.amount.toLocaleString()}** ${coinEmoji}\n\n` +
-          `> 💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
-          `> 🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
-          `> 🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**`
+          `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
+          `🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
+          `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**\n\n` +
+          `Total: **${result.amount.toLocaleString()}** ${coinEmoji}`
         )
         .setFooter({
           text: `Daily Streak: ${result.streak} day${result.streak === 1 ? '' : 's'}`
