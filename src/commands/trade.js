@@ -24,7 +24,7 @@ import { syncInventoryWithDiscord, runDependencySweep, getUserInventory, getShop
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
 import { getCachedGuildConfig } from '../activity/tracker.js';
-import { renderTradeCard } from '../graphics/tradeCard.js';
+import { renderTradeCard, normalizeToImageUrl } from '../graphics/tradeCard.js';
 
 /**
  * ============================================================================
@@ -105,35 +105,7 @@ export async function getGuildChestEmojiUrl(guildId) {
         const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
         const chestEmojiStr = await getLootBoxCategoryEmoji(cleanGuildId);
         if (!chestEmojiStr) return null;
-
-        const trimmed = String(chestEmojiStr).trim();
-
-        // 1. Direct Image URL: http:// or https://
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            return trimmed;
-        }
-
-        // 2. Custom Discord Emoji: <:name:ID> or <a:name:ID>
-        const customEmojiMatch = trimmed.match(/<a?:[a-zA-Z0-9_]+:(\d+)>/);
-        if (customEmojiMatch && customEmojiMatch[1]) {
-            return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
-        }
-
-        // 3. Raw snowflake ID: \d{17,22}
-        if (/^\d{17,22}$/.test(trimmed)) {
-            return `https://cdn.discordapp.com/emojis/${trimmed}.png?size=128&quality=lossless`;
-        }
-
-        // 4. Unicode emoji: convert code points to Twemoji PNG URL
-        const codePoints = [];
-        for (const sym of trimmed) {
-            codePoints.push(sym.codePointAt(0).toString(16));
-        }
-        const filtered = codePoints.filter(c => c !== 'fe0f');
-        const code = (filtered.length > 0 ? filtered : codePoints).join('-');
-        if (code && code.length > 0) {
-            return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
-        }
+        return normalizeToImageUrl(chestEmojiStr);
     } catch (_) {}
     return null;
 }
@@ -205,6 +177,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
 
     const imageMap = new Map();
     const rarityMap = new Map();
+    const roleMap = new Map();
     const chestSet = new Set();
     const guildId = typeof guild === 'string' ? guild : (guild?.id || null);
     const chestEmojiUrl = await getGuildChestEmojiUrl(guildId);
@@ -222,6 +195,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
             for (const row of res.rows) {
                 if (row.image_url) imageMap.set(row.id, row.image_url);
                 if (row.rarity) rarityMap.set(row.id, row.rarity.toLowerCase().trim());
+                if (row.role_id) roleMap.set(row.id, row.role_id);
                 if (row.item_type === 'loot_box' || row.loot_box_id || (typeof row.role_id === 'string' && (row.role_id.startsWith('CHEST_') || row.role_id.startsWith('LOOT_BOX_')))) {
                     chestSet.add(row.id);
                 }
@@ -247,7 +221,49 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 nameLower.includes('chest') ||
                 nameLower.includes('صندوق')
             );
-            const resolvedImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || (isChestItem ? chestEmojiUrl : null) || null;
+            let rawImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || null;
+            let resolvedImg = rawImg ? (normalizeToImageUrl(rawImg) || rawImg) : null;
+
+            // Fallback 1: Discord Role Icon or Role Unicode Emoji
+            if (!resolvedImg && guild && guild.roles) {
+                const roleId = (i.role_id || (shopId ? roleMap.get(shopId) : null) || '').split(/[,\s]+/)[0];
+                if (roleId) {
+                    const role = guild.roles.cache.get(roleId);
+                    if (role) {
+                        if (typeof role.iconURL === 'function' && role.icon) {
+                            resolvedImg = role.iconURL({ extension: 'png', size: 128 });
+                        } else if (role.unicodeEmoji) {
+                            resolvedImg = normalizeToImageUrl(role.unicodeEmoji);
+                        }
+                    }
+                }
+            }
+
+            // Fallback 2: Discord Guild Custom Emoji matching the item's name
+            if (!resolvedImg && guild && guild.emojis) {
+                const cleanName = String(i.name || '').toLowerCase().trim();
+                const guildEmoji = guild.emojis.cache.find(e => {
+                    const eName = e.name.toLowerCase();
+                    return eName === cleanName || eName === cleanName.replace(/\s+/g, '_') || eName === cleanName.replace(/[^a-z0-9_]/g, '');
+                });
+                if (guildEmoji) {
+                    resolvedImg = `https://cdn.discordapp.com/emojis/${guildEmoji.id}.png?size=128&quality=lossless`;
+                }
+            }
+
+            // Fallback 3: Unicode Emoji in Item Name
+            if (!resolvedImg) {
+                const emojiMatch = String(i.name || '').match(/(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u);
+                if (emojiMatch && emojiMatch[0]) {
+                    resolvedImg = normalizeToImageUrl(emojiMatch[0]);
+                }
+            }
+
+            // Fallback 4: Chest category emoji
+            if (!resolvedImg && isChestItem) {
+                resolvedImg = chestEmojiUrl;
+            }
+
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
             const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
             return {
