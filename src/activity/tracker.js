@@ -48,7 +48,7 @@ setInterval(() => {
 }, CACHE_CLEANUP_INTERVAL);
 
 // In-memory queue for batching message points to PostgreSQL
-// Key: `${guildId}:${userId}`, Value: { guildId, userId, username, count, lastTime }
+// Key: `${guildId}:${userId}`, Value: { guildId, userId, username, count, messageCount, lastTime }
 const pendingMessageBatch = new Map();
 let isFlushingBatch = false;
 const BATCH_FLUSH_INTERVAL = 15 * 1000; // 15 seconds
@@ -78,7 +78,7 @@ export async function flushMessageBatch() {
           [entry.userId, entry.guildId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
         );
 
-        // Record toward weekly activity summary
+        // Record toward weekly activity summary (discrete message count, not weighted points)
         await client.query(
           `INSERT INTO user_weekly_activity (guild_id, user_id, username, messages_count, updated_at)
            VALUES ($1, $2, $3, $4, NOW())
@@ -87,7 +87,7 @@ export async function flushMessageBatch() {
              messages_count = user_weekly_activity.messages_count + $4,
              username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
              updated_at = NOW()`,
-          [entry.guildId, entry.userId, entry.username, entry.count]
+          [entry.guildId, entry.userId, entry.username, entry.messageCount || 1]
         ).catch(() => {});
       }
       await client.query('COMMIT');
@@ -99,6 +99,7 @@ export async function flushMessageBatch() {
         const existing = pendingMessageBatch.get(key);
         if (existing) {
           existing.count += entry.count;
+          existing.messageCount = (existing.messageCount || 0) + (entry.messageCount || 1);
           existing.lastTime = Math.max(existing.lastTime, entry.lastTime);
         } else {
           pendingMessageBatch.set(key, entry);
@@ -292,10 +293,11 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 
   userMessageCooldownCache.set(userKey, now);
 
-  // 6. Buffer into pending batch (scaled by length points)
+  // 6. Buffer into pending batch (scaled by length points for activity, discrete count for weekly summary)
   const existingBatch = pendingMessageBatch.get(userKey);
   if (existingBatch) {
     existingBatch.count += pointsEarned;
+    existingBatch.messageCount = (existingBatch.messageCount || 0) + 1;
     existingBatch.lastTime = now;
     existingBatch.username = username;
   } else {
@@ -304,6 +306,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       userId,
       username,
       count: pointsEarned,
+      messageCount: 1,
       lastTime: now
     });
   }
