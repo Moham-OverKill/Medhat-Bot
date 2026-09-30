@@ -303,16 +303,21 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   const pad = 7;
   const imgY = y + (height - imgSize) / 2;
 
-  let textStartX = x + 10;
-  let maxNameW = x + width - textStartX - 10;
+  let name = item.name || 'Unknown Item';
+  ctx.font = `bold 13px ${fontStack}`;
+  ctx.fillStyle = '#F8FAFC';
+  ctx.textBaseline = 'middle';
 
-  if (loadedImg) {
-    if (side === 'left') {
-      // Left Panel: Item name on left, item image on its right (opposite side)
+  if (side === 'left') {
+    let textStartX = x + 10;
+    let maxNameW = x + width - textStartX - 10;
+
+    if (loadedImg) {
+      // Left Panel: Item image on the far right
       const imgX = x + width - pad - imgSize;
       drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
 
-      // Quantity pill (if > 1)
+      // Quantity pill (if > 1) on the left
       if (itemQty > 1) {
         const qtyText = `${itemQty}x`;
         ctx.font = `bold 11px ${fontStack}`;
@@ -326,7 +331,6 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
 
         ctx.fillStyle = '#7DD3FC';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
         ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
 
         textStartX += qtyW + 6;
@@ -334,13 +338,7 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
 
       maxNameW = (imgX - 6) - textStartX;
     } else {
-      // Right Panel (Flipped/Mirrored): Item image on left, item name on its right
-      const imgX = x + pad;
-      drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
-
-      textStartX = imgX + imgSize + 7;
-
-      // Quantity pill (if > 1)
+      // No image configured: Clean text-only display
       if (itemQty > 1) {
         const qtyText = `${itemQty}x`;
         ctx.font = `bold 11px ${fontStack}`;
@@ -354,52 +352,87 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
 
         ctx.fillStyle = '#7DD3FC';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
         ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
 
-        textStartX += qtyW + 6;
+        textStartX += qtyW + 8;
       }
 
-      maxNameW = (x + width - 10) - textStartX;
+      maxNameW = x + width - textStartX - 10;
     }
+
+    ctx.font = `bold 13px ${fontStack}`;
+    ctx.textAlign = 'left';
+    if (ctx.measureText(name).width > maxNameW) {
+      while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
+        name = name.slice(0, -1);
+      }
+      name += '...';
+    }
+    ctx.fillText(name, textStartX, y + height / 2);
   } else {
-    // No image configured: Clean text-only display without breaking alignment
-    if (itemQty > 1) {
-      const qtyText = `${itemQty}x`;
-      ctx.font = `bold 11px ${fontStack}`;
-      const qtyW = ctx.measureText(qtyText).width + 10;
-      roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = '#38BDF8';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    // Right Panel (Exact opposite of left): Item image on far left, text/quantity on far right
+    let textEndX = x + width - 10;
+    let maxNameW = textEndX - (x + 10);
 
-      ctx.fillStyle = '#7DD3FC';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+    if (loadedImg) {
+      const imgX = x + pad;
+      drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
 
-      textStartX += qtyW + 8;
+      // Quantity pill (if > 1) on the far right
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        const qtyX = textEndX - qtyW;
+        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
+
+        textEndX = qtyX - 6;
+      }
+
+      maxNameW = textEndX - (imgX + imgSize + 6);
+    } else {
+      // No image configured: text aligned to the right
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        const qtyX = textEndX - qtyW;
+        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
+
+        textEndX = qtyX - 8;
+      }
+
+      maxNameW = textEndX - (x + 10);
     }
 
-    maxNameW = x + width - textStartX - 10;
-  }
-
-  // Draw Item Name
-  let name = item.name || 'Unknown Item';
-  ctx.font = `bold 13px ${fontStack}`;
-  ctx.fillStyle = '#F8FAFC';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-
-  if (ctx.measureText(name).width > maxNameW) {
-    while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
-      name = name.slice(0, -1);
+    ctx.font = `bold 13px ${fontStack}`;
+    ctx.textAlign = 'right';
+    if (ctx.measureText(name).width > maxNameW) {
+      while (ctx.measureText(name + '...').width > maxNameW && name.length > 0) {
+        name = name.slice(0, -1);
+      }
+      name += '...';
     }
-    name += '...';
+    ctx.fillText(name, textEndX, y + height / 2);
   }
-  ctx.fillText(name, textStartX, y + height / 2);
 }
 
 /**
@@ -674,21 +707,31 @@ export async function renderTradeCard({
       ctx.stroke();
 
       const coinIconSize = 24;
-      const coinIconX = panelX + 28;
       const coinIconY = cursorY + (42 - coinIconSize) / 2;
-
-      if (customCoinImg) {
-        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-      } else {
-        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-      }
-
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
+      const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
       ctx.font = `bold 16px ${fontStack}`;
       ctx.fillStyle = '#FDE68A';
-      const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
-      ctx.fillText(coinText, coinIconX + coinIconSize + 12, cursorY + 21);
+      ctx.textBaseline = 'middle';
+
+      if (side === 'left') {
+        const coinIconX = panelX + 28;
+        if (customCoinImg) {
+          ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
+        } else {
+          drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+        }
+        ctx.textAlign = 'left';
+        ctx.fillText(coinText, coinIconX + coinIconSize + 12, cursorY + 21);
+      } else {
+        const coinIconX = panelX + panelW - 28 - coinIconSize;
+        if (customCoinImg) {
+          ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
+        } else {
+          drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+        }
+        ctx.textAlign = 'right';
+        ctx.fillText(coinText, coinIconX - 12, cursorY + 21);
+      }
 
       cursorY += 42 + 12;
     }
@@ -696,8 +739,13 @@ export async function renderTradeCard({
     // 2. Items Section (Only rendered if items.length > 0)
     if (hasItems) {
       const colW = (panelW - 32 - itemGapX) / 2; // 180px
-      const col1X = panelX + 16;
-      const col2X = panelX + 16 + colW + itemGapX;
+      const colLeftX = panelX + 16;
+      const colRightX = panelX + 16 + colW + itemGapX;
+
+      // Left user: columns go left-to-right (col1 = left, col2 = right)
+      // Right user: columns go right-to-left (col1 = right, col2 = left)
+      const col1X = side === 'left' ? colLeftX : colRightX;
+      const col2X = side === 'left' ? colRightX : colLeftX;
       const itemsStartY = cursorY;
 
       if (itemsList.length <= maxPerCol) {
