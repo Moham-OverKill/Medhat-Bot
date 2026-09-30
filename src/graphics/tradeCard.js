@@ -79,8 +79,28 @@ async function fetchImageSafe(url) {
       const cleanPath = url.replace('file://', '');
       if (fs.existsSync(cleanPath)) return await loadImage(cleanPath);
     }
-    const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
-    if (!res.ok) return null;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!res.ok) {
+      if (typeof url === 'string' && url.includes('cdnjs.cloudflare.com/ajax/libs/twemoji/')) {
+        const fallbackUrl = url.replace('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/', 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/');
+        const fbRes = await fetch(fallbackUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+        if (fbRes.ok) {
+          const fbBuffer = await fbRes.arrayBuffer();
+          return await loadImage(Buffer.from(fbBuffer));
+        }
+      }
+      return null;
+    }
     const arrayBuffer = await res.arrayBuffer();
     return await loadImage(Buffer.from(arrayBuffer));
   } catch (_) {
@@ -481,6 +501,7 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
  * @param {string} [tradeData.status='pending'] - 'pending' | 'completed' | 'declined' | 'expired'
  * @param {string} [tradeData.expiresText='Expires in 5m']
  * @param {string|null} [tradeData.customCoinUrl=null] - Custom server coin emoji URL
+ * @param {string|null} [tradeData.chestEmojiUrl=null] - Custom server chest emoji URL
  * @param {Object} tradeData.sender - { username, displayName, avatarUrl, coins, items, accentColor }
  * @param {Object} tradeData.target - { username, displayName, avatarUrl, coins, items, accentColor }
  * @returns {Promise<Buffer>} PNG image buffer
@@ -489,6 +510,7 @@ export async function renderTradeCard({
   status = 'pending',
   expiresText = 'Expires in 5m',
   customCoinUrl = null,
+  chestEmojiUrl = null,
   sender = {},
   target = {}
 }) {
@@ -564,17 +586,33 @@ export async function renderTradeCard({
     titleText = 'TRADE EXPIRED';
   }
 
+  const resolveItemImgUrl = (item) => {
+    if (item.image_url || item.imageUrl || item.default_image_url) {
+      return item.image_url || item.imageUrl || item.default_image_url;
+    }
+    const nameLower = String(item.name || '').toLowerCase();
+    const isChest = Boolean(
+      item.item_type === 'loot_box' ||
+      item.item_type === 'chest' ||
+      item.loot_box_id ||
+      (typeof item.role_id === 'string' && (item.role_id.startsWith('CHEST_') || item.role_id.startsWith('LOOT_BOX_'))) ||
+      nameLower.includes('chest') ||
+      nameLower.includes('صندوق')
+    );
+    return isChest ? chestEmojiUrl : null;
+  };
+
   // Concurrently fetch participant avatars, custom coin icon, and item images
   const [senderAvatarImg, targetAvatarImg, customCoinImg, senderItemImgs, targetItemImgs] = await Promise.all([
     fetchImageSafe(sender.avatarUrl),
     fetchImageSafe(target.avatarUrl),
     fetchImageSafe(customCoinUrl),
     Promise.all(senderItems.map(item => {
-      const url = item.image_url || item.imageUrl || item.default_image_url || null;
+      const url = resolveItemImgUrl(item);
       return url ? fetchImageSafe(url) : Promise.resolve(null);
     })),
     Promise.all(targetItems.map(item => {
-      const url = item.image_url || item.imageUrl || item.default_image_url || null;
+      const url = resolveItemImgUrl(item);
       return url ? fetchImageSafe(url) : Promise.resolve(null);
     }))
   ]);
