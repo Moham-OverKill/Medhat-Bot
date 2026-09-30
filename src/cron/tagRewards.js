@@ -34,21 +34,12 @@ export async function runTagRewardsCycle(client, guildId, options = {}) {
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
     sysLog('Tag Rewards Scan Started', { guild: guildId, rewardAmount });
 
-    // Robust member collection: try fetch with 20s timeout and graceful fallback to cache
-    let members;
-    try {
-      members = await Promise.race([
-        guildObj.members.fetch(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Gateway members fetch timed out')), 20000))
-      ]);
-    } catch (fetchErr) {
-      sysWarn('Tag Rewards Member Fetch Fallback', { guild: guildId, detail: fetchErr.message });
-      members = guildObj.members.cache;
-    }
-
-    if (!members || members.size === 0) {
-      members = guildObj.members.cache;
-    }
+    // Use the in-memory member cache directly.
+    // primaryGuild (used for server tag detection below) is populated by gateway
+    // presence/join events and does not require a full member list fetch.
+    // Calling guildObj.members.fetch() fires Gateway opcode 8 (REQUEST_GUILD_MEMBERS)
+    // across all guilds simultaneously, which Discord rate-limits heavily.
+    const members = guildObj.members.cache;
 
     if (!members || members.size === 0) {
       sysLog('Tag Rewards Scan Aborted', { guild: guildId, detail: 'No members retrieved' });
