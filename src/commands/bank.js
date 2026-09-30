@@ -249,8 +249,9 @@ export async function handleBankDaily(interaction) {
       .setDescription(
         `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
         `🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
-        `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**\n\n` +
-        `Total: **${result.amount.toLocaleString()}** ${coinEmoji}`
+        `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**\n` +
+        `────────────────\n` +
+        `${coinEmoji} Total: **${result.amount.toLocaleString()}**`
       )
       .setFooter({
         text: `Daily Streak: ${result.streak} day${result.streak === 1 ? '' : 's'}`
