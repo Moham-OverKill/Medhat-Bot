@@ -77,7 +77,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 export function normalizeToImageUrl(input) {
   if (!input || typeof input !== 'string') return null;
   const str = input.trim();
-  if (!str) return null;
+  if (!str || str.toLowerCase() === 'none' || str.toLowerCase() === 'null') return null;
 
   // Direct image URL
   if (str.startsWith('http://') || str.startsWith('https://')) {
@@ -95,6 +95,12 @@ export function normalizeToImageUrl(input) {
     return `https://cdn.discordapp.com/emojis/${str}.png?size=128&quality=lossless`;
   }
 
+  // Only proceed if str is a valid Unicode emoji sequence
+  const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u.test(str);
+  if (!isEmoji) {
+    return null;
+  }
+
   // Unicode emoji: extract code points and build Twemoji CDN URL
   const codePoints = [];
   for (const sym of str) {
@@ -110,43 +116,64 @@ export function normalizeToImageUrl(input) {
 }
 
 /**
- * Safely fetch an external image with timeout
+ * Safely fetch an external image with timeout, CDN fallback, and diagnostic logging
  */
-async function fetchImageSafe(rawUrl) {
+export async function fetchImageSafe(rawUrl) {
   if (!rawUrl) return null;
   const url = (typeof rawUrl === 'string' ? normalizeToImageUrl(rawUrl) : null) || rawUrl;
   if (!url) return null;
+
+  const urlStr = typeof url === 'string' ? url : 'buffer';
   try {
     if (Buffer.isBuffer(url)) return await loadImage(url);
     if (typeof url === 'string' && (url.startsWith('/') || url.includes(':\\') || url.includes(':/') || url.startsWith('file://'))) {
       const cleanPath = url.replace('file://', '');
       if (fs.existsSync(cleanPath)) return await loadImage(cleanPath);
     }
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      },
-      signal: AbortSignal.timeout(4000)
-    });
-    if (!res.ok) {
+
+    let res = null;
+    try {
+      res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(4000)
+      });
+    } catch (netErr) {
+      sysWarn('Trade Card Image Primary Fetch Network Error', { url: urlStr.slice(0, 120), error: netErr?.message });
+    }
+
+    // Fallback for Twemoji if primary failed or returned non-200
+    if (!res || !res.ok) {
       if (typeof url === 'string' && url.includes('cdnjs.cloudflare.com/ajax/libs/twemoji/')) {
         const fallbackUrl = url.replace('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/', 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/');
-        const fbRes = await fetch(fallbackUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-          },
-          signal: AbortSignal.timeout(4000)
-        });
-        if (fbRes.ok) {
-          const fbBuffer = await fbRes.arrayBuffer();
-          return await loadImage(Buffer.from(fbBuffer));
+        try {
+          const fbRes = await fetch(fallbackUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            signal: AbortSignal.timeout(4000)
+          });
+          if (fbRes.ok) {
+            const fbBuffer = await fbRes.arrayBuffer();
+            const img = await loadImage(Buffer.from(fbBuffer));
+            sysLog('Trade Card Image Loaded via Fallback CDN', { url: fallbackUrl.slice(0, 100), width: img.width, height: img.height });
+            return img;
+          } else {
+            sysWarn('Trade Card Image Fallback Failed', { fallbackUrl: fallbackUrl.slice(0, 100), status: fbRes.status });
+          }
+        } catch (fbErr) {
+          sysWarn('Trade Card Image Fallback Network Error', { fallbackUrl: fallbackUrl.slice(0, 100), error: fbErr?.message });
         }
       }
+      sysWarn('Trade Card Image Fetch Failed', { url: urlStr.slice(0, 120), status: res?.status || 'no_response' });
       return null;
     }
+
     const arrayBuffer = await res.arrayBuffer();
-    return await loadImage(Buffer.from(arrayBuffer));
-  } catch (_) {
+    const img = await loadImage(Buffer.from(arrayBuffer));
+    sysLog('Trade Card Image Loaded', { url: urlStr.slice(0, 100), width: img.width, height: img.height });
+    return img;
+  } catch (err) {
+    sysWarn('Trade Card Image Processing Error', { url: urlStr.slice(0, 120), error: err?.message });
     return null;
   }
 }

@@ -85,9 +85,14 @@ async function getGuildCustomCoinUrl(guildId) {
         const coinEmojiStr = config?.coin_emoji || COIN_EMOJI.forGuild(guildId) || '';
         const customEmojiMatch = String(coinEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
         if (customEmojiMatch && customEmojiMatch[1]) {
-            return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+            const url = `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+            sysLog('Trade Card Custom Coin URL Resolved', { guild: guildId, rawEmoji: coinEmojiStr, url });
+            return url;
         }
-    } catch (_) {}
+        sysLog('Trade Card Custom Coin Default Vector', { guild: guildId, rawEmoji: coinEmojiStr });
+    } catch (err) {
+        sysWarn('Trade Card Custom Coin Resolution Error', { guild: guildId, error: err?.message });
+    }
     return null;
 }
 
@@ -104,9 +109,16 @@ export async function getGuildChestEmojiUrl(guildId) {
     try {
         const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
         const chestEmojiStr = await getLootBoxCategoryEmoji(cleanGuildId);
-        if (!chestEmojiStr) return null;
-        return normalizeToImageUrl(chestEmojiStr);
-    } catch (_) {}
+        if (!chestEmojiStr) {
+            sysLog('Trade Card Chest Emoji Not Set', { guild: cleanGuildId });
+            return null;
+        }
+        const resolved = normalizeToImageUrl(chestEmojiStr);
+        sysLog('Trade Card Chest Emoji Resolved', { guild: cleanGuildId, rawEmoji: chestEmojiStr, url: resolved });
+        return resolved;
+    } catch (err) {
+        sysWarn('Trade Card Chest Emoji Resolution Error', { guild: cleanGuildId, error: err?.message });
+    }
     return null;
 }
 
@@ -140,6 +152,14 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         } catch (_) {
             normalizedItems = [];
         }
+    }
+
+    // Warm guild emoji and role caches if needed
+    if (guild && guild.emojis && guild.emojis.cache.size === 0) {
+        await guild.emojis.fetch().catch(() => null);
+    }
+    if (guild && guild.roles && guild.roles.cache.size === 0) {
+        await guild.roles.fetch().catch(() => null);
     }
 
     // Resolve missing image URLs or rarity from database if needed
@@ -223,6 +243,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
             );
             let rawImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || null;
             let resolvedImg = rawImg ? (normalizeToImageUrl(rawImg) || rawImg) : null;
+            let resolutionSource = resolvedImg ? 'shop_item' : null;
 
             // Fallback 1: Discord Role Icon or Role Unicode Emoji
             if (!resolvedImg && guild && guild.roles) {
@@ -232,8 +253,10 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                     if (role) {
                         if (typeof role.iconURL === 'function' && role.icon) {
                             resolvedImg = role.iconURL({ extension: 'png', size: 128 });
+                            resolutionSource = 'role_icon';
                         } else if (role.unicodeEmoji) {
                             resolvedImg = normalizeToImageUrl(role.unicodeEmoji);
+                            resolutionSource = 'role_unicode_emoji';
                         }
                     }
                 }
@@ -248,6 +271,7 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 });
                 if (guildEmoji) {
                     resolvedImg = `https://cdn.discordapp.com/emojis/${guildEmoji.id}.png?size=128&quality=lossless`;
+                    resolutionSource = 'guild_custom_emoji';
                 }
             }
 
@@ -256,13 +280,27 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 const emojiMatch = String(i.name || '').match(/(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u);
                 if (emojiMatch && emojiMatch[0]) {
                     resolvedImg = normalizeToImageUrl(emojiMatch[0]);
+                    resolutionSource = 'name_unicode_emoji';
                 }
             }
 
             // Fallback 4: Chest category emoji
             if (!resolvedImg && isChestItem) {
                 resolvedImg = chestEmojiUrl;
+                resolutionSource = 'chest_category_emoji';
             }
+
+            sysLog('Trade Card Item Resolution', {
+                guild: guildId,
+                userId,
+                name: i.name,
+                shopId,
+                invId,
+                rawImg,
+                resolvedImg,
+                resolutionSource: resolutionSource || 'none_text_only',
+                isChest: isChestItem
+            });
 
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
             const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
