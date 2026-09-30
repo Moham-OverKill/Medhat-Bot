@@ -124,29 +124,53 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
     }
 
     // Resolve missing image URLs or rarity from database if needed
-    const shopItemIdsToFetch = [];
+    const shopItemIdsToFetch = new Set();
+    const invIdsToResolve = new Set();
+
     for (const item of normalizedItems) {
         const hasImg = Boolean(item.image_url || item.imageUrl || item.default_image_url);
-        if (!hasImg && item.shop_item_id) {
-            shopItemIdsToFetch.push(parseInt(item.shop_item_id, 10));
+        const hasRarity = Boolean(item.rarity || item.tier);
+        if (!hasImg || !hasRarity) {
+            if (item.shop_item_id) {
+                shopItemIdsToFetch.add(parseInt(item.shop_item_id, 10));
+            } else if (item.id) {
+                invIdsToResolve.add(parseInt(item.id, 10));
+            }
         }
+    }
+
+    const invToShopMap = new Map();
+    if (invIdsToResolve.size > 0) {
+        try {
+            const pool = getPool();
+            const invRes = await pool.query(
+                `SELECT id, shop_item_id FROM user_inventory WHERE id = ANY($1::int[])`,
+                [Array.from(invIdsToResolve)]
+            );
+            for (const row of invRes.rows) {
+                if (row.shop_item_id) {
+                    invToShopMap.set(row.id, row.shop_item_id);
+                    shopItemIdsToFetch.add(row.shop_item_id);
+                }
+            }
+        } catch (_) {}
     }
 
     const imageMap = new Map();
     const rarityMap = new Map();
-    if (shopItemIdsToFetch.length > 0) {
+    if (shopItemIdsToFetch.size > 0) {
         try {
             const pool = getPool();
             const res = await pool.query(
-                `SELECT s.id, s.rarity, COALESCE(s.default_image_url, lb.image_url) as image_url
+                `SELECT s.id, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url
                  FROM shop_items s
                  LEFT JOIN loot_boxes lb ON s.loot_box_id = lb.id
                  WHERE s.id = ANY($1::int[])`,
-                [shopItemIdsToFetch]
+                [Array.from(shopItemIdsToFetch)]
             );
             for (const row of res.rows) {
                 if (row.image_url) imageMap.set(row.id, row.image_url);
-                if (row.rarity) rarityMap.set(row.id, row.rarity);
+                if (row.rarity) rarityMap.set(row.id, row.rarity.toLowerCase().trim());
             }
         } catch (_) {}
     }
@@ -157,9 +181,11 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
         avatarUrl,
         coins: parseInt(coins, 10) || 0,
         items: normalizedItems.map(i => {
-            const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : null;
+            const invId = i.id ? parseInt(i.id, 10) : null;
+            const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : (invId && invToShopMap.has(invId) ? invToShopMap.get(invId) : null);
             const resolvedImg = i.image_url || i.imageUrl || i.default_image_url || (shopId ? imageMap.get(shopId) : null) || null;
-            const resolvedRarity = i.rarity || (shopId ? rarityMap.get(shopId) : null) || 'common';
+            const dbRarity = shopId ? rarityMap.get(shopId) : null;
+            const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
             return {
                 id: i.id,
                 shop_item_id: shopId,
@@ -1139,7 +1165,7 @@ export async function handleTradeModal(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
 
         const result = await query(
-            `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id, s.default_image_url, s.rarity, COALESCE(s.default_image_url, lb.image_url) as image_url 
+            `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id, s.default_image_url, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url 
              FROM user_inventory i
              JOIN shop_items s ON i.shop_item_id = s.id 
              LEFT JOIN loot_boxes lb ON s.loot_box_id = lb.id
@@ -1264,7 +1290,7 @@ export async function handleTradeSelect(interaction) {
     const itemOwnerId = isGive ? interaction.user.id : setup.targetId;
 
     const result = await query(
-        `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id, s.default_image_url, s.rarity, COALESCE(s.default_image_url, lb.image_url) as image_url 
+        `SELECT i.id, i.shop_item_id, i.source, i.purchase_source, i.expires_at, COALESCE(i.quantity, 1) as quantity, s.name, s.duration_hours, s.duration_seconds, s.role_id, s.is_tradable, s.item_type, s.loot_box_id, s.default_image_url, COALESCE(s.rarity, 'common') as rarity, COALESCE(s.default_image_url, lb.image_url) as image_url 
          FROM user_inventory i
          JOIN shop_items s ON i.shop_item_id = s.id 
          LEFT JOIN loot_boxes lb ON s.loot_box_id = lb.id
@@ -1423,8 +1449,8 @@ async function finalizeTradePosting(interaction, setup) {
                 setup.targetId,
                 setup.senderCoins,
                 setup.targetCoins,
-                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: i.rarity || 'common' }))),
-                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: i.rarity || 'common' }))),
+                JSON.stringify(setup.senderItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
+                JSON.stringify(setup.targetItems.map(i => ({ id: i.id, shop_item_id: i.shop_item_id, name: i.name, qty: parseInt(i.quantity || 1), role_id: i.role_id, image_url: i.image_url || i.default_image_url || null, rarity: (i.rarity || 'common').toString().toLowerCase().trim() }))),
                 expiryDate
             ]
         );
