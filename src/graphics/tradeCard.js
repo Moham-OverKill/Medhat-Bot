@@ -288,7 +288,8 @@ function drawContainedImage(ctx, img, x, y, size, radius = 6) {
  * Draw an individual item container with dynamic rarity border and mirrored item image layout
  */
 function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = null) {
-  const rarityColor = item.rarityColor || RARITY_COLORS[item.tier?.toLowerCase()] || RARITY_COLORS[item.rarity?.toLowerCase()] || '#3B82F6';
+  const cleanRarity = (item.rarity || item.tier || '').toString().toLowerCase().trim();
+  const rarityColor = item.rarityColor || RARITY_COLORS[cleanRarity] || RARITY_COLORS.common;
 
   // Distinct item container with dynamic rarity border
   roundRect(ctx, x, y, width, height, 10);
