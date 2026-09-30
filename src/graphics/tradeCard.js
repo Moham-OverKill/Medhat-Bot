@@ -252,10 +252,43 @@ const RARITY_COLORS = {
 };
 
 /**
- * Draw an individual item container with a dynamic rarity border
+ * Draw an aspect-ratio preserved, cleanly clipped image inside a rounded container
  */
-function drawItemBox(ctx, x, y, width, height, item) {
-  const rarityColor = item.rarityColor || RARITY_COLORS[item.tier?.toLowerCase()] || '#3B82F6';
+function drawContainedImage(ctx, img, x, y, size, radius = 6) {
+  if (!img) return;
+  ctx.save();
+  roundRect(ctx, x, y, size, size, radius);
+  ctx.clip();
+
+  // Subtle dark background under the icon in case of transparency
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(x, y, size, size);
+
+  const iw = img.width || 1;
+  const ih = img.height || 1;
+  const ratio = Math.min(size / iw, size / ih);
+  const dw = iw * ratio;
+  const dh = ih * ratio;
+  const dx = x + (size - dw) / 2;
+  const dy = y + (size - dh) / 2;
+
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+
+  // Crisp 1px border around the thumbnail
+  ctx.save();
+  roundRect(ctx, x, y, size, size, radius);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Draw an individual item container with dynamic rarity border and mirrored item image layout
+ */
+function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = null) {
+  const rarityColor = item.rarityColor || RARITY_COLORS[item.tier?.toLowerCase()] || RARITY_COLORS[item.rarity?.toLowerCase()] || '#3B82F6';
 
   // Distinct item container with dynamic rarity border
   roundRect(ctx, x, y, width, height, 10);
@@ -265,31 +298,95 @@ function drawItemBox(ctx, x, y, width, height, item) {
   ctx.lineWidth = 1.4;
   ctx.stroke();
 
+  const itemQty = parseInt(item.qty || item.quantity || 1, 10);
+  const imgSize = 28;
+  const pad = 7;
+  const imgY = y + (height - imgSize) / 2;
+
   let textStartX = x + 10;
-  const itemQty = parseInt(item.qty || 1, 10);
+  let maxNameW = x + width - textStartX - 10;
 
-  // Quantity pill (if > 1)
-  if (itemQty > 1) {
-    const qtyText = `${itemQty}x`;
-    ctx.font = `bold 11px ${fontStack}`;
-    const qtyW = ctx.measureText(qtyText).width + 10;
-    roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-    ctx.fill();
-    ctx.strokeStyle = '#38BDF8';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  if (loadedImg) {
+    if (side === 'left') {
+      // Left Panel: Item name on left, item image on its right (opposite side)
+      const imgX = x + width - pad - imgSize;
+      drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
 
-    ctx.fillStyle = '#7DD3FC';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+      // Quantity pill (if > 1)
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-    textStartX += qtyW + 8;
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+        textStartX += qtyW + 6;
+      }
+
+      maxNameW = (imgX - 6) - textStartX;
+    } else {
+      // Right Panel (Flipped/Mirrored): Item image on left, item name on its right
+      const imgX = x + pad;
+      drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
+
+      textStartX = imgX + imgSize + 7;
+
+      // Quantity pill (if > 1)
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+        textStartX += qtyW + 6;
+      }
+
+      maxNameW = (x + width - 10) - textStartX;
+    }
+  } else {
+    // No image configured: Clean text-only display without breaking alignment
+    if (itemQty > 1) {
+      const qtyText = `${itemQty}x`;
+      ctx.font = `bold 11px ${fontStack}`;
+      const qtyW = ctx.measureText(qtyText).width + 10;
+      roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.fill();
+      ctx.strokeStyle = '#38BDF8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#7DD3FC';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+      textStartX += qtyW + 8;
+    }
+
+    maxNameW = x + width - textStartX - 10;
   }
 
-  // Item Name (NO rarity text label per requirement)
-  const maxNameW = x + width - textStartX - 10;
+  // Draw Item Name
   let name = item.name || 'Unknown Item';
   ctx.font = `bold 13px ${fontStack}`;
   ctx.fillStyle = '#F8FAFC';
@@ -394,11 +491,19 @@ export async function renderTradeCard({
     titleText = 'TRADE EXPIRED';
   }
 
-  // Concurrently fetch participant avatars and custom coin icon
-  const [senderAvatarImg, targetAvatarImg, customCoinImg] = await Promise.all([
+  // Concurrently fetch participant avatars, custom coin icon, and item images
+  const [senderAvatarImg, targetAvatarImg, customCoinImg, senderItemImgs, targetItemImgs] = await Promise.all([
     fetchImageSafe(sender.avatarUrl),
     fetchImageSafe(target.avatarUrl),
-    fetchImageSafe(customCoinUrl)
+    fetchImageSafe(customCoinUrl),
+    Promise.all(senderItems.map(item => {
+      const url = item.image_url || item.imageUrl || item.default_image_url || null;
+      return url ? fetchImageSafe(url) : Promise.resolve(null);
+    })),
+    Promise.all(targetItems.map(item => {
+      const url = item.image_url || item.imageUrl || item.default_image_url || null;
+      return url ? fetchImageSafe(url) : Promise.resolve(null);
+    }))
   ]);
 
   // 1. Transparent Rounded Card Background
@@ -463,6 +568,7 @@ export async function renderTradeCard({
     displayName = 'User',
     coins = 0,
     items = [],
+    itemImgs = [],
     accentColor = '#3B82F6',
     avatarImg = null,
     otherHasOffer = true
@@ -598,7 +704,7 @@ export async function renderTradeCard({
         // All items in Column 1 (Column 2 is not drawn at all)
         for (let i = 0; i < itemsList.length; i++) {
           const itemY = itemsStartY + i * (itemHeight + itemGapY);
-          drawItemBox(ctx, col1X, itemY, colW, itemHeight, itemsList[i]);
+          drawItemBox(ctx, col1X, itemY, colW, itemHeight, itemsList[i], side, itemImgs[i] || null);
         }
       } else {
         // Column 1 is full, Column 2 appears (don't show empty slots)
@@ -608,7 +714,7 @@ export async function renderTradeCard({
           const row = i < rows ? i : (i - rows);
           const itemX = col === 0 ? col1X : col2X;
           const itemY = itemsStartY + row * (itemHeight + itemGapY);
-          drawItemBox(ctx, itemX, itemY, colW, itemHeight, itemsList[i]);
+          drawItemBox(ctx, itemX, itemY, colW, itemHeight, itemsList[i], side, itemImgs[i] || null);
         }
       }
     } else if (!hasCoins) {
@@ -634,6 +740,7 @@ export async function renderTradeCard({
     side: 'left',
     ...sender,
     items: senderItems,
+    itemImgs: senderItemImgs,
     avatarImg: senderAvatarImg,
     otherHasOffer: targetHasOffer
   });
@@ -642,6 +749,7 @@ export async function renderTradeCard({
     side: 'right',
     ...target,
     items: targetItems,
+    itemImgs: targetItemImgs,
     avatarImg: targetAvatarImg,
     otherHasOffer: senderHasOffer
   });
