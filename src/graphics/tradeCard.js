@@ -504,15 +504,11 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   const pad = 7;
   const imgY = y + (height - imgSize) / 2;
 
-  // Always show the icon slot — either the loaded image or the generic placeholder
-  const hasVisual = Boolean(loadedImg);
-
   let name = item.name || 'Unknown Item';
-  // Strip emoji characters from display name whenever an icon occupies the slot
-  // (true for real images AND for the generic placeholder, since the visual replaces the emoji)
-  const strippedName = name.replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu, '').trim();
-  if (strippedName.length > 0) name = strippedName;
-
+  if (loadedImg) {
+    const stripped = name.replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu, '').trim();
+    if (stripped.length > 0) name = stripped;
+  }
   ctx.font = `bold 13px ${fontStack}`;
   ctx.fillStyle = '#F8FAFC';
   ctx.textBaseline = 'middle';
@@ -521,34 +517,53 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
     let textStartX = x + 10;
     let maxNameW = x + width - textStartX - 10;
 
-    // Left Panel: icon slot on the far right
-    const imgX = x + width - pad - imgSize;
-    if (hasVisual) {
+    if (loadedImg) {
+      // Left Panel: Item image on the far right
+      const imgX = x + width - pad - imgSize;
       drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
+
+      // Quantity pill (if > 1) on the left
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+        textStartX += qtyW + 6;
+      }
+
+      maxNameW = (x + width - pad - imgSize - 6) - textStartX;
     } else {
-      drawGenericItemIcon(ctx, imgX, imgY, imgSize, rarityColor);
+      // No image configured: clean text-only display
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
+
+        textStartX += qtyW + 8;
+      }
+
+      maxNameW = x + width - textStartX - 10;
     }
-
-    // Quantity pill (if > 1) on the left
-    if (itemQty > 1) {
-      const qtyText = `${itemQty}x`;
-      ctx.font = `bold 11px ${fontStack}`;
-      const qtyW = ctx.measureText(qtyText).width + 10;
-      roundRect(ctx, textStartX, y + (height - 18) / 2, qtyW, 18, 5);
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = '#38BDF8';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle = '#7DD3FC';
-      ctx.textAlign = 'center';
-      ctx.fillText(qtyText, textStartX + qtyW / 2, y + height / 2);
-
-      textStartX += qtyW + 6;
-    }
-
-    maxNameW = (imgX - 6) - textStartX;
 
     ctx.font = `bold 13px ${fontStack}`;
     ctx.fillStyle = '#F8FAFC';
@@ -561,38 +576,58 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
     }
     ctx.fillText(name, textStartX, y + height / 2);
   } else {
-    // Right Panel: icon slot on the far left, text/quantity on the far right
+    // Right Panel (exact mirror of left): image on far left, text/quantity on far right
     let textEndX = x + width - 10;
     let maxNameW = textEndX - (x + 10);
 
-    const imgX = x + pad;
-    if (hasVisual) {
+    if (loadedImg) {
+      const imgX = x + pad;
       drawContainedImage(ctx, loadedImg, imgX, imgY, imgSize, 6);
+
+      // Quantity pill (if > 1) on the far right
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        const qtyX = textEndX - qtyW;
+        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
+
+        textEndX = qtyX - 6;
+      }
+
+      maxNameW = textEndX - (x + pad + imgSize + 6);
     } else {
-      drawGenericItemIcon(ctx, imgX, imgY, imgSize, rarityColor);
+      // No image configured: text aligned to the right
+      if (itemQty > 1) {
+        const qtyText = `${itemQty}x`;
+        ctx.font = `bold 11px ${fontStack}`;
+        const qtyW = ctx.measureText(qtyText).width + 10;
+        const qtyX = textEndX - qtyW;
+        roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7DD3FC';
+        ctx.textAlign = 'center';
+        ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
+
+        textEndX = qtyX - 8;
+      }
+
+      maxNameW = textEndX - (x + 10);
     }
-
-    // Quantity pill (if > 1) on the far right
-    if (itemQty > 1) {
-      const qtyText = `${itemQty}x`;
-      ctx.font = `bold 11px ${fontStack}`;
-      const qtyW = ctx.measureText(qtyText).width + 10;
-      const qtyX = textEndX - qtyW;
-      roundRect(ctx, qtyX, y + (height - 18) / 2, qtyW, 18, 5);
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = '#38BDF8';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle = '#7DD3FC';
-      ctx.textAlign = 'center';
-      ctx.fillText(qtyText, qtyX + qtyW / 2, y + height / 2);
-
-      textEndX = qtyX - 6;
-    }
-
-    maxNameW = textEndX - (imgX + imgSize + 6);
 
     ctx.font = `bold 13px ${fontStack}`;
     ctx.fillStyle = '#F8FAFC';
