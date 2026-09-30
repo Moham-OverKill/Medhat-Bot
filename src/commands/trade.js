@@ -244,6 +244,8 @@ function calculateTradeTax(amount, isBooster = false) {
 // Memory for active trade SETUPS (ephemeral, pre-posting)
 // Key: GuildId_UserId (Sender)
 const ACTIVE_SETUPS = new Map();
+const POSTING_TRADES = new Set();
+const EXECUTING_TRADES = new Set();
 
 /**
  * ─────────────────────────────────────────────────────
@@ -742,6 +744,10 @@ export async function handleTradeSetupInteraction(interaction) {
         return interaction.reply({ content: '❌ Trade session expired. Restart with /trade.', flags: MessageFlags.Ephemeral });
     }
 
+    if (POSTING_TRADES.has(setupId) || setup.isPosting) {
+        return;
+    }
+
     const { customId } = interaction;
 
     try {
@@ -835,8 +841,31 @@ export async function handleTradeSetupInteraction(interaction) {
 
         // Post Trade (Making it public)
         if (customId === 'trade_setup_post') {
-            await finalizeTradePosting(interaction, setup);
-            ACTIVE_SETUPS.delete(setupId);
+            if (POSTING_TRADES.has(setupId) || setup.isPosting) {
+                return;
+            }
+            POSTING_TRADES.add(setupId);
+            setup.isPosting = true;
+
+            // Immediately visually disable the Trade button so the user cannot click again
+            await interaction.editReply({
+                components: [
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('trade_setup_posting')
+                            .setLabel('Posting Trade...')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(true)
+                    )
+                ]
+            }).catch(() => {});
+
+            try {
+                await finalizeTradePosting(interaction, setup);
+            } finally {
+                POSTING_TRADES.delete(setupId);
+                ACTIVE_SETUPS.delete(setupId);
+            }
             return;
         }
 
@@ -1323,6 +1352,25 @@ async function finalizeTradePosting(interaction, setup) {
             }
         }
 
+        // Concurrency Guard: Ensure neither sender nor target already has an active pending trade
+        const activeCheck = await query(
+            `SELECT id, sender_id, target_id, message_url FROM trades 
+             WHERE (sender_id = $1 OR target_id = $1 OR sender_id = $2 OR target_id = $2) 
+             AND status = 'pending' AND guild_id = $3 LIMIT 1`,
+            [setup.senderId, setup.targetId, setup.guildId]
+        );
+
+        if (activeCheck.rows.length > 0) {
+            const busyTrade = activeCheck.rows[0];
+            const tradeLink = busyTrade.message_url ? `[pending trade](${busyTrade.message_url})` : 'pending trade';
+            return interaction.editReply({
+                files: [],
+                content: `❌ You or the target user already have an active ${tradeLink}.`,
+                components: [],
+                embeds: []
+            });
+        }
+
         // 1. Save to Database
         let tradeId = null;
         const res = await query(
@@ -1557,6 +1605,9 @@ export async function handleTradeExecution(interaction) {
         if (interaction.user.id !== trade.target_id) {
             return interaction.reply({ content: '❌ Only the target user can accept this offer.', flags: MessageFlags.Ephemeral });
         }
+        if (EXECUTING_TRADES.has(tradeId)) {
+            return;
+        }
         await interaction.deferUpdate().catch(() => { });
         return handleTradeFinalConfirmation(interaction, trade);
     }
@@ -1570,10 +1621,16 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
     const tradeId = tradeIdOverride ?? parseInt(interaction.customId.split('_')[2], 10);
 
+    if (EXECUTING_TRADES.has(tradeId)) {
+        return;
+    }
+    EXECUTING_TRADES.add(tradeId);
+
     // If it's a modal, we check the field. Otherwise (direct click), we skip it.
     if (interaction.type === InteractionType.ModalSubmit) {
         const confirmText = interaction.fields.getTextInputValue('confirm');
         if (confirmText.toUpperCase() !== 'CONFIRM') {
+            EXECUTING_TRADES.delete(tradeId);
             return interaction.editReply({ files: [], content: '❌ Trade confirmation failed. You must type "CONFIRM".', components: [], embeds: [] });
         }
     }
@@ -2163,8 +2220,13 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
         
         sysError('Atomic Swap Failure', err, { user: interaction.user.id, guild: interaction.guildId, detail: `TradeID: ${tradeId}` });
 
+        // Ignore duplicate acceptance on an already finalized trade
+        if (err.message.includes('already')) {
+            return;
+        }
+
         // Update public message if it's a verification failure
-        if (err.message.includes('insufficient') || err.message.includes('missing') || err.message.includes('already')) {
+        if (err.message.includes('insufficient') || err.message.includes('missing')) {
            await query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['canceled', tradeId, interaction.guildId]).catch(() => {});
            await interaction.editReply({ files: [], content: '',
                 components: [],
@@ -2176,6 +2238,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             else await interaction.reply({ content: finalMsg, flags: MessageFlags.Ephemeral, components: [], embeds: [] }).catch(() => { });
         }
     } finally {
+        EXECUTING_TRADES.delete(tradeId);
         if (client) client.release();
     }
 }
