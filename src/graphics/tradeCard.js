@@ -69,9 +69,52 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 /**
+ * Normalize any image input (direct HTTP URL, Discord custom emoji, snowflake ID, or Unicode emoji)
+ * into a renderable image URL.
+ * @param {string|null} input
+ * @returns {string|null}
+ */
+export function normalizeToImageUrl(input) {
+  if (!input || typeof input !== 'string') return null;
+  const str = input.trim();
+  if (!str) return null;
+
+  // Direct image URL
+  if (str.startsWith('http://') || str.startsWith('https://')) {
+    return str;
+  }
+
+  // Discord custom emoji: <:name:ID> or <a:name:ID>
+  const customEmojiMatch = str.match(/<a?:[a-zA-Z0-9_]+:(\d+)>/);
+  if (customEmojiMatch && customEmojiMatch[1]) {
+    return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+  }
+
+  // Raw snowflake ID: 17-22 digits
+  if (/^\d{17,22}$/.test(str)) {
+    return `https://cdn.discordapp.com/emojis/${str}.png?size=128&quality=lossless`;
+  }
+
+  // Unicode emoji: extract code points and build Twemoji CDN URL
+  const codePoints = [];
+  for (const sym of str) {
+    codePoints.push(sym.codePointAt(0).toString(16));
+  }
+  const filtered = codePoints.filter(c => c !== 'fe0f');
+  const code = (filtered.length > 0 ? filtered : codePoints).join('-');
+  if (code && code.length > 0) {
+    return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
+  }
+
+  return null;
+}
+
+/**
  * Safely fetch an external image with timeout
  */
-async function fetchImageSafe(url) {
+async function fetchImageSafe(rawUrl) {
+  if (!rawUrl) return null;
+  const url = (typeof rawUrl === 'string' ? normalizeToImageUrl(rawUrl) : null) || rawUrl;
   if (!url) return null;
   try {
     if (Buffer.isBuffer(url)) return await loadImage(url);
@@ -364,6 +407,10 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   const imgY = y + (height - imgSize) / 2;
 
   let name = item.name || 'Unknown Item';
+  if (loadedImg) {
+    const stripped = name.replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu, '').trim();
+    if (stripped.length > 0) name = stripped;
+  }
   ctx.font = `bold 13px ${fontStack}`;
   ctx.fillStyle = '#F8FAFC';
   ctx.textBaseline = 'middle';
@@ -587,8 +634,9 @@ export async function renderTradeCard({
   }
 
   const resolveItemImgUrl = (item) => {
-    if (item.image_url || item.imageUrl || item.default_image_url) {
-      return item.image_url || item.imageUrl || item.default_image_url;
+    const raw = item.image_url || item.imageUrl || item.default_image_url;
+    if (raw) {
+      return normalizeToImageUrl(raw) || raw;
     }
     const nameLower = String(item.name || '').toLowerCase();
     const isChest = Boolean(
@@ -599,7 +647,15 @@ export async function renderTradeCard({
       nameLower.includes('chest') ||
       nameLower.includes('صندوق')
     );
-    return isChest ? chestEmojiUrl : null;
+    if (isChest && chestEmojiUrl) {
+      return normalizeToImageUrl(chestEmojiUrl) || chestEmojiUrl;
+    }
+    // Check if item name contains a unicode emoji
+    const emojiMatch = String(item.name || '').match(/(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u);
+    if (emojiMatch && emojiMatch[0]) {
+      return normalizeToImageUrl(emojiMatch[0]);
+    }
+    return null;
   };
 
   // Concurrently fetch participant avatars, custom coin icon, and item images
