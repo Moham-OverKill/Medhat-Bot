@@ -242,13 +242,22 @@ export async function handleBankDaily(interaction) {
 
     // 3. Send Success Message (New Ephemeral Reply)
     const { breakdown } = result;
-    let msg = `You received **${result.amount}** ${COIN_EMOJI}\n`;
-    msg += `> 💰 Base: **+${breakdown.base}**\n`;
-    msg += `> 🔥 Streak Bonus: **+${breakdown.streakBonus}**\n`;
-    msg += `> 🚀 Boost Bonus: **+${breakdown.boostBonus}**\n`;
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    const claimEmbed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle('Daily Reward')
+      .setDescription(
+        `You received **${result.amount.toLocaleString()}** ${coinEmoji}\n\n` +
+        `> 💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
+        `> 🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
+        `> 🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**`
+      )
+      .setFooter({
+        text: `Daily Streak: ${result.streak} day${result.streak === 1 ? '' : 's'}`
+      });
 
     await interaction.followUp({
-      content: msg,
+      embeds: [claimEmbed],
       flags: MessageFlags.Ephemeral
     });
 

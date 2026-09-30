@@ -1409,12 +1409,20 @@ export async function handleHubShortcut(interaction) {
       );
 
       const { breakdown } = result;
-      let msg = `You received **${result.amount}** ${coinEmoji}\n`;
-      msg += `> Base: **+${breakdown.base}**\n`;
-      msg += `> Streak Bonus: **+${breakdown.streakBonus}**\n`;
-      msg += `> Boost Bonus: **+${breakdown.boostBonus}**\n`;
+      const claimEmbed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle('Daily Reward')
+        .setDescription(
+          `You received **${result.amount.toLocaleString()}** ${coinEmoji}\n\n` +
+          `> 💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
+          `> 🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
+          `> 🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**`
+        )
+        .setFooter({
+          text: `Daily Streak: ${result.streak} day${result.streak === 1 ? '' : 's'}`
+        });
 
-      return interaction.editReply({ files: [], content: msg, embeds: [] });
+      return interaction.editReply({ files: [], content: '', embeds: [claimEmbed] });
     }
 
     // 4. Inventory Shortcut (🎒)
