@@ -69,7 +69,6 @@ const pendingNewItems = new Map();
 export const shopSetupCommand = new SlashCommandBuilder()
   .setName('shop')
   .setDescription('Admin: Manage the server shop')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .setDMPermission(false)
   .addSubcommand(subcommand =>
     subcommand
@@ -95,10 +94,8 @@ export async function handleShopCommand(interaction) {
  */
 export async function handleShopSetup(interaction) {
   try {
-    // Permission check
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
-      return handleInteractionError(interaction, new Error('Permission Denied: Administrator required'), 'shop setup');
-    }
+    const { verifyAdminAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminAccess(interaction))) return;
 
     // Defer if not already deferred
     if (!interaction.deferred && !interaction.replied) {

@@ -39,7 +39,6 @@ import { COIN_EMOJI, getUserLogName, resolveComponentEmoji } from '../shared.js'
 export const settingsCommand = new SlashCommandBuilder()
     .setName('settings')
     .setDescription('Open the server control panel')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false);
 
 /**
@@ -49,12 +48,9 @@ export async function handleSettingsCommand(interaction) {
   const guildName = interaction.guild?.name || 'Unknown Server';
   sysLog('Settings Dashboard opened', { user: interaction.user.id, guild: interaction.guildId });
 
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({
-            content: '🚫 You do not have permission to view the dashboard.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
+    const { verifyAdminAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminAccess(interaction))) return;
+
     if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await showMainMenu(interaction);
 }
@@ -323,12 +319,8 @@ export async function showCustomizeModal(interaction) {
  */
 export async function handleSettingsComponent(interaction) {
     try {
-        // Runtime guard: verify Administrator permission in THIS guild
-        if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-            const deny = { content: '⛔ Administrator permission required.', flags: MessageFlags.Ephemeral };
-            if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
-            return interaction.reply(deny);
-        }
+        const { verifyAdminAccess } = await import('../storage/admins.js');
+        if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
 
@@ -840,7 +832,7 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('admin_user_')) {
+        if (customId.startsWith('admin_user_') || customId.startsWith('admin_manage_')) {
             await handleAdminUserComponent(interaction);
             return;
         }

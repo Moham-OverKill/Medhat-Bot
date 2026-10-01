@@ -32,11 +32,21 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Button Row 1: Anti Cheat
+    // Button Row 1: Interface | Anti Cheat | Admins
     const row1Buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_users_interface')
+            .setLabel('Interface')
+            .setEmoji('💻')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
+            .setEmoji('🛡️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('admin_user_admins')
+            .setLabel('Admins')
             .setEmoji('🛡️')
             .setStyle(ButtonStyle.Secondary)
     );
@@ -969,14 +979,31 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
-        // Runtime guard: verify Administrator permission in THIS guild
-        if (!interaction.member?.permissions.has('Administrator')) {
-            const deny = { content: '⛔ Administrator permission required.', flags: 64 };
-            if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
-            return interaction.reply(deny);
-        }
+        const { verifyAdminAccess } = await import('../storage/admins.js');
+        if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
+
+        if (customId === 'admin_user_admins') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
+            await showAdminManagement(interaction);
+            return;
+        }
+
+        if (customId === 'admin_manage_toggle_user') {
+            await handleToggleAdminUser(interaction);
+            return;
+        }
+
+        if (customId === 'admin_manage_back') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
+            await showUserSelector(interaction);
+            return;
+        }
 
         if (customId === 'admin_user_select') {
             const targetUserId = interaction.values[0];
@@ -1271,4 +1298,142 @@ export async function handleToggleAltFarmingGate(interaction, gateType) {
 // Backward compatibility alias
 export const showAntiCheatDashboard = showAntiCheatHub;
 export const handleToggleAntiCheat = handleToggleAltFarmingGate;
+
+/**
+ * Render the Bot Admin Management panel
+ * Shows server owner, list of authorized bot admins, and UserSelectMenu to toggle admin status
+ * @param {import('discord.js').Interaction} interaction
+ */
+export async function showAdminManagement(interaction) {
+    const guildId = interaction.guildId;
+    const guild = interaction.guild;
+    let ownerId = guild?.ownerId;
+
+    if (!ownerId && guild?.fetch) {
+        try {
+            const g = await guild.fetch();
+            ownerId = g.ownerId;
+        } catch {}
+    }
+    if (!ownerId && interaction.client) {
+        try {
+            const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
+            ownerId = g?.ownerId;
+        } catch {}
+    }
+
+    const { getServerAdmins } = await import('../storage/admins.js');
+    const admins = await getServerAdmins(guildId);
+
+    const embed = new EmbedBuilder()
+        .setTitle('🛡️ Bot Admin Management')
+        .setDescription(
+            'Manage authorized administrators for this server. Only the server owner and whitelisted bot admins have access to `/settings`, `/mass`, and administrative controls.\n\n' +
+            'Use the user select menu below to **add or remove** an administrator.'
+        )
+        .setColor(0x5865F2);
+
+    embed.addFields({
+        name: '👑 Server Owner',
+        value: ownerId ? `<@${ownerId}> *(Permanent Access)*` : '*Unknown*',
+        inline: false
+    });
+
+    const adminLines = admins.map((a, idx) => {
+        const ts = Math.floor(new Date(a.added_at).getTime() / 1000);
+        return `${idx + 1}. <@${a.user_id}> — Added <t:${ts}:R>`;
+    });
+
+    embed.addFields({
+        name: `Authorized Bot Admins (${admins.length})`,
+        value: adminLines.length > 0 ? adminLines.join('\n') : '_No bot admins added yet. Only the server owner currently has access._',
+        inline: false
+    });
+
+    const userSelect = new UserSelectMenuBuilder()
+        .setCustomId('admin_manage_toggle_user')
+        .setPlaceholder('Select a user to add or remove as admin...')
+        .setMinValues(1)
+        .setMaxValues(1);
+
+    const backButton = new ButtonBuilder()
+        .setCustomId('admin_manage_back')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary);
+
+    const row1 = new ActionRowBuilder().addComponents(userSelect);
+    const row2 = new ActionRowBuilder().addComponents(backButton);
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
+ * Handle adding or removing a user from server_admins (toggle logic)
+ * @param {import('discord.js').Interaction} interaction
+ */
+export async function handleToggleAdminUser(interaction) {
+    const guildId = interaction.guildId;
+    const targetUserId = interaction.values[0];
+    const guild = interaction.guild;
+    let ownerId = guild?.ownerId;
+
+    if (!ownerId && guild?.fetch) {
+        try {
+            const g = await guild.fetch();
+            ownerId = g.ownerId;
+        } catch {}
+    }
+
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
+    if (ownerId && targetUserId === ownerId) {
+        await interaction.followUp({
+            content: '❌ **Action Prohibited**: The server owner is permanently an administrator and cannot be modified.',
+            flags: MessageFlags.Ephemeral
+        });
+        return showAdminManagement(interaction);
+    }
+
+    const { toggleServerAdmin } = await import('../storage/admins.js');
+    const result = await toggleServerAdmin(guildId, targetUserId);
+
+    const logName = getUserLogName(interaction);
+    if (result.action === 'added') {
+        sendLog(interaction.guild, 'audit', 'cyan', '🛡️ Bot Admin Added',
+            `**Admin:** \`${logName}\`\n` +
+            `**Target:** <@${targetUserId}>\n` +
+            `**Action:** Added to bot administrators`
+        );
+        sysLog('Bot Admin Added', { user: interaction.user.id, guild: guildId, target: targetUserId });
+        await interaction.followUp({
+            content: `✅ Successfully added <@${targetUserId}> as a bot administrator.`,
+            flags: MessageFlags.Ephemeral
+        });
+    } else {
+        sendLog(interaction.guild, 'audit', 'yellow', '🛡️ Bot Admin Removed',
+            `**Admin:** \`${logName}\`\n` +
+            `**Target:** <@${targetUserId}>\n` +
+            `**Action:** Removed from bot administrators`
+        );
+        sysLog('Bot Admin Removed', { user: interaction.user.id, guild: guildId, target: targetUserId });
+        await interaction.followUp({
+            content: `🗑️ Successfully removed <@${targetUserId}> from bot administrators.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    return showAdminManagement(interaction);
+}
+
 

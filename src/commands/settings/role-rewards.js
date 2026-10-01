@@ -314,12 +314,8 @@ export async function showStreaksConfig(interaction) {
 // ── Public: Component Router ─────────────────────────────────────────────────
 export async function handleRoleRewardsComponent(interaction) {
     try {
-        if (!interaction.member?.permissions.has('Administrator')) {
-            const deny = { content: '⛔ Administrator permission required.', flags: MessageFlags.Ephemeral };
-            return interaction.deferred || interaction.replied
-                ? interaction.followUp(deny)
-                : interaction.reply(deny);
-        }
+        const { verifyAdminAccess } = await import('../../storage/admins.js');
+        if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
         const guildId  = interaction.guildId;

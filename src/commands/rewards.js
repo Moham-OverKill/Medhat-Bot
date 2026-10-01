@@ -20,16 +20,14 @@ import { getUserDisplayName, getUserLogName, sanitizeError, COIN_EMOJI } from '.
 export const rewardsCommand = new SlashCommandBuilder()
   .setName('rewards')
   .setDescription('Manage server rewards')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand(sub =>
     sub.setName('setup')
       .setDescription('Configure reward settings')
   );
 
 export async function handleRewardsCommand(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({ content: '❌ Administrator permission required.', flags: MessageFlags.Ephemeral });
-  }
+  const { verifyAdminAccess } = await import('../storage/admins.js');
+  if (!(await verifyAdminAccess(interaction))) return;
 
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'setup') {

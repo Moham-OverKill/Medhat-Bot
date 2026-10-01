@@ -736,6 +736,8 @@ client.on('guildMemberRemove', async (member) => {
       await cleanupDepartedMember(member.id, member.guild.id);
       const { disableUserNotificationsOnLeave } = await import('./storage/notifications.js');
       await disableUserNotificationsOnLeave(member.guild.id, member.id);
+      const { removeServerAdmin } = await import('./storage/admins.js');
+      await removeServerAdmin(member.guild.id, member.id);
     } catch (error) {
       sysError('Member Leave Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
     }
