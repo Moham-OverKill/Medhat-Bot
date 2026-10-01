@@ -1337,7 +1337,9 @@ export async function showAdminManagement(interaction) {
     }
 
     const desc = userLines.join('\n') + '\n\n' +
-        '_Users in this list are allowed to use `/settings`, `/mass`, and interact with the Admin Interface._';
+        '———————————————————————\n' +
+        'Users in this list are allowed to use `/settings`, `/mass`\n' +
+        'And interact with the Admin Interface.';
 
     const embed = new EmbedBuilder()
         .setTitle('Authorized Users')
