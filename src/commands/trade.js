@@ -680,7 +680,7 @@ export async function handleTradeCommand(interaction) {
 
         // 2. Decline Cooldown (Anti-Spam Filter)
         const cooldownCheck = await query(
-            `SELECT updated_at FROM trades 
+            `SELECT updated_at, declined_by FROM trades 
             WHERE sender_id = $1 AND target_id = $2 AND status = 'declined' AND guild_id = $3
             ORDER BY updated_at DESC LIMIT 1`,
             [sender.id, target.id, guildId]
@@ -692,12 +692,16 @@ export async function handleTradeCommand(interaction) {
             const diffSeconds = Math.floor((now - lastDeclined) / 1000);
 
             if (diffSeconds < 60) {
-                return interaction.reply({ 
-                    content: `❌ This user recently declined your trade. Please wait ${60 - diffSeconds} seconds before sending another offer to them.`, 
-                    flags: MessageFlags.Ephemeral 
-                });
+                const secsLeft = 60 - diffSeconds;
+                const declinedBy = cooldownCheck.rows[0].declined_by;
+                const senderDeclined = declinedBy === sender.id;
+                const msg = senderDeclined
+                    ? `❌ You recently declined a trade with this user. Please try again in **${secsLeft}s**.`
+                    : `❌ This user recently declined your trade. Please try again in **${secsLeft}s**.`;
+                return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
             }
         }
+
 
         // Initialize state
         const setupId = `${interaction.guildId}_${sender.id}`;
@@ -1692,8 +1696,8 @@ export async function handleTradeExecution(interaction) {
     if (customId.startsWith('trade_decline_')) {
         await interaction.deferUpdate().catch(() => { });
         const declineRes = await query(
-            'UPDATE trades SET status = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3 AND status = $4',
-            ['declined', tradeId, interaction.guildId, 'pending']
+            'UPDATE trades SET status = $1, declined_by = $2, updated_at = NOW() WHERE id = $3 AND guild_id = $4 AND status = $5',
+            ['declined', interaction.user.id, tradeId, interaction.guildId, 'pending']
         );
 
         if (declineRes.rowCount === 0) {
