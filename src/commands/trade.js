@@ -97,8 +97,9 @@ async function getGuildCustomCoinUrl(guildId) {
 }
 
 /**
- * Resolves the server's configured chest/lootbox emoji into a renderable image URL
- * Supports Discord custom emojis (<:name:id>), raw emoji snowflakes, and Unicode emojis via Twemoji CDN
+ * Resolves the server's configured chest/lootbox emoji into a renderable image URL.
+ * Uses the same direct snowflake extraction as the coin emoji — no Twemoji dependency.
+ * Returns null if the configured emoji is a Unicode emoji (not a Discord custom emoji).
  * @param {string} guildId
  * @returns {Promise<string|null>}
  */
@@ -109,18 +110,26 @@ export async function getGuildChestEmojiUrl(guildId) {
     try {
         const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
         const chestEmojiStr = await getLootBoxCategoryEmoji(cleanGuildId);
-        if (!chestEmojiStr) {
-            sysLog('Trade Card Chest Emoji Not Set', { guild: cleanGuildId });
-            return null;
+        if (!chestEmojiStr) return null;
+
+        // Extract Discord custom emoji snowflake ID — same method used for the coin emoji.
+        // e.g. <:minecraftchest:1539577473728254032> → cdn.discordapp.com/emojis/153...png
+        const customMatch = String(chestEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
+        if (customMatch && customMatch[1]) {
+            const url = `https://cdn.discordapp.com/emojis/${customMatch[1]}.png?size=128&quality=lossless`;
+            sysLog('Trade Card Chest Emoji Resolved', { guild: cleanGuildId, rawEmoji: chestEmojiStr, url });
+            return url;
         }
-        const resolved = normalizeToImageUrl(chestEmojiStr);
-        sysLog('Trade Card Chest Emoji Resolved', { guild: cleanGuildId, rawEmoji: chestEmojiStr, url: resolved });
-        return resolved;
+
+        // Unicode emoji (e.g. the default 🎁) — no reliable CDN from Railway, return null.
+        sysLog('Trade Card Chest Emoji Not Custom', { guild: cleanGuildId, rawEmoji: chestEmojiStr, detail: 'Unicode emoji — skipped, text-only for chests' });
+        return null;
     } catch (err) {
         sysWarn('Trade Card Chest Emoji Resolution Error', { guild: cleanGuildId, error: err?.message });
     }
     return null;
 }
+
 
 /**
  * Format participant data for canvas trade card rendering
