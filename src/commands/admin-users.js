@@ -32,13 +32,8 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Button Row 1: Interface | Anti Cheat | Admins
+    // Button Row 1: Anti Cheat | Admins
     const row1Buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_users_interface')
-            .setLabel('Interface')
-            .setEmoji('💻')
-            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
