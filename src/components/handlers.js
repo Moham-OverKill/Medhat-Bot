@@ -173,11 +173,12 @@ export function setupComponentHandlers(client) {
           detail: `CustomID: ${interaction.customId}`
         });
       }
-      // --- SECURITY GUARDRAIL: CONTINUOUS ADMIN VERIFICATION ---
+      // --- SECURITY GUARDRAIL: CONTINUOUS ADMIN VERIFICATION (ZERO TRUST) ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
         const adminPrefixes = [
           'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_', 'organize_',
-          'shop_', 'mass_', 'quests_', 'admin_user_', 'lb_', 'role_rewards_', 'pass_'
+          'shop_', 'mass_', 'quests_', 'admin_user_', 'admin_manage_', 'lb_', 'role_rewards_', 'pass_',
+          'interface_', 'admin_interface_', 'admin_hub_'
         ];
 
         // Public shop buy modal is the only shop_ prefix intended for regular players
@@ -187,29 +188,9 @@ export function setupComponentHandlers(client) {
         const isAdminInteraction = !isPublicShopModal && adminPrefixes.some(prefix => interaction.customId.startsWith(prefix));
 
         if (isAdminInteraction) {
-          const isAdmin = Boolean(
-            interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
-            (typeof interaction.member?.permissions?.has === 'function' && interaction.member.permissions.has(PermissionFlagsBits.Administrator)) ||
-            (interaction.member?.permissions && typeof interaction.member.permissions.has !== 'function' && (BigInt(interaction.member.permissions) & 8n) === 8n)
-          );
-
-          if (!isAdmin) {
-            sysError('Security Violation: Unauthorized Admin Interaction Blocked', new Error('Non-admin attempted admin action'), {
-              user: interaction.user?.id,
-              guild: interaction.guildId,
-              detail: `CustomID: ${interaction.customId}`
-            });
-
-            const reply = {
-              content: '⛔ **Access Denied**: Administrator permission required. You cannot interact with server control settings.',
-              flags: MessageFlags.Ephemeral
-            };
-
-            if (interaction.deferred || interaction.replied) {
-              await interaction.followUp(reply).catch(() => {});
-            } else {
-              await interaction.reply(reply).catch(() => {});
-            }
+          const { verifyAdminAccess } = await import('../storage/admins.js');
+          const hasAccess = await verifyAdminAccess(interaction);
+          if (!hasAccess) {
             return;
           }
         }
@@ -332,6 +313,7 @@ export function setupComponentHandlers(client) {
         customId.startsWith('organize_') ||
         customId.startsWith('leaderboard_channel_') ||
         customId.startsWith('admin_user_') ||
+        customId.startsWith('admin_manage_') ||
         customId.startsWith('lb_') ||
         customId.startsWith('role_rewards_') ||
         customId.startsWith('pass_') ||

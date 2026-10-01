@@ -1111,12 +1111,8 @@ export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
 export async function handleAdminHubComponent(interaction) {
   const customId = interaction.customId;
 
-  // Runtime Admin check
-  if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-    const deny = { content: 'Administrator permission required.', flags: MessageFlags.Ephemeral };
-    if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
-    return interaction.reply(deny);
-  }
+  const { verifyAdminAccess } = await import('../storage/admins.js');
+  if (!(await verifyAdminAccess(interaction))) return;
 
   // Customize modal must be opened without deferring
   if (customId === 'admin_hub_customize') {
@@ -1593,12 +1589,8 @@ export async function handleInterfaceComponent(interaction) {
   const guildId = interaction.guildId;
   const customId = interaction.customId;
 
-  // Runtime Admin check
-  if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-    const deny = { content: 'Administrator permission required.', flags: MessageFlags.Ephemeral };
-    if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
-    return interaction.reply(deny);
-  }
+  const { verifyAdminAccess } = await import('../storage/admins.js');
+  if (!(await verifyAdminAccess(interaction))) return;
 
   try {
     // 0. Interface Landing Navigation

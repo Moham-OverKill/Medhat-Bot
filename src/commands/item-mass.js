@@ -27,7 +27,6 @@ const pendingMassOps = new Map();
 export const itemMassCommand = new SlashCommandBuilder()
   .setName('mass')
   .setDescription('Bulk operations')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .setDMPermission(false)
   .addSubcommand(sub => 
     sub.setName('item')
@@ -68,15 +67,8 @@ export const itemMassCommand = new SlashCommandBuilder()
 
 export async function handleItemMassCommand(interaction) {
   try {
-    // Runtime guard: verify Administrator permission in THIS guild
-    const isAdmin = Boolean(
-      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
-      (typeof interaction.member?.permissions?.has === 'function' && interaction.member.permissions.has(PermissionFlagsBits.Administrator)) ||
-      (interaction.member?.permissions && typeof interaction.member.permissions.has !== 'function' && (BigInt(interaction.member.permissions) & 8n) === 8n)
-    );
-    if (!isAdmin) {
-      return interaction.reply({ content: '⛔ You need Administrator permission to use this command.', flags: MessageFlags.Ephemeral });
-    }
+    const { verifyAdminAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminAccess(interaction))) return;
 
     // Verify subcommand (in case we add more)
     const sub = interaction.options.getSubcommand();
