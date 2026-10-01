@@ -60,7 +60,9 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
         components: [
@@ -1186,7 +1188,9 @@ export async function showAntiCheatHub(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
         components: [row1, row2]
@@ -1241,7 +1245,9 @@ export async function showAltFarmingDashboard(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
         components: [row1, row2, row3]
@@ -1265,7 +1271,9 @@ export async function showVoiceAfkDashboard(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
         components: [row1]
