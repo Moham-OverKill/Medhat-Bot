@@ -1001,6 +1001,105 @@ async function createTables() {
         AND (role_id NOT LIKE 'CHEST_%' OR role_id IS NULL);
     `).catch(() => {});
 
+    // Self-healing migration: Remove phantom duplicate level chests caused by legacy deficit reconciliation
+    try {
+      const phantomAuditRes = await pool.query(`
+        WITH traded_chests AS (
+          SELECT 
+            t.guild_id,
+            t.sender_id AS user_id,
+            COALESCE(NULLIF(elem->>'loot_box_id', '')::INT, NULLIF(SUBSTRING(elem->>'role_id' FROM 'LOOT_BOX_([0-9]+)'), '')::INT, NULLIF(SUBSTRING(elem->>'role_id' FROM 'CHEST_([0-9]+)'), '')::INT) AS loot_box_id,
+            COALESCE(NULLIF(elem->>'shop_item_id', '')::INT, 0) AS shop_item_id,
+            COALESCE(NULLIF(elem->>'qty', '')::INT, 1) AS qty
+          FROM trades t,
+               jsonb_array_elements(t.sender_items) elem
+          WHERE t.status = 'accepted'
+            AND (elem->>'loot_box_id' IS NOT NULL OR elem->>'role_id' LIKE 'CHEST_%' OR elem->>'role_id' LIKE 'LOOT_BOX_%')
+          UNION ALL
+          SELECT 
+            t.guild_id,
+            t.target_id AS user_id,
+            COALESCE(NULLIF(elem->>'loot_box_id', '')::INT, NULLIF(SUBSTRING(elem->>'role_id' FROM 'LOOT_BOX_([0-9]+)'), '')::INT, NULLIF(SUBSTRING(elem->>'role_id' FROM 'CHEST_([0-9]+)'), '')::INT) AS loot_box_id,
+            COALESCE(NULLIF(elem->>'shop_item_id', '')::INT, 0) AS shop_item_id,
+            COALESCE(NULLIF(elem->>'qty', '')::INT, 1) AS qty
+          FROM trades t,
+               jsonb_array_elements(t.target_items) elem
+          WHERE t.status = 'accepted'
+            AND (elem->>'loot_box_id' IS NOT NULL OR elem->>'role_id' LIKE 'CHEST_%' OR elem->>'role_id' LIKE 'LOOT_BOX_%')
+        )
+        SELECT guild_id, user_id, loot_box_id, MAX(shop_item_id) as shop_item_id, SUM(qty) as total_traded
+        FROM traded_chests
+        WHERE loot_box_id IS NOT NULL
+        GROUP BY guild_id, user_id, loot_box_id
+      `);
+
+      for (const tc of phantomAuditRes.rows) {
+        const invRows = await pool.query(
+          `SELECT ui.id, COALESCE(ui.quantity, 1) as quantity
+           FROM user_inventory ui
+           LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+           WHERE ui.guild_id = $1 AND ui.user_id = $2
+             AND (UPPER(COALESCE(ui.source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(ui.purchase_source, '')) IN ('level', 'battlepass'))
+             AND (
+               ($3::int > 0 AND ui.shop_item_id = $3::int)
+               OR si.loot_box_id = $4::int
+               OR ui.role_id = ('LOOT_BOX_' || $4::text)
+               OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4::int)
+             )
+           ORDER BY ui.id DESC`,
+          [tc.guild_id, tc.user_id, tc.shop_item_id, tc.loot_box_id]
+        );
+
+        if (invRows.rows.length === 0) continue;
+
+        const expectedRes = await pool.query(
+          `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as expected
+           FROM battlepass_rewards
+           WHERE guild_id = $1 AND reward_type = 'chest' AND loot_box_id = $2`,
+          [tc.guild_id, tc.loot_box_id]
+        );
+        const legacyExpectedRes = await pool.query(
+          `SELECT COUNT(*)::INT as expected
+           FROM battlepass_config
+           WHERE guild_id = $1 AND reward_chest_id = $2`,
+          [tc.guild_id, tc.loot_box_id]
+        );
+        const totalExpected = parseInt(expectedRes.rows[0]?.expected || 0, 10) + parseInt(legacyExpectedRes.rows[0]?.expected || 0, 10);
+
+        const heldQty = invRows.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
+
+        const openedRes = await pool.query(
+          `SELECT COUNT(*)::INTEGER as count FROM transactions
+           WHERE user_id = $1 AND guild_id = $2
+             AND type = 'loot_box_reward'
+             AND reference_id = $3::text`,
+          [tc.user_id, tc.guild_id, tc.loot_box_id]
+        );
+        const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+        const totalTraded = parseInt(tc.total_traded || 0, 10);
+
+        const totalAccounted = heldQty + openedQty + totalTraded;
+        const excess = Math.max(0, totalAccounted - totalExpected);
+
+        if (excess > 0) {
+          let toDeduct = Math.min(excess, heldQty);
+          for (const row of invRows.rows) {
+            if (toDeduct <= 0) break;
+            const rQty = parseInt(row.quantity || 1, 10);
+            if (rQty <= toDeduct) {
+              await pool.query(`DELETE FROM user_inventory WHERE id = $1`, [row.id]);
+              toDeduct -= rQty;
+            } else {
+              await pool.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [toDeduct, row.id]);
+              toDeduct = 0;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking cleanup
+    }
+
     // User DM Notification Settings (Server-Specific, Opt-in)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_notification_settings (
