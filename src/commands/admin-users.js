@@ -1328,34 +1328,25 @@ export async function showAdminManagement(interaction) {
     const { getServerAdmins } = await import('../storage/admins.js');
     const admins = await getServerAdmins(guildId);
 
+    const userLines = [];
+    if (ownerId) {
+        userLines.push(`👑 <@${ownerId}> *(Owner)*`);
+    }
+    for (const a of admins) {
+        userLines.push(`• <@${a.user_id}>`);
+    }
+
+    const desc = userLines.join('\n') + '\n\n' +
+        '_Users in this list are allowed to use `/settings`, `/mass`, and interact with the Admin Interface._';
+
     const embed = new EmbedBuilder()
-        .setTitle('🛡️ Bot Admin Management')
-        .setDescription(
-            'Manage authorized administrators for this server. Only the server owner and whitelisted bot admins have access to `/settings`, `/mass`, and administrative controls.\n\n' +
-            'Use the user select menu below to **add or remove** an administrator.'
-        )
+        .setTitle('Authorized Users')
+        .setDescription(desc)
         .setColor(0x5865F2);
-
-    embed.addFields({
-        name: '👑 Server Owner',
-        value: ownerId ? `<@${ownerId}> *(Permanent Access)*` : '*Unknown*',
-        inline: false
-    });
-
-    const adminLines = admins.map((a, idx) => {
-        const ts = Math.floor(new Date(a.added_at).getTime() / 1000);
-        return `${idx + 1}. <@${a.user_id}> — Added <t:${ts}:R>`;
-    });
-
-    embed.addFields({
-        name: `Authorized Bot Admins (${admins.length})`,
-        value: adminLines.length > 0 ? adminLines.join('\n') : '_No bot admins added yet. Only the server owner currently has access._',
-        inline: false
-    });
 
     const userSelect = new UserSelectMenuBuilder()
         .setCustomId('admin_manage_toggle_user')
-        .setPlaceholder('Select a user to add or remove as admin...')
+        .setPlaceholder('Select a user to add or remove...')
         .setMinValues(1)
         .setMaxValues(1);
 
