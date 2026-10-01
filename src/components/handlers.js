@@ -335,7 +335,9 @@ export function setupComponentHandlers(client) {
         customId.startsWith('lb_') ||
         customId.startsWith('role_rewards_') ||
         customId.startsWith('pass_') ||
-        customId.startsWith('interface_')
+        customId.startsWith('interface_') ||
+        customId.startsWith('admin_interface_') ||
+        customId.startsWith('admin_hub_')
       ) {
         await handleSettingsComponent(interaction);
         return;

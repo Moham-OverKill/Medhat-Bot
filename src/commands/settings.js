@@ -198,7 +198,9 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
@@ -253,12 +255,67 @@ export async function showOtherSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    const responseMethod = interaction.isButton() ? 'update' : 'editReply';
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
         components: [row1, row2]
     });
+}
+
+/**
+ * Open the Bot Customization modal directly (modal cannot be deferred)
+ * @param {import('discord.js').Interaction} interaction 
+ */
+export async function showCustomizeModal(interaction) {
+    const { getGuildConfig } = await import('../storage/config.js');
+    const config = await getGuildConfig(interaction.guildId) || {};
+    
+    const currentEmoji = config.coin_emoji;
+    let initialValue = '';
+    if (currentEmoji) {
+        const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
+        initialValue = currentEmojiStr;
+    }
+
+    const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
+    const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
+    const currentServerAvatar = config.bot_avatar !== undefined ? (config.bot_avatar || '') : '';
+
+    const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${Date.now()}`).setTitle('Customize Bot');
+    
+    const nameInput = new TextInputBuilder()
+        .setCustomId('bot_name')
+        .setLabel('Bot Server Nickname')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter bot nickname')
+        .setRequired(false);
+    if (currentNickname) nameInput.setValue(currentNickname);
+
+    const avatarInput = new TextInputBuilder()
+        .setCustomId('bot_avatar')
+        .setLabel('Bot Server Avatar URL')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter profile image URL')
+        .setRequired(false);
+    if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
+
+    const emojiInput = new TextInputBuilder()
+        .setCustomId('coin_emoji')
+        .setLabel('Coin Emoji')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter an emoji or emoji ID')
+        .setRequired(false);
+    if (initialValue) emojiInput.setValue(initialValue);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(nameInput),
+        new ActionRowBuilder().addComponents(avatarInput),
+        new ActionRowBuilder().addComponents(emojiInput)
+    );
+    await interaction.showModal(modal);
 }
 
 /**
@@ -316,52 +373,7 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_customize') {
-            const { getGuildConfig } = await import('../storage/config.js');
-            const config = await getGuildConfig(interaction.guildId) || {};
-            
-            const currentEmoji = config.coin_emoji;
-            let initialValue = '';
-            if (currentEmoji) {
-                const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
-                initialValue = currentEmojiStr;
-            }
-
-            const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
-            const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
-            const currentServerAvatar = config.bot_avatar !== undefined ? (config.bot_avatar || '') : '';
-
-            const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${Date.now()}`).setTitle('Customize Bot');
-            
-            const nameInput = new TextInputBuilder()
-                .setCustomId('bot_name')
-                .setLabel('Bot Server Nickname')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter bot nickname')
-                .setRequired(false);
-            if (currentNickname) nameInput.setValue(currentNickname);
-
-            const avatarInput = new TextInputBuilder()
-                .setCustomId('bot_avatar')
-                .setLabel('Bot Server Avatar URL')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter profile image URL')
-                .setRequired(false);
-            if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
-
-            const emojiInput = new TextInputBuilder()
-                .setCustomId('coin_emoji')
-                .setLabel('Coin Emoji')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Enter an emoji or emoji ID')
-                .setRequired(false);
-            if (initialValue) emojiInput.setValue(initialValue);
-
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(nameInput),
-                new ActionRowBuilder().addComponents(avatarInput),
-                new ActionRowBuilder().addComponents(emojiInput)
-            );
-            await interaction.showModal(modal);
+            await showCustomizeModal(interaction);
             return;
         }
 
@@ -740,12 +752,12 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_users_interface') {
-            const { showInterfaceSettings } = await import('./interface.js');
-            await showInterfaceSettings(interaction);
+            const { showInterfaceMainMenu } = await import('./interface.js');
+            await showInterfaceMainMenu(interaction);
             return;
         }
 
-        if (customId.startsWith('interface_')) {
+        if (customId.startsWith('interface_') || customId.startsWith('admin_interface_')) {
             if (interaction.isModalSubmit && interaction.isModalSubmit()) {
                 const { handleInterfaceModal } = await import('./interface.js');
                 await handleInterfaceModal(interaction);
@@ -753,6 +765,12 @@ export async function handleSettingsComponent(interaction) {
                 const { handleInterfaceComponent } = await import('./interface.js');
                 await handleInterfaceComponent(interaction);
             }
+            return;
+        }
+
+        if (customId.startsWith('admin_hub_')) {
+            const { handleAdminHubComponent } = await import('./interface.js');
+            await handleAdminHubComponent(interaction);
             return;
         }
 
