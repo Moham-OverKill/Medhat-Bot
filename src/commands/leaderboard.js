@@ -70,6 +70,17 @@ export async function getLeaderboardConfig(guildId) {
  */
 export async function setLeaderboardConfig(guildId, config) {
     const pool = getPool();
+    const existing = await getLeaderboardConfig(guildId) || {};
+    const merged = {
+        daily_channel_id: config.daily_channel_id !== undefined ? config.daily_channel_id : (existing.daily_channel_id ?? null),
+        daily_message_id: config.daily_message_id !== undefined ? config.daily_message_id : (existing.daily_message_id ?? null),
+        coins_channel_id: config.coins_channel_id !== undefined ? config.coins_channel_id : (existing.coins_channel_id ?? null),
+        coins_message_id: config.coins_message_id !== undefined ? config.coins_message_id : (existing.coins_message_id ?? null),
+        streak_channel_id: config.streak_channel_id !== undefined ? config.streak_channel_id : (existing.streak_channel_id ?? null),
+        streak_message_id: config.streak_message_id !== undefined ? config.streak_message_id : (existing.streak_message_id ?? null),
+        level_channel_id: config.level_channel_id !== undefined ? config.level_channel_id : (existing.level_channel_id ?? null),
+        level_message_id: config.level_message_id !== undefined ? config.level_message_id : (existing.level_message_id ?? null)
+    };
     await pool.query(`
     INSERT INTO leaderboard_config (
       guild_id, 
@@ -91,10 +102,10 @@ export async function setLeaderboardConfig(guildId, config) {
       updated_at = CURRENT_TIMESTAMP
   `, [
         guildId,
-        config.daily_channel_id, config.daily_message_id,
-        config.coins_channel_id, config.coins_message_id,
-        config.streak_channel_id, config.streak_message_id,
-        config.level_channel_id, config.level_message_id
+        merged.daily_channel_id, merged.daily_message_id,
+        merged.coins_channel_id, merged.coins_message_id,
+        merged.streak_channel_id, merged.streak_message_id,
+        merged.level_channel_id, merged.level_message_id
     ]);
 }
 
