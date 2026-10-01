@@ -1197,12 +1197,19 @@ async function createTables() {
         slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb,
         target_channel_id VARCHAR(32),
         message_id VARCHAR(32),
+        admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        admin_target_channel_id VARCHAR(32),
+        admin_message_id VARCHAR(32),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb;
       ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32);
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32);
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_channel ON server_interface_config(target_channel_id);
+      CREATE INDEX IF NOT EXISTS idx_server_interface_config_admin_channel ON server_interface_config(admin_target_channel_id);
     `);
 
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
