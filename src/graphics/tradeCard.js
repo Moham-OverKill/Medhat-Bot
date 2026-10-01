@@ -734,15 +734,30 @@ export async function renderTradeCard({
     titleText = 'TRADE EXPIRED';
   }
 
-  // Items are always rendered text-only. No image URLs are resolved or fetched for items.
-  // Only participant avatars and the custom coin icon are fetched.
+  // Chest items show the configured chest emoji. All other items are text-only.
+  const isChestItem = (item) => {
+    const nameLower = String(item.name || '').toLowerCase();
+    return (
+      item.item_type === 'loot_box' ||
+      item.item_type === 'chest' ||
+      Boolean(item.loot_box_id) ||
+      (typeof item.role_id === 'string' && (item.role_id.startsWith('CHEST_') || item.role_id.startsWith('LOOT_BOX_'))) ||
+      nameLower.includes('chest') ||
+      nameLower.includes('صندوق')
+    );
+  };
+
+  // Fetch chest emoji once if available — reused for every chest item
+  const chestImg = chestEmojiUrl ? await fetchImageSafe(chestEmojiUrl) : null;
+
   const [senderAvatarImg, targetAvatarImg, customCoinImg] = await Promise.all([
     fetchImageSafe(sender.avatarUrl),
     fetchImageSafe(target.avatarUrl),
     fetchImageSafe(customCoinUrl)
   ]);
-  const senderItemImgs = senderItems.map(() => null);
-  const targetItemImgs = targetItems.map(() => null);
+  const senderItemImgs = senderItems.map(item => (chestImg && isChestItem(item) ? chestImg : null));
+  const targetItemImgs = targetItems.map(item => (chestImg && isChestItem(item) ? chestImg : null));
+
 
   // 1. Transparent Rounded Card Background
   const cardRadius = 24;
