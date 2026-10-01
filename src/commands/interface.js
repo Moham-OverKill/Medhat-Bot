@@ -1187,13 +1187,13 @@ export async function showInterfaceMainMenu(interaction) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('interface_menu_users')
-      .setLabel('Users')
-      .setEmoji('👥')
+      .setLabel('Shortcuts')
+      .setEmoji('⚡')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('interface_menu_admins')
-      .setLabel('Admins')
-      .setEmoji('🛡️')
+      .setLabel('Settings')
+      .setEmoji('⚙️')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -1588,10 +1588,10 @@ export async function handleInterfaceComponent(interaction) {
     if (customId === 'interface_home') {
       return showInterfaceMainMenu(interaction);
     }
-    if (customId === 'interface_menu_users') {
+    if (customId === 'interface_menu_users' || customId === 'interface_menu_shortcuts') {
       return showInterfaceSettings(interaction);
     }
-    if (customId === 'interface_menu_admins') {
+    if (customId === 'interface_menu_admins' || customId === 'interface_menu_settings') {
       return showAdminInterfaceSettings(interaction);
     }
 
