@@ -204,15 +204,20 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
     }
 
     const rarityMap = new Map();
+    const chestSet = new Set();
     if (shopItemIdsToFetch.size > 0) {
         try {
             const pool = getPool();
             const res = await pool.query(
-                `SELECT id, COALESCE(rarity, 'common') as rarity FROM shop_items WHERE id = ANY($1::int[])`,
+                `SELECT id, COALESCE(rarity, 'common') as rarity, item_type, loot_box_id
+                 FROM shop_items WHERE id = ANY($1::int[])`,
                 [Array.from(shopItemIdsToFetch)]
             );
             for (const row of res.rows) {
                 if (row.rarity) rarityMap.set(row.id, row.rarity.toLowerCase().trim());
+                if (row.item_type === 'loot_box' || row.item_type === 'chest' || row.loot_box_id) {
+                    chestSet.add(row.id);
+                }
             }
         } catch (_) {}
     }
@@ -227,6 +232,8 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
             const shopId = i.shop_item_id ? parseInt(i.shop_item_id, 10) : (invId && invToShopMap.has(invId) ? invToShopMap.get(invId) : null);
             const dbRarity = shopId ? rarityMap.get(shopId) : null;
             const resolvedRarity = (i.rarity || dbRarity || 'common').toString().toLowerCase().trim();
+            // DB is the authoritative source for chest detection — not item name or stored JSON
+            const isChest = Boolean(shopId && chestSet.has(shopId));
             return {
                 id: i.id,
                 shop_item_id: shopId,
@@ -235,9 +242,10 @@ async function getTradeParticipantCardData(guild, userId, coins, items = []) {
                 image_url: null,
                 rarity: resolvedRarity,
                 tier: resolvedRarity,
-                item_type: i.item_type || null
+                item_type: isChest ? 'loot_box' : (i.item_type || null)
             };
         }),
+
         accentColor
     };
 }
