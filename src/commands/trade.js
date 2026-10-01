@@ -1890,7 +1890,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                         WHERE i.user_id = $1 AND i.guild_id = $2 AND i.shop_item_id = $3
                           AND COALESCE(i.source, '') != 'SYNC' AND COALESCE(i.source, '') != 'ADMIN'
                         ORDER BY CASE WHEN i.id = $4 THEN 0 ELSE 1 END, i.id ASC
-                        FOR UPDATE
+                        FOR UPDATE OF i
                     `, [senderId, trade.guild_id, shopItemId, offerObj.id]);
                 } else {
                     unactRows = await client.query(`
@@ -1905,7 +1905,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                           AND (i.id = $3 OR (i.role_id IS NOT NULL AND i.role_id = $4))
                           AND COALESCE(i.source, '') != 'SYNC' AND COALESCE(i.source, '') != 'ADMIN'
                         ORDER BY CASE WHEN i.id = $3 THEN 0 ELSE 1 END, i.id ASC
-                        FOR UPDATE
+                        FOR UPDATE OF i
                     `, [senderId, trade.guild_id, offerObj.id, roleId]);
                 }
 
