@@ -595,12 +595,14 @@ export async function getInterfaceConfig(guildId) {
 export async function saveInterfaceConfig(guildId, data) {
   try {
     const pool = getPool();
-    const normalizedOrder = normalizeShortcutOrder(data.shortcut_order);
-    const normalizedColors = normalizeSlotColors(data.slot_colors);
-    const normalizedBtnColors = normalizeSlotButtonColors(data.slot_button_colors);
-    const isEnabled = data.is_enabled !== undefined ? Boolean(data.is_enabled) : true;
-    const channelId = data.target_channel_id !== undefined ? (data.target_channel_id || null) : null;
-    const messageId = data.message_id !== undefined ? (data.message_id || null) : null;
+    const existing = await getInterfaceConfig(guildId);
+
+    const isEnabled = data.is_enabled !== undefined ? Boolean(data.is_enabled) : existing.is_enabled;
+    const normalizedOrder = data.shortcut_order !== undefined ? normalizeShortcutOrder(data.shortcut_order) : existing.shortcut_order;
+    const normalizedColors = data.slot_colors !== undefined ? normalizeSlotColors(data.slot_colors) : existing.slot_colors;
+    const normalizedBtnColors = data.slot_button_colors !== undefined ? normalizeSlotButtonColors(data.slot_button_colors) : existing.slot_button_colors;
+    const channelId = data.target_channel_id !== undefined ? (data.target_channel_id || null) : existing.target_channel_id;
+    const messageId = data.message_id !== undefined ? (data.message_id || null) : existing.message_id;
 
     const queryStr = `
       INSERT INTO server_interface_config (guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id, updated_at)
@@ -611,8 +613,8 @@ export async function saveInterfaceConfig(guildId, data) {
         shortcut_order = EXCLUDED.shortcut_order,
         slot_colors = EXCLUDED.slot_colors,
         slot_button_colors = EXCLUDED.slot_button_colors,
-        target_channel_id = EXCLUDED.target_channel_id,
-        message_id = EXCLUDED.message_id,
+        target_channel_id = COALESCE(EXCLUDED.target_channel_id, server_interface_config.target_channel_id),
+        message_id = COALESCE(EXCLUDED.message_id, server_interface_config.message_id),
         updated_at = NOW()
       RETURNING guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id
     `;
@@ -631,14 +633,16 @@ export async function saveInterfaceConfig(guildId, data) {
       }
     }
 
-    // Keep legacy guild_configs synchronized for backwards compatibility
-    try {
-      const guildConfig = await getGuildConfig(guildId) || {};
-      guildConfig.interface_channel_id = channelId;
-      guildConfig.interface_message_id = messageId;
-      await setGuildConfig(guildId, guildConfig);
-    } catch (syncErr) {
-      sysError('Failed to sync guildConfig interface channel', syncErr, { guildId });
+    // Keep legacy guild_configs synchronized ONLY if valid channelId/messageId is present
+    if (channelId || messageId) {
+      try {
+        const guildConfig = await getGuildConfig(guildId) || {};
+        if (channelId) guildConfig.interface_channel_id = channelId;
+        if (messageId) guildConfig.interface_message_id = messageId;
+        await setGuildConfig(guildId, guildConfig);
+      } catch (syncErr) {
+        sysError('Failed to sync guildConfig interface channel', syncErr, { guildId });
+      }
     }
 
     const row = res.rows[0];
