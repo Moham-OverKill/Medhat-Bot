@@ -1319,26 +1319,33 @@ export async function showInterfaceSettings(interaction) {
  * Render the Admin Interface Configuration Panel
  * Layout:
  * - Row 0: Target Channel Selector (Placeholder: "Select target channel for admins interface...")
- * - Row 1: [ Enable / Disable ] | [ Update / Publish ]
- * - Row 2: [ Back ] (Returns to interface_home)
+ * - Row 1: [ Back ] | [ Update ]
  * @param {import('discord.js').Interaction} interaction
  */
 export async function showAdminInterfaceSettings(interaction) {
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
 
-  const currentChannel = config.admin_target_channel_id ? `<#${config.admin_target_channel_id}>` : '*Not Set*';
-  const isPublished = Boolean(config.admin_target_channel_id && config.admin_message_id);
-
-  let statusText = '`🔴 Disabled`';
-  if (config.admin_is_enabled) {
-    if (isPublished) {
-      statusText = '`🟢 Published & Active`';
-    } else if (config.admin_target_channel_id) {
-      statusText = '`🟡 Pending Deployment`';
-    } else {
-      statusText = '`🟡 Pending Setup (Channel Required)`';
+  let isPublished = false;
+  if (config.admin_target_channel_id && config.admin_message_id) {
+    const channel = interaction.guild?.channels.cache.get(config.admin_target_channel_id) ||
+      await interaction.guild?.channels.fetch(config.admin_target_channel_id).catch(() => null);
+    if (channel?.isTextBased?.()) {
+      const existingMsg = await channel.messages.fetch(config.admin_message_id).catch(() => null);
+      if (existingMsg) {
+        isPublished = true;
+      } else {
+        config.admin_message_id = null;
+        await saveInterfaceConfig(guildId, config).catch(() => {});
+      }
     }
+  }
+
+  const currentChannel = config.admin_target_channel_id ? `<#${config.admin_target_channel_id}>` : '*Not Set*';
+
+  let statusText = '`🟡 Pending Setup (Channel Required)`';
+  if (config.admin_target_channel_id) {
+    statusText = isPublished ? '`🟢 Published & Active`' : '`🟡 Pending Deployment`';
   }
 
   const desc = [
@@ -1362,41 +1369,25 @@ export async function showAdminInterfaceSettings(interaction) {
     channelSelect.setDefaultChannels([config.admin_target_channel_id]);
   }
 
-  // Row 1: [ Enable / Disable ] | [ Update ] (all gray)
-  const toggleBtn = config.admin_is_enabled
-    ? new ButtonBuilder()
-        .setCustomId('admin_interface_disable_btn')
-        .setLabel('Disable')
-        .setEmoji('🔴')
-        .setStyle(ButtonStyle.Secondary)
-    : new ButtonBuilder()
-        .setCustomId('admin_interface_enable_btn')
-        .setLabel('Enable')
-        .setEmoji('🟢')
-        .setStyle(ButtonStyle.Secondary);
-
-  const updateBtn = new ButtonBuilder()
-    .setCustomId('admin_interface_publish_btn')
-    .setLabel(isPublished ? 'Update' : 'Publish')
-    .setEmoji('🔄')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(!config.admin_target_channel_id);
-
-  const row1 = new ActionRowBuilder().addComponents(toggleBtn, updateBtn);
-
-  // Row 2: [ Back ] (all gray) - No Setup button as requested
+  // Row 1: [ Back ] | [ Update ] (side by side)
   const backBtn = new ButtonBuilder()
     .setCustomId('interface_home')
     .setLabel('Back')
     .setEmoji('⬅️')
     .setStyle(ButtonStyle.Secondary);
 
-  const row2 = new ActionRowBuilder().addComponents(backBtn);
+  const updateBtn = new ButtonBuilder()
+    .setCustomId('admin_interface_publish_btn')
+    .setLabel('Update')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!config.admin_target_channel_id);
+
+  const row1 = new ActionRowBuilder().addComponents(backBtn, updateBtn);
 
   const components = [
     new ActionRowBuilder().addComponents(channelSelect),
-    row1,
-    row2
+    row1
   ];
 
   const method = (interaction.deferred || interaction.replied)
