@@ -642,6 +642,54 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   }
 }
 
+function drawCoinBox(ctx, x, y, width, height, coins, side = 'left', customCoinImg = null, coinBorderColor = '#F59E0B') {
+  roundRect(ctx, x, y, width, height, 10);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fill();
+  ctx.strokeStyle = coinBorderColor;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  const coinIconSize = 28; // Matches item & chest icon size (28px)
+  const pad = 7;
+  const coinIconY = y + (height - coinIconSize) / 2;
+  const coinText = coins === 1 ? '1 Coin' : `${coins.toLocaleString()} Coins`;
+
+  ctx.font = `bold 13px ${fontStack}`;
+  ctx.fillStyle = '#FDE68A';
+  ctx.textBaseline = 'middle';
+
+  const maxTextW = width - coinIconSize - 26;
+  let displayText = coinText;
+  if (ctx.measureText(displayText).width > maxTextW) {
+    while (ctx.measureText(displayText + '...').width > maxTextW && displayText.length > 0) {
+      displayText = displayText.slice(0, -1);
+    }
+    displayText += '...';
+  }
+
+  if (side === 'left') {
+    const coinIconX = x + pad;
+    if (customCoinImg) {
+      drawContainedImage(ctx, customCoinImg, coinIconX, coinIconY, coinIconSize, 6);
+    } else {
+      drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+    }
+    ctx.textAlign = 'left';
+    ctx.fillText(displayText, coinIconX + coinIconSize + 8, y + height / 2);
+  } else {
+    const coinIconX = x + width - pad - coinIconSize;
+    if (customCoinImg) {
+      drawContainedImage(ctx, customCoinImg, coinIconX, coinIconY, coinIconSize, 6);
+    } else {
+      drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+    }
+    ctx.textAlign = 'right';
+    ctx.fillText(displayText, coinIconX - 8, y + height / 2);
+  }
+}
+
+
 
 /**
  * Generate a high-resolution, 2x Retina trade settlement card
@@ -698,20 +746,12 @@ export async function renderTradeCard({
   const itemGapX = 8;
 
   const calcContentHeight = (coins, itemsCount) => {
-    const hasCoins = coins > 0;
-    const hasItems = itemsCount > 0;
-    const rows = hasItems ? (itemsCount <= maxPerCol ? itemsCount : Math.max(maxPerCol, Math.ceil(itemsCount / 2))) : 0;
-    const itemsH = rows > 0 ? (rows * itemHeight + (rows - 1) * itemGapY) : 0;
-    if (hasCoins && hasItems) {
-      return itemHeight + itemGapY + itemsH;
-    } else if (hasCoins && !hasItems) {
-      return itemHeight;
-    } else if (!hasCoins && hasItems) {
-      return itemsH;
-    } else {
-      return itemHeight;
-    }
+    const totalEntries = (coins > 0 ? 1 : 0) + itemsCount;
+    if (totalEntries === 0) return itemHeight;
+    const rows = totalEntries <= maxPerCol ? totalEntries : Math.max(maxPerCol, Math.ceil(totalEntries / 2));
+    return rows * itemHeight + (rows - 1) * itemGapY;
   };
+
 
 
   const senderContentH = calcContentHeight(senderCoins, senderItems.length);
@@ -922,68 +962,16 @@ export async function renderTradeCard({
 
     let cursorY = contentY + 88;
 
-    // 1. Currency Box (Only rendered if coins > 0)
+    // Combine coins and items into unified grid entries
+    const gridEntries = [];
     if (hasCoins) {
-    // Coin box is sized to match a single item box — same width, font, and height
-    const coinColW = (panelW - 32 - itemGapX) / 2;
-    const coinBoxX = side === 'left' ? panelX + 16 : panelX + 16 + coinColW + itemGapX;
-    const coinIconSize = 20;
-    const coinIconY = cursorY + (itemHeight - coinIconSize) / 2;
-    const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
-
-    roundRect(ctx, coinBoxX, cursorY, coinColW, itemHeight, 10);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.fill();
-    ctx.strokeStyle = coinBorderColor;
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-
-    ctx.font = `bold 13px ${fontStack}`;
-    ctx.fillStyle = '#FDE68A';
-    ctx.textBaseline = 'middle';
-
-    if (side === 'left') {
-      const coinIconX = coinBoxX + 10;
-      if (customCoinImg) {
-        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-      } else {
-        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-      }
-      ctx.textAlign = 'left';
-      const maxTextW = coinColW - coinIconSize - 26;
-      let displayText = coinText;
-      if (ctx.measureText(displayText).width > maxTextW) {
-        while (ctx.measureText(displayText + '...').width > maxTextW && displayText.length > 0) {
-          displayText = displayText.slice(0, -1);
-        }
-        displayText += '...';
-      }
-      ctx.fillText(displayText, coinIconX + coinIconSize + 8, cursorY + itemHeight / 2);
-    } else {
-      const coinIconX = coinBoxX + coinColW - 10 - coinIconSize;
-      if (customCoinImg) {
-        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-      } else {
-        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-      }
-      ctx.textAlign = 'right';
-      const maxTextW = coinColW - coinIconSize - 26;
-      let displayText = coinText;
-      if (ctx.measureText(displayText).width > maxTextW) {
-        while (ctx.measureText(displayText + '...').width > maxTextW && displayText.length > 0) {
-          displayText = displayText.slice(0, -1);
-        }
-        displayText += '...';
-      }
-      ctx.fillText(displayText, coinIconX - 8, cursorY + itemHeight / 2);
+      gridEntries.push({ type: 'coins', amount: parsedCoins });
+    }
+    for (let i = 0; i < itemsList.length; i++) {
+      gridEntries.push({ type: 'item', item: itemsList[i], img: itemImgs[i] || null });
     }
 
-    cursorY += itemHeight + itemGapY;
-
-    }
-
-    // 2. Items Section (Only rendered if items.length > 0)
-    if (hasItems) {
+    if (gridEntries.length > 0) {
       const colW = (panelW - 32 - itemGapX) / 2; // 180px
       const colLeftX = panelX + 16;
       const colRightX = panelX + 16 + colW + itemGapX;
@@ -992,26 +980,34 @@ export async function renderTradeCard({
       // Right user: columns go right-to-left (col1 = right, col2 = left)
       const col1X = side === 'left' ? colLeftX : colRightX;
       const col2X = side === 'left' ? colRightX : colLeftX;
-      const itemsStartY = cursorY;
+      const startY = cursorY;
 
-      if (itemsList.length <= maxPerCol) {
+      const drawEntry = (entry, x, y) => {
+        if (entry.type === 'coins') {
+          drawCoinBox(ctx, x, y, colW, itemHeight, entry.amount, side, customCoinImg, coinBorderColor);
+        } else {
+          drawItemBox(ctx, x, y, colW, itemHeight, entry.item, side, entry.img);
+        }
+      };
+
+      if (gridEntries.length <= maxPerCol) {
         // All items in Column 1 (Column 2 is not drawn at all)
-        for (let i = 0; i < itemsList.length; i++) {
-          const itemY = itemsStartY + i * (itemHeight + itemGapY);
-          drawItemBox(ctx, col1X, itemY, colW, itemHeight, itemsList[i], side, itemImgs[i] || null);
+        for (let i = 0; i < gridEntries.length; i++) {
+          const entryY = startY + i * (itemHeight + itemGapY);
+          drawEntry(gridEntries[i], col1X, entryY);
         }
       } else {
-        // Column 1 is full, Column 2 appears (don't show empty slots)
-        const rows = Math.max(maxPerCol, Math.ceil(itemsList.length / 2));
-        for (let i = 0; i < itemsList.length; i++) {
+        // Column 1 is full, Column 2 appears — sharing row 0 with coins naturally
+        const rows = Math.max(maxPerCol, Math.ceil(gridEntries.length / 2));
+        for (let i = 0; i < gridEntries.length; i++) {
           const col = i < rows ? 0 : 1;
           const row = i < rows ? i : (i - rows);
-          const itemX = col === 0 ? col1X : col2X;
-          const itemY = itemsStartY + row * (itemHeight + itemGapY);
-          drawItemBox(ctx, itemX, itemY, colW, itemHeight, itemsList[i], side, itemImgs[i] || null);
+          const entryX = col === 0 ? col1X : col2X;
+          const entryY = startY + row * (itemHeight + itemGapY);
+          drawEntry(gridEntries[i], entryX, entryY);
         }
       }
-    } else if (!hasCoins) {
+    } else {
       // 3. Neither coins nor items offered: Clean minimal placeholder
       roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 12);
       ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
@@ -1028,6 +1024,7 @@ export async function renderTradeCard({
       ctx.fillText(placeholderText, panelX + panelW / 2, cursorY + 21);
     }
   }
+
 
   // Extract dynamic dominant color from custom coin image with gold fallback
   const coinBorderColor = extractCoinColor(customCoinImg, '#F59E0B');

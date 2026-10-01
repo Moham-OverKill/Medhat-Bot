@@ -1205,16 +1205,24 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_channel ON server_interface_config(target_channel_id);
     `);
 
-    // Self-healing migration: Populate server_interface_config from existing guild_configs
-    await pool.query(`
-      INSERT INTO server_interface_config (guild_id, target_channel_id, message_id)
-      SELECT guild_id, (config->>'interface_channel_id'), (config->>'interface_message_id')
-      FROM guild_configs
-      WHERE config->>'interface_channel_id' IS NOT NULL
-      ON CONFLICT (guild_id) DO UPDATE SET
-        target_channel_id = COALESCE(server_interface_config.target_channel_id, EXCLUDED.target_channel_id),
-        message_id = COALESCE(server_interface_config.message_id, EXCLUDED.message_id);
-    `).catch(() => {});
+    // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
+    const ifaceMigrated = await pool.query(
+      `SELECT 1 FROM bot_migrations WHERE migration_name = 'populate_server_interface_config_v1'`
+    ).catch(() => ({ rows: [] }));
+    if (ifaceMigrated.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO server_interface_config (guild_id, target_channel_id, message_id)
+        SELECT guild_id, (config->>'interface_channel_id'), (config->>'interface_message_id')
+        FROM guild_configs
+        WHERE config->>'interface_channel_id' IS NOT NULL
+        ON CONFLICT (guild_id) DO UPDATE SET
+          target_channel_id = COALESCE(server_interface_config.target_channel_id, EXCLUDED.target_channel_id),
+          message_id = COALESCE(server_interface_config.message_id, EXCLUDED.message_id);
+      `).catch(() => {});
+      await pool.query(
+        `INSERT INTO bot_migrations (migration_name, details) VALUES ('populate_server_interface_config_v1', '{}'::jsonb) ON CONFLICT DO NOTHING`
+      ).catch(() => {});
+    }
 
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
