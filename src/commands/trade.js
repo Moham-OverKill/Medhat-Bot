@@ -1887,11 +1887,12 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                                COALESCE(s.role_id, i.role_id) as role_id
                         FROM user_inventory i
                         LEFT JOIN shop_items s ON i.shop_item_id = s.id
-                        WHERE i.user_id = $1 AND i.guild_id = $2 AND i.shop_item_id = $3
+                        WHERE i.user_id = $1 AND i.guild_id = $2 
+                          AND (i.shop_item_id = $3 OR ($5::text IS NOT NULL AND i.role_id = $5::text))
                           AND COALESCE(i.source, '') != 'SYNC' AND COALESCE(i.source, '') != 'ADMIN'
                         ORDER BY CASE WHEN i.id = $4 THEN 0 ELSE 1 END, i.id ASC
                         FOR UPDATE OF i
-                    `, [senderId, trade.guild_id, shopItemId, offerObj.id]);
+                    `, [senderId, trade.guild_id, shopItemId, offerObj.id, roleId]);
                 } else {
                     unactRows = await client.query(`
                         SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, i.expires_at,
@@ -2103,10 +2104,11 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 if (shopItemId) {
                     giverRows = await client.query(
                         `SELECT id, COALESCE(quantity, 1) as quantity FROM user_inventory
-                         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+                         WHERE user_id = $1 AND guild_id = $2 
+                           AND (shop_item_id = $3 OR ($5::text IS NOT NULL AND role_id = $5::text))
                            AND COALESCE(source, '') != 'SYNC' AND COALESCE(source, '') != 'ADMIN'
                          ORDER BY CASE WHEN id = $4 THEN 0 ELSE 1 END, id ASC FOR UPDATE`,
-                        [giverId, trade.guild_id, shopItemId, offer.id]
+                        [giverId, trade.guild_id, shopItemId, offer.id, roleId]
                     );
                 } else {
                     giverRows = await client.query(
