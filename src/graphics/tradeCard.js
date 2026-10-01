@@ -735,17 +735,9 @@ export async function renderTradeCard({
   }
 
   // Chest items show the configured chest emoji. All other items are text-only.
-  const isChestItem = (item) => {
-    const nameLower = String(item.name || '').toLowerCase();
-    return (
-      item.item_type === 'loot_box' ||
-      item.item_type === 'chest' ||
-      Boolean(item.loot_box_id) ||
-      (typeof item.role_id === 'string' && (item.role_id.startsWith('CHEST_') || item.role_id.startsWith('LOOT_BOX_'))) ||
-      nameLower.includes('chest') ||
-      nameLower.includes('صندوق')
-    );
-  };
+  // item_type is set authoritatively from the DB in getTradeParticipantCardData —
+  // no name or keyword guessing needed here.
+  const isChestItem = (item) => item.item_type === 'loot_box' || item.item_type === 'chest';
 
   // Fetch chest emoji once if available — reused for every chest item
   const chestImg = chestEmojiUrl ? await fetchImageSafe(chestEmojiUrl) : null;
