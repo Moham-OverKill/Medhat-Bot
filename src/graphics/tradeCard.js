@@ -703,15 +703,16 @@ export async function renderTradeCard({
     const rows = hasItems ? (itemsCount <= maxPerCol ? itemsCount : Math.max(maxPerCol, Math.ceil(itemsCount / 2))) : 0;
     const itemsH = rows > 0 ? (rows * itemHeight + (rows - 1) * itemGapY) : 0;
     if (hasCoins && hasItems) {
-      return 42 + 12 + itemsH;
+      return itemHeight + itemGapY + itemsH;
     } else if (hasCoins && !hasItems) {
-      return 42;
+      return itemHeight;
     } else if (!hasCoins && hasItems) {
       return itemsH;
     } else {
-      return 42;
+      return itemHeight;
     }
   };
+
 
   const senderContentH = calcContentHeight(senderCoins, senderItems.length);
   const targetContentH = calcContentHeight(targetCoins, targetItems.length);
@@ -923,41 +924,62 @@ export async function renderTradeCard({
 
     // 1. Currency Box (Only rendered if coins > 0)
     if (hasCoins) {
-      roundRect(ctx, panelX + 16, cursorY, panelW - 32, 42, 10);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-      ctx.fill();
-      ctx.strokeStyle = coinBorderColor;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
+    // Coin box is sized to match a single item box — same width, font, and height
+    const coinColW = (panelW - 32 - itemGapX) / 2;
+    const coinBoxX = side === 'left' ? panelX + 16 : panelX + 16 + coinColW + itemGapX;
+    const coinIconSize = 20;
+    const coinIconY = cursorY + (itemHeight - coinIconSize) / 2;
+    const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
 
-      const coinIconSize = 24;
-      const coinIconY = cursorY + (42 - coinIconSize) / 2;
-      const coinText = parsedCoins === 1 ? '1 Coin' : `${parsedCoins.toLocaleString()} Coins`;
-      ctx.font = `bold 16px ${fontStack}`;
-      ctx.fillStyle = '#FDE68A';
-      ctx.textBaseline = 'middle';
+    roundRect(ctx, coinBoxX, cursorY, coinColW, itemHeight, 10);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fill();
+    ctx.strokeStyle = coinBorderColor;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
 
-      if (side === 'left') {
-        const coinIconX = panelX + 28;
-        if (customCoinImg) {
-          ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-        } else {
-          drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-        }
-        ctx.textAlign = 'left';
-        ctx.fillText(coinText, coinIconX + coinIconSize + 12, cursorY + 21);
+    ctx.font = `bold 13px ${fontStack}`;
+    ctx.fillStyle = '#FDE68A';
+    ctx.textBaseline = 'middle';
+
+    if (side === 'left') {
+      const coinIconX = coinBoxX + 10;
+      if (customCoinImg) {
+        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
       } else {
-        const coinIconX = panelX + panelW - 28 - coinIconSize;
-        if (customCoinImg) {
-          ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
-        } else {
-          drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-        }
-        ctx.textAlign = 'right';
-        ctx.fillText(coinText, coinIconX - 12, cursorY + 21);
+        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
       }
+      ctx.textAlign = 'left';
+      const maxTextW = coinColW - coinIconSize - 26;
+      let displayText = coinText;
+      if (ctx.measureText(displayText).width > maxTextW) {
+        while (ctx.measureText(displayText + '...').width > maxTextW && displayText.length > 0) {
+          displayText = displayText.slice(0, -1);
+        }
+        displayText += '...';
+      }
+      ctx.fillText(displayText, coinIconX + coinIconSize + 8, cursorY + itemHeight / 2);
+    } else {
+      const coinIconX = coinBoxX + coinColW - 10 - coinIconSize;
+      if (customCoinImg) {
+        ctx.drawImage(customCoinImg, coinIconX, coinIconY, coinIconSize, coinIconSize);
+      } else {
+        drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+      }
+      ctx.textAlign = 'right';
+      const maxTextW = coinColW - coinIconSize - 26;
+      let displayText = coinText;
+      if (ctx.measureText(displayText).width > maxTextW) {
+        while (ctx.measureText(displayText + '...').width > maxTextW && displayText.length > 0) {
+          displayText = displayText.slice(0, -1);
+        }
+        displayText += '...';
+      }
+      ctx.fillText(displayText, coinIconX - 8, cursorY + itemHeight / 2);
+    }
 
-      cursorY += 42 + 12;
+    cursorY += itemHeight + itemGapY;
+
     }
 
     // 2. Items Section (Only rendered if items.length > 0)
