@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { sysLog, sysError } from './logger.js';
+import { sysLog, sysWarn, sysError } from './logger.js';
 import { sanitizeEmbed } from './embed-sanitizer.js';
 
 /**
@@ -66,13 +66,18 @@ async function checkUrlReachable(url) {
       return { ok: false, status: res.status, reason: `http_${res.status}` };
     }
 
-    // For other responses (2xx, 3xx, 401, 403, or bot-side network limits), Discord proxy crawler
+    // For other responses (2xx, 3xx, 401, 403, or host network limits), Discord proxy crawler
     // may still have access even if direct Node.js fetch is restricted or challenged.
     if (res && (res.ok || res.status === 206 || res.status === 304 || res.status === 401 || res.status === 403)) {
       return { ok: true, status: res.status, reason: 'ok' };
     }
 
-    return { ok: false, status: res?.status ?? null, reason: res ? `http_${res.status}` : 'network_error' };
+    // If direct Node fetch failed/timed out, do not block Discord's internal proxy crawler
+    if (!res) {
+      return { ok: true, status: null, reason: 'network_fallback' };
+    }
+
+    return { ok: false, status: res.status, reason: `http_${res.status}` };
   } catch (err) {
     // Network fallback: don't block Discord's internal proxy crawler due to local host network limits
     return { ok: true, status: null, reason: 'network_fallback' };
@@ -133,13 +138,11 @@ export function verifyAndHealMessageImages(message, options = {}) {
           if (!url) continue;
           const check = await checkUrlReachable(url);
           if (!check.ok) {
-            sysError('Image URL Unreachable — Aborting Healer', null, {
+            sysWarn('Image URL Unreachable — Aborting Healer', {
               guild: message.guildId,
               channel: message.channelId,
-              messageId: message.id,
-              url,
-              status: check.status,
-              reason: check.reason
+              message: message.id,
+              detail: `URL: ${url} | Status: ${check.status ?? 'N/A'} | Reason: ${check.reason}`
             });
             return; // Abort entirely — no point retrying a dead link
           }
