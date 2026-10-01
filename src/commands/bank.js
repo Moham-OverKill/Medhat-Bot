@@ -71,8 +71,8 @@ async function getUserBalance(guildId, userId) {
   return result.rows[0] || { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
 }
 
-function getCoinThumbnailUrl() {
-  const emojiStr = COIN_EMOJI.toString().trim();
+export function getCoinThumbnailUrl(guildId = null) {
+  const emojiStr = (guildId ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI.toString()).trim();
   const match = emojiStr.match(/<(a)?:[^:]+:(\d+)>/);
   if (match) {
     const isAnimated = Boolean(match[1]);
@@ -242,10 +242,11 @@ export async function handleBankDaily(interaction) {
 
     // 3. Send Success Message (New Ephemeral Reply)
     const { breakdown } = result;
-    const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    const coinThumbnail = getCoinThumbnailUrl(guildId);
     const claimEmbed = new EmbedBuilder()
       .setColor(0xFFD700)
-      .setTitle(`Total: ${result.amount.toLocaleString()} ${coinEmoji}`)
+      .setTitle(`Total: ${result.amount.toLocaleString()}`)
+      .setThumbnail(coinThumbnail)
       .setDescription(
         `────────────────\n` +
         `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +

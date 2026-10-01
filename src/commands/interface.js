@@ -22,7 +22,7 @@ import { claimDaily } from '../economy/service.js';
 import { getLevelViewPayload } from './pass.js';
 import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
-import { handleInventoryButton } from './bank.js';
+import { handleInventoryButton, getCoinThumbnailUrl } from './bank.js';
 import { isMemberBooster } from './colors.js';
 import { COIN_EMOJI, getUserDisplayName, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
@@ -1935,9 +1935,11 @@ export async function handleHubShortcut(interaction) {
       );
 
       const { breakdown } = result;
+      const coinThumbnail = getCoinThumbnailUrl(interaction.guildId);
       const claimEmbed = new EmbedBuilder()
         .setColor(0xFFD700)
-        .setTitle(`Total: ${result.amount.toLocaleString()} ${coinEmoji}`)
+        .setTitle(`Total: ${result.amount.toLocaleString()}`)
+        .setThumbnail(coinThumbnail)
         .setDescription(
           `────────────────\n` +
           `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
