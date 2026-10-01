@@ -37,12 +37,12 @@ export async function showUserSelector(interaction) {
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
-            .setEmoji('🛡️')
+            .setEmoji('🚫')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_admins')
             .setLabel('Admins')
-            .setEmoji('🛡️')
+            .setEmoji('💼')
             .setStyle(ButtonStyle.Secondary)
     );
 
