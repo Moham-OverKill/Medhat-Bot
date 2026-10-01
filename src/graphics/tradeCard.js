@@ -663,8 +663,19 @@ export async function renderTradeCard({
   target = {}
 }) {
   const renderStart = performance.now();
-  const senderItems = Array.isArray(sender.items) ? sender.items : [];
-  const targetItems = Array.isArray(target.items) ? target.items : [];
+  const RARITY_ORDER = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+  const sortItems = (items) => items.slice().sort((a, b) => {
+    const aIsChest = a.item_type === 'loot_box' || a.item_type === 'chest';
+    const bIsChest = b.item_type === 'loot_box' || b.item_type === 'chest';
+    if (aIsChest !== bIsChest) return aIsChest ? -1 : 1; // chests first
+    const aRarity = RARITY_ORDER[String(a.rarity || 'common').toLowerCase()] ?? 4;
+    const bRarity = RARITY_ORDER[String(b.rarity || 'common').toLowerCase()] ?? 4;
+    return aRarity - bRarity; // lower number = higher rarity = shown first
+  });
+
+  const senderItems = sortItems(Array.isArray(sender.items) ? sender.items : []);
+  const targetItems = sortItems(Array.isArray(target.items) ? target.items : []);
+
   const senderCoins = parseInt(sender.coins, 10) || 0;
   const targetCoins = parseInt(target.coins, 10) || 0;
   const senderHasOffer = senderCoins > 0 || senderItems.length > 0;
