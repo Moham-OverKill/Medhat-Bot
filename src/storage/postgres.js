@@ -1212,6 +1212,17 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_admin_channel ON server_interface_config(admin_target_channel_id);
     `);
 
+    // Server Admins Table — Strict Multi-Tenant Bot Administration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_admins (
+        guild_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_admins_guild ON server_admins(guild_id);
+    `);
+
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
     const ifaceMigrated = await pool.query(
       `SELECT 1 FROM bot_migrations WHERE migration_name = 'populate_server_interface_config_v1'`

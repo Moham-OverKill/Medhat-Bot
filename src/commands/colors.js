@@ -47,7 +47,6 @@ export function hasAnyDangerousPermission(role) {
 export const colorsCommand = new SlashCommandBuilder()
   .setName('colors')
   .setDescription('Color roles management')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .setDMPermission(false)
   .addSubcommand(subcommand =>
     subcommand
@@ -60,6 +59,8 @@ export const colorsCommand = new SlashCommandBuilder()
  */
 export async function handleColorsCommand(interaction) {
   try {
+    const { verifyAdminAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminAccess(interaction))) return;
     // Handle button interactions (Back button) differently
     if (interaction.isButton()) {
       await interaction.deferUpdate();

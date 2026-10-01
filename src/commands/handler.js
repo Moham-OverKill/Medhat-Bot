@@ -27,25 +27,12 @@ export async function handleSlashCommand(interaction) {
     detail: `Name: /${commandName}`
   });
 
-  // Top-Level Admin Slash Command Security Gate
+  // Top-Level Admin Slash Command Security Gate (Zero Trust Multi-Tenant Pre-Check)
   const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors'];
   if (adminCommands.includes(commandName)) {
-    const isAdmin = Boolean(
-      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
-      (typeof interaction.member?.permissions?.has === 'function' && interaction.member.permissions.has(PermissionFlagsBits.Administrator)) ||
-      (interaction.member?.permissions && typeof interaction.member.permissions.has !== 'function' && (BigInt(interaction.member.permissions) & 8n) === 8n)
-    );
-    if (!isAdmin) {
-      sysError('Security Violation: Unauthorized Admin Slash Command Blocked', new Error('Non-admin executed admin command'), {
-        user: interaction.user?.id,
-        guild: interaction.guildId,
-        detail: `Command: /${commandName}`
-      });
-      return interaction.reply({
-        content: '⛔ **Access Denied**: Administrator permission required. You cannot use admin commands.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
+    const { verifyAdminAccess } = await import('../storage/admins.js');
+    const hasAccess = await verifyAdminAccess(interaction);
+    if (!hasAccess) return;
   }
 
   switch (commandName) {
