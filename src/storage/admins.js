@@ -199,3 +199,64 @@ export async function verifyAdminAccess(interaction) {
 
   return false;
 }
+
+/**
+ * Check if the user executing the interaction is the server owner.
+ * @param {import('discord.js').Interaction} interaction
+ * @returns {Promise<boolean>}
+ */
+export async function isGuildOwner(interaction) {
+  const userId = interaction.user?.id;
+  const guildId = interaction.guildId;
+  if (!userId || !guildId) return false;
+
+  let ownerId = interaction.guild?.ownerId;
+  if (!ownerId && interaction.guild?.fetch) {
+    try {
+      const g = await interaction.guild.fetch();
+      ownerId = g.ownerId;
+    } catch {}
+  }
+  if (!ownerId && interaction.client) {
+    try {
+      const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
+      ownerId = g?.ownerId;
+    } catch {}
+  }
+
+  return Boolean(ownerId && userId === ownerId);
+}
+
+/**
+ * Strictly verifies that the interacting user is the server owner.
+ * If not, sends an ephemeral denial and returns false.
+ * @param {import('discord.js').Interaction} interaction
+ * @returns {Promise<boolean>}
+ */
+export async function verifyOwnerAccess(interaction) {
+  const isOwner = await isGuildOwner(interaction);
+  if (isOwner) return true;
+
+  sysError('Security Violation: Non-Owner Admin Management Blocked', new Error('Only server owner can manage authorized admins'), {
+    user: interaction.user?.id,
+    guild: interaction.guildId,
+    detail: interaction.customId || interaction.commandName
+  });
+
+  const denyMsg = {
+    content: '❌ **Access Denied**: Only the server owner can manage authorized bot administrators.',
+    flags: MessageFlags.Ephemeral
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    if (typeof interaction.followUp === 'function') {
+      await Promise.resolve(interaction.followUp(denyMsg)).catch(() => {});
+    }
+  } else {
+    if (typeof interaction.reply === 'function') {
+      await Promise.resolve(interaction.reply(denyMsg)).catch(() => {});
+    }
+  }
+
+  return false;
+}

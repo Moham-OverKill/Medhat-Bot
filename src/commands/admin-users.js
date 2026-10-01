@@ -32,19 +32,27 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Button Row 1: Anti Cheat | Admins
+    // Button Row 1: Anti Cheat | Admins (Owner only)
+    const { isGuildOwner } = await import('../storage/admins.js');
+    const isOwner = await isGuildOwner(interaction);
+
     const row1Buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
             .setEmoji('🚫')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('admin_user_admins')
-            .setLabel('Admins')
-            .setEmoji('💼')
             .setStyle(ButtonStyle.Secondary)
     );
+
+    if (isOwner) {
+        row1Buttons.addComponents(
+            new ButtonBuilder()
+                .setCustomId('admin_user_admins')
+                .setLabel('Admins')
+                .setEmoji('💼')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
 
     // Button Row 2: Back
     const row2Buttons = new ActionRowBuilder().addComponents(
@@ -976,12 +984,13 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
-        const { verifyAdminAccess } = await import('../storage/admins.js');
+        const { verifyAdminAccess, verifyOwnerAccess } = await import('../storage/admins.js');
         if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
 
         if (customId === 'admin_user_admins') {
+            if (!(await verifyOwnerAccess(interaction))) return;
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferUpdate().catch(() => {});
             }
@@ -990,6 +999,7 @@ export async function handleAdminUserComponent(interaction) {
         }
 
         if (customId === 'admin_manage_toggle_user') {
+            if (!(await verifyOwnerAccess(interaction))) return;
             await handleToggleAdminUser(interaction);
             return;
         }
@@ -1308,6 +1318,9 @@ export const handleToggleAntiCheat = handleToggleAltFarmingGate;
  * @param {import('discord.js').Interaction} interaction
  */
 export async function showAdminManagement(interaction) {
+    const { verifyOwnerAccess } = await import('../storage/admins.js');
+    if (!(await verifyOwnerAccess(interaction))) return;
+
     const guildId = interaction.guildId;
     const guild = interaction.guild;
     let ownerId = guild?.ownerId;
@@ -1377,6 +1390,9 @@ export async function showAdminManagement(interaction) {
  * @param {import('discord.js').Interaction} interaction
  */
 export async function handleToggleAdminUser(interaction) {
+    const { verifyOwnerAccess } = await import('../storage/admins.js');
+    if (!(await verifyOwnerAccess(interaction))) return;
+
     const guildId = interaction.guildId;
     const targetUserId = interaction.values[0];
     const guild = interaction.guild;
