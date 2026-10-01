@@ -497,6 +497,7 @@ async function createTables() {
       
       // Trade Concurrency & Anti-Spam (March 24)
       await pool.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`);
+      await pool.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS declined_by TEXT`);
       
       // Category Upgrade: Add category_type (0=Multi, 1=Single)
       await pool.query(`ALTER TABLE shop_categories ADD COLUMN IF NOT EXISTS category_type INTEGER DEFAULT 0`);
