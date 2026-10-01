@@ -527,22 +527,24 @@ export async function getInterfaceConfig(guildId) {
   try {
     const pool = getPool();
     const res = await pool.query(
-      `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id 
+      `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id,
+              admin_is_enabled, admin_target_channel_id, admin_message_id
        FROM server_interface_config 
        WHERE guild_id = $1`,
       [guildId]
     ).catch(async (queryErr) => {
-      if (queryErr.code === '42703' || String(queryErr.message).includes('slot_button_colors') || String(queryErr.message).includes('slot_colors')) {
-        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
-        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
-        return pool.query(
-          `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id 
-           FROM server_interface_config 
-           WHERE guild_id = $1`,
-          [guildId]
-        );
-      }
-      throw queryErr;
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
+      return pool.query(
+        `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id,
+                admin_is_enabled, admin_target_channel_id, admin_message_id
+         FROM server_interface_config 
+         WHERE guild_id = $1`,
+        [guildId]
+      );
     });
 
     if (res.rows.length > 0) {
@@ -554,7 +556,10 @@ export async function getInterfaceConfig(guildId) {
         slot_colors: normalizeSlotColors(row.slot_colors),
         slot_button_colors: normalizeSlotButtonColors(row.slot_button_colors),
         target_channel_id: row.target_channel_id || null,
-        message_id: row.message_id || null
+        message_id: row.message_id || null,
+        admin_is_enabled: Boolean(row.admin_is_enabled ?? true),
+        admin_target_channel_id: row.admin_target_channel_id || null,
+        admin_message_id: row.admin_message_id || null
       };
     }
 
@@ -570,7 +575,10 @@ export async function getInterfaceConfig(guildId) {
       slot_colors: new Array(12).fill('#000000'),
       slot_button_colors: new Array(12).fill('secondary'),
       target_channel_id: fallbackChannel,
-      message_id: fallbackMessage
+      message_id: fallbackMessage,
+      admin_is_enabled: true,
+      admin_target_channel_id: null,
+      admin_message_id: null
     };
   } catch (err) {
     sysError('Failed to fetch interface config', err, { guildId });
@@ -581,7 +589,10 @@ export async function getInterfaceConfig(guildId) {
       slot_colors: new Array(12).fill('#000000'),
       slot_button_colors: new Array(12).fill('secondary'),
       target_channel_id: null,
-      message_id: null
+      message_id: null,
+      admin_is_enabled: true,
+      admin_target_channel_id: null,
+      admin_message_id: null
     };
   }
 }
@@ -604,33 +615,57 @@ export async function saveInterfaceConfig(guildId, data) {
     const channelId = data.target_channel_id !== undefined ? (data.target_channel_id || null) : existing.target_channel_id;
     const messageId = data.message_id !== undefined ? (data.message_id || null) : existing.message_id;
 
+    const adminIsEnabled = data.admin_is_enabled !== undefined ? Boolean(data.admin_is_enabled) : existing.admin_is_enabled;
+    const adminChannelId = data.admin_target_channel_id !== undefined ? (data.admin_target_channel_id || null) : existing.admin_target_channel_id;
+    const adminMessageId = data.admin_message_id !== undefined ? (data.admin_message_id || null) : existing.admin_message_id;
+
     const queryStr = `
-      INSERT INTO server_interface_config (guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      INSERT INTO server_interface_config (
+        guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors,
+        target_channel_id, message_id,
+        admin_is_enabled, admin_target_channel_id, admin_message_id,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (guild_id)
       DO UPDATE SET
         is_enabled = EXCLUDED.is_enabled,
         shortcut_order = EXCLUDED.shortcut_order,
         slot_colors = EXCLUDED.slot_colors,
         slot_button_colors = EXCLUDED.slot_button_colors,
-        target_channel_id = COALESCE(EXCLUDED.target_channel_id, server_interface_config.target_channel_id),
-        message_id = COALESCE(EXCLUDED.message_id, server_interface_config.message_id),
+        target_channel_id = EXCLUDED.target_channel_id,
+        message_id = EXCLUDED.message_id,
+        admin_is_enabled = EXCLUDED.admin_is_enabled,
+        admin_target_channel_id = EXCLUDED.admin_target_channel_id,
+        admin_message_id = EXCLUDED.admin_message_id,
         updated_at = NOW()
-      RETURNING guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id
+      RETURNING guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors,
+                target_channel_id, message_id,
+                admin_is_enabled, admin_target_channel_id, admin_message_id
     `;
-    const params = [guildId, isEnabled, JSON.stringify(normalizedOrder), JSON.stringify(normalizedColors), JSON.stringify(normalizedBtnColors), channelId, messageId];
+    const params = [
+      guildId,
+      isEnabled,
+      JSON.stringify(normalizedOrder),
+      JSON.stringify(normalizedColors),
+      JSON.stringify(normalizedBtnColors),
+      channelId,
+      messageId,
+      adminIsEnabled,
+      adminChannelId,
+      adminMessageId
+    ];
 
     let res;
     try {
       res = await pool.query(queryStr, params);
     } catch (saveErr) {
-      if (saveErr.code === '42703' || String(saveErr.message).includes('slot_button_colors') || String(saveErr.message).includes('slot_colors')) {
-        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
-        await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
-        res = await pool.query(queryStr, params);
-      } else {
-        throw saveErr;
-      }
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS slot_button_colors JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
+      res = await pool.query(queryStr, params);
     }
 
     // Keep legacy guild_configs synchronized ONLY if valid channelId/messageId is present
@@ -653,7 +688,10 @@ export async function saveInterfaceConfig(guildId, data) {
       slot_colors: normalizeSlotColors(row.slot_colors),
       slot_button_colors: normalizeSlotButtonColors(row.slot_button_colors),
       target_channel_id: row.target_channel_id || null,
-      message_id: row.message_id || null
+      message_id: row.message_id || null,
+      admin_is_enabled: Boolean(row.admin_is_enabled ?? true),
+      admin_target_channel_id: row.admin_target_channel_id || null,
+      admin_message_id: row.admin_message_id || null
     };
   } catch (err) {
     sysError('Failed to save interface config', err, { guildId });
@@ -882,15 +920,315 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
   }
 }
 
+export const ADMIN_SHORTCUT_ITEMS = [
+  [
+    { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
+    { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
+    { id: 'coins', label: 'COINS', emoji: '🪙', btnId: 'admin_hub_coins' },
+    { id: 'items', label: 'ITEMS', emoji: '📦', btnId: 'admin_hub_shop' }
+  ],
+  [
+    { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
+    { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' },
+    { id: 'organize', label: 'ORGANIZE', emoji: '🧹', btnId: 'admin_hub_organize' },
+    { id: 'customize', label: 'CUSTOMIZE', emoji: '✨', btnId: 'admin_hub_customize' }
+  ],
+  [
+    { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
+    { id: 'embed', label: 'EMBED', emoji: '📰', btnId: 'admin_hub_embed' },
+    { id: 'logs', label: 'LOGS', emoji: '📜', btnId: 'admin_hub_logs' },
+    { id: 'economy', label: 'ECONOMY', emoji: '📈', btnId: 'admin_hub_economy' }
+  ]
+];
+
 /**
- * Render the Admin Interface Configuration Panel in /settings -> Users -> Interface
- * Clean minimal view without shortcut listing
- * All buttons styled in gray (ButtonStyle.Secondary)
+ * Generate composite Admin Interface banner image buffer
+ * 4x3 grid with all 12 Control Panel module shortcuts
+ * @returns {Promise<Buffer>}
+ */
+export async function generateAdminInterfaceBanner() {
+  const cardW = 312;
+  const cardH = 262;
+  const marginX = 24;
+  const marginY = 20;
+  const gapX = 29;
+  const gapY = 28;
+
+  const maxCols = 4;
+  const rowCount = 3;
+
+  const canvasW = maxCols * cardW + (maxCols - 1) * gapX + 2 * marginX;
+  const canvasH = rowCount * cardH + (rowCount - 1) * gapY + 2 * marginY;
+
+  const canvas = createCanvas(canvasW, canvasH);
+  const ctx = canvas.getContext('2d');
+
+  for (let r = 0; r < rowCount; r++) {
+    const rowItems = ADMIN_SHORTCUT_ITEMS[r];
+    const y = marginY + r * (cardH + gapY);
+    for (let c = 0; c < maxCols; c++) {
+      const item = rowItems[c];
+      const x = marginX + c * (cardW + gapX);
+      drawShortcutCard(ctx, x, y, cardW, cardH, item, '#000000');
+    }
+  }
+
+  return canvas.toBuffer('image/png');
+}
+
+export function buildAdminHubEmbed() {
+  return new EmbedBuilder()
+    .setTitle('ADMIN INTERFACE')
+    .setColor(0x000000)
+    .setImage('attachment://admin_interface.png');
+}
+
+export function buildAdminHubButtons() {
+  const rows = [];
+  for (const rowItems of ADMIN_SHORTCUT_ITEMS) {
+    const actionRow = new ActionRowBuilder();
+    for (const item of rowItems) {
+      actionRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(item.btnId)
+          .setEmoji(item.emoji)
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    rows.push(actionRow);
+  }
+  return rows;
+}
+
+const adminHubUpdateLocks = new Set();
+
+/**
+ * Publish or update the public Admin Hub message in the designated channel
+ * @param {import('discord.js').Client} client 
+ * @param {string} guildId 
+ * @param {{ allowCreate?: boolean }} [options]
+ * @returns {Promise<boolean>}
+ */
+export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
+  const { allowCreate = false } = options;
+
+  if (adminHubUpdateLocks.has(guildId)) {
+    return false;
+  }
+  adminHubUpdateLocks.add(guildId);
+
+  try {
+    const interfaceConfig = await getInterfaceConfig(guildId);
+    if (!interfaceConfig.admin_is_enabled) {
+      return false;
+    }
+
+    const channelId = interfaceConfig.admin_target_channel_id;
+    if (!channelId) {
+      return false;
+    }
+
+    if (!interfaceConfig.admin_message_id && !allowCreate) {
+      return false;
+    }
+
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return false;
+
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      sysLog('Admin Hub Channel Inaccessible', { guild: guildId, channel: channelId });
+      return false;
+    }
+
+    const bannerBuffer = await generateAdminInterfaceBanner();
+    const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_interface.png' });
+    const embed = buildAdminHubEmbed();
+    const buttonRows = buildAdminHubButtons();
+    const payload = {
+      embeds: [embed],
+      components: buttonRows,
+      files: [attachment]
+    };
+
+    const oldMsgId = interfaceConfig.admin_message_id;
+    if (oldMsgId) {
+      const oldMessage = await channel.messages.fetch(oldMsgId).catch(() => null);
+      if (oldMessage) {
+        await oldMessage.edit(payload).catch(() => null);
+        sysLog('Admin Hub Message Updated In-Place', { guild: guildId, channel: channelId, messageId: oldMsgId });
+        return true;
+      }
+    }
+
+    if (!allowCreate) {
+      return false;
+    }
+
+    try {
+      const recentMessages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
+      if (recentMessages) {
+        for (const msg of recentMessages.values()) {
+          if (msg.author.id === client.user.id) {
+            const hasAdminHubButtons = msg.components?.some(row =>
+              row.components?.some(btn => btn.customId?.startsWith('admin_hub_'))
+            );
+            if (hasAdminHubButtons) {
+              await msg.delete().catch(() => {});
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-blocking cleanup
+    }
+
+    const newMessage = await channel.send(payload).catch((err) => {
+      sysError('Admin Hub Message Send Failed', err, { guild: guildId, channel: channelId });
+      return null;
+    });
+
+    if (newMessage) {
+      interfaceConfig.admin_message_id = newMessage.id;
+      await saveInterfaceConfig(guildId, interfaceConfig);
+      sysLog('Admin Hub Message Freshly Published', { guild: guildId, channel: channelId, messageId: newMessage.id });
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    sysError('Admin Hub Publish/Update Error', error, { guild: guildId });
+    return false;
+  } finally {
+    adminHubUpdateLocks.delete(guildId);
+  }
+}
+
+/**
+ * Handle Admin Hub shortcut buttons clicked by staff in the Admin Interface message
+ * @param {import('discord.js').ButtonInteraction} interaction 
+ */
+export async function handleAdminHubComponent(interaction) {
+  const customId = interaction.customId;
+
+  // Runtime Admin check
+  if (!interaction.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    const deny = { content: 'Administrator permission required.', flags: MessageFlags.Ephemeral };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(deny);
+    return interaction.reply(deny);
+  }
+
+  // Customize modal must be opened without deferring
+  if (customId === 'admin_hub_customize') {
+    const { showCustomizeModal } = await import('./settings.js');
+    return showCustomizeModal(interaction);
+  }
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
+
+  switch (customId) {
+    case 'admin_hub_colors': {
+      const { showColorPanel } = await import('./colors.js');
+      return showColorPanel(interaction, 'normal');
+    }
+    case 'admin_hub_pass': {
+      const { handlePassSetup } = await import('./settings/pass.js');
+      return handlePassSetup(interaction);
+    }
+    case 'admin_hub_coins': {
+      const { showCoinsSubMenu } = await import('./settings.js');
+      return showCoinsSubMenu(interaction);
+    }
+    case 'admin_hub_shop': {
+      const { handleShopSetup } = await import('./shop-setup.js');
+      return handleShopSetup(interaction);
+    }
+    case 'admin_hub_users': {
+      const { showUserSelector } = await import('./admin-users.js');
+      return showUserSelector(interaction);
+    }
+    case 'admin_hub_roles': {
+      const { showRolesMenu } = await import('./settings/role-rewards.js');
+      return showRolesMenu(interaction);
+    }
+    case 'admin_hub_organize': {
+      const { showOrganizeMenu } = await import('./settings/organize.js');
+      return showOrganizeMenu(interaction);
+    }
+    case 'admin_hub_leaderboards': {
+      const { handleLeaderboardSettings } = await import('./settings/leaderboards.js');
+      return handleLeaderboardSettings(interaction);
+    }
+    case 'admin_hub_embed': {
+      const { renderRootEmbedMenu } = await import('./settings/embeds.js');
+      return renderRootEmbedMenu(interaction);
+    }
+    case 'admin_hub_logs': {
+      const { handleLogsSettings } = await import('./settings/logs.js');
+      return handleLogsSettings(interaction);
+    }
+    case 'admin_hub_economy': {
+      const { handleEconomySettings } = await import('./settings/economy.js');
+      return handleEconomySettings(interaction);
+    }
+    default:
+      return;
+  }
+}
+
+/**
+ * Render the top-level Interface Selection Hub: [Users] [Admins]
+ * @param {import('discord.js').Interaction} interaction
+ */
+export async function showInterfaceMainMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('Interface Selection')
+    .setDescription('Select an interface type to configure.')
+    .setColor(0x5865F2);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('interface_menu_users')
+      .setLabel('Users')
+      .setEmoji('👥')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('interface_menu_admins')
+      .setLabel('Admins')
+      .setEmoji('🛡️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings_organize')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
+    content: '',
+    embeds: [embed],
+    components: [row1, row2],
+    files: [],
+    attachments: []
+  });
+}
+
+/**
+ * Render the User Interface Configuration Panel
  * Layout:
- * - Row 0: Target Channel Selector
+ * - Row 0: Target Channel Selector (Placeholder: "Select target channel for user's interface...")
  * - Row 1: [ Enable / Disable ] | [ Update ]
  * - Row 2: [ Back ] | [ Setup ]
- * @param {import('discord.js').ButtonInteraction|import('discord.js').ModalSubmitInteraction|import('discord.js').ChannelSelectMenuInteraction} interaction 
+ * @param {import('discord.js').Interaction} interaction 
  */
 export async function showInterfaceSettings(interaction) {
   const guildId = interaction.guildId;
@@ -924,7 +1262,7 @@ export async function showInterfaceSettings(interaction) {
   // Row 0: Channel Selector
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId('interface_set_channel')
-    .setPlaceholder('Select target channel for the Interface...')
+    .setPlaceholder("Select target channel for user's interface...")
     .setChannelTypes(ChannelType.GuildText);
 
   if (config.target_channel_id) {
@@ -955,7 +1293,7 @@ export async function showInterfaceSettings(interaction) {
 
   // Row 2: [ Back ] | [ Setup ] (all gray)
   const backBtn = new ButtonBuilder()
-    .setCustomId('settings_users')
+    .setCustomId('interface_home')
     .setLabel('Back')
     .setEmoji('⬅️')
     .setStyle(ButtonStyle.Secondary);
@@ -967,6 +1305,97 @@ export async function showInterfaceSettings(interaction) {
     .setStyle(ButtonStyle.Secondary);
 
   const row2 = new ActionRowBuilder().addComponents(backBtn, setupBtn);
+
+  const components = [
+    new ActionRowBuilder().addComponents(channelSelect),
+    row1,
+    row2
+  ];
+
+  const method = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+}
+
+/**
+ * Render the Admin Interface Configuration Panel
+ * Layout:
+ * - Row 0: Target Channel Selector (Placeholder: "Select target channel for admins interface...")
+ * - Row 1: [ Enable / Disable ] | [ Update / Publish ]
+ * - Row 2: [ Back ] (Returns to interface_home)
+ * @param {import('discord.js').Interaction} interaction
+ */
+export async function showAdminInterfaceSettings(interaction) {
+  const guildId = interaction.guildId;
+  const config = await getInterfaceConfig(guildId);
+
+  const currentChannel = config.admin_target_channel_id ? `<#${config.admin_target_channel_id}>` : '*Not Set*';
+  const isPublished = Boolean(config.admin_target_channel_id && config.admin_message_id);
+
+  let statusText = '`🔴 Disabled`';
+  if (config.admin_is_enabled) {
+    if (isPublished) {
+      statusText = '`🟢 Published & Active`';
+    } else if (config.admin_target_channel_id) {
+      statusText = '`🟡 Pending Deployment`';
+    } else {
+      statusText = '`🟡 Pending Setup (Channel Required)`';
+    }
+  }
+
+  const desc = [
+    'Configure the private Admin Interface message with direct shortcuts to all Control Panel modules.\n',
+    `• **Target Channel:** ${currentChannel}`,
+    `• **Status:** ${statusText}`
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle('Admin Interface Configuration')
+    .setDescription(desc)
+    .setColor(0x5865F2);
+
+  // Row 0: Channel Selector
+  const channelSelect = new ChannelSelectMenuBuilder()
+    .setCustomId('admin_interface_set_channel')
+    .setPlaceholder("Select target channel for admins interface...")
+    .setChannelTypes(ChannelType.GuildText);
+
+  if (config.admin_target_channel_id) {
+    channelSelect.setDefaultChannels([config.admin_target_channel_id]);
+  }
+
+  // Row 1: [ Enable / Disable ] | [ Update ] (all gray)
+  const toggleBtn = config.admin_is_enabled
+    ? new ButtonBuilder()
+        .setCustomId('admin_interface_disable_btn')
+        .setLabel('Disable')
+        .setEmoji('🔴')
+        .setStyle(ButtonStyle.Secondary)
+    : new ButtonBuilder()
+        .setCustomId('admin_interface_enable_btn')
+        .setLabel('Enable')
+        .setEmoji('🟢')
+        .setStyle(ButtonStyle.Secondary);
+
+  const updateBtn = new ButtonBuilder()
+    .setCustomId('admin_interface_publish_btn')
+    .setLabel(isPublished ? 'Update' : 'Publish')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!config.admin_target_channel_id);
+
+  const row1 = new ActionRowBuilder().addComponents(toggleBtn, updateBtn);
+
+  // Row 2: [ Back ] (all gray) - No Setup button as requested
+  const backBtn = new ButtonBuilder()
+    .setCustomId('interface_home')
+    .setLabel('Back')
+    .setEmoji('⬅️')
+    .setStyle(ButtonStyle.Secondary);
+
+  const row2 = new ActionRowBuilder().addComponents(backBtn);
 
   const components = [
     new ActionRowBuilder().addComponents(channelSelect),
@@ -1172,6 +1601,116 @@ export async function handleInterfaceComponent(interaction) {
   }
 
   try {
+    // 0. Interface Landing Navigation
+    if (customId === 'interface_home') {
+      return showInterfaceMainMenu(interaction);
+    }
+    if (customId === 'interface_menu_users') {
+      return showInterfaceSettings(interaction);
+    }
+    if (customId === 'interface_menu_admins') {
+      return showAdminInterfaceSettings(interaction);
+    }
+
+    // Admin Interface Handlers
+    if (customId === 'admin_interface_set_channel') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const channelId = interaction.values[0];
+
+      const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+      const permCheck = checkChannelPermissions(channel);
+      if (!permCheck.valid) {
+        return interaction.followUp({
+          content: `Cannot use that channel. ${permCheck.error}\nPlease ensure the bot has View Channel, Send Messages, and Embed Links permissions there.`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const config = await getInterfaceConfig(guildId);
+      config.admin_target_channel_id = channelId;
+      await saveInterfaceConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', 'cyan', 'Admin Interface Channel Assigned',
+        `**Admin:** \`${logName}\`\n` +
+        `**Channel:** <#${channelId}>`
+      );
+
+      return showAdminInterfaceSettings(interaction);
+    }
+
+    if (customId === 'admin_interface_enable_btn') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+      config.admin_is_enabled = true;
+      await saveInterfaceConfig(guildId, config);
+
+      if (config.admin_target_channel_id) {
+        await publishOrUpdateAdminHub(interaction.client, guildId, { allowCreate: true }).catch(() => {});
+      }
+
+      return showAdminInterfaceSettings(interaction);
+    }
+
+    if (customId === 'admin_interface_disable_btn') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+      config.admin_is_enabled = false;
+
+      if (config.admin_target_channel_id && config.admin_message_id) {
+        const channel = interaction.guild.channels.cache.get(config.admin_target_channel_id) ||
+          await interaction.guild.channels.fetch(config.admin_target_channel_id).catch(() => null);
+        if (channel?.isTextBased?.()) {
+          const oldMsg = await channel.messages.fetch(config.admin_message_id).catch(() => null);
+          if (oldMsg) await oldMsg.delete().catch(() => {});
+        }
+        config.admin_message_id = null;
+      }
+
+      await saveInterfaceConfig(guildId, config);
+      return showAdminInterfaceSettings(interaction);
+    }
+
+    if (customId === 'admin_interface_publish_btn') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+
+      if (!config.admin_target_channel_id) {
+        return interaction.followUp({
+          content: 'Please select a target channel first before publishing or updating the Admin Interface.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      if (!config.admin_is_enabled) {
+        config.admin_is_enabled = true;
+        await saveInterfaceConfig(guildId, config);
+      }
+
+      const success = await publishOrUpdateAdminHub(interaction.client, guildId, { allowCreate: true });
+      const freshConfig = await getInterfaceConfig(guildId);
+
+      if (success) {
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Admin Interface Published/Updated',
+          `**Admin:** \`${logName}\`\n` +
+          `**Channel:** <#${freshConfig.admin_target_channel_id}>`
+        );
+
+        await interaction.followUp({
+          content: `Admin Interface published successfully to <#${freshConfig.admin_target_channel_id}>!`,
+          flags: MessageFlags.Ephemeral
+        });
+      } else {
+        await interaction.followUp({
+          content: 'Failed to publish the Admin Interface. Please verify channel permissions and try again.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      return showAdminInterfaceSettings(interaction);
+    }
+
     // 1. Channel Select
     if (customId === 'interface_set_channel') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});

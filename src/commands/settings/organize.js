@@ -155,7 +155,7 @@ async function renderPanel(interaction, activeFilter = null) {
     // Row 4: Control buttons (Back, CMD Only, Auto React)
     const row2Buttons = [
         new ButtonBuilder()
-            .setCustomId('settings_home')
+            .setCustomId('settings_organize')
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
@@ -319,10 +319,63 @@ async function handleChannelToggle(interaction, filterKey) {
 }
 
 /**
+ * Render the main Organize Hub
+ * Row 1: [Filters] [Emojis] [Forums] [Interface]
+ * Row 2: [Back]
+ */
+export async function showOrganizeMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('Organize')
+        .setDescription('Manage server channels, automation filters, and interface hubs.')
+        .setColor(0x2B2D31);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('organize_filters')
+            .setLabel('Filters')
+            .setEmoji('🧹')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_emojis')
+            .setLabel('Emojis')
+            .setEmoji('😀')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_forums')
+            .setLabel('Forums')
+            .setEmoji('📁')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_interface')
+            .setLabel('Interface')
+            .setEmoji('🖥️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components: [row1, row2]
+    });
+}
+
+/**
  * Show the main Organize panel (no filter selected)
  */
 export async function handleOrganizeSettings(interaction) {
-    await renderPanel(interaction, null);
+    await showOrganizeMenu(interaction);
 }
 
 /**
@@ -391,9 +444,28 @@ export async function handleOrganizeComponent(interaction) {
         return renderPanel(interaction, 'auto_react');
     }
 
-    // Main panel (back from sub-module or initial open)
+    // Main Organize Hub
     if (customId === 'settings_organize') {
+        return showOrganizeMenu(interaction);
+    }
+
+    // Channel Filters panel
+    if (customId === 'organize_filters') {
         return renderPanel(interaction, null);
+    }
+
+    // Interface navigation
+    if (customId === 'organize_interface') {
+        const { showInterfaceMainMenu } = await import('../interface.js');
+        return showInterfaceMainMenu(interaction);
+    }
+
+    // Placeholder modules (Emojis, Forums)
+    if (customId === 'organize_emojis' || customId === 'organize_forums') {
+        return interaction.followUp({
+            content: 'This module is coming soon.',
+            flags: MessageFlags.Ephemeral
+        });
     }
 
     // Filter type buttons — render the same panel with that tab active

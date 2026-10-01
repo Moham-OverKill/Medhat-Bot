@@ -79,7 +79,7 @@ export async function handleLogsSettings(interaction) {
     const row4 = new ActionRowBuilder().addComponents(auditSelect);
     const row5 = new ActionRowBuilder().addComponents(backButton, disableButton);
 
-    const responseMethod = interaction.isCommand?.() || interaction.isModalSubmit?.() ? 'reply' : 'update';
+    const responseMethod = (interaction.deferred || interaction.replied || interaction.isCommand?.() || interaction.isModalSubmit?.()) ? 'reply' : 'update';
     const msgData = {
         embeds: [embed],
         components: [row1, row2, row3, row4, row5],
