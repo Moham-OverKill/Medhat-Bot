@@ -1177,17 +1177,17 @@ export async function showAntiCheatHub(interaction) {
         .setTitle('Anti-Cheat')
         .setDescription(
             'Configure anti-cheat protections and farming gates.\n\n' +
-            '• **Alt Farming** — Account age and join date gates\n' +
+            '• **Text Spam** — Message cooldown and anti-spam gates\n' +
             '• **Voice AFK** — Voice farming prevention\n' +
-            '• **Text Spam** — Message cooldown and anti-spam gates'
+            '• **Alt Farming** — Account age and join date gates'
         )
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_alt')
-            .setLabel('Alt Farming')
-            .setEmoji('🎭')
+            .setCustomId('admin_user_anticheat_text')
+            .setLabel('Text Spam')
+            .setEmoji('💬')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice')
@@ -1195,9 +1195,9 @@ export async function showAntiCheatHub(interaction) {
             .setEmoji('🎙️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_text')
-            .setLabel('Text Spam')
-            .setEmoji('💬')
+            .setCustomId('admin_user_anticheat_alt')
+            .setLabel('Alt Farming')
+            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary)
     );
 
