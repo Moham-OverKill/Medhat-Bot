@@ -602,6 +602,14 @@ export const RARITY_COLORS = {
   legendary: '#F1C40F'
 };
 
+export const RARITY_OPTIONS = [
+  { label: 'Common',    value: 'common',    emoji: RARITY_EMOJIS.common },
+  { label: 'Uncommon',  value: 'uncommon',  emoji: RARITY_EMOJIS.uncommon },
+  { label: 'Rare',      value: 'rare',      emoji: RARITY_EMOJIS.rare },
+  { label: 'Epic',      value: 'epic',      emoji: RARITY_EMOJIS.epic },
+  { label: 'Legendary', value: 'legendary', emoji: RARITY_EMOJIS.legendary }
+];
+
 /**
  * Resolves an emoji string or ID into a safe format for Discord Buttons and Select Menus.
  * Validates custom emojis against the bot's accessible emoji cache to prevent COMPONENT_INVALID_EMOJI crashes.

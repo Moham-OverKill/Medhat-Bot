@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -942,14 +942,6 @@ export async function handleAssignCategorySelect(interaction) {
 // ============================================================
 // NEW ITEM ATTRIBUTE HANDLERS (Item Created panel - no auto-save)
 // ============================================================
-
-const RARITY_OPTIONS = [
-  { label: 'Common',    value: 'common',    emoji: '<:Common:1540257440971366400>' },
-  { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540257439629312010>' },
-  { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540257438274428928>' },
-  { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540257436890566666>' },
-  { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540257435560841236>' }
-];
 
 export function getTradableOptions(lootBoxName = 'loot boxes') {
   const name = (lootBoxName && lootBoxName.trim().length > 0) ? lootBoxName.trim() : 'Loot Boxes';
