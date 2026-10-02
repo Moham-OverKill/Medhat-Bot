@@ -583,9 +583,9 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
     const validStart = row.voice_valid_start ? parseInt(row.voice_valid_start) : null;
     if (!validStart || validStart <= 0) return;
 
-    const elapsedMs = now - validStart;
+    const elapsedMs = Math.max(0, now - validStart);
     const elapsedSeconds = Math.floor(elapsedMs / 1000);
-    const pointsToAward = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
+    const pointsToAward = Math.max(0, Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS)) * VOICE_POINTS_REWARD;
 
     // ATOMIC UPDATE: Award any completed full minutes, wipe uncompleted seconds to 0, and clear voice_valid_start
     await pool.query(
@@ -753,12 +753,12 @@ export async function voicePointsTick(client) {
         }
 
         // ========== VALIDATION PASSED - AWARD POINTS ==========
-        const elapsedMs = now - validStart;
+        const elapsedMs = Math.max(0, now - validStart);
         const elapsedSeconds = Math.floor(elapsedMs / 1000);
 
         if (elapsedSeconds >= VOICE_POINTS_THRESHOLD_SECONDS) {
           const completedMinutes = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS);
-          const pointsToAward = completedMinutes * VOICE_POINTS_REWARD;
+          const pointsToAward = Math.max(0, completedMinutes * VOICE_POINTS_REWARD);
           const newValidStart = validStart + (completedMinutes * VOICE_POINTS_THRESHOLD_SECONDS * 1000);
 
           // ATOMIC UPDATE: Consume completed minutes and advance voice_valid_start seamlessly
@@ -864,9 +864,9 @@ export async function flushAllVoiceTime(guildId) {
       const validStart = parseInt(row.voice_valid_start);
       if (!validStart || validStart <= 0) continue;
 
-      const elapsedMs = now - validStart;
+      const elapsedMs = Math.max(0, now - validStart);
       const elapsedSeconds = Math.floor(elapsedMs / 1000);
-      const pointsToAward = Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS) * VOICE_POINTS_REWARD;
+      const pointsToAward = Math.max(0, Math.floor(elapsedSeconds / VOICE_POINTS_THRESHOLD_SECONDS)) * VOICE_POINTS_REWARD;
 
       // ATOMIC UPDATE: Consume valid time, reset buffer to 0, and clear voice_valid_start
       await pool.query(
