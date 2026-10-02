@@ -1,5 +1,5 @@
 import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
-import { logSystemError, sendLog, sysLog, sysError } from '../utils/logger.js';
+import { logSystemError, sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { getGuildActivity, resetGuildActivity, getTopActiveUsers } from '../activity/tracker.js';
 import { getGuildConfig, setGuildConfig, loadGuildConfigs } from '../storage/config.js';
 import { appendAwardRecord } from '../storage/mvpHistory.js';
@@ -848,10 +848,10 @@ export async function awardMvp(client, guildId, options = {}) {
     }
 
     if (hasAnyDangerousPermission(mvpRole)) {
-      sysError('Security Violation: Dangerous MVP Role Blocked', new Error('MVP role holds dangerous permissions'), {
-        guildId,
-        roleId: mvpRole.id,
-        roleName: mvpRole.name
+      sysWarn('Dangerous MVP Role Blocked', {
+        guild: guildId,
+        role: mvpRole.id,
+        detail: `MVP role "${mvpRole.name}" (${mvpRole.id}) holds dangerous permissions and cannot be assigned`
       });
       throw new Error('MVP role holds dangerous permissions and cannot be assigned');
     }

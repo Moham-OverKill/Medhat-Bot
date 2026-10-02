@@ -1282,7 +1282,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
         try {
           const roleObj = member.guild?.roles?.cache?.get(rid);
           if (roleObj && hasAnyDangerousPermission(roleObj)) {
-            sysError('Security Violation: Dangerous Role Grant Blocked', new Error('Attempted to grant role with dangerous permissions via item purchase'), { user: userId, guild: guildId, roleId: rid, item: item.name });
+            sysWarn('Dangerous Role Grant Blocked', { user: userId, guild: guildId, role: rid, item: item.name, detail: 'Attempted to grant role with dangerous permissions via item purchase' });
             continue;
           }
           await member.roles.add(rid);
@@ -2317,7 +2317,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
         try {
           const roleObj = member.guild?.roles?.cache?.get(rid);
           if (roleObj && hasAnyDangerousPermission(roleObj)) {
-            sysError('Security Violation: Dangerous Role Equip Blocked', new Error('Attempted to equip role with dangerous permissions'), { user: member.id, guild: member.guild?.id, roleId: rid, item: item.name });
+            sysWarn('Dangerous Role Equip Blocked', { user: member.id, guild: member.guild?.id, role: rid, item: item.name, detail: 'Attempted to equip role with dangerous permissions' });
             continue;
           }
           await member.roles.add(rid, `Equipped item: ${item.name}`);

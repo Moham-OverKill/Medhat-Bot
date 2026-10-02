@@ -17,7 +17,7 @@ import {
   setBoosterRole
 } from '../storage/colors.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, hasAnyDangerousPermission } from '../shared.js';
-import { logServerEvent, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
+import { logServerEvent, sendLog, sendBulkLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 // Helper to check if a member is a server booster
 export async function isMemberBooster(member) {
@@ -861,7 +861,7 @@ export async function handleColorButton(interaction) {
       }
 
       if (targetRole && hasAnyDangerousPermission(targetRole)) {
-        sysError('Security Violation: Dangerous Color Role Assignment Blocked', new Error('Target color role holds dangerous permissions'), { user: member.id, guild: interaction.guildId, roleId });
+        sysWarn('Dangerous Color Role Assignment Blocked', { user: member.id, guild: interaction.guildId, role: roleId, detail: 'Target color role holds dangerous permissions' });
         return interaction.editReply({ files: [], content: '❌ This color role holds administrative or moderation permissions and cannot be assigned.', });
       }
 
