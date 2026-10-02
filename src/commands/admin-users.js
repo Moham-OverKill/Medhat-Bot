@@ -989,14 +989,10 @@ export async function handleAdminRemoveModal(interaction) {
     try {
         await client.query('BEGIN');
 
-        // Concurrency Protection: Lock the specific user_inventory row
+        // Concurrency Protection: Lock the specific user_inventory row directly (no outer joins on FOR UPDATE)
         const itemRes = await client.query(
-            `SELECT ui.*, COALESCE(si.name, lb.name, 'Item') as name, si.role_id as shop_role_id
-             FROM user_inventory ui
-             LEFT JOIN shop_items si ON ui.shop_item_id = si.id
-             LEFT JOIN loot_boxes lb ON (ui.role_id LIKE 'CHEST_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER)
-                 OR (ui.role_id LIKE 'LOOT_BOX_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 10), '')::INTEGER)
-             WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
+            `SELECT * FROM user_inventory 
+             WHERE id = $1 AND user_id = $2 AND guild_id = $3
              FOR UPDATE`,
             [invId, targetUserId, guildId]
         );
@@ -1007,9 +1003,38 @@ export async function handleAdminRemoveModal(interaction) {
         }
 
         const item = itemRes.rows[0];
+        let itemName = 'Item';
+        let shopRoleId = null;
+
+        if (item.shop_item_id) {
+            const siRes = await client.query(
+                `SELECT name, role_id FROM shop_items WHERE id = $1`,
+                [item.shop_item_id]
+            );
+            if (siRes.rows.length > 0) {
+                itemName = siRes.rows[0].name;
+                shopRoleId = siRes.rows[0].role_id;
+            }
+        }
+
+        if ((!item.shop_item_id || itemName === 'Item') && item.role_id && (item.role_id.startsWith('CHEST_') || item.role_id.startsWith('LOOT_BOX_'))) {
+            const rawBoxId = item.role_id.startsWith('CHEST_')
+                ? item.role_id.slice(6)
+                : item.role_id.slice(9);
+            const boxId = parseInt(rawBoxId, 10);
+            if (!isNaN(boxId)) {
+                const lbRes = await client.query(
+                    `SELECT name FROM loot_boxes WHERE id = $1`,
+                    [boxId]
+                );
+                if (lbRes.rows.length > 0) {
+                    itemName = lbRes.rows[0].name;
+                }
+            }
+        }
+
         const oldQty = parseInt(item.quantity) || 1;
-        const itemName = item.name;
-        const roleIdToRevoke = item.role_id || item.shop_role_id;
+        const roleIdToRevoke = item.role_id || shopRoleId;
         const shopItemId = item.shop_item_id;
 
         let newQty = 0;
