@@ -1459,13 +1459,35 @@ export async function handleToggleAdminUser(interaction) {
         return showAdminManagement(interaction);
     }
 
-    // Check if target user has Discord Administrator permission
+    // Check target user validity and membership
     let targetMember = guild?.members?.cache?.get(targetUserId);
     if (!targetMember && guild) {
         targetMember = await guild.members.fetch(targetUserId).catch(() => null);
     }
 
-    if (targetMember?.permissions?.has(PermissionFlagsBits.Administrator)) {
+    if (!targetMember) {
+        const { isServerAdmin, removeServerAdmin } = await import('../storage/admins.js');
+        const isCurrentlyAdmin = await isServerAdmin(guildId, targetUserId);
+        if (isCurrentlyAdmin) {
+            await removeServerAdmin(guildId, targetUserId);
+            return showAdminManagement(interaction);
+        }
+        await interaction.followUp({
+            content: '❌ **Action Prohibited**: Target user was not found in this server.',
+            flags: MessageFlags.Ephemeral
+        });
+        return showAdminManagement(interaction);
+    }
+
+    if (targetMember.user?.bot) {
+        await interaction.followUp({
+            content: '❌ **Action Prohibited**: Bots cannot be designated as administrators.',
+            flags: MessageFlags.Ephemeral
+        });
+        return showAdminManagement(interaction);
+    }
+
+    if (targetMember.permissions?.has(PermissionFlagsBits.Administrator)) {
         await interaction.followUp({
             content: `❌ **Action Prohibited**: <@${targetUserId}> has the Discord **Administrator** permission and is automatically an administrator. To remove their access, remove their Administrator role in Discord Server Settings.`,
             flags: MessageFlags.Ephemeral
