@@ -1,6 +1,6 @@
 import { sysLog, sysError, sendLog } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
-import { sleep, executeWithRetry } from '../shared.js';
+import { sleep, executeWithRetry, hasAnyDangerousPermission } from '../shared.js';
 import { getTopCoinUsers, getTopStreakUsers } from '../commands/leaderboard.js';
 
 // ── Constants (mirrors award.js patterns) ──────────────────────────────────
@@ -124,6 +124,15 @@ async function validateRole(guild, roleId) {
     if (!role) return null;
     if (role.id === guild.id) return null; // @everyone
     if (role.managed) return null;         // bot/integration role
+
+    if (hasAnyDangerousPermission(role)) {
+        sysError('Security Violation: Dangerous Leaderboard Role Blocked', new Error('Target role holds dangerous permissions'), {
+            guildId: guild.id,
+            roleId: role.id,
+            roleName: role.name
+        });
+        return null;
+    }
 
     const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
     if (!botMember) return null;

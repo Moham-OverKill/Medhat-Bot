@@ -16,7 +16,7 @@ import {
   getAllColorRoles,
   setBoosterRole
 } from '../storage/colors.js';
-import { sanitizeError, getUserDisplayName, getUserLogName } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, hasAnyDangerousPermission } from '../shared.js';
 import { logServerEvent, sendLog, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 
 // Helper to check if a member is a server booster
@@ -854,10 +854,15 @@ export async function handleColorButton(interaction) {
         }
       }
 
-      // Add the new color role (Check hierarchy first)
-      const targetRole = interaction.guild.roles.cache.get(roleId);
+      // Add the new color role (Check hierarchy and security first)
+      const targetRole = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
         return interaction.editReply({ files: [], content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.', });
+      }
+
+      if (targetRole && hasAnyDangerousPermission(targetRole)) {
+        sysError('Security Violation: Dangerous Color Role Assignment Blocked', new Error('Target color role holds dangerous permissions'), { user: member.id, guild: interaction.guildId, roleId });
+        return interaction.editReply({ files: [], content: '❌ This color role holds administrative or moderation permissions and cannot be assigned.', });
       }
 
       await member.roles.add(roleId);

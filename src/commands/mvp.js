@@ -12,7 +12,7 @@ import {
   TextInputBuilder,
   TextInputStyle
 } from 'discord.js';
-import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
+import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, hasAnyDangerousPermission } from '../shared.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { cancelMvpTimer, scheduleMvpTimer } from '../mvp/award.js';
 import { getNextCairoHourTimestamp } from '../utils/time.js';
@@ -453,10 +453,10 @@ async function handleRoleSelect(interaction, config) {
       return;
     }
 
-    // Warn if role has dangerous permissions
-    if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
+    // Reject if role has dangerous permissions
+    if (hasAnyDangerousPermission(role)) {
       await interaction.reply({
-        content: '❌ Reward role must not have Administrator, Manage Server, or Manage Roles permissions.',
+        content: '❌ Reward role must not possess administrative or elevated permissions.',
         flags: MessageFlags.Ephemeral
       });
       return;
