@@ -4,7 +4,7 @@ import { getActiveMvps, setActiveMvps } from '../storage/activeMvps.js';
 import { setMvpCache } from './mvpCache.js';
 import { updateBalance } from '../economy/service.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
-import { COIN_EMOJI, executeWithRetry } from '../shared.js';
+import { COIN_EMOJI, executeWithRetry, hasAnyDangerousPermission } from '../shared.js';
 import { query } from '../storage/postgres.js';
 
 // Per-guild lock to prevent concurrent KotH executions
@@ -57,7 +57,14 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
     let mvpRole = null;
     if (mvpRoleId) {
       mvpRole = await guildObj.roles.fetch(mvpRoleId).catch(() => null);
-      if (!mvpRole) {
+      if (mvpRole && hasAnyDangerousPermission(mvpRole)) {
+        sysError('Security Violation: Dangerous KotH MVP Role Blocked', new Error('MVP role holds dangerous permissions'), {
+          guildId,
+          roleId: mvpRole.id,
+          roleName: mvpRole.name
+        });
+        mvpRole = null;
+      } else if (!mvpRole) {
         sysLog('KotH Role Warning', {
           guild: guildId,
           detail: `MVP role ${mvpRoleId} not found in server. Coins will still be distributed.`

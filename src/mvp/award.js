@@ -11,7 +11,8 @@ import {
   getUserLogName,
   COIN_EMOJI,
   executeWithRetry,
-  sleep
+  sleep,
+  hasAnyDangerousPermission
 } from '../shared.js';
 import { getPool } from '../storage/postgres.js';
 import { updateBalance } from '../economy/service.js';
@@ -844,6 +845,15 @@ export async function awardMvp(client, guildId, options = {}) {
 
     if (!mvpRole.editable) {
       throw new Error('Cannot manage MVP role - adjust hierarchy');
+    }
+
+    if (hasAnyDangerousPermission(mvpRole)) {
+      sysError('Security Violation: Dangerous MVP Role Blocked', new Error('MVP role holds dangerous permissions'), {
+        guildId,
+        roleId: mvpRole.id,
+        roleName: mvpRole.name
+      });
+      throw new Error('MVP role holds dangerous permissions and cannot be assigned');
     }
 
     const winnerUserIds = winners.map(w => w.userId);
