@@ -1413,7 +1413,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
           tag: 'AUDIT',
           user: uid,
           guild: guildId,
-          detail: `Level: ${reachedLevel} | Missing Reconciled: ${missingRewards.length} | Configured Chests Audited: ${configuredChestsMap.size}`
+          detail: `Level: ${reachedLevel} | Missing Reconciled: ${missingRewards.length}`
         });
       }
     }
