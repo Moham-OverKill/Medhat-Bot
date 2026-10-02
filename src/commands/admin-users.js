@@ -1142,10 +1142,20 @@ export async function handleAdminUserComponent(interaction) {
                         await showAntiCheatHub(interaction);
                     }
                 } else if (subAction === 'voice') {
-                    if (subSubAction === 'back') {
+                    if (!subSubAction) {
+                        await showVoiceAfkDashboard(interaction);
+                    } else if (subSubAction === 'back') {
                         await showAntiCheatHub(interaction);
                     } else {
-                        await showVoiceAfkDashboard(interaction);
+                        await handleToggleVoiceAfkGate(interaction, subSubAction);
+                    }
+                } else if (subAction === 'text') {
+                    if (!subSubAction) {
+                        await showTextSpamDashboard(interaction);
+                    } else if (subSubAction === 'back') {
+                        await showAntiCheatHub(interaction);
+                    } else {
+                        await handleToggleTextSpamGate(interaction, subSubAction);
                     }
                 } else if (subAction === 'back') {
                     await showUserSelector(interaction);
@@ -1168,7 +1178,8 @@ export async function showAntiCheatHub(interaction) {
         .setDescription(
             'Configure anti-cheat protections and farming gates.\n\n' +
             '• **Alt Farming** — Account age and join date gates\n' +
-            '• **Voice AFK** — Voice farming prevention (Coming Soon)'
+            '• **Voice AFK** — Voice farming prevention\n' +
+            '• **Text Spam** — Message cooldown and anti-spam gates'
         )
         .setColor(0x3498DB);
 
@@ -1176,12 +1187,17 @@ export async function showAntiCheatHub(interaction) {
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_alt')
             .setLabel('Alt Farming')
-            .setEmoji('👥')
+            .setEmoji('🎭')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice')
             .setLabel('Voice AFK')
             .setEmoji('🎙️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text')
+            .setLabel('Text Spam')
+            .setEmoji('💬')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -1260,15 +1276,64 @@ export async function showAltFarmingDashboard(interaction) {
 }
 
 /**
- * Show the Voice AFK dashboard (UI placeholder)
+ * Show the Voice AFK dashboard
  */
 export async function showVoiceAfkDashboard(interaction) {
+    const { getGuildConfig } = await import('../storage/config.js');
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+
+    const minHumans = config.anti_cheat_voice_min_humans ?? true;
+    const noMute = config.anti_cheat_voice_no_mute ?? true;
+    const noDeafen = config.anti_cheat_voice_no_deafen ?? true;
+    const noAfk = config.anti_cheat_voice_no_afk_channel ?? true;
+
+    const desc = [
+        '👥 **Minimum 2 Humans**',
+        'Requires at least 2 non-bot users in call to earn points.',
+        '',
+        '🔇 **Mute Filter**',
+        'Pauses point accumulation while self-muted or server-muted.',
+        '',
+        '🎧 **Deafen Filter**',
+        'Pauses point accumulation while self-deafened or server-deafened.',
+        '',
+        '⛔ **AFK Channel Blacklist**',
+        'Blocks point accumulation inside Discord\'s official AFK channel.'
+    ].join('\n');
+
     const embed = new EmbedBuilder()
         .setTitle('Voice AFK')
-        .setDescription('This feature is coming soon.')
+        .setDescription(desc)
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice_min_humans')
+            .setLabel(`Min 2 Humans: ${minHumans ? 'ON' : 'OFF'}`)
+            .setEmoji(minHumans ? '🟢' : '🔴')
+            .setStyle(minHumans ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice_no_mute')
+            .setLabel(`Mute Filter: ${noMute ? 'ON' : 'OFF'}`)
+            .setEmoji(noMute ? '🟢' : '🔴')
+            .setStyle(noMute ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice_no_deafen')
+            .setLabel(`Deafen Filter: ${noDeafen ? 'ON' : 'OFF'}`)
+            .setEmoji(noDeafen ? '🟢' : '🔴')
+            .setStyle(noDeafen ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_voice_no_afk')
+            .setLabel(`AFK Channel: ${noAfk ? 'ON' : 'OFF'}`)
+            .setEmoji(noAfk ? '🟢' : '🔴')
+            .setStyle(noAfk ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice_back')
             .setLabel('Back')
@@ -1281,8 +1346,141 @@ export async function showVoiceAfkDashboard(interaction) {
         : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1]
+        components: [row1, row2, row3]
     });
+}
+
+/**
+ * Handle toggle action for Voice AFK gates
+ */
+export async function handleToggleVoiceAfkGate(interaction, gateType) {
+    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+    const { invalidateConfigCache } = await import('../activity/index.js');
+    const guildId = interaction.guildId;
+    let config = await getGuildConfig(guildId) || {};
+
+    if (gateType === 'min_humans') {
+        const current = config.anti_cheat_voice_min_humans ?? true;
+        config.anti_cheat_voice_min_humans = !current;
+    } else if (gateType === 'no_mute') {
+        const current = config.anti_cheat_voice_no_mute ?? true;
+        config.anti_cheat_voice_no_mute = !current;
+    } else if (gateType === 'no_deafen') {
+        const current = config.anti_cheat_voice_no_deafen ?? true;
+        config.anti_cheat_voice_no_deafen = !current;
+    } else if (gateType === 'no_afk') {
+        const current = config.anti_cheat_voice_no_afk_channel ?? true;
+        config.anti_cheat_voice_no_afk_channel = !current;
+    }
+
+    await setGuildConfig(guildId, config);
+    invalidateConfigCache(guildId);
+
+    await showVoiceAfkDashboard(interaction);
+}
+
+/**
+ * Show the Text Spam dashboard
+ */
+export async function showTextSpamDashboard(interaction) {
+    const { getGuildConfig } = await import('../storage/config.js');
+    const guildId = interaction.guildId;
+    const config = await getGuildConfig(guildId) || {};
+
+    const cooldown = config.anti_cheat_text_cooldown ?? true;
+    const minLength = config.anti_cheat_text_min_length ?? true;
+    const noDuplicates = config.anti_cheat_text_no_duplicates ?? true;
+    const noPrefixes = config.anti_cheat_text_no_prefixes ?? true;
+
+    const desc = [
+        '⏱️ **5-Second Cooldown**',
+        'Limits point accumulation to one message every 5 seconds.',
+        '',
+        '📏 **Minimum Length**',
+        'Requires at least 5 characters to earn points (attachments bypass).',
+        '',
+        '🔁 **Duplicate Filter**',
+        'Blocks points for sending the same message twice in a row.',
+        '',
+        '⌨️ **Command Prefix Filter**',
+        'Blocks points for messages starting with bot command prefixes.'
+    ].join('\n');
+
+    const embed = new EmbedBuilder()
+        .setTitle('Text Spam')
+        .setDescription(desc)
+        .setColor(0x3498DB);
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text_cooldown')
+            .setLabel(`Cooldown (5s): ${cooldown ? 'ON' : 'OFF'}`)
+            .setEmoji(cooldown ? '🟢' : '🔴')
+            .setStyle(cooldown ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text_min_length')
+            .setLabel(`Min Length: ${minLength ? 'ON' : 'OFF'}`)
+            .setEmoji(minLength ? '🟢' : '🔴')
+            .setStyle(minLength ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text_no_duplicates')
+            .setLabel(`Duplicate Filter: ${noDuplicates ? 'ON' : 'OFF'}`)
+            .setEmoji(noDuplicates ? '🟢' : '🔴')
+            .setStyle(noDuplicates ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text_no_prefixes')
+            .setLabel(`Command Filter: ${noPrefixes ? 'ON' : 'OFF'}`)
+            .setEmoji(noPrefixes ? '🟢' : '🔴')
+            .setStyle(noPrefixes ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_anticheat_text_back')
+            .setLabel('Back')
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+    await interaction[responseMethod]({
+        embeds: [embed],
+        components: [row1, row2, row3]
+    });
+}
+
+/**
+ * Handle toggle action for Text Spam gates
+ */
+export async function handleToggleTextSpamGate(interaction, gateType) {
+    const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+    const { invalidateConfigCache } = await import('../activity/index.js');
+    const guildId = interaction.guildId;
+    let config = await getGuildConfig(guildId) || {};
+
+    if (gateType === 'cooldown') {
+        const current = config.anti_cheat_text_cooldown ?? true;
+        config.anti_cheat_text_cooldown = !current;
+    } else if (gateType === 'min_length') {
+        const current = config.anti_cheat_text_min_length ?? true;
+        config.anti_cheat_text_min_length = !current;
+    } else if (gateType === 'no_duplicates') {
+        const current = config.anti_cheat_text_no_duplicates ?? true;
+        config.anti_cheat_text_no_duplicates = !current;
+    } else if (gateType === 'no_prefixes') {
+        const current = config.anti_cheat_text_no_prefixes ?? true;
+        config.anti_cheat_text_no_prefixes = !current;
+    }
+
+    await setGuildConfig(guildId, config);
+    invalidateConfigCache(guildId);
+
+    await showTextSpamDashboard(interaction);
 }
 
 /**
