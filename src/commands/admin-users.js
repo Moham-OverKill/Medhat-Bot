@@ -45,15 +45,14 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    if (canManageAdmins) {
-        row1Buttons.addComponents(
-            new ButtonBuilder()
-                .setCustomId('admin_user_admins')
-                .setLabel('Admins')
-                .setEmoji('💼')
-                .setStyle(ButtonStyle.Secondary)
-        );
-    }
+    row1Buttons.addComponents(
+        new ButtonBuilder()
+            .setCustomId('admin_user_admins')
+            .setLabel('Admins')
+            .setEmoji('💼')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(!canManageAdmins)
+    );
 
     // Button Row 2: Back
     const row2Buttons = new ActionRowBuilder().addComponents(
