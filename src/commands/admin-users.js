@@ -1359,10 +1359,10 @@ export async function showAdminManagement(interaction) {
 
     const userLines = [];
     if (ownerId) {
-        userLines.push(`👑 <@${ownerId}> *(Owner)*`);
+        userLines.push(`• <@${ownerId}> (Owner)`);
     }
     for (const adminId of discordAdminIds) {
-        userLines.push(`• <@${adminId}> *(Admin)*`);
+        userLines.push(`• <@${adminId}> (Admin)`);
     }
     for (const a of admins) {
         if (!discordAdminIds.has(a.user_id) && a.user_id !== ownerId) {
