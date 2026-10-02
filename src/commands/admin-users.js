@@ -12,8 +12,9 @@ import {
     PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji } from '../shared.js';
-import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage } from '../economy/shop.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
+import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage, getShopItems } from '../economy/shop.js';
+import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -578,6 +579,14 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             buttons.push(lbBtn);
         }
 
+        const giveRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`admin_user_give_${targetUserId}`)
+                .setLabel('Give Items')
+                .setEmoji('🎁')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
         const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`admin_user_dash_${targetUserId}`)
@@ -588,10 +597,11 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
 
         const rows = [];
         if (buttons.length > 0) {
-            for (let i = 0; i < buttons.length; i += 4) {
+            for (let i = 0; i < buttons.length && rows.length < 3; i += 4) {
                 rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
             }
         }
+        rows.push(giveRow);
         rows.push(backRow);
 
         const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
@@ -788,6 +798,429 @@ export async function handleAdminSetQuantity(interaction) {
             await interaction.followUp({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
         } else {
             await interaction.reply({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
+        }
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Item browser for granting items to a member (Admin Give Items)
+ */
+export async function showAdminGiveItemBrowser(interaction, targetUserId, selectedCatId = null, page = 1) {
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+    const guildId = interaction.guildId;
+    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+    const targetName = targetMember?.displayName || targetMember?.user?.username || targetUserId;
+
+    // Fetch categories, all items, and loot boxes
+    const [categories, rawItems, lootBoxes, lootBoxCatName, lootBoxEmoji] = await Promise.all([
+        getShopCategories(guildId),
+        getShopItems(guildId, null, 'name', false, false),
+        getLootBoxes(guildId),
+        getLootBoxCategoryName(guildId),
+        getLootBoxCategoryEmoji(guildId)
+    ]);
+
+    // Exclude packs (bundles)
+    const nonPackItems = rawItems.filter(i => !i.is_pack && i.item_type !== 'pack');
+    const standardItems = nonPackItems.filter(i => i.item_type !== 'loot_box');
+
+    // Build available category folders
+    const availableFolders = [];
+
+    // 1. Regular shop categories with items
+    for (const cat of categories) {
+        const catItems = standardItems.filter(i => i.category_id === cat.id);
+        if (catItems.length > 0) {
+            availableFolders.push({
+                id: String(cat.id),
+                name: cat.name,
+                isLootBox: false
+            });
+        }
+    }
+
+    // 2. Uncategorized items (Other)
+    const otherItems = standardItems.filter(i => i.category_id === null);
+    if (otherItems.length > 0) {
+        availableFolders.push({
+            id: 'null',
+            name: 'Other',
+            isLootBox: false
+        });
+    }
+
+    // 3. Loot boxes / chests
+    if (lootBoxes.length > 0) {
+        availableFolders.push({
+            id: 'lootboxes',
+            name: lootBoxCatName || 'Loot Boxes',
+            emoji: lootBoxEmoji || '🎁',
+            isLootBox: true
+        });
+    }
+
+    if (availableFolders.length === 0) {
+        const emptyEmbed = new EmbedBuilder()
+            .setTitle(safeTruncate(`Give Items • ${targetName}`, 256))
+            .setColor('#E74C3C')
+            .setDescription('❌ No active shop items or chests found in this server. Please create items first via `/settings` -> **Items**.');
+
+        const backRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`admin_user_items_${targetUserId}`)
+                .setLabel('Back')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const method = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+        return interaction[method]({ embeds: [emptyEmbed], components: [backRow] });
+    }
+
+    // Determine active folder
+    let activeFolder = null;
+    if (selectedCatId !== null && selectedCatId !== undefined) {
+        activeFolder = availableFolders.find(f => f.id === String(selectedCatId));
+    }
+    if (!activeFolder) {
+        activeFolder = availableFolders[0];
+    }
+
+    // Resolve items for active folder
+    let folderItems = [];
+    if (activeFolder.isLootBox) {
+        folderItems = lootBoxes.map(b => ({
+            id: b.id,
+            name: b.name,
+            item_type: 'loot_box',
+            rarity: 'common',
+            shop_item_id: b.shop_item_id,
+            isChest: true
+        }));
+    } else if (activeFolder.id === 'null') {
+        folderItems = await sortItemsByRolePosition(otherItems, interaction.guild);
+    } else {
+        const catIdNum = parseInt(activeFolder.id, 10);
+        folderItems = await sortItemsByRolePosition(standardItems.filter(i => i.category_id === catIdNum), interaction.guild);
+    }
+
+    // Pagination for the item select menu
+    const pageSize = 20;
+    const totalPages = Math.max(1, Math.ceil(folderItems.length / pageSize));
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const startIndex = (currentPage - 1) * pageSize;
+
+    const embed = new EmbedBuilder()
+        .setTitle(safeTruncate(`Give Items: ${targetName}`, 256))
+        .setColor('#3498DB')
+        .setDescription(
+            `Select a category below, then choose an item to grant to **${targetName}**.\n\n` +
+            `📂 **Category:** \`${activeFolder.name}\`${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''}`
+        );
+
+    const components = [];
+
+    // Row 0: Select Menu for items in active folder
+    if (folderItems.length > 0) {
+        const { selectMenu } = buildPaginatedSelectMenu({
+            items: folderItems,
+            page: currentPage,
+            customId: `admin_user_givesel_${targetUserId}_${activeFolder.id}`,
+            placeholder: `Select an item to give to ${safeTruncate(targetName, 25)}...`,
+            pageNavPrefix: 'admin_givepage_',
+            pageSize: 20,
+            mapOption: (i) => {
+                const isChest = i.isChest || i.item_type === 'loot_box';
+                const emoji = isChest
+                    ? parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
+                    : getItemRarityEmoji(i);
+                const desc = isChest ? 'Loot Box / Chest' : (i.role_id ? 'Role Item' : 'Inventory Item');
+                return {
+                    label: safeTruncate(i.name || 'Unnamed Item', 100),
+                    value: isChest ? `chest_${i.id}` : `item_${i.id}`,
+                    description: desc,
+                    emoji
+                };
+            }
+        });
+        components.push(new ActionRowBuilder().addComponents(selectMenu));
+    }
+
+    // Category buttons (max 4 per row, up to 3 rows to stay well under 5-row total limit)
+    const catButtons = availableFolders.map(f => {
+        const btn = new ButtonBuilder()
+            .setCustomId(`admin_user_givecat_${targetUserId}_${f.id}`)
+            .setLabel(safeTruncate(f.name, 40))
+            .setStyle(f.id === activeFolder.id ? ButtonStyle.Primary : ButtonStyle.Secondary);
+        if (f.emoji) {
+            safeSetButtonEmoji(btn, f.emoji, interaction.guild, '🎁');
+        }
+        return btn;
+    });
+
+    for (let i = 0; i < catButtons.length && components.length < 4; i += 4) {
+        components.push(new ActionRowBuilder().addComponents(catButtons.slice(i, i + 4)));
+    }
+
+    // Bottom Row: Back to user inventory
+    const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`admin_user_items_${targetUserId}`)
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(backRow);
+
+    const method = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+    await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+}
+
+/**
+ * Handle item selection from the Give Items browser select menu.
+ * Immediately opens a Discord Modal prompting for the quantity.
+ */
+export async function handleAdminGiveSelect(interaction) {
+    const selectedVal = interaction.values[0];
+    const customId = interaction.customId;
+    const parts = customId.split('_');
+    const targetUserId = parts[3];
+    const catId = parts[4];
+
+    // Handle pagination within select menu
+    if (selectedVal.startsWith('admin_givepage_')) {
+        const targetPage = parseInt(selectedVal.replace('admin_givepage_', ''), 10) || 1;
+        return showAdminGiveItemBrowser(interaction, targetUserId, catId, targetPage);
+    }
+
+    const [typePrefix, rawId] = selectedVal.split('_');
+    const itemId = parseInt(rawId, 10);
+    if (!typePrefix || isNaN(itemId)) {
+        return interaction.reply({ content: '❌ Invalid item selection.', flags: MessageFlags.Ephemeral });
+    }
+
+    const pool = getPool();
+    let itemName = 'Item';
+    if (typePrefix === 'chest') {
+        const boxRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [itemId]);
+        itemName = boxRes.rows[0]?.name || 'Chest';
+    } else {
+        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [itemId]);
+        itemName = itemRes.rows[0]?.name || 'Item';
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId(`admin_user_givemod_${targetUserId}_${typePrefix}_${itemId}`)
+        .setTitle(safeTruncate(`Give ${itemName}`, 45));
+
+    const qtyInput = new TextInputBuilder()
+        .setCustomId('give_quantity')
+        .setLabel('Enter quantity to give:')
+        .setPlaceholder('1')
+        .setValue('1')
+        .setMinLength(1)
+        .setMaxLength(6)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+    await interaction.showModal(modal);
+}
+
+/**
+ * Handle submission of the Give Items quantity modal.
+ * Executes an atomic transaction with row-level locking (FOR UPDATE) and audit logging.
+ */
+export async function handleAdminGiveModal(interaction) {
+    const customId = interaction.customId;
+    const parts = customId.split('_');
+    const targetUserId = parts[3];
+    const itemType = parts[4]; // 'item' or 'chest'
+    const itemId = parseInt(parts[5], 10);
+
+    const rawQty = interaction.fields.getTextInputValue('give_quantity')?.trim();
+    const inputQty = parseInt(rawQty, 10);
+
+    // Strict positive integer validation
+    if (isNaN(inputQty) || inputQty <= 0 || !/^\d+$/.test(rawQty)) {
+        return interaction.reply({
+            content: '❌ Invalid quantity. Please enter a positive whole number greater than 0.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (inputQty > 1000000) {
+        return interaction.reply({
+            content: '❌ Quantity is too large. Maximum allowed is 1,000,000.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
+    const guildId = interaction.guildId;
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        let shopItemId = null;
+        let roleId = null;
+        let itemName = 'Item';
+
+        if (itemType === 'chest') {
+            const boxRes = await client.query(
+                `SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2 FOR UPDATE`,
+                [itemId, guildId]
+            );
+            if (boxRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return interaction.followUp({ content: '❌ Loot box not found.', flags: MessageFlags.Ephemeral });
+            }
+            const box = boxRes.rows[0];
+            itemName = box.name;
+
+            // Ensure a shop_items entry exists for this loot box
+            const shopItemRes = await client.query(
+                `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1 FOR UPDATE`,
+                [itemId, guildId]
+            );
+
+            if (shopItemRes.rows.length > 0) {
+                shopItemId = shopItemRes.rows[0].id;
+                roleId = shopItemRes.rows[0].role_id || `LOOT_BOX_${itemId}`;
+            } else {
+                const newShopItem = await client.query(
+                    `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
+                     VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
+                     RETURNING id, role_id`,
+                    [guildId, box.name, `LOOT_BOX_${itemId}`, itemId]
+                );
+                shopItemId = newShopItem.rows[0].id;
+                roleId = newShopItem.rows[0].role_id;
+            }
+        } else {
+            // Standard shop item
+            const itemRes = await client.query(
+                `SELECT * FROM shop_items WHERE id = $1 AND guild_id = $2 FOR UPDATE`,
+                [itemId, guildId]
+            );
+            if (itemRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return interaction.followUp({ content: '❌ Shop item not found.', flags: MessageFlags.Ephemeral });
+            }
+            const item = itemRes.rows[0];
+            shopItemId = item.id;
+            roleId = item.role_id || '';
+            itemName = item.name;
+        }
+
+        // Concurrency Protection: Lock existing inventory row(s) for this user and item
+        const existingInv = await client.query(
+            `SELECT id, quantity, is_active, role_id 
+             FROM user_inventory 
+             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+             ORDER BY is_active DESC, id ASC 
+             FOR UPDATE`,
+            [targetUserId, guildId, shopItemId]
+        );
+
+        let newTotal = 0;
+        let oldTotal = 0;
+
+        if (existingInv.rows.length > 0) {
+            // Atomically add to existing stack on the first row
+            const targetRow = existingInv.rows[0];
+            oldTotal = parseInt(targetRow.quantity || 1, 10);
+            newTotal = oldTotal + inputQty;
+
+            await client.query(
+                `UPDATE user_inventory 
+                 SET quantity = quantity + $1, 
+                     source = COALESCE(source, 'ADMIN_GRANT'),
+                     purchase_source = 'admin'
+                 WHERE id = $2`,
+                [inputQty, targetRow.id]
+            );
+        } else {
+            // Insert new inventory row
+            newTotal = inputQty;
+            await client.query(
+                `INSERT INTO user_inventory (
+                    user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity
+                 ) VALUES ($1, $2, $3, $4, false, 'ADMIN_GRANT', 'admin', $5)`,
+                [targetUserId, guildId, shopItemId, roleId, inputQty]
+            );
+        }
+
+        // Audit Logging in audit_logs table
+        await client.query(
+            `INSERT INTO audit_logs (guild_id, user_id, action_type, target_type, target_id, details)
+             VALUES ($1, $2, 'ADMIN_GIVE_ITEM', 'user', $3, $4)`,
+            [guildId, interaction.user.id, targetUserId, JSON.stringify({
+                item_type: itemType,
+                shop_item_id: shopItemId,
+                item_name: itemName,
+                quantity_given: inputQty,
+                previous_quantity: oldTotal,
+                new_quantity: newTotal,
+                timestamp: new Date().toISOString()
+            })]
+        );
+
+        await client.query('COMMIT');
+
+        // Audit logs to Discord audit channel and system logger
+        const adminLogName = getUserLogName(interaction);
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
+
+        sysLog('Admin Gave Items', {
+            tag: 'SECURITY',
+            user: interaction.user.id,
+            target: targetUserId,
+            guild: guildId,
+            detail: `Admin ${interaction.user.id} gave ${inputQty}x "${itemName}" to ${targetUserId} (New Total: ${newTotal})`
+        });
+
+        sendLog(interaction.guild, 'inventory', 'green', '🎁 Items Granted (Admin)',
+            `**Item:** **${itemName}** \`(x${inputQty})\`\n` +
+            `**Target:** <@${targetUserId}> (${targetLogName})\n` +
+            `**New Stack Total:** \`${newTotal}\`\n` +
+            `**Admin:** ${adminLogName} (via User Inventory Settings)`
+        );
+
+        // Safe Discord role assignment for role items if applicable
+        if (targetMember && roleId && !roleId.startsWith('LOOT_BOX_') && !roleId.startsWith('CHEST_')) {
+            const roleIds = roleId.split(/[,\s]+/);
+            const botMember = interaction.guild.members.me;
+            for (const rId of roleIds) {
+                const role = interaction.guild.roles.cache.get(rId);
+                if (role && botMember && role.comparePositionTo(botMember.roles.highest) < 0) {
+                    await targetMember.roles.add(role).catch(err => {
+                        sysError('Role Assignment Failed on Admin Give', err, { user: targetUserId, roleId: rId });
+                    });
+                }
+            }
+        }
+
+        // Return admin directly to the user's updated inventory screen
+        return showUserItems(interaction, targetUserId, null);
+
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        sysError('Admin Give Item Error', err, { user: interaction.user.id, guild: guildId, targetUserId });
+        if (interaction.deferred || interaction.replied) {
+            return interaction.followUp({ content: `❌ Error granting items: ${err.message}`, flags: MessageFlags.Ephemeral });
+        } else {
+            return interaction.reply({ content: `❌ Error granting items: ${err.message}`, flags: MessageFlags.Ephemeral });
         }
     } finally {
         client.release();
@@ -1029,6 +1462,11 @@ export async function handleAdminUserComponent(interaction) {
             return;
         }
 
+        if (interaction.isModalSubmit() && customId.startsWith('admin_user_givemod_')) {
+            await handleAdminGiveModal(interaction);
+            return;
+        }
+
         const parts = customId.split('_');
         const action = parts[2];
         const targetUserId = parts[3];
@@ -1049,6 +1487,18 @@ export async function handleAdminUserComponent(interaction) {
             case 'items':
                 await showUserItems(interaction, targetUserId);
                 break;
+            case 'give':
+                await showAdminGiveItemBrowser(interaction, targetUserId);
+                break;
+            case 'givecat': {
+                const catId = parts[4];
+                await showAdminGiveItemBrowser(interaction, targetUserId, catId);
+                break;
+            }
+            case 'givesel': {
+                await handleAdminGiveSelect(interaction);
+                break;
+            }
             case 'history':
                 await showUserHistory(interaction, targetUserId);
                 break;
