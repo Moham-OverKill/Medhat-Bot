@@ -118,10 +118,10 @@ export const SHORTCUT_REGISTRY = {
   },
   items: {
     id: 'items',
-    name: 'Items',
-    label: 'ITEMS',
-    description: 'Browse available items and catalog',
-    emoji: '📦',
+    name: 'Shop',
+    label: 'SHOP',
+    description: 'Browse items available in the shop',
+    emoji: '🛒',
     buttonCustomId: 'hub_btn_items',
     tileFile: 'items.png'
   },
@@ -925,7 +925,7 @@ export const ADMIN_SHORTCUT_ITEMS = [
     { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
     { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
     { id: 'coins', label: 'COINS', emoji: '🪙', btnId: 'admin_hub_coins' },
-    { id: 'items', label: 'ITEMS', emoji: '📦', btnId: 'admin_hub_shop' }
+    { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' }
   ],
   [
     { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
