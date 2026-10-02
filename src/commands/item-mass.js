@@ -501,14 +501,12 @@ export async function handleMassSave(interaction) {
         
         const summary = [
             `✅ **Operation Complete**`,
-            `🆕 Items Created: **${created}** (Saved to Warehouse as unposted)`,
+            `🆕 Items Created: **${created}**`,
             `🔄 Items Updated: **${updated}**`,
             packId ? `📦 Added to Pack: **${addedToPack}**` : null,
             categoryId ? `🏷️ Added to Category: **${addedToCategory}**` : null,
-            errors > 0 ? `⚠️ Errors/Skipped: **${errors}** (${skipped.join(', ')})` : null,
-            '',
-            `💡 _New items are stored in your Warehouse. Use \`/shop-setup\` -> **Post** to set prices and publish them to the shop._`
-        ].filter(v => v !== null).join('\n');
+            errors > 0 ? `⚠️ Errors/Skipped: **${errors}** (${skipped.join(', ')})` : null
+        ].filter(Boolean).join('\n');
         
         await interaction.editReply({ files: [], content: summary, components: [], embeds: [] });
         pendingMassOps.delete(getMassKey(interaction.guildId, userId));
