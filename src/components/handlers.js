@@ -255,6 +255,9 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('admin_user_givemod_')) {
           const { handleAdminGiveModal } = await import('../commands/admin-users.js');
           await handleAdminGiveModal(interaction);
+        } else if (interaction.customId.startsWith('admin_user_remmod_')) {
+          const { handleAdminRemoveModal } = await import('../commands/admin-users.js');
+          await handleAdminRemoveModal(interaction);
         } else if (interaction.customId.startsWith('trade_modal_')) {
           await handleTradeModal(interaction);
         } else if (interaction.customId.startsWith('trade_confirm_')) {
