@@ -26,22 +26,8 @@ export async function isMemberBooster(member) {
   return Boolean(member?.premiumSinceTimestamp);
 }
 
-// Dangerous permissions that color roles should never have
-const DANGEROUS_PERMISSIONS = [
-  PermissionFlagsBits.Administrator,
-  PermissionFlagsBits.ManageGuild,
-  PermissionFlagsBits.ManageRoles,
-  PermissionFlagsBits.ManageChannels,
-  PermissionFlagsBits.KickMembers,
-  PermissionFlagsBits.BanMembers,
-  PermissionFlagsBits.ManageWebhooks,
-  PermissionFlagsBits.ManageGuildExpressions,
-  PermissionFlagsBits.MentionEveryone
-];
-
-export function hasAnyDangerousPermission(role) {
-  return DANGEROUS_PERMISSIONS.some(perm => role.permissions.has(perm));
-}
+// Re-export canonical dangerous permissions from shared.js
+export { DANGEROUS_PERMISSIONS, hasAnyDangerousPermission } from '../shared.js';
 
 // Command definitions
 export const colorsCommand = new SlashCommandBuilder()

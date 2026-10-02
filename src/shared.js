@@ -1,4 +1,30 @@
 // Shared utility helpers for the MVP bot
+import { PermissionFlagsBits } from 'discord.js';
+
+export const DANGEROUS_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.ManageWebhooks,
+  PermissionFlagsBits.ManageGuildExpressions,
+  PermissionFlagsBits.MentionEveryone,
+  PermissionFlagsBits.ModerateMembers,
+  PermissionFlagsBits.ManageMessages,
+  PermissionFlagsBits.ViewAuditLog
+];
+
+/**
+ * Checks whether a Discord role has any dangerous or elevated administrative permissions.
+ * @param {import('discord.js').Role} role
+ * @returns {boolean}
+ */
+export function hasAnyDangerousPermission(role) {
+  if (!role || !role.permissions) return false;
+  return DANGEROUS_PERMISSIONS.some(perm => role.permissions.has(perm));
+}
 
 const SNOWFLAKE_REGEX = /^(\d{17,20})$/;
 

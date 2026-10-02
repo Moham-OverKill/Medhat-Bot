@@ -1,6 +1,6 @@
 import { query, getPool } from '../storage/postgres.js';
 export { query };
-import { sanitizeError, COIN_EMOJI, getUserLogName } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserLogName, hasAnyDangerousPermission } from '../shared.js';
 import { updateBalance } from './service.js';
 // D-04 FIX: Removed unused imports (logAudit, createRefund, getBoosterLossPolicy)
 import { isMemberBooster } from '../commands/colors.js';
@@ -1280,6 +1280,11 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       const roles = item.role_id.split(/[,\s]+/);
       for (const rid of roles) {
         try {
+          const roleObj = member.guild?.roles?.cache?.get(rid);
+          if (roleObj && hasAnyDangerousPermission(roleObj)) {
+            sysError('Security Violation: Dangerous Role Grant Blocked', new Error('Attempted to grant role with dangerous permissions via item purchase'), { user: userId, guild: guildId, roleId: rid, item: item.name });
+            continue;
+          }
           await member.roles.add(rid);
           sysLog('Role Granted', { user: userId, guild: guildId, detail: `RoleID: ${rid} | Reason: TEMP Item ${item.name}` });
         } catch (e) {
@@ -2309,7 +2314,14 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     if (newStatus) {
       // User clicked ACTIVATE -> After wipe, add this item's role
       for (const rid of roles) {
-        try { await member.roles.add(rid, `Equipped item: ${item.name}`); } catch (e) { }
+        try {
+          const roleObj = member.guild?.roles?.cache?.get(rid);
+          if (roleObj && hasAnyDangerousPermission(roleObj)) {
+            sysError('Security Violation: Dangerous Role Equip Blocked', new Error('Attempted to equip role with dangerous permissions'), { user: member.id, guild: member.guild?.id, roleId: rid, item: item.name });
+            continue;
+          }
+          await member.roles.add(rid, `Equipped item: ${item.name}`);
+        } catch (e) { }
       }
       await client.query('UPDATE user_inventory SET is_active = true WHERE id = $1', [inventoryId]);
     } else {
