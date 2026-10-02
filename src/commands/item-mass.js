@@ -19,7 +19,8 @@ import { addColorRole, removeColorRole } from '../storage/colors.js';
 import { isMemberBooster } from './colors.js';
 import { hasAnyDangerousPermission } from './colors.js';
 import { logServerEvent, sendBulkLog, sysError } from '../utils/logger.js';
-import { getUserDisplayName, getUserLogName, isValidEconomyAmount } from '../shared.js';
+import { getUserDisplayName, getUserLogName, isValidEconomyAmount, parseSelectEmoji, RARITY_OPTIONS } from '../shared.js';
+import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 
 // Temporary storage: guildId:userId -> input_ids
 const pendingMassOps = new Map();
@@ -106,7 +107,9 @@ async function handleMassItemSubcommand(interaction) {
         packId: null,
         rarity: 'common',
         is_tradable: true,
-        price: null  // Always null - set at post time
+        price: null,  // Always null - set at post time
+        categoryPage: 1,
+        packPage: 1
     });
     
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -135,59 +138,94 @@ async function renderMassPanel(interaction, userId) {
 
     const components = [];
 
-    // Row 1: Category Select
-    const catOptions = [
-        { label: 'No Category (Default)', value: 'null', emoji: '🏷️', description: 'Create as standalone items' },
-        ...categories.map(c => ({ label: c.name, value: c.id.toString(), emoji: '📂' }))
+    // Row 1: Category Select (Paginated)
+    const catPage = state.categoryPage || 1;
+    const allCatItems = [
+        { id: 'null', name: 'No Category (Default)', isDefaultNull: true },
+        ...categories
     ];
+    const selectedCategory = categories.find(c => c.id.toString() === categoryId);
+    const catPlaceholder = selectedCategory
+        ? `Category: ${selectedCategory.name.slice(0, 80)}`
+        : (categoryId ? 'Select Category (Optional)' : 'Category: None (Standalone)');
 
-    const catSelect = new StringSelectMenuBuilder()
-        .setCustomId('mass_select_category')
-        .setPlaceholder('Select Category (Optional)')
-        .addOptions(catOptions.slice(0, 25));
-
-    if (categoryId && catOptions.some(o => o.value === categoryId)) {
-         catSelect.setOptions(catOptions.slice(0, 25).map(o => ({
-            ...o,
-            default: o.value === categoryId
-        })));
-    }
-
+    const { selectMenu: catSelect } = buildPaginatedSelectMenu({
+        items: allCatItems,
+        page: catPage,
+        customId: 'mass_select_category',
+        placeholder: catPlaceholder,
+        pageSize: 23,
+        pageNavPrefix: 'mass_cat_page_',
+        mapOption: (item) => {
+            if (item.isDefaultNull) {
+                return {
+                    label: item.name,
+                    value: 'null',
+                    emoji: '🏷️',
+                    description: 'Create as standalone items',
+                    default: categoryId === null
+                };
+            }
+            return {
+                label: item.name.slice(0, 100),
+                value: item.id.toString(),
+                emoji: '📂',
+                default: categoryId === item.id.toString()
+            };
+        }
+    });
     components.push(new ActionRowBuilder().addComponents(catSelect));
 
-    // Row 2: Pack Select
-    const packOptions = [
-        { label: 'No Pack (Default)', value: 'null', emoji: '🏷️', description: 'Do not add to any pack' },
-        ...packs.map(p => ({ label: p.name, value: p.id.toString(), emoji: '📦', description: `ID: ${p.id}` }))
+    // Row 2: Pack Select (Paginated)
+    const packPage = state.packPage || 1;
+    const allPackItems = [
+        { id: 'null', name: 'No Pack (Default)', isDefaultNull: true },
+        ...packs
     ];
+    const selectedPack = packs.find(p => p.id.toString() === packId);
+    const packPlaceholder = selectedPack
+        ? `Pack: ${selectedPack.name.slice(0, 80)}`
+        : (packId ? 'Select Pack (Optional)' : 'Pack: None');
 
-    const packSelect = new StringSelectMenuBuilder()
-        .setCustomId('mass_select_pack')
-        .setPlaceholder('Select Pack (Optional)')
-        .addOptions(packOptions.slice(0, 25));
-
-    if (packId && packOptions.some(o => o.value === packId)) {
-         packSelect.setOptions(packOptions.slice(0, 25).map(o => ({
-            ...o,
-            default: o.value === packId
-        })));
-    }
-
+    const { selectMenu: packSelect } = buildPaginatedSelectMenu({
+        items: allPackItems,
+        page: packPage,
+        customId: 'mass_select_pack',
+        placeholder: packPlaceholder,
+        pageSize: 23,
+        pageNavPrefix: 'mass_pack_page_',
+        mapOption: (item) => {
+            if (item.isDefaultNull) {
+                return {
+                    label: item.name,
+                    value: 'null',
+                    emoji: '🏷️',
+                    description: 'Do not add to any pack',
+                    default: packId === null
+                };
+            }
+            return {
+                label: item.name.slice(0, 100),
+                value: item.id.toString(),
+                emoji: '📦',
+                description: `ID: ${item.id}`,
+                default: packId === item.id.toString()
+            };
+        }
+    });
     components.push(new ActionRowBuilder().addComponents(packSelect));
 
     // Row 3: Rarity Select
-    const rarityOptions = [
-        { label: 'Common',    value: 'common',    emoji: '<:Common:1540257440971366400>' },
-        { label: 'Uncommon',  value: 'uncommon',  emoji: '<:Uncommon:1540257439629312010>' },
-        { label: 'Rare',      value: 'rare',      emoji: '<:Rare:1540257438274428928>' },
-        { label: 'Epic',      value: 'epic',      emoji: '<:Epic:1540257436890566666>' },
-        { label: 'Legendary', value: 'legendary', emoji: '<:Legendary:1540257435560841236>' }
-    ];
     const { rarity: currentRarity, is_tradable: currentTradable } = state;
     const raritySelect = new StringSelectMenuBuilder()
         .setCustomId('mass_select_rarity')
         .setPlaceholder('Rarity')
-        .addOptions(rarityOptions.map(o => ({ ...o, default: o.value === currentRarity })));
+        .addOptions(RARITY_OPTIONS.map(o => ({
+            label: o.label,
+            value: o.value,
+            emoji: parseSelectEmoji(o.emoji, interaction.guild),
+            default: o.value === currentRarity
+        })));
     components.push(new ActionRowBuilder().addComponents(raritySelect));
 
     // Row 4: Status Select
@@ -237,9 +275,17 @@ export async function handleMassSelect(interaction) {
     const value = interaction.values[0];
     
     if (interaction.customId === 'mass_select_category') {
-        state.categoryId = value === 'null' ? null : value;
+        if (value.startsWith('mass_cat_page_')) {
+            state.categoryPage = parseInt(value.replace('mass_cat_page_', ''), 10) || 1;
+        } else {
+            state.categoryId = value === 'null' ? null : value;
+        }
     } else if (interaction.customId === 'mass_select_pack') {
-        state.packId = value === 'null' ? null : value;
+        if (value.startsWith('mass_pack_page_')) {
+            state.packPage = parseInt(value.replace('mass_pack_page_', ''), 10) || 1;
+        } else {
+            state.packId = value === 'null' ? null : value;
+        }
     } else if (interaction.customId === 'mass_select_rarity') {
         state.rarity = value;
     } else if (interaction.customId === 'mass_select_tradable') {
@@ -281,9 +327,10 @@ export async function handleMassCreateStart(interaction) {
     if (type === 'pack') {
         const priceInput = new TextInputBuilder()
             .setCustomId('price')
-            .setLabel('Price')
+            .setLabel('Price (Optional)')
+            .setPlaceholder('Leave blank for Warehouse / unposted')
             .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+            .setRequired(false);
         modal.addComponents(row, new ActionRowBuilder().addComponents(priceInput));
     } else {
         modal.addComponents(row);
@@ -309,11 +356,14 @@ export async function handleMassModalSubmit(interaction) {
              const cat = await addShopCategory(interaction.guildId, name);
              state.categoryId = cat.id.toString();
         } else {
-             const priceInput = interaction.fields.getTextInputValue('price');
-             if (!isValidEconomyAmount(priceInput, true)) {
-                 return interaction.followUp({ content: '❌ Invalid price. Maximum allowed is **700,000,000,000**.', flags: MessageFlags.Ephemeral });
+             const priceInput = interaction.fields.getTextInputValue('price')?.trim();
+             let price = null;
+             if (priceInput && priceInput.length > 0) {
+                 if (!isValidEconomyAmount(priceInput, false)) {
+                     return interaction.followUp({ content: '❌ Invalid price. Maximum allowed is **700,000,000,000**.', flags: MessageFlags.Ephemeral });
+                 }
+                 price = parseInt(priceInput, 10);
              }
-             const price = parseInt(priceInput);
              const pack = await addShopItem(interaction.guildId, null, '', name, '', price, null, null, 'pack');
              state.packId = pack.id.toString();
         }
@@ -451,12 +501,14 @@ export async function handleMassSave(interaction) {
         
         const summary = [
             `✅ **Operation Complete**`,
-            `🆕 Items Created: ${created}`,
-            `🔄 Items Updated: ${updated}`,
-            packId ? `📦 Added to Pack: ${addedToPack}` : null,
-            categoryId ? `🏷️ Added to Category: ${addedToCategory}` : null,
-            errors > 0 ? `⚠️ Errors/Skipped: ${errors} (${skipped.join(', ')})` : null
-        ].filter(Boolean).join('\n');
+            `🆕 Items Created: **${created}** (Saved to Warehouse as unposted)`,
+            `🔄 Items Updated: **${updated}**`,
+            packId ? `📦 Added to Pack: **${addedToPack}**` : null,
+            categoryId ? `🏷️ Added to Category: **${addedToCategory}**` : null,
+            errors > 0 ? `⚠️ Errors/Skipped: **${errors}** (${skipped.join(', ')})` : null,
+            '',
+            `💡 _New items are stored in your Warehouse. Use \`/shop-setup\` -> **Post** to set prices and publish them to the shop._`
+        ].filter(v => v !== null).join('\n');
         
         await interaction.editReply({ files: [], content: summary, components: [], embeds: [] });
         pendingMassOps.delete(getMassKey(interaction.guildId, userId));
@@ -506,6 +558,7 @@ async function handleMassColorSubcommand(interaction) {
         }
 
         const guild = await interaction.client.guilds.fetch(guildId);
+        const botMember = await guild.members.fetchMe().catch(() => null);
         let added = 0, removed = 0, skipped = 0;
         const errors = [];
 
@@ -526,6 +579,11 @@ async function handleMassColorSubcommand(interaction) {
             }
             if (hasAnyDangerousPermission(role)) {
               errors.push(`${role.name}: dangerous permissions`);
+              skipped++;
+              continue;
+            }
+            if (botMember && role.comparePositionTo(botMember.roles.highest) >= 0) {
+              errors.push(`${role.name}: role is equal to or higher than bot role`);
               skipped++;
               continue;
             }
