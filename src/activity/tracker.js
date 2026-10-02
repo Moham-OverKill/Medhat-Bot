@@ -286,16 +286,18 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 
   // 5. Channel-Specific Duplicate Content Check (anti-spam across all systems, only if rule is enabled)
   const contentLower = content.toLowerCase();
-  if (duplicatesEnforced && contentLower.length > 0 && !hasAttachments) {
+  if (contentLower.length > 0 && !hasAttachments) {
     const channelKey = channelId ? `${guildId}:${channelId}:${userId}` : `${guildId}:global:${userId}`;
-    const previousEntry = userLastChannelContentCache.get(channelKey);
-    if (previousEntry && previousEntry.content === contentLower) {
-      sysLog('Anti-Spam Duplicate Message Rejected', {
-        user: userId,
-        guild: guildId,
-        detail: `Channel: ${channelId || 'Global'} | Text: "${contentLower.slice(0, 30)}"`
-      });
-      return false;
+    if (duplicatesEnforced) {
+      const previousEntry = userLastChannelContentCache.get(channelKey);
+      if (previousEntry && previousEntry.content === contentLower) {
+        sysLog('Anti-Spam Duplicate Message Rejected', {
+          user: userId,
+          guild: guildId,
+          detail: `Channel: ${channelId || 'Global'} | Text: "${contentLower.slice(0, 30)}"`
+        });
+        return false;
+      }
     }
     userLastChannelContentCache.set(channelKey, { content: contentLower, timestamp: now });
   }
