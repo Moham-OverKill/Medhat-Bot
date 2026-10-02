@@ -19,8 +19,9 @@ import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-// State map for hierarchical admin give items select menu: keyed by `${adminUserId}_${targetUserId}`
+// State map for hierarchical admin give & remove items select menus: keyed by `${adminUserId}_${targetUserId}`
 const pendingAdminGive = new Map();
+const pendingAdminRemove = new Map();
 
 /**
  * Show user selector dropdown
@@ -507,211 +508,63 @@ export async function handleLevelModal(interaction) {
 /**
  * Show user inventory (items & chests)
  */
-export async function showUserItems(interaction, targetUserId, categoryId = null, page = 1) {
+export async function showUserItems(interaction, targetUserId, _ignoredCatId = null, _ignoredPage = 1) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const guildId = interaction.guildId;
-    const isLootBox = categoryId === 'lootboxes';
-    const isOther = categoryId === 'null';
-    const catId = (isOther || isLootBox) ? null : (categoryId ? parseInt(categoryId) : null);
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     if (!targetMember) return interaction.followUp({ content: '❌ Member not found.', flags: MessageFlags.Ephemeral });
 
     // Sync and fetch inventory for target user (including synthesized admin items)
     const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
-    const categories = await getShopCategories(guildId);
 
     // List of visible items (no packs)
     const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
-    const lootBoxItems = visibleItems.filter(i => i.item_type === 'loot_box');
-    const standardItems = visibleItems.filter(i => i.item_type !== 'loot_box');
-    const lootBoxCount = lootBoxItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
+    const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
-    if (categoryId === null) {
-        const pool = getPool();
-        const userBalRes = await pool.query(
-            'SELECT balance FROM user_balances WHERE guild_id = $1 AND user_id = $2',
-            [guildId, targetUserId]
-        );
-        const currentBalance = parseInt(userBalRes.rows[0]?.balance || 0);
-        const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
+    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
+    const remState = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
 
-        const stateKey = `${interaction.user.id}_${targetUserId}`;
-        const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
+    const embed = new EmbedBuilder()
+        .setTitle(safeTruncate(`Inventory: ${targetMember.displayName}`, 256))
+        .setColor('#3498DB')
+        .setDescription(`📦 **Total Items:** ${totalCount}`);
 
-        let desc = `${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`;
-        if (giveState.folder === 'categories') {
-            desc += '\n\n*Choose a category from the select menu below to browse items to give.*';
-        } else if (giveState.folder === 'standalone') {
-            desc += '\n\n*Choose an uncategorized item from the select menu below to give.*';
-        } else if (giveState.folder === 'lootboxes') {
-            desc += '\n\n*Choose a loot box / chest from the select menu below to give.*';
-        } else if (giveState.folder?.startsWith('cat_')) {
-            desc += '\n\n*Choose an item from the select menu below to give.*';
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`Inventory: ${targetMember.displayName}`, 256))
-            .setColor('#3498DB')
-            .setDescription(desc);
-
-        const categoryCounts = {};
-        let otherCount = 0;
-        for (const item of standardItems) {
-            const itemQty = parseInt(item.quantity) || 1;
-            if (item.category_id) {
-                categoryCounts[item.category_id] = (categoryCounts[item.category_id] || 0) + itemQty;
-            } else {
-                otherCount += itemQty;
-            }
-        }
-
-        const validCategoryIds = Object.keys(categoryCounts).map(Number);
-        const validCategories = categories.filter(c => validCategoryIds.includes(c.id));
-        const buttons = validCategories.map(c => 
-            new ButtonBuilder()
-                .setCustomId(`admin_user_icat_${targetUserId}_${c.id}`)
-                .setLabel(c.name)
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        if (otherCount > 0) {
-            buttons.push(
-                new ButtonBuilder()
-                    .setCustomId(`admin_user_icat_${targetUserId}_null`)
-                    .setLabel('Other')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-        }
-
-        if (lootBoxCount > 0) {
-            const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
-            const lootBoxCatName = await getLootBoxCategoryName(guildId);
-            const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-            const lbBtn = new ButtonBuilder()
-                .setCustomId(`admin_user_icat_${targetUserId}_lootboxes`)
-                .setLabel(lootBoxCatName)
-                .setStyle(ButtonStyle.Secondary);
-            safeSetButtonEmoji(lbBtn, lootBoxEmoji, interaction.guild, '🎁');
-            buttons.push(lbBtn);
-        }
-
-        const giveSelectMenu = await buildAdminGiveSelectMenu(
+    const [removeSelectMenu, giveSelectMenu] = await Promise.all([
+        buildAdminRemoveSelectMenu(
+            guildId,
+            targetUserId,
+            remState.folder,
+            remState.page,
+            interaction.guild,
+            inventory
+        ),
+        buildAdminGiveSelectMenu(
             guildId,
             targetUserId,
             giveState.folder,
             giveState.page,
             interaction.guild
-        );
+        )
+    ]);
 
-        const backRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`admin_user_dash_${targetUserId}`)
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary)
-        );
+    const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`admin_user_dash_${targetUserId}`)
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
 
-        const rows = [];
-        if (buttons.length > 0) {
-            for (let i = 0; i < buttons.length && rows.length < 3; i += 4) {
-                rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
-            }
-        }
-        rows.push(new ActionRowBuilder().addComponents(giveSelectMenu));
-        rows.push(backRow);
+    const rows = [
+        new ActionRowBuilder().addComponents(removeSelectMenu),
+        new ActionRowBuilder().addComponents(giveSelectMenu),
+        backRow
+    ];
 
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-        await interaction[responseMethod]({ embeds: [embed], components: rows });
-    } else {
-        // Show items in specific category or loot boxes
-        let items;
-        let catName;
-        const lootBoxCatEmoji = await (async () => {
-            const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
-            return getLootBoxCategoryEmoji(guildId);
-        })();
-
-        if (isLootBox) {
-            items = lootBoxItems;
-            const { getLootBoxCategoryName } = await import('../economy/lootbox.js');
-            catName = await getLootBoxCategoryName(guildId);
-            items.sort((a, b) => (parseInt(a.loot_box_id) || a.id) - (parseInt(b.loot_box_id) || b.id));
-        } else {
-            items = standardItems.filter(i => isOther ? i.category_id === null : i.category_id === catId);
-            catName = isOther ? 'Other' : (categories.find(c => c.id === catId)?.name || 'Items');
-            items = await sortItemsByRolePosition(items, interaction.guild);
-        }
-
-        const listLines = isLootBox
-            ? items.map(i => {
-                const qty = parseInt(i.quantity) || 1;
-                const baseName = (i.name && i.name.trim().length > 0) ? i.name : `Loot Box #${i.id}`;
-                return `• ${lootBoxCatEmoji} **${baseName}** \`(x${qty})\``;
-              })
-            : items.map(i => formatInventoryItemLine(i));
-
-        const pageSize = 20;
-        const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-        const currentPage = Math.max(1, Math.min(page, totalPages));
-        const startIndex = (currentPage - 1) * pageSize;
-        const pagedLines = listLines.slice(startIndex, startIndex + pageSize);
-        const remainingCount = items.length - (startIndex + pagedLines.length);
-
-        let desc = pagedLines.join('\n');
-        if (remainingCount > 0) {
-            desc += `\n...and ${remainingCount} more`;
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle(safeTruncate(`Category: ${catName}${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''} • ${targetMember.displayName}`, 256))
-            .setColor('#2ECC71')
-            .setDescription(desc || '*No items in this category.*');
-
-        const rows = [];
-        if (items.length > 0) {
-            const { selectMenu } = buildPaginatedSelectMenu({
-                items,
-                page: currentPage,
-                customId: `admin_user_isel_${targetUserId}_${categoryId}`,
-                placeholder: isLootBox ? 'Select a Loot Box to Manage' : 'Select an Item to Manage',
-                pageNavPrefix: 'admin_page_',
-                pageSize: 20,
-                mapOption: (i, idx) => {
-                    const isAdminIdentified = i.source === 'SYNC';
-                    const isTemp = !!(i.expires_at || 
-                                   (i.duration_seconds && i.duration_seconds > 0) || 
-                                   (i.duration_hours && i.duration_hours > 0));
-                    let statusEmoji = isLootBox 
-                        ? parseSelectEmoji(lootBoxCatEmoji, interaction.guild, '🎁') 
-                        : (isAdminIdentified ? '🛡️' : (i.is_active ? '✅' : '⬜'));
-                    let statusText = isLootBox ? 'Unopened Loot Box' : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
-                    const itemQty = parseInt(i.quantity) || 1;
-                    const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
-                    const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : (isLootBox ? `Loot Box #${i.id}` : `Item #${i.id}`);
-                    return {
-                        label: `${baseName}${qtyBadge}`,
-                        value: `${i.id}_${idx}`,
-                        description: statusText,
-                        emoji: statusEmoji
-                    };
-                }
-            });
-
-            rows.push(new ActionRowBuilder().addComponents(selectMenu));
-        }
-
-        rows.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`admin_user_items_${targetUserId}`)
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary)
-        ));
-
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-        await interaction[responseMethod]({ embeds: [embed], components: rows });
-    }
+    const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+    await interaction[responseMethod]({ embeds: [embed], components: rows });
 }
 
 /**
@@ -815,6 +668,439 @@ export async function handleAdminSetQuantity(interaction) {
             await interaction.followUp({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
         } else {
             await interaction.reply({ content: `❌ Error: ${err.message}`, flags: MessageFlags.Ephemeral });
+        }
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Builds the hierarchical folder select menu for removing items from a user.
+ * Replicates the standard folder navigation pattern from item editing/deleting, p2p trading, and shop posting.
+ *
+ * @param {string} guildId
+ * @param {string} targetUserId
+ * @param {string} currentFolder - 'root' | 'categories' | 'standalone' | 'lootboxes' | 'cat_<id>'
+ * @param {number} page
+ * @param {Guild} guild
+ * @param {Array} inventory - Target user's synthesized inventory items
+ * @returns {Promise<StringSelectMenuBuilder>}
+ */
+export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentFolder = 'root', page = 1, guild = null, inventory = []) {
+    const [categories, lootBoxCatName, lootBoxEmoji] = await Promise.all([
+        getShopCategories(guildId),
+        getLootBoxCategoryName(guildId),
+        getLootBoxCategoryEmoji(guildId)
+    ]);
+
+    const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
+    const lootBoxItems = visibleItems.filter(i => i.item_type === 'loot_box');
+    const standardItems = visibleItems.filter(i => i.item_type !== 'loot_box');
+    const categorizedItems = standardItems.filter(i => i.category_id !== null);
+    const uncategorizedItems = standardItems.filter(i => i.category_id === null);
+
+    const hasCategorized = categorizedItems.length > 0;
+    const hasUncategorized = uncategorizedItems.length > 0;
+    const hasLootBoxes = lootBoxItems.length > 0;
+
+    const customId = `admin_user_remsel_${targetUserId}`;
+
+    if (!hasCategorized && !hasUncategorized && !hasLootBoxes) {
+        return new StringSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder('No items to remove')
+            .setDisabled(true)
+            .addOptions([{ label: 'No items in inventory', value: 'rem_none' }]);
+    }
+
+    // LEVEL 1: ROOT FOLDERS
+    if (currentFolder === 'root' || !currentFolder) {
+        const folderOptions = [];
+        if (hasCategorized) {
+            folderOptions.push({
+                label: 'Categorized Items',
+                value: 'rem_folder_categorized',
+                emoji: '📂'
+            });
+        }
+        if (hasUncategorized) {
+            folderOptions.push({
+                label: 'Uncategorized Items',
+                value: 'rem_folder_standalone',
+                emoji: '🏷️'
+            });
+        }
+        if (hasLootBoxes) {
+            const lbLabel = safeTruncate(lootBoxCatName || 'Loot Boxes', 50);
+            const lbEmoji = parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁';
+            folderOptions.push({
+                label: lbLabel,
+                value: 'rem_folder_lootboxes',
+                emoji: lbEmoji
+            });
+        }
+
+        return new StringSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder('🗑️ Remove Items...')
+            .addOptions(folderOptions);
+    }
+
+    // LEVEL 2: CATEGORIZED FOLDERS
+    if (currentFolder === 'categories') {
+        const usedCatIds = new Set(categorizedItems.map(i => i.category_id));
+        const activeCats = categories.filter(c => usedCatIds.has(c.id));
+
+        if (activeCats.length === 0) {
+            return buildAdminRemoveSelectMenu(guildId, targetUserId, 'root', 1, guild, inventory);
+        }
+
+        const { selectMenu } = buildPaginatedSelectMenu({
+            items: activeCats,
+            page,
+            customId,
+            placeholder: '📂 Choose Category to Remove...',
+            backOption: { label: 'Back', value: 'rem_back_root', emoji: '⬅️' },
+            pageNavPrefix: 'rem_page_',
+            pageSize: 20,
+            mapOption: c => ({
+                label: safeTruncate(c.name || `Category #${c.id}`, 100),
+                value: `rem_cat_${c.id}`,
+                emoji: '📂'
+            })
+        });
+
+        return selectMenu;
+    }
+
+    // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
+    let folderItems = [];
+    let placeholder = '🗑️ Select Item to Remove...';
+    let backValue = 'rem_back_root';
+
+    if (currentFolder === 'standalone') {
+        folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        placeholder = '🏷️ Uncategorized: Select Item to Remove...';
+        backValue = 'rem_back_root';
+    } else if (currentFolder === 'lootboxes') {
+        folderItems = lootBoxItems;
+        folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
+        const catName = lootBoxCatName || 'Loot Boxes';
+        placeholder = `🎁 ${safeTruncate(catName, 20)}: Select Box to Remove...`;
+        backValue = 'rem_back_root';
+    } else if (currentFolder.startsWith('cat_')) {
+        const catId = parseInt(currentFolder.replace('cat_', ''), 10);
+        const catItems = categorizedItems.filter(i => i.category_id === catId);
+        folderItems = await sortItemsByRolePosition(catItems, guild);
+        const catObj = categories.find(c => c.id === catId);
+        const catName = catObj?.name || 'Category';
+        placeholder = `📂 ${safeTruncate(catName, 20)}: Select Item to Remove...`;
+        backValue = 'rem_back_categories';
+    }
+
+    if (folderItems.length === 0) {
+        return buildAdminRemoveSelectMenu(guildId, targetUserId, 'root', 1, guild, inventory);
+    }
+
+    const { selectMenu } = buildPaginatedSelectMenu({
+        items: folderItems,
+        page,
+        customId,
+        placeholder: safeTruncate(placeholder, 100),
+        backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
+        pageNavPrefix: 'rem_page_',
+        pageSize: 20,
+        mapOption: i => {
+            const isAdminIdentified = i.source === 'SYNC';
+            const isChest = i.item_type === 'loot_box';
+            const emoji = isChest
+                ? (parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁')
+                : (isAdminIdentified ? '🛡️' : getItemRarityEmoji(i));
+            
+            const isTemp = !!(i.expires_at || 
+                           (i.duration_seconds && i.duration_seconds > 0) || 
+                           (i.duration_hours && i.duration_hours > 0));
+            const statusText = isChest
+                ? 'Loot Box'
+                : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
+            
+            const itemQty = parseInt(i.quantity) || 1;
+            const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
+            const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : (isChest ? `Loot Box #${i.id}` : `Item #${i.id}`);
+
+            return {
+                label: `${baseName}${qtyBadge}`,
+                value: `rem_item_${i.id}`,
+                description: statusText,
+                emoji
+            };
+        }
+    });
+
+    return selectMenu;
+}
+
+/**
+ * Handle selection in the hierarchical Remove Items select menu.
+ * Supports navigation (folders, categories, pages, back) and triggers the quantity removal modal on item selection.
+ */
+export async function handleAdminRemoveSelect(interaction) {
+    const selection = interaction.values[0];
+    if (selection === 'rem_none') return;
+
+    const customId = interaction.customId;
+    const parts = customId.split('_');
+    const targetUserId = parts[3];
+    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    let state = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
+
+    // 1. Pagination navigation
+    if (selection.startsWith('rem_page_')) {
+        state.page = parseInt(selection.replace('rem_page_', ''), 10) || 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+
+    // 2. Back navigation
+    if (selection === 'rem_back_root') {
+        state.folder = 'root';
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+    if (selection === 'rem_back_categories') {
+        state.folder = 'categories';
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+
+    // 3. Folder navigation
+    if (selection === 'rem_folder_categorized') {
+        state.folder = 'categories';
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+    if (selection === 'rem_folder_standalone') {
+        state.folder = 'standalone';
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+    if (selection === 'rem_folder_lootboxes') {
+        state.folder = 'lootboxes';
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+
+    // 4. Drill into category
+    if (selection.startsWith('rem_cat_')) {
+        const catId = selection.replace('rem_cat_', '');
+        state.folder = `cat_${catId}`;
+        state.page = 1;
+        pendingAdminRemove.set(stateKey, state);
+        return showUserItems(interaction, targetUserId);
+    }
+
+    // 5. Item selection -> Check if SYNC role or open Modal
+    if (selection.startsWith('rem_item_')) {
+        const rawId = selection.replace('rem_item_', '');
+
+        if (String(rawId).startsWith('admin_')) {
+            return interaction.reply({
+                content: '❌ **Admin-Granted Item:** This item is linked to a Discord role. Please remove the role directly from the user in Discord.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        const invId = parseInt(rawId, 10);
+        if (isNaN(invId)) {
+            return interaction.reply({ content: '❌ Invalid item selection.', flags: MessageFlags.Ephemeral });
+        }
+
+        const pool = getPool();
+        const itemRes = await pool.query(
+            `SELECT ui.id, ui.quantity, COALESCE(si.name, lb.name, 'Item') as name
+             FROM user_inventory ui
+             LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+             LEFT JOIN loot_boxes lb ON (ui.role_id LIKE 'CHEST_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER)
+                 OR (ui.role_id LIKE 'LOOT_BOX_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 10), '')::INTEGER)
+             WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3`,
+            [invId, targetUserId, interaction.guildId]
+        );
+
+        if (itemRes.rowCount === 0) {
+            return interaction.reply({ content: '❌ Item not found in user inventory.', flags: MessageFlags.Ephemeral });
+        }
+
+        const currentQty = parseInt(itemRes.rows[0].quantity) || 1;
+        const itemName = itemRes.rows[0].name || 'Item';
+
+        const modal = new ModalBuilder()
+            .setCustomId(`admin_user_remmod_${targetUserId}_${invId}`)
+            .setTitle(safeTruncate(`Remove ${itemName}`, 45));
+
+        const qtyInput = new TextInputBuilder()
+            .setCustomId('remove_quantity')
+            .setLabel(safeTruncate(`Quantity to remove (Current: ${currentQty})`, 45))
+            .setPlaceholder(String(currentQty))
+            .setValue(String(currentQty))
+            .setMinLength(1)
+            .setMaxLength(6)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+        return interaction.showModal(modal);
+    }
+}
+
+/**
+ * Handle submission of the Remove Items quantity modal.
+ * Executes an atomic transaction with row-level locking (FOR UPDATE) and audit logging.
+ */
+export async function handleAdminRemoveModal(interaction) {
+    const customId = interaction.customId;
+    const parts = customId.split('_');
+    const targetUserId = parts[3];
+    const invId = parseInt(parts[4], 10);
+
+    const rawQty = interaction.fields.getTextInputValue('remove_quantity')?.trim();
+    const inputQty = parseInt(rawQty, 10);
+
+    // Strict positive integer validation
+    if (isNaN(inputQty) || inputQty <= 0 || !/^\d+$/.test(rawQty)) {
+        return interaction.reply({
+            content: '❌ Invalid quantity. Please enter a positive whole number greater than 0.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
+    const guildId = interaction.guildId;
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Concurrency Protection: Lock the specific user_inventory row
+        const itemRes = await client.query(
+            `SELECT ui.*, COALESCE(si.name, lb.name, 'Item') as name, si.role_id as shop_role_id
+             FROM user_inventory ui
+             LEFT JOIN shop_items si ON ui.shop_item_id = si.id
+             LEFT JOIN loot_boxes lb ON (ui.role_id LIKE 'CHEST_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER)
+                 OR (ui.role_id LIKE 'LOOT_BOX_%' AND lb.id = NULLIF(SUBSTRING(ui.role_id FROM 10), '')::INTEGER)
+             WHERE ui.id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
+             FOR UPDATE`,
+            [invId, targetUserId, guildId]
+        );
+
+        if (itemRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return showUserItems(interaction, targetUserId);
+        }
+
+        const item = itemRes.rows[0];
+        const oldQty = parseInt(item.quantity) || 1;
+        const itemName = item.name;
+        const roleIdToRevoke = item.role_id || item.shop_role_id;
+        const shopItemId = item.shop_item_id;
+
+        let newQty = 0;
+        let removedQty = 0;
+
+        if (inputQty >= oldQty) {
+            removedQty = oldQty;
+            newQty = 0;
+            await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
+
+            // Check if user still has any remaining rows of this shop_item_id
+            if (shopItemId) {
+                const totalRemainingRes = await client.query(
+                    `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as remaining
+                     FROM user_inventory
+                     WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
+                    [targetUserId, guildId, shopItemId]
+                );
+                const totalRemaining = parseInt(totalRemainingRes.rows[0]?.remaining || 0, 10);
+
+                if (totalRemaining <= 0 && roleIdToRevoke && !roleIdToRevoke.startsWith('CHEST_') && !roleIdToRevoke.startsWith('LOOT_BOX_')) {
+                    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+                    if (targetMember) {
+                        const rIds = roleIdToRevoke.split(/[,\s]+/);
+                        const botMember = interaction.guild.members.me;
+                        for (const rId of rIds) {
+                            const role = interaction.guild.roles.cache.get(rId);
+                            if (role && botMember && role.comparePositionTo(botMember.roles.highest) < 0) {
+                                await targetMember.roles.remove(role).catch(err => {
+                                    sysError('Role Removal Failed on Admin Remove', err, { user: targetUserId, roleId: rId });
+                                });
+                            }
+                        }
+                        const { runDependencySweep } = await import('../economy/shop.js');
+                        await runDependencySweep(targetUserId, guildId, targetMember, client).catch(() => {});
+                    }
+                }
+            }
+        } else {
+            removedQty = inputQty;
+            newQty = oldQty - inputQty;
+            await client.query('UPDATE user_inventory SET quantity = $1 WHERE id = $2', [newQty, invId]);
+        }
+
+        // Audit Logging in audit_logs table
+        await client.query(
+            `INSERT INTO audit_logs (guild_id, user_id, action_type, target_type, target_id, details)
+             VALUES ($1, $2, 'ADMIN_REMOVE_ITEM', 'user', $3, $4)`,
+            [guildId, interaction.user.id, targetUserId, JSON.stringify({
+                inventory_id: invId,
+                shop_item_id: shopItemId,
+                item_name: itemName,
+                quantity_removed: removedQty,
+                previous_quantity: oldQty,
+                new_quantity: newQty,
+                timestamp: new Date().toISOString()
+            })]
+        );
+
+        await client.query('COMMIT');
+
+        const adminLogName = getUserLogName(interaction);
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
+
+        sysLog('Admin Removed Items', {
+            tag: 'SECURITY',
+            user: interaction.user.id,
+            target: targetUserId,
+            guild: guildId,
+            detail: `Admin ${interaction.user.id} removed ${removedQty}x "${itemName}" from ${targetUserId} (New Total: ${newQty})`
+        });
+
+        sendLog(interaction.guild, 'inventory', 'red', '🗑️ Items Removed (Admin)',
+            `**Item:** **${itemName}** \`(x${removedQty})\`\n` +
+            `**Target:** <@${targetUserId}> (${targetLogName})\n` +
+            `**Remaining Stack:** \`${newQty}\`\n` +
+            `**Admin:** ${adminLogName} (via User Inventory Settings)`
+        );
+
+        pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
+
+        return showUserItems(interaction, targetUserId);
+
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        sysError('Admin Remove Item Error', err, { user: interaction.user.id, guild: guildId, targetUserId });
+        if (interaction.deferred || interaction.replied) {
+            return interaction.followUp({ content: `❌ Error removing items: ${err.message}`, flags: MessageFlags.Ephemeral });
+        } else {
+            return interaction.reply({ content: `❌ Error removing items: ${err.message}`, flags: MessageFlags.Ephemeral });
         }
     } finally {
         client.release();
@@ -981,6 +1267,8 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
  */
 export async function handleAdminGiveSelect(interaction) {
     const selection = interaction.values[0];
+    if (selection === 'give_none') return;
+
     const customId = interaction.customId;
     const parts = customId.split('_');
     const targetUserId = parts[3];
@@ -991,7 +1279,7 @@ export async function handleAdminGiveSelect(interaction) {
     if (selection.startsWith('give_page_')) {
         state.page = parseInt(selection.replace('give_page_', ''), 10) || 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
 
     // 2. Back navigation
@@ -999,13 +1287,13 @@ export async function handleAdminGiveSelect(interaction) {
         state.folder = 'root';
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
     if (selection === 'give_back_categories') {
         state.folder = 'categories';
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
 
     // 3. Folder navigation
@@ -1013,19 +1301,19 @@ export async function handleAdminGiveSelect(interaction) {
         state.folder = 'categories';
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
     if (selection === 'give_folder_standalone') {
         state.folder = 'standalone';
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
     if (selection === 'give_folder_lootboxes') {
         state.folder = 'lootboxes';
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
 
     // 4. Drill into category
@@ -1034,7 +1322,7 @@ export async function handleAdminGiveSelect(interaction) {
         state.folder = `cat_${catId}`;
         state.page = 1;
         pendingAdminGive.set(stateKey, state);
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
     }
 
     // 5. Item / Chest selection -> Discord Modal
@@ -1261,7 +1549,7 @@ export async function handleAdminGiveModal(interaction) {
         pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
 
         // Return admin directly to the user's updated inventory screen
-        return showUserItems(interaction, targetUserId, null);
+        return showUserItems(interaction, targetUserId);
 
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
@@ -1516,6 +1804,11 @@ export async function handleAdminUserComponent(interaction) {
             return;
         }
 
+        if (interaction.isModalSubmit() && customId.startsWith('admin_user_remmod_')) {
+            await handleAdminRemoveModal(interaction);
+            return;
+        }
+
         const parts = customId.split('_');
         const action = parts[2];
         const targetUserId = parts[3];
@@ -1523,6 +1816,7 @@ export async function handleAdminUserComponent(interaction) {
         switch (action) {
             case 'dash':
                 pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
+                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
                 await showUserDashboard(interaction, targetUserId);
                 break;
             case 'balance':
@@ -1535,6 +1829,8 @@ export async function handleAdminUserComponent(interaction) {
                 await handleLevelAction(interaction, targetUserId);
                 break;
             case 'items':
+                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
+                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
                 await showUserItems(interaction, targetUserId);
                 break;
             case 'give':
@@ -1545,13 +1841,18 @@ export async function handleAdminUserComponent(interaction) {
                 await handleAdminGiveSelect(interaction);
                 break;
             }
+            case 'remsel': {
+                await handleAdminRemoveSelect(interaction);
+                break;
+            }
             case 'history':
                 await showUserHistory(interaction, targetUserId);
                 break;
             case 'icat': {
                 const catId = parts[4];
                 pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
-                await showUserItems(interaction, targetUserId, catId);
+                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
+                await showUserItems(interaction, targetUserId);
                 break;
             }
             case 'isel': {
