@@ -206,12 +206,76 @@ export async function sortItemsByRolePosition(items, guild) {
 }
 
 export const RARITY_WEIGHTS = {
+  mythic: 6,
+  mythical: 6,
   legendary: 5,
   epic: 4,
   rare: 3,
   uncommon: 2,
   common: 1
 };
+
+/**
+ * Helper: Sort items strictly by rarity (highest first: Mythic > Legendary > Epic > Rare > Uncommon > Common),
+ * then by Discord role position, then by name.
+ * Also filters out ghost role items if roleCache is available.
+ */
+export async function sortItemsByRarity(items, guild) {
+  if (!items || items.length <= 1) return items || [];
+
+  let roleCache = guild?.roles?.cache;
+  if (guild?.roles?.fetch) {
+    try {
+      const fetched = await guild.roles.fetch();
+      if (fetched) roleCache = fetched;
+    } catch (_) {
+      roleCache = guild.roles?.cache;
+    }
+  }
+
+  // Map items with their role position
+  const itemsWithPosition = items.map(item => {
+    let position = -1;
+    if (item.role_id && roleCache) {
+      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+      const role = roleCache.get(firstRoleId);
+      if (role) {
+        position = role.position;
+      }
+    }
+    return { ...item, _rolePosition: position };
+  });
+
+  // Sort: Rarity descending, then role position, then name
+  itemsWithPosition.sort((a, b) => {
+    const weightA = RARITY_WEIGHTS[String(a.rarity || 'common').toLowerCase()] ?? 1;
+    const weightB = RARITY_WEIGHTS[String(b.rarity || 'common').toLowerCase()] ?? 1;
+    if (weightB !== weightA) {
+      return weightB - weightA;
+    }
+
+    if (a._rolePosition >= 0 && b._rolePosition >= 0 && a._rolePosition !== b._rolePosition) {
+      return b._rolePosition - a._rolePosition;
+    }
+    if (a._rolePosition >= 0 && b._rolePosition < 0) return -1;
+    if (b._rolePosition >= 0 && a._rolePosition < 0) return 1;
+
+    const nameA = String(a.name || '').trim();
+    const nameB = String(b.name || '').trim();
+    const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+    if (cmp !== 0) return cmp;
+
+    return (a.id || 0) - (b.id || 0);
+  });
+
+  if (!roleCache) return itemsWithPosition;
+
+  return itemsWithPosition.filter(item => {
+    if (!item.role_id) return true;
+    const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+    return roleCache.get(firstRoleId) !== undefined;
+  });
+}
 
 /**
  * Sorts inventory items according to user's preference
