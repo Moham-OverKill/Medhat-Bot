@@ -1369,6 +1369,15 @@ export async function showAdminManagement(interaction) {
     }
     for (const a of admins) {
         if (!discordAdminIds.has(a.user_id) && a.user_id !== ownerId) {
+            let member = guild?.members?.cache?.get(a.user_id);
+            if (!member && guild) {
+                member = await guild.members.fetch(a.user_id).catch(() => null);
+            }
+            if (!member) {
+                const { removeServerAdmin } = await import('../storage/admins.js');
+                await removeServerAdmin(guildId, a.user_id).catch(() => {});
+                continue;
+            }
             userLines.push(`• <@${a.user_id}>`);
         }
     }
