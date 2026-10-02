@@ -1,4 +1,4 @@
-import { sysLog, sysError, sendLog } from '../utils/logger.js';
+import { sysLog, sysWarn, sysError, sendLog } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
 import { sleep, executeWithRetry, hasAnyDangerousPermission } from '../shared.js';
 import { getTopCoinUsers, getTopStreakUsers } from '../commands/leaderboard.js';
@@ -126,10 +126,10 @@ async function validateRole(guild, roleId) {
     if (role.managed) return null;         // bot/integration role
 
     if (hasAnyDangerousPermission(role)) {
-        sysError('Security Violation: Dangerous Leaderboard Role Blocked', new Error('Target role holds dangerous permissions'), {
-            guildId: guild.id,
-            roleId: role.id,
-            roleName: role.name
+        sysWarn('Dangerous Leaderboard Role Blocked', {
+            guild: guild.id,
+            role: role.id,
+            detail: `Target role "${role.name}" (${role.id}) holds dangerous permissions and assignment was skipped`
         });
         return null;
     }
