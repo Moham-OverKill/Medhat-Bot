@@ -522,6 +522,54 @@ export async function showUserItems(interaction, targetUserId, _ignoredCatId = n
     const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
     const remState = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
 
+    // Reconcile and clamp remove state against current inventory
+    const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
+    const lootBoxItems = visibleItems.filter(i => i.item_type === 'loot_box');
+    const standardItems = visibleItems.filter(i => i.item_type !== 'loot_box');
+    const categorizedItems = standardItems.filter(i => i.category_id !== null);
+    const uncategorizedItems = standardItems.filter(i => i.category_id === null);
+
+    const hasCategorized = categorizedItems.length > 0;
+    const hasUncategorized = uncategorizedItems.length > 0;
+    const hasLootBoxes = lootBoxItems.length > 0;
+
+    let remFolderItemsCount = 0;
+    if (remState.folder === 'standalone') {
+        if (!hasUncategorized) {
+            remState.folder = 'root';
+            remState.page = 1;
+        } else {
+            remFolderItemsCount = uncategorizedItems.length;
+        }
+    } else if (remState.folder === 'lootboxes') {
+        if (!hasLootBoxes) {
+            remState.folder = 'root';
+            remState.page = 1;
+        } else {
+            remFolderItemsCount = lootBoxItems.length;
+        }
+    } else if (remState.folder.startsWith('cat_')) {
+        const catId = parseInt(remState.folder.replace('cat_', ''), 10);
+        const catItems = categorizedItems.filter(i => i.category_id === catId);
+        if (catItems.length === 0) {
+            remState.folder = hasCategorized ? 'categories' : 'root';
+            remState.page = 1;
+        } else {
+            remFolderItemsCount = catItems.length;
+        }
+    } else if (remState.folder === 'categories') {
+        if (!hasCategorized) {
+            remState.folder = 'root';
+            remState.page = 1;
+        }
+    }
+
+    if (remFolderItemsCount > 0) {
+        const totalPages = Math.max(1, Math.ceil(remFolderItemsCount / 20));
+        remState.page = Math.min(Math.max(1, remState.page || 1), totalPages);
+    }
+    pendingAdminRemove.set(stateKey, remState);
+
     const embed = new EmbedBuilder()
         .setTitle(safeTruncate(`Inventory: ${targetMember.displayName}`, 256))
         .setColor('#3498DB');
@@ -794,6 +842,9 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
     }
 
     if (folderItems.length === 0) {
+        if (currentFolder.startsWith('cat_') && hasCategorized) {
+            return buildAdminRemoveSelectMenu(guildId, targetUserId, 'categories', 1, guild, inventory);
+        }
         return buildAdminRemoveSelectMenu(guildId, targetUserId, 'root', 1, guild, inventory);
     }
 
@@ -1140,8 +1191,6 @@ export async function handleAdminRemoveModal(interaction) {
                 `**Admin:** ${adminLogName} (via User Inventory Settings)`
             );
         }
-
-        pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
 
         return showUserItems(interaction, targetUserId);
 
@@ -1595,9 +1644,6 @@ export async function handleAdminGiveModal(interaction) {
                 }
             }
         }
-
-        // Reset give folder state to root
-        pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
 
         // Return admin directly to the user's updated inventory screen
         return showUserItems(interaction, targetUserId);
