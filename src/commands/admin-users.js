@@ -1190,8 +1190,8 @@ export async function handleAdminGiveModal(interaction) {
             await client.query(
                 `UPDATE user_inventory 
                  SET quantity = quantity + $1, 
-                     source = 'ADMIN',
-                     purchase_source = 'admin'
+                     source = CASE WHEN source IN ('SYNC', 'ADMIN', 'ADMIN_GRANT') THEN 'TRADE' ELSE COALESCE(source, 'TRADE') END,
+                     purchase_source = CASE WHEN purchase_source IN ('sync', 'admin') THEN 'trade' ELSE COALESCE(purchase_source, 'trade') END
                  WHERE id = $2`,
                 [inputQty, targetRow.id]
             );
@@ -1201,7 +1201,7 @@ export async function handleAdminGiveModal(interaction) {
             await client.query(
                 `INSERT INTO user_inventory (
                     user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity
-                 ) VALUES ($1, $2, $3, $4, false, 'ADMIN', 'admin', $5)`,
+                 ) VALUES ($1, $2, $3, $4, false, 'TRADE', 'trade', $5)`,
                 [targetUserId, guildId, shopItemId, roleId, inputQty]
             );
         }

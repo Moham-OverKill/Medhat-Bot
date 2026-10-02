@@ -979,6 +979,11 @@ async function createTables() {
       SET purchase_source = 'shop'
       WHERE purchase_source IS NULL;
     `).catch(() => {});
+    await pool.query(`
+      UPDATE user_inventory
+      SET source = 'TRADE', purchase_source = 'trade'
+      WHERE source IN ('ADMIN', 'ADMIN_GRANT') OR purchase_source = 'admin';
+    `).catch(() => {});
 
 
     // Self-healing migration: Start missing expiration timers for currently active temporary items
