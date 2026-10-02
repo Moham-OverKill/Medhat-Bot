@@ -1127,35 +1127,35 @@ export async function handleAdminUserComponent(interaction) {
             }
             case 'anticheat': {
                 const subAction = parts[3];
-                const subSubAction = parts[4];
+                const gateType = parts.slice(4).join('_');
 
                 if (!subAction || subAction === 'hub') {
                     await showAntiCheatHub(interaction);
                 } else if (subAction === 'alt') {
-                    if (!subSubAction) {
+                    if (!gateType) {
                         await showAltFarmingDashboard(interaction);
-                    } else if (subSubAction === 'age') {
+                    } else if (gateType === 'age') {
                         await handleToggleAltFarmingGate(interaction, 'age');
-                    } else if (subSubAction === 'join') {
+                    } else if (gateType === 'join') {
                         await handleToggleAltFarmingGate(interaction, 'join');
-                    } else if (subSubAction === 'back') {
+                    } else if (gateType === 'back') {
                         await showAntiCheatHub(interaction);
                     }
                 } else if (subAction === 'voice') {
-                    if (!subSubAction) {
+                    if (!gateType) {
                         await showVoiceAfkDashboard(interaction);
-                    } else if (subSubAction === 'back') {
+                    } else if (gateType === 'back') {
                         await showAntiCheatHub(interaction);
                     } else {
-                        await handleToggleVoiceAfkGate(interaction, subSubAction);
+                        await handleToggleVoiceAfkGate(interaction, gateType);
                     }
                 } else if (subAction === 'text') {
-                    if (!subSubAction) {
+                    if (!gateType) {
                         await showTextSpamDashboard(interaction);
-                    } else if (subSubAction === 'back') {
+                    } else if (gateType === 'back') {
                         await showAntiCheatHub(interaction);
                     } else {
-                        await handleToggleTextSpamGate(interaction, subSubAction);
+                        await handleToggleTextSpamGate(interaction, gateType);
                     }
                 } else if (subAction === 'back') {
                     await showUserSelector(interaction);
@@ -1312,7 +1312,10 @@ export async function showVoiceAfkDashboard(interaction) {
             .setCustomId('admin_user_anticheat_voice_min_humans')
             .setLabel(`Min 2 Humans: ${minHumans ? 'ON' : 'OFF'}`)
             .setEmoji(minHumans ? '🟢' : '🔴')
-            .setStyle(minHumans ? ButtonStyle.Success : ButtonStyle.Danger),
+            .setStyle(minHumans ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice_no_mute')
             .setLabel(`Mute Filter: ${noMute ? 'ON' : 'OFF'}`)
@@ -1320,12 +1323,15 @@ export async function showVoiceAfkDashboard(interaction) {
             .setStyle(noMute ? ButtonStyle.Success : ButtonStyle.Danger)
     );
 
-    const row2 = new ActionRowBuilder().addComponents(
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice_no_deafen')
             .setLabel(`Deafen Filter: ${noDeafen ? 'ON' : 'OFF'}`)
             .setEmoji(noDeafen ? '🟢' : '🔴')
-            .setStyle(noDeafen ? ButtonStyle.Success : ButtonStyle.Danger),
+            .setStyle(noDeafen ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice_no_afk')
             .setLabel(`AFK Channel: ${noAfk ? 'ON' : 'OFF'}`)
@@ -1333,7 +1339,7 @@ export async function showVoiceAfkDashboard(interaction) {
             .setStyle(noAfk ? ButtonStyle.Success : ButtonStyle.Danger)
     );
 
-    const row3 = new ActionRowBuilder().addComponents(
+    const row5 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice_back')
             .setLabel('Back')
@@ -1346,7 +1352,7 @@ export async function showVoiceAfkDashboard(interaction) {
         : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2, row3, row4, row5]
     });
 }
 
@@ -1354,6 +1360,9 @@ export async function showVoiceAfkDashboard(interaction) {
  * Handle toggle action for Voice AFK gates
  */
 export async function handleToggleVoiceAfkGate(interaction, gateType) {
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
     const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
     const { invalidateConfigCache } = await import('../activity/index.js');
     const guildId = interaction.guildId;
@@ -1416,7 +1425,10 @@ export async function showTextSpamDashboard(interaction) {
             .setCustomId('admin_user_anticheat_text_cooldown')
             .setLabel(`Cooldown (5s): ${cooldown ? 'ON' : 'OFF'}`)
             .setEmoji(cooldown ? '🟢' : '🔴')
-            .setStyle(cooldown ? ButtonStyle.Success : ButtonStyle.Danger),
+            .setStyle(cooldown ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_text_min_length')
             .setLabel(`Min Length: ${minLength ? 'ON' : 'OFF'}`)
@@ -1424,12 +1436,15 @@ export async function showTextSpamDashboard(interaction) {
             .setStyle(minLength ? ButtonStyle.Success : ButtonStyle.Danger)
     );
 
-    const row2 = new ActionRowBuilder().addComponents(
+    const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_text_no_duplicates')
             .setLabel(`Duplicate Filter: ${noDuplicates ? 'ON' : 'OFF'}`)
             .setEmoji(noDuplicates ? '🟢' : '🔴')
-            .setStyle(noDuplicates ? ButtonStyle.Success : ButtonStyle.Danger),
+            .setStyle(noDuplicates ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_text_no_prefixes')
             .setLabel(`Command Filter: ${noPrefixes ? 'ON' : 'OFF'}`)
@@ -1437,7 +1452,7 @@ export async function showTextSpamDashboard(interaction) {
             .setStyle(noPrefixes ? ButtonStyle.Success : ButtonStyle.Danger)
     );
 
-    const row3 = new ActionRowBuilder().addComponents(
+    const row5 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_text_back')
             .setLabel('Back')
@@ -1450,7 +1465,7 @@ export async function showTextSpamDashboard(interaction) {
         : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2, row3, row4, row5]
     });
 }
 
@@ -1458,6 +1473,9 @@ export async function showTextSpamDashboard(interaction) {
  * Handle toggle action for Text Spam gates
  */
 export async function handleToggleTextSpamGate(interaction, gateType) {
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
     const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
     const { invalidateConfigCache } = await import('../activity/index.js');
     const guildId = interaction.guildId;
@@ -1487,6 +1505,9 @@ export async function handleToggleTextSpamGate(interaction, gateType) {
  * Handle toggle action for Alt Farming gates
  */
 export async function handleToggleAltFarmingGate(interaction, gateType) {
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
     const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
     const { invalidateConfigCache } = await import('../activity/index.js');
     const guildId = interaction.guildId;
