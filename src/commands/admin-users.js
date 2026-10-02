@@ -754,7 +754,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
             items: activeCats,
             page,
             customId,
-            placeholder: '🗑️ Remove Items...',
+            placeholder: '🗑️ Remove Items (Categories)',
             backOption: { label: 'Back', value: 'rem_back_root', emoji: '⬅️' },
             pageNavPrefix: 'rem_page_',
             pageSize: 20,
@@ -771,18 +771,25 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
     // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
     let folderItems = [];
     let backValue = 'rem_back_root';
+    let placeholder = '🗑️ Remove Items...';
 
     if (currentFolder === 'standalone') {
         folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        placeholder = '🗑️ Remove Items (Uncategorized)';
         backValue = 'rem_back_root';
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxItems;
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
+        const boxName = lootBoxCatName || 'Loot Boxes';
+        placeholder = safeTruncate(`🗑️ Remove Items (${boxName})`, 100);
         backValue = 'rem_back_root';
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
         folderItems = await sortItemsByRolePosition(catItems, guild);
+        const catObj = categories.find(c => parseInt(c.id, 10) === catId);
+        const catName = catObj?.name || 'Category';
+        placeholder = safeTruncate(`🗑️ Remove Items (${catName})`, 100);
         backValue = 'rem_back_categories';
     }
 
@@ -794,7 +801,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
         items: folderItems,
         page,
         customId,
-        placeholder: '🗑️ Remove Items...',
+        placeholder,
         backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: 'rem_page_',
         pageSize: 20,
@@ -1236,7 +1243,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
             items: activeCats,
             page,
             customId,
-            placeholder: '🎁 Give Items...',
+            placeholder: '🎁 Give Items (Categories)',
             backOption: { label: 'Back', value: 'give_back_root', emoji: '⬅️' },
             pageNavPrefix: 'give_page_',
             pageSize: 20,
@@ -1253,18 +1260,25 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
     // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
     let folderItems = [];
     let backValue = 'give_back_root';
+    let placeholder = '🎁 Give Items...';
 
     if (currentFolder === 'standalone') {
         folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        placeholder = '🎁 Give Items (Uncategorized)';
         backValue = 'give_back_root';
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxes.map(b => ({ ...b, isChest: true }));
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
+        const boxName = lootBoxCatName || 'Loot Boxes';
+        placeholder = safeTruncate(`🎁 Give Items (${boxName})`, 100);
         backValue = 'give_back_root';
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
         folderItems = await sortItemsByRolePosition(catItems, guild);
+        const catObj = categories.find(c => parseInt(c.id, 10) === catId);
+        const catName = catObj?.name || 'Category';
+        placeholder = safeTruncate(`🎁 Give Items (${catName})`, 100);
         backValue = 'give_back_categories';
     }
 
@@ -1276,7 +1290,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
         items: folderItems,
         page,
         customId,
-        placeholder: '🎁 Give Items...',
+        placeholder,
         backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: 'give_page_',
         pageSize: 20,
