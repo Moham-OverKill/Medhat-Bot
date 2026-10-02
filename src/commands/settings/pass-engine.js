@@ -525,7 +525,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
             if (role) {
               const secErr = validateRoleForAssignment(role, guild);
               if (secErr) {
-                sysError('Battlepass Level Reward Blocked: Dangerous Role', new Error(secErr), { guild: guildId, user: userId, role: reward.item_role_id });
+                sysWarn('Battlepass Level Reward Blocked: Dangerous Role', { guild: guildId, user: userId, role: reward.item_role_id, detail: secErr });
                 if (reward.reward_id) {
                   await client2.query(
                     `UPDATE user_pass_reward_claims

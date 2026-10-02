@@ -3,7 +3,7 @@ import { getTopActiveUsers } from '../activity/tracker.js';
 import { getActiveMvps, setActiveMvps } from '../storage/activeMvps.js';
 import { setMvpCache } from './mvpCache.js';
 import { updateBalance } from '../economy/service.js';
-import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { COIN_EMOJI, executeWithRetry, hasAnyDangerousPermission } from '../shared.js';
 import { query } from '../storage/postgres.js';
 
@@ -58,10 +58,10 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
     if (mvpRoleId) {
       mvpRole = await guildObj.roles.fetch(mvpRoleId).catch(() => null);
       if (mvpRole && hasAnyDangerousPermission(mvpRole)) {
-        sysError('Security Violation: Dangerous KotH MVP Role Blocked', new Error('MVP role holds dangerous permissions'), {
-          guildId,
-          roleId: mvpRole.id,
-          roleName: mvpRole.name
+        sysWarn('Dangerous KotH MVP Role Blocked', {
+          guild: guildId,
+          role: mvpRole.id,
+          detail: `MVP role "${mvpRole.name}" holds dangerous permissions and assignment was skipped`
         });
         mvpRole = null;
       } else if (!mvpRole) {
