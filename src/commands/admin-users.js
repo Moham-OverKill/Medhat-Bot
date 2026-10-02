@@ -1323,7 +1323,10 @@ export async function showAdminManagement(interaction) {
     if (!(await verifyAdminManagerAccess(interaction))) return;
 
     const guildId = interaction.guildId;
-    const guild = interaction.guild;
+    let guild = interaction.guild;
+    if (!guild && interaction.client) {
+        guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+    }
     let ownerId = guild?.ownerId;
 
     if (!ownerId && guild?.fetch) {
@@ -1416,13 +1419,22 @@ export async function handleToggleAdminUser(interaction) {
 
     const guildId = interaction.guildId;
     const targetUserId = interaction.values[0];
-    const guild = interaction.guild;
+    let guild = interaction.guild;
+    if (!guild && interaction.client) {
+        guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+    }
     let ownerId = guild?.ownerId;
 
     if (!ownerId && guild?.fetch) {
         try {
             const g = await guild.fetch();
             ownerId = g.ownerId;
+        } catch {}
+    }
+    if (!ownerId && interaction.client) {
+        try {
+            const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
+            ownerId = g?.ownerId;
         } catch {}
     }
 
