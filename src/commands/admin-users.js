@@ -518,18 +518,13 @@ export async function showUserItems(interaction, targetUserId, _ignoredCatId = n
     // Sync and fetch inventory for target user (including synthesized admin items)
     const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
 
-    // List of visible items (no packs)
-    const visibleItems = inventory.filter(i => !(i.item_type === 'pack' || i.is_pack));
-    const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
-
     const stateKey = `${interaction.user.id}_${targetUserId}`;
     const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
     const remState = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
 
     const embed = new EmbedBuilder()
         .setTitle(safeTruncate(`Inventory: ${targetMember.displayName}`, 256))
-        .setColor('#3498DB')
-        .setDescription(`📦 **Total Items:** ${totalCount}`);
+        .setColor('#3498DB');
 
     const [removeSelectMenu, giveSelectMenu] = await Promise.all([
         buildAdminRemoveSelectMenu(
