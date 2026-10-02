@@ -19,6 +19,9 @@ import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
 
+// State map for hierarchical admin give items select menu: keyed by `${adminUserId}_${targetUserId}`
+const pendingAdminGive = new Map();
+
 /**
  * Show user selector dropdown
  */
@@ -533,10 +536,24 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
         const currentBalance = parseInt(userBalRes.rows[0]?.balance || 0);
         const totalCount = visibleItems.reduce((sum, i) => sum + (parseInt(i.quantity) || 1), 0);
 
+        const stateKey = `${interaction.user.id}_${targetUserId}`;
+        const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
+
+        let desc = `${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`;
+        if (giveState.folder === 'categories') {
+            desc += '\n\n*Choose a category from the select menu below to browse items to give.*';
+        } else if (giveState.folder === 'standalone') {
+            desc += '\n\n*Choose an uncategorized item from the select menu below to give.*';
+        } else if (giveState.folder === 'lootboxes') {
+            desc += '\n\n*Choose a loot box / chest from the select menu below to give.*';
+        } else if (giveState.folder?.startsWith('cat_')) {
+            desc += '\n\n*Choose an item from the select menu below to give.*';
+        }
+
         const embed = new EmbedBuilder()
             .setTitle(safeTruncate(`Inventory: ${targetMember.displayName}`, 256))
             .setColor('#3498DB')
-            .setDescription(`${COIN_EMOJI} **Balance:** ${currentBalance.toLocaleString()}   📦 **Total Items:** ${totalCount}`);
+            .setDescription(desc);
 
         const categoryCounts = {};
         let otherCount = 0;
@@ -579,12 +596,12 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
             buttons.push(lbBtn);
         }
 
-        const giveRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`admin_user_give_${targetUserId}`)
-                .setLabel('Give Items')
-                .setEmoji('🎁')
-                .setStyle(ButtonStyle.Secondary)
+        const giveSelectMenu = await buildAdminGiveSelectMenu(
+            guildId,
+            targetUserId,
+            giveState.folder,
+            giveState.page,
+            interaction.guild
         );
 
         const backRow = new ActionRowBuilder().addComponents(
@@ -601,7 +618,7 @@ export async function showUserItems(interaction, targetUserId, categoryId = null
                 rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
             }
         }
-        rows.push(giveRow);
+        rows.push(new ActionRowBuilder().addComponents(giveSelectMenu));
         rows.push(backRow);
 
         const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
@@ -805,17 +822,17 @@ export async function handleAdminSetQuantity(interaction) {
 }
 
 /**
- * Item browser for granting items to a member (Admin Give Items)
+ * Builds the hierarchical folder select menu for granting items to a user.
+ * Replicates the standard folder navigation pattern from item editing/deleting, p2p trading, and shop posting.
+ *
+ * @param {string} guildId
+ * @param {string} targetUserId
+ * @param {string} currentFolder - 'root' | 'categories' | 'standalone' | 'lootboxes' | 'cat_<id>'
+ * @param {number} page
+ * @param {Guild} guild
+ * @returns {Promise<StringSelectMenuBuilder>}
  */
-export async function showAdminGiveItemBrowser(interaction, targetUserId, selectedCatId = null, page = 1) {
-    if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(() => {});
-    }
-    const guildId = interaction.guildId;
-    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-    const targetName = targetMember?.displayName || targetMember?.user?.username || targetUserId;
-
-    // Fetch categories, all items, and loot boxes
+export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFolder = 'root', page = 1, guild = null) {
     const [categories, rawItems, lootBoxes, lootBoxCatName, lootBoxEmoji] = await Promise.all([
         getShopCategories(guildId),
         getShopItems(guildId, null, 'name', false, false),
@@ -824,211 +841,240 @@ export async function showAdminGiveItemBrowser(interaction, targetUserId, select
         getLootBoxCategoryEmoji(guildId)
     ]);
 
-    // Exclude packs (bundles)
     const nonPackItems = rawItems.filter(i => !i.is_pack && i.item_type !== 'pack');
     const standardItems = nonPackItems.filter(i => i.item_type !== 'loot_box');
+    const categorizedItems = standardItems.filter(i => i.category_id !== null);
+    const uncategorizedItems = standardItems.filter(i => i.category_id === null);
 
-    // Build available category folders
-    const availableFolders = [];
+    const hasCategorized = categorizedItems.length > 0;
+    const hasUncategorized = uncategorizedItems.length > 0;
+    const hasLootBoxes = lootBoxes.length > 0;
 
-    // 1. Regular shop categories with items
-    for (const cat of categories) {
-        const catItems = standardItems.filter(i => i.category_id === cat.id);
-        if (catItems.length > 0) {
-            availableFolders.push({
-                id: String(cat.id),
-                name: cat.name,
-                isLootBox: false
+    const customId = `admin_user_givesel_${targetUserId}`;
+
+    if (!hasCategorized && !hasUncategorized && !hasLootBoxes) {
+        return new StringSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder('No items available to give')
+            .setDisabled(true)
+            .addOptions([{ label: 'No items available', value: 'give_none' }]);
+    }
+
+    // LEVEL 1: ROOT FOLDERS
+    if (currentFolder === 'root' || !currentFolder) {
+        const folderOptions = [];
+        if (hasCategorized) {
+            folderOptions.push({
+                label: 'Categorized Items',
+                value: 'give_folder_categorized',
+                emoji: '📂'
             });
         }
-    }
-
-    // 2. Uncategorized items (Other)
-    const otherItems = standardItems.filter(i => i.category_id === null);
-    if (otherItems.length > 0) {
-        availableFolders.push({
-            id: 'null',
-            name: 'Other',
-            isLootBox: false
-        });
-    }
-
-    // 3. Loot boxes / chests
-    if (lootBoxes.length > 0) {
-        availableFolders.push({
-            id: 'lootboxes',
-            name: lootBoxCatName || 'Loot Boxes',
-            emoji: lootBoxEmoji || '🎁',
-            isLootBox: true
-        });
-    }
-
-    if (availableFolders.length === 0) {
-        const emptyEmbed = new EmbedBuilder()
-            .setTitle(safeTruncate(`Give Items • ${targetName}`, 256))
-            .setColor('#E74C3C')
-            .setDescription('❌ No active shop items or chests found in this server. Please create items first via `/settings` -> **Items**.');
-
-        const backRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`admin_user_items_${targetUserId}`)
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        const method = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-        return interaction[method]({ embeds: [emptyEmbed], components: [backRow] });
-    }
-
-    // Determine active folder
-    let activeFolder = null;
-    if (selectedCatId !== null && selectedCatId !== undefined) {
-        activeFolder = availableFolders.find(f => f.id === String(selectedCatId));
-    }
-    if (!activeFolder) {
-        activeFolder = availableFolders[0];
-    }
-
-    // Resolve items for active folder
-    let folderItems = [];
-    if (activeFolder.isLootBox) {
-        folderItems = lootBoxes.map(b => ({
-            id: b.id,
-            name: b.name,
-            item_type: 'loot_box',
-            rarity: 'common',
-            shop_item_id: b.shop_item_id,
-            isChest: true
-        }));
-    } else if (activeFolder.id === 'null') {
-        folderItems = await sortItemsByRolePosition(otherItems, interaction.guild);
-    } else {
-        const catIdNum = parseInt(activeFolder.id, 10);
-        folderItems = await sortItemsByRolePosition(standardItems.filter(i => i.category_id === catIdNum), interaction.guild);
-    }
-
-    // Pagination for the item select menu
-    const pageSize = 20;
-    const totalPages = Math.max(1, Math.ceil(folderItems.length / pageSize));
-    const currentPage = Math.max(1, Math.min(page, totalPages));
-    const startIndex = (currentPage - 1) * pageSize;
-
-    const embed = new EmbedBuilder()
-        .setTitle(safeTruncate(`Give Items: ${targetName}`, 256))
-        .setColor('#3498DB')
-        .setDescription(
-            `Select a category below, then choose an item to grant to **${targetName}**.\n\n` +
-            `📂 **Category:** \`${activeFolder.name}\`${totalPages > 1 ? ` (Page ${currentPage}/${totalPages})` : ''}`
-        );
-
-    const components = [];
-
-    // Row 0: Select Menu for items in active folder
-    if (folderItems.length > 0) {
-        const { selectMenu } = buildPaginatedSelectMenu({
-            items: folderItems,
-            page: currentPage,
-            customId: `admin_user_givesel_${targetUserId}_${activeFolder.id}`,
-            placeholder: `Select an item to give to ${safeTruncate(targetName, 25)}...`,
-            pageNavPrefix: 'admin_givepage_',
-            pageSize: 20,
-            mapOption: (i) => {
-                const isChest = i.isChest || i.item_type === 'loot_box';
-                const emoji = isChest
-                    ? parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
-                    : getItemRarityEmoji(i);
-                const desc = isChest ? 'Loot Box / Chest' : (i.role_id ? 'Role Item' : 'Inventory Item');
-                return {
-                    label: safeTruncate(i.name || 'Unnamed Item', 100),
-                    value: isChest ? `chest_${i.id}` : `item_${i.id}`,
-                    description: desc,
-                    emoji
-                };
-            }
-        });
-        components.push(new ActionRowBuilder().addComponents(selectMenu));
-    }
-
-    // Category buttons (max 4 per row, up to 3 rows to stay well under 5-row total limit)
-    const catButtons = availableFolders.map(f => {
-        const btn = new ButtonBuilder()
-            .setCustomId(`admin_user_givecat_${targetUserId}_${f.id}`)
-            .setLabel(safeTruncate(f.name, 40))
-            .setStyle(f.id === activeFolder.id ? ButtonStyle.Primary : ButtonStyle.Secondary);
-        if (f.emoji) {
-            safeSetButtonEmoji(btn, f.emoji, interaction.guild, '🎁');
+        if (hasUncategorized) {
+            folderOptions.push({
+                label: 'Uncategorized Items',
+                value: 'give_folder_standalone',
+                emoji: '🏷️'
+            });
         }
-        return btn;
+        if (hasLootBoxes) {
+            const lbLabel = safeTruncate(lootBoxCatName || 'Loot Boxes', 50);
+            const lbEmoji = parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁';
+            folderOptions.push({
+                label: lbLabel,
+                value: 'give_folder_lootboxes',
+                emoji: lbEmoji
+            });
+        }
+
+        return new StringSelectMenuBuilder()
+            .setCustomId(customId)
+            .setPlaceholder('🎁 Give Items...')
+            .addOptions(folderOptions);
+    }
+
+    // LEVEL 2: CATEGORIZED FOLDERS
+    if (currentFolder === 'categories') {
+        const usedCatIds = new Set(categorizedItems.map(i => i.category_id));
+        const activeCats = categories.filter(c => usedCatIds.has(c.id));
+
+        if (activeCats.length === 0) {
+            return buildAdminGiveSelectMenu(guildId, targetUserId, 'root', 1, guild);
+        }
+
+        const { selectMenu } = buildPaginatedSelectMenu({
+            items: activeCats,
+            page,
+            customId,
+            placeholder: '📂 Choose Category to Give...',
+            backOption: { label: 'Back', value: 'give_back_root', emoji: '⬅️' },
+            pageNavPrefix: 'give_page_',
+            pageSize: 20,
+            mapOption: c => ({
+                label: safeTruncate(c.name || `Category #${c.id}`, 100),
+                value: `give_cat_${c.id}`,
+                emoji: '📂'
+            })
+        });
+
+        return selectMenu;
+    }
+
+    // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
+    let folderItems = [];
+    let placeholder = '🎁 Select Item to Give...';
+    let backValue = 'give_back_root';
+
+    if (currentFolder === 'standalone') {
+        folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        placeholder = '🏷️ Uncategorized: Select Item to Give...';
+        backValue = 'give_back_root';
+    } else if (currentFolder === 'lootboxes') {
+        folderItems = lootBoxes.map(b => ({ ...b, isChest: true }));
+        folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
+        const catName = lootBoxCatName || 'Loot Boxes';
+        placeholder = `🎁 ${safeTruncate(catName, 20)}: Select Box to Give...`;
+        backValue = 'give_back_root';
+    } else if (currentFolder.startsWith('cat_')) {
+        const catId = parseInt(currentFolder.replace('cat_', ''), 10);
+        const catItems = categorizedItems.filter(i => i.category_id === catId);
+        folderItems = await sortItemsByRolePosition(catItems, guild);
+        const catObj = categories.find(c => c.id === catId);
+        const catName = catObj?.name || 'Category';
+        placeholder = `📂 ${safeTruncate(catName, 20)}: Select Item to Give...`;
+        backValue = 'give_back_categories';
+    }
+
+    if (folderItems.length === 0) {
+        return buildAdminGiveSelectMenu(guildId, targetUserId, 'root', 1, guild);
+    }
+
+    const { selectMenu } = buildPaginatedSelectMenu({
+        items: folderItems,
+        page,
+        customId,
+        placeholder: safeTruncate(placeholder, 100),
+        backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
+        pageNavPrefix: 'give_page_',
+        pageSize: 20,
+        mapOption: i => {
+            const isChest = i.isChest || i.item_type === 'loot_box';
+            const emoji = isChest
+                ? (parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁')
+                : getItemRarityEmoji(i);
+            const desc = isChest ? 'Loot Box / Chest' : (i.role_id ? 'Role Item' : 'Inventory Item');
+            return {
+                label: safeTruncate(i.name || (isChest ? `Loot Box #${i.id}` : `Item #${i.id}`), 100),
+                value: isChest ? `give_chest_${i.id}` : `give_item_${i.id}`,
+                description: desc,
+                emoji
+            };
+        }
     });
 
-    for (let i = 0; i < catButtons.length && components.length < 4; i += 4) {
-        components.push(new ActionRowBuilder().addComponents(catButtons.slice(i, i + 4)));
-    }
-
-    // Bottom Row: Back to user inventory
-    const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`admin_user_items_${targetUserId}`)
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-    );
-    components.push(backRow);
-
-    const method = interaction.deferred || interaction.replied ? 'editReply' : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-    await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+    return selectMenu;
 }
 
 /**
- * Handle item selection from the Give Items browser select menu.
- * Immediately opens a Discord Modal prompting for the quantity.
+ * Handle selection in the hierarchical Give Items select menu.
+ * Supports navigation (folders, categories, pages, back) and triggers the quantity modal on item selection.
  */
 export async function handleAdminGiveSelect(interaction) {
-    const selectedVal = interaction.values[0];
+    const selection = interaction.values[0];
     const customId = interaction.customId;
     const parts = customId.split('_');
     const targetUserId = parts[3];
-    const catId = parts[4];
+    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    let state = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
 
-    // Handle pagination within select menu
-    if (selectedVal.startsWith('admin_givepage_')) {
-        const targetPage = parseInt(selectedVal.replace('admin_givepage_', ''), 10) || 1;
-        return showAdminGiveItemBrowser(interaction, targetUserId, catId, targetPage);
+    // 1. Pagination navigation
+    if (selection.startsWith('give_page_')) {
+        state.page = parseInt(selection.replace('give_page_', ''), 10) || 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
     }
 
-    const [typePrefix, rawId] = selectedVal.split('_');
-    const itemId = parseInt(rawId, 10);
-    if (!typePrefix || isNaN(itemId)) {
-        return interaction.reply({ content: '❌ Invalid item selection.', flags: MessageFlags.Ephemeral });
+    // 2. Back navigation
+    if (selection === 'give_back_root') {
+        state.folder = 'root';
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
+    }
+    if (selection === 'give_back_categories') {
+        state.folder = 'categories';
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
     }
 
-    const pool = getPool();
-    let itemName = 'Item';
-    if (typePrefix === 'chest') {
-        const boxRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [itemId]);
-        itemName = boxRes.rows[0]?.name || 'Chest';
-    } else {
-        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [itemId]);
-        itemName = itemRes.rows[0]?.name || 'Item';
+    // 3. Folder navigation
+    if (selection === 'give_folder_categorized') {
+        state.folder = 'categories';
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
+    }
+    if (selection === 'give_folder_standalone') {
+        state.folder = 'standalone';
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
+    }
+    if (selection === 'give_folder_lootboxes') {
+        state.folder = 'lootboxes';
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
     }
 
-    const modal = new ModalBuilder()
-        .setCustomId(`admin_user_givemod_${targetUserId}_${typePrefix}_${itemId}`)
-        .setTitle(safeTruncate(`Give ${itemName}`, 45));
+    // 4. Drill into category
+    if (selection.startsWith('give_cat_')) {
+        const catId = selection.replace('give_cat_', '');
+        state.folder = `cat_${catId}`;
+        state.page = 1;
+        pendingAdminGive.set(stateKey, state);
+        return showUserItems(interaction, targetUserId, null);
+    }
 
-    const qtyInput = new TextInputBuilder()
-        .setCustomId('give_quantity')
-        .setLabel('Enter quantity to give:')
-        .setPlaceholder('1')
-        .setValue('1')
-        .setMinLength(1)
-        .setMaxLength(6)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
+    // 5. Item / Chest selection -> Discord Modal
+    if (selection.startsWith('give_item_') || selection.startsWith('give_chest_')) {
+        const isChest = selection.startsWith('give_chest_');
+        const typePrefix = isChest ? 'chest' : 'item';
+        const rawId = selection.replace(isChest ? 'give_chest_' : 'give_item_', '');
+        const itemId = parseInt(rawId, 10);
 
-    modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
-    await interaction.showModal(modal);
+        if (isNaN(itemId)) {
+            return interaction.reply({ content: '❌ Invalid item selection.', flags: MessageFlags.Ephemeral });
+        }
+
+        const pool = getPool();
+        let itemName = 'Item';
+        if (isChest) {
+            const boxRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [itemId]);
+            itemName = boxRes.rows[0]?.name || 'Chest';
+        } else {
+            const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [itemId]);
+            itemName = itemRes.rows[0]?.name || 'Item';
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId(`admin_user_givemod_${targetUserId}_${typePrefix}_${itemId}`)
+            .setTitle(safeTruncate(`Give ${itemName}`, 45));
+
+        const qtyInput = new TextInputBuilder()
+            .setCustomId('give_quantity')
+            .setLabel('Enter quantity to give:')
+            .setPlaceholder('1')
+            .setValue('1')
+            .setMinLength(1)
+            .setMaxLength(6)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+        return interaction.showModal(modal);
+    }
 }
 
 /**
@@ -1210,6 +1256,9 @@ export async function handleAdminGiveModal(interaction) {
                 }
             }
         }
+
+        // Reset give folder state to root
+        pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
 
         // Return admin directly to the user's updated inventory screen
         return showUserItems(interaction, targetUserId, null);
@@ -1473,6 +1522,7 @@ export async function handleAdminUserComponent(interaction) {
 
         switch (action) {
             case 'dash':
+                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
                 await showUserDashboard(interaction, targetUserId);
                 break;
             case 'balance':
@@ -1488,13 +1538,9 @@ export async function handleAdminUserComponent(interaction) {
                 await showUserItems(interaction, targetUserId);
                 break;
             case 'give':
-                await showAdminGiveItemBrowser(interaction, targetUserId);
+            case 'givecat':
+                await showUserItems(interaction, targetUserId);
                 break;
-            case 'givecat': {
-                const catId = parts[4];
-                await showAdminGiveItemBrowser(interaction, targetUserId, catId);
-                break;
-            }
             case 'givesel': {
                 await handleAdminGiveSelect(interaction);
                 break;
@@ -1504,6 +1550,7 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             case 'icat': {
                 const catId = parts[4];
+                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
                 await showUserItems(interaction, targetUserId, catId);
                 break;
             }
