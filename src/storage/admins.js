@@ -116,6 +116,41 @@ export async function removeServerAdmin(guildId, userId) {
 }
 
 /**
+ * Audit sweep to prune any departed members from server_admins
+ * that might have left while the bot was offline.
+ *
+ * @param {import('discord.js').Client} client
+ */
+export async function auditAndPruneDepartedAdmins(client) {
+  if (!client?.guilds?.cache) return;
+  try {
+    const pool = getPool();
+    const res = await pool.query('SELECT guild_id, user_id FROM server_admins');
+    if (res.rows.length === 0) return;
+
+    let purgedCount = 0;
+    for (const row of res.rows) {
+      const guild = client.guilds.cache.get(row.guild_id) || await client.guilds.fetch(row.guild_id).catch(() => null);
+      if (!guild) continue;
+
+      let member = guild.members.cache.get(row.user_id);
+      if (!member) {
+        member = await guild.members.fetch(row.user_id).catch(() => null);
+      }
+      if (!member) {
+        await removeServerAdmin(row.guild_id, row.user_id);
+        purgedCount++;
+      }
+    }
+    if (purgedCount > 0) {
+      sysLog('Departed Admins Purged in Audit', { count: purgedCount });
+    }
+  } catch (err) {
+    sysError('Failed to audit departed admins', err);
+  }
+}
+
+/**
  * Mandatory Zero-Trust Security Pre-Check
  * Validates whether the interacting user has administrative clearance.
  *

@@ -346,6 +346,11 @@ client.once(Events.ClientReady, async () => {
     startExpirationScheduler(client);
     startWeeklySummaryScheduler(client);
 
+    // Sweep and purge any departed bot admins across all guilds (runs non-blocking in background)
+    import('./storage/admins.js').then(({ auditAndPruneDepartedAdmins }) => {
+      auditAndPruneDepartedAdmins(client).catch(err => sysError('Startup Admin Audit Failed', err));
+    }).catch(() => {});
+
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
 
     const initMem = process.memoryUsage();
@@ -744,7 +749,19 @@ client.on('guildMemberRemove', async (member) => {
   });
 });
 
-
+// Ensure any stale admin whitelist entries are purged if a departed user rejoins
+client.on('guildMemberAdd', async (member) => {
+  return runInGuildContext(member.guild?.id, async () => {
+    try {
+      const { isDatabaseReady } = await import('./storage/postgres.js');
+      if (!isDatabaseReady()) return;
+      const { removeServerAdmin } = await import('./storage/admins.js');
+      await removeServerAdmin(member.guild.id, member.id);
+    } catch (error) {
+      sysError('Member Join Stale Admin Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
+    }
+  });
+});
 
 // Member update handler - strip booster colors when boost status is lost
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
