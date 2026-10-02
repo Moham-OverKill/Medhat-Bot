@@ -49,6 +49,16 @@ const CONFIG_SCHEMA = {
   // Anti-Cheat (Trade Gates)
   anti_cheat_account_age_gate: { type: 'boolean', required: false },
   anti_cheat_join_date_gate: { type: 'boolean', required: false },
+  // Anti-Cheat (Voice AFK Gates)
+  anti_cheat_voice_min_humans: { type: 'boolean', required: false },
+  anti_cheat_voice_no_mute: { type: 'boolean', required: false },
+  anti_cheat_voice_no_deafen: { type: 'boolean', required: false },
+  anti_cheat_voice_no_afk_channel: { type: 'boolean', required: false },
+  // Anti-Cheat (Text Spam Gates)
+  anti_cheat_text_cooldown: { type: 'boolean', required: false },
+  anti_cheat_text_min_length: { type: 'boolean', required: false },
+  anti_cheat_text_no_duplicates: { type: 'boolean', required: false },
+  anti_cheat_text_no_prefixes: { type: 'boolean', required: false },
   // Vote & Tag Rewards
   vote_reward_amount: { type: 'number', min: 0, required: false },
   tag_reward_amount: { type: 'number', min: 0, required: false },
@@ -97,6 +107,14 @@ export const CONFIG_DEFAULTS = {
   tag_reward_amount: 0,
   anti_cheat_account_age_gate: false,
   anti_cheat_join_date_gate: false,
+  anti_cheat_voice_min_humans: true,
+  anti_cheat_voice_no_mute: true,
+  anti_cheat_voice_no_deafen: true,
+  anti_cheat_voice_no_afk_channel: true,
+  anti_cheat_text_cooldown: true,
+  anti_cheat_text_min_length: true,
+  anti_cheat_text_no_duplicates: true,
+  anti_cheat_text_no_prefixes: true,
   richest_role_enabled: false,
   richest_role_winners: 1,
   streak_role_enabled: false,
