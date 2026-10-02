@@ -6,7 +6,7 @@
  * 3. Discord Administrator permissions or roles grant ZERO access.
  * 4. Real-time revocation check on every interaction.
  */
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getPool } from './postgres.js';
 import { sysError, sysLog } from '../utils/logger.js';
 
@@ -169,14 +169,23 @@ export async function verifyAdminAccess(interaction) {
     return true;
   }
 
-  // 2. Database Whitelist Check: strictly scoped to guild_id and user_id
+  // 2. Discord Administrator Permission Bypass
+  let member = interaction.member;
+  if (!member || !member.permissions) {
+    member = await interaction.guild?.members.fetch(userId).catch(() => null);
+  }
+  if (member?.permissions?.has(PermissionFlagsBits.Administrator)) {
+    return true;
+  }
+
+  // 3. Database Whitelist Check: strictly scoped to guild_id and user_id
   const isWhitelisted = await isServerAdmin(guildId, userId);
   if (isWhitelisted) {
     return true;
   }
 
-  // 3. Hard Denial
-  sysError('Security Violation: Unauthorized Admin Action Blocked', new Error('User not on server_admins whitelist'), {
+  // 4. Hard Denial
+  sysError('Security Violation: Unauthorized Admin Action Blocked', new Error('User not on server_admins whitelist and not a Discord administrator'), {
     user: userId,
     guild: guildId,
     detail: interaction.commandName ? `Command: /${interaction.commandName}` : `CustomID: ${interaction.customId}`
@@ -201,50 +210,68 @@ export async function verifyAdminAccess(interaction) {
 }
 
 /**
- * Check if the user executing the interaction is the server owner.
+ * Check if the user executing the interaction is either the server owner or has Discord Administrator permission.
+ * These are the only users authorized to view/click the "Admins" button and manage authorized bot admins.
+ *
  * @param {import('discord.js').Interaction} interaction
  * @returns {Promise<boolean>}
  */
-export async function isGuildOwner(interaction) {
+export async function hasAdminManagerAccess(interaction) {
   const userId = interaction.user?.id;
-  const guildId = interaction.guildId;
-  if (!userId || !guildId) return false;
+  const guild = interaction.guild;
+  if (!userId || !guild) return false;
 
-  let ownerId = interaction.guild?.ownerId;
-  if (!ownerId && interaction.guild?.fetch) {
+  // 1. Owner check
+  let ownerId = guild.ownerId;
+  if (!ownerId && guild.fetch) {
     try {
-      const g = await interaction.guild.fetch();
+      const g = await guild.fetch();
       ownerId = g.ownerId;
     } catch {}
   }
   if (!ownerId && interaction.client) {
     try {
-      const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
+      const g = await interaction.client.guilds.fetch(guild.id).catch(() => null);
       ownerId = g?.ownerId;
     } catch {}
   }
 
-  return Boolean(ownerId && userId === ownerId);
+  if (ownerId && userId === ownerId) {
+    return true;
+  }
+
+  // 2. Discord Administrator permission check
+  let member = interaction.member;
+  if (!member || !member.permissions) {
+    member = await guild.members.fetch(userId).catch(() => null);
+  }
+
+  if (member?.permissions?.has(PermissionFlagsBits.Administrator)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
- * Strictly verifies that the interacting user is the server owner.
+ * Strictly verifies that the interacting user is either the server owner or a Discord Administrator.
  * If not, sends an ephemeral denial and returns false.
+ *
  * @param {import('discord.js').Interaction} interaction
  * @returns {Promise<boolean>}
  */
-export async function verifyOwnerAccess(interaction) {
-  const isOwner = await isGuildOwner(interaction);
-  if (isOwner) return true;
+export async function verifyAdminManagerAccess(interaction) {
+  const isAuthorized = await hasAdminManagerAccess(interaction);
+  if (isAuthorized) return true;
 
-  sysError('Security Violation: Non-Owner Admin Management Blocked', new Error('Only server owner can manage authorized admins'), {
+  sysError('Security Violation: Unauthorized Admin Management Blocked', new Error('Only server owner and Discord administrators can manage authorized admins'), {
     user: interaction.user?.id,
     guild: interaction.guildId,
     detail: interaction.customId || interaction.commandName
   });
 
   const denyMsg = {
-    content: '❌ **Access Denied**: Only the server owner can manage authorized bot administrators.',
+    content: '❌ **Access Denied**: Only the server owner and administrators can manage authorized bot administrators.',
     flags: MessageFlags.Ephemeral
   };
 
@@ -260,3 +287,7 @@ export async function verifyOwnerAccess(interaction) {
 
   return false;
 }
+
+// Aliases for compatibility
+export const isGuildOwner = hasAdminManagerAccess;
+export const verifyOwnerAccess = verifyAdminManagerAccess;
