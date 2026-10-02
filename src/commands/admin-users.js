@@ -8,7 +8,8 @@ import {
     TextInputBuilder,
     TextInputStyle,
     StringSelectMenuBuilder,
-    MessageFlags
+    MessageFlags,
+    PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji } from '../shared.js';
@@ -32,9 +33,9 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Button Row 1: Anti Cheat | Admins (Owner only)
-    const { isGuildOwner } = await import('../storage/admins.js');
-    const isOwner = await isGuildOwner(interaction);
+    // Button Row 1: Anti Cheat | Admins (Owner & Discord Admins only)
+    const { hasAdminManagerAccess } = await import('../storage/admins.js');
+    const canManageAdmins = await hasAdminManagerAccess(interaction);
 
     const row1Buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -44,7 +45,7 @@ export async function showUserSelector(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    if (isOwner) {
+    if (canManageAdmins) {
         row1Buttons.addComponents(
             new ButtonBuilder()
                 .setCustomId('admin_user_admins')
@@ -984,13 +985,13 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
-        const { verifyAdminAccess, verifyOwnerAccess } = await import('../storage/admins.js');
+        const { verifyAdminAccess, verifyAdminManagerAccess } = await import('../storage/admins.js');
         if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
 
         if (customId === 'admin_user_admins') {
-            if (!(await verifyOwnerAccess(interaction))) return;
+            if (!(await verifyAdminManagerAccess(interaction))) return;
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferUpdate().catch(() => {});
             }
@@ -999,7 +1000,7 @@ export async function handleAdminUserComponent(interaction) {
         }
 
         if (customId === 'admin_manage_toggle_user') {
-            if (!(await verifyOwnerAccess(interaction))) return;
+            if (!(await verifyAdminManagerAccess(interaction))) return;
             await handleToggleAdminUser(interaction);
             return;
         }
@@ -1318,8 +1319,8 @@ export const handleToggleAntiCheat = handleToggleAltFarmingGate;
  * @param {import('discord.js').Interaction} interaction
  */
 export async function showAdminManagement(interaction) {
-    const { verifyOwnerAccess } = await import('../storage/admins.js');
-    if (!(await verifyOwnerAccess(interaction))) return;
+    const { verifyAdminManagerAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminManagerAccess(interaction))) return;
 
     const guildId = interaction.guildId;
     const guild = interaction.guild;
@@ -1341,12 +1342,32 @@ export async function showAdminManagement(interaction) {
     const { getServerAdmins } = await import('../storage/admins.js');
     const admins = await getServerAdmins(guildId);
 
+    // Fetch members with Discord Administrator permission
+    const discordAdminIds = new Set();
+    if (guild) {
+        try {
+            await guild.members.fetch().catch(() => {});
+            for (const member of guild.members.cache.values()) {
+                if (!member.user.bot && member.id !== ownerId && member.permissions?.has(PermissionFlagsBits.Administrator)) {
+                    discordAdminIds.add(member.id);
+                }
+            }
+        } catch (err) {
+            sysError('Failed to fetch Discord administrators for admin panel', err, { guildId });
+        }
+    }
+
     const userLines = [];
     if (ownerId) {
         userLines.push(`👑 <@${ownerId}> *(Owner)*`);
     }
+    for (const adminId of discordAdminIds) {
+        userLines.push(`• <@${adminId}> *(Admin)*`);
+    }
     for (const a of admins) {
-        userLines.push(`• <@${a.user_id}>`);
+        if (!discordAdminIds.has(a.user_id) && a.user_id !== ownerId) {
+            userLines.push(`• <@${a.user_id}>`);
+        }
     }
 
     const desc = userLines.join('\n') + '\n\n' +
@@ -1390,8 +1411,8 @@ export async function showAdminManagement(interaction) {
  * @param {import('discord.js').Interaction} interaction
  */
 export async function handleToggleAdminUser(interaction) {
-    const { verifyOwnerAccess } = await import('../storage/admins.js');
-    if (!(await verifyOwnerAccess(interaction))) return;
+    const { verifyAdminManagerAccess } = await import('../storage/admins.js');
+    if (!(await verifyAdminManagerAccess(interaction))) return;
 
     const guildId = interaction.guildId;
     const targetUserId = interaction.values[0];
@@ -1412,6 +1433,20 @@ export async function handleToggleAdminUser(interaction) {
     if (ownerId && targetUserId === ownerId) {
         await interaction.followUp({
             content: '❌ **Action Prohibited**: The server owner is permanently an administrator and cannot be modified.',
+            flags: MessageFlags.Ephemeral
+        });
+        return showAdminManagement(interaction);
+    }
+
+    // Check if target user has Discord Administrator permission
+    let targetMember = guild?.members?.cache?.get(targetUserId);
+    if (!targetMember && guild) {
+        targetMember = await guild.members.fetch(targetUserId).catch(() => null);
+    }
+
+    if (targetMember?.permissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.followUp({
+            content: `❌ **Action Prohibited**: <@${targetUserId}> has the Discord **Administrator** permission and is automatically an administrator. To remove their access, remove their Administrator role in Discord Server Settings.`,
             flags: MessageFlags.Ephemeral
         });
         return showAdminManagement(interaction);
