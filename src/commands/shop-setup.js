@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -619,7 +619,8 @@ export async function handleItemModalSubmit(interaction) {
           return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });
         }
 
-        if (!interaction.guild.roles.cache.has(roleId)) {
+        const targetItemRole = interaction.guild.roles.cache.get(roleId);
+        if (!targetItemRole) {
           return interaction.editReply({ files: [], content: '❌ Role not found in server.', 
             embeds: [],
             components: [
@@ -627,6 +628,19 @@ export async function handleItemModalSubmit(interaction) {
                 new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
               )
             ] });
+        }
+
+        if (hasAnyDangerousPermission(targetItemRole)) {
+          return interaction.editReply({
+            files: [],
+            content: '❌ **Security Violation**: This role holds administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members) and cannot be added to the shop.',
+            embeds: [],
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
+              )
+            ]
+          });
         }
 
         const uniqueCheck = await validateRoleUniqueness(interaction.guildId, roleId);
@@ -796,8 +810,16 @@ export async function handleItemModalSubmit(interaction) {
             return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });
           }
 
-          if (!interaction.guild.roles.cache.has(roleId.split(/[,\s]+/)[0])) {
+          const editTargetRoleId = roleId.split(/[,\s]+/)[0];
+          const editTargetRole = interaction.guild.roles.cache.get(editTargetRoleId);
+          if (!editTargetRole) {
             return interaction.followUp({ content: '❌ Invalid Role ID.', flags: MessageFlags.Ephemeral });
+          }
+          if (hasAnyDangerousPermission(editTargetRole)) {
+            return interaction.followUp({
+              content: '❌ **Security Violation**: This role holds administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members) and cannot be linked to a shop item.',
+              flags: MessageFlags.Ephemeral
+            });
           }
           updates.role_id = roleId;
         }
