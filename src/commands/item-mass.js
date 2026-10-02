@@ -360,8 +360,16 @@ export async function handleMassSave(interaction) {
         for (const roleId of ids) {
             try {
                 // Check 1: Role must exist in guild (anti-zombie)
-                if (!guild.roles.cache.has(roleId)) {
+                const role = guild.roles.cache.get(roleId);
+                if (!role) {
                     skipped.push(`${roleId} (not found)`);
+                    errors++;
+                    continue;
+                }
+
+                // Check 2: Block Dangerous Roles (Administrator / Moderation)
+                if (hasAnyDangerousPermission(role)) {
+                    skipped.push(`${role.name || roleId} (dangerous permissions)`);
                     errors++;
                     continue;
                 }

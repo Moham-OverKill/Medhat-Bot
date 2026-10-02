@@ -8,7 +8,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
-import { isValidSnowflake, COIN_EMOJI } from '../../shared.js';
+import { isValidSnowflake, COIN_EMOJI, hasAnyDangerousPermission } from '../../shared.js';
 import { sendLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError, diagnoseRolePermissions } from '../../utils/errors.js';
 
@@ -49,8 +49,8 @@ async function validateRoleChoice(interaction, roleId, currentModule) {
     if (!role) return { ok: false, msg: '❌ Selected role not found.' };
     if (role.id === guild.id) return { ok: false, msg: '❌ Cannot use @everyone as a reward role.' };
 
-    if (role.permissions.has('Administrator') || role.permissions.has('ManageGuild') || role.permissions.has('ManageRoles')) {
-        return { ok: false, msg: '❌ Reward role must not have Administrator, Manage Server, or Manage Roles permissions.' };
+    if (hasAnyDangerousPermission(role)) {
+        return { ok: false, msg: '❌ Reward role must not possess any administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members).' };
     }
 
     const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
