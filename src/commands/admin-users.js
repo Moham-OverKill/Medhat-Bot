@@ -754,7 +754,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
             items: activeCats,
             page,
             customId,
-            placeholder: '📂 Choose Category to Remove...',
+            placeholder: '🗑️ Remove Items...',
             backOption: { label: 'Back', value: 'rem_back_root', emoji: '⬅️' },
             pageNavPrefix: 'rem_page_',
             pageSize: 20,
@@ -770,26 +770,19 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
 
     // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
     let folderItems = [];
-    let placeholder = '🗑️ Select Item to Remove...';
     let backValue = 'rem_back_root';
 
     if (currentFolder === 'standalone') {
         folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
-        placeholder = '🏷️ Uncategorized: Select Item to Remove...';
         backValue = 'rem_back_root';
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxItems;
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
-        const catName = lootBoxCatName || 'Loot Boxes';
-        placeholder = `🎁 ${safeTruncate(catName, 20)}: Select Box to Remove...`;
         backValue = 'rem_back_root';
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
         folderItems = await sortItemsByRolePosition(catItems, guild);
-        const catObj = categories.find(c => c.id === catId);
-        const catName = catObj?.name || 'Category';
-        placeholder = `📂 ${safeTruncate(catName, 20)}: Select Item to Remove...`;
         backValue = 'rem_back_categories';
     }
 
@@ -801,7 +794,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
         items: folderItems,
         page,
         customId,
-        placeholder: safeTruncate(placeholder, 100),
+        placeholder: '🗑️ Remove Items...',
         backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: 'rem_page_',
         pageSize: 20,
@@ -935,11 +928,11 @@ export async function handleAdminRemoveSelect(interaction) {
 
         const modal = new ModalBuilder()
             .setCustomId(`admin_user_remmod_${targetUserId}_${invId}`)
-            .setTitle(safeTruncate(`Remove ${itemName}`, 45));
+            .setTitle(safeTruncate(`Edit Quantity: ${itemName}`, 45));
 
         const qtyInput = new TextInputBuilder()
-            .setCustomId('remove_quantity')
-            .setLabel(safeTruncate(`Quantity to remove (Current: ${currentQty})`, 45))
+            .setCustomId('new_quantity')
+            .setLabel('Enter new quantity (0 to remove)')
             .setPlaceholder(String(currentQty))
             .setValue(String(currentQty))
             .setMinLength(1)
@@ -954,6 +947,7 @@ export async function handleAdminRemoveSelect(interaction) {
 
 /**
  * Handle submission of the Remove Items quantity modal.
+ * Sets the exact new quantity for the user or deletes the item if 0 is entered.
  * Executes an atomic transaction with row-level locking (FOR UPDATE) and audit logging.
  */
 export async function handleAdminRemoveModal(interaction) {
@@ -962,13 +956,20 @@ export async function handleAdminRemoveModal(interaction) {
     const targetUserId = parts[3];
     const invId = parseInt(parts[4], 10);
 
-    const rawQty = interaction.fields.getTextInputValue('remove_quantity')?.trim();
-    const inputQty = parseInt(rawQty, 10);
+    const rawQty = (interaction.fields.getTextInputValue('new_quantity') || interaction.fields.getTextInputValue('remove_quantity'))?.trim();
+    const newQty = parseInt(rawQty, 10);
 
-    // Strict positive integer validation
-    if (isNaN(inputQty) || inputQty <= 0 || !/^\d+$/.test(rawQty)) {
+    // Validate non-negative whole number (0 to remove all)
+    if (isNaN(newQty) || newQty < 0 || !/^\d+$/.test(rawQty)) {
         return interaction.reply({
-            content: '❌ Invalid quantity. Please enter a positive whole number greater than 0.',
+            content: '❌ Invalid quantity. Please enter a valid number (0 to remove all).',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (newQty > 1000000) {
+        return interaction.reply({
+            content: '❌ Quantity is too large. Maximum allowed is 1,000,000.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -1032,12 +1033,12 @@ export async function handleAdminRemoveModal(interaction) {
         const roleIdToRevoke = item.role_id || shopRoleId;
         const shopItemId = item.shop_item_id;
 
-        let newQty = 0;
-        let removedQty = 0;
+        const adminLogName = getUserLogName(interaction);
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
 
-        if (inputQty >= oldQty) {
-            removedQty = oldQty;
-            newQty = 0;
+        if (newQty === 0) {
+            // Delete the inventory row
             await client.query('DELETE FROM user_inventory WHERE id = $1', [invId]);
 
             // Check if user still has any remaining rows of this shop_item_id
@@ -1051,7 +1052,6 @@ export async function handleAdminRemoveModal(interaction) {
                 const totalRemaining = parseInt(totalRemainingRes.rows[0]?.remaining || 0, 10);
 
                 if (totalRemaining <= 0 && roleIdToRevoke && !roleIdToRevoke.startsWith('CHEST_') && !roleIdToRevoke.startsWith('LOOT_BOX_')) {
-                    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
                     if (targetMember) {
                         const rIds = roleIdToRevoke.split(/[,\s]+/);
                         const botMember = interaction.guild.members.me;
@@ -1068,47 +1068,71 @@ export async function handleAdminRemoveModal(interaction) {
                     }
                 }
             }
+
+            // Audit Logging in audit_logs table
+            await client.query(
+                `INSERT INTO audit_logs (guild_id, user_id, action_type, target_type, target_id, details)
+                 VALUES ($1, $2, 'ADMIN_REMOVE_ITEM', 'user', $3, $4)`,
+                [guildId, interaction.user.id, targetUserId, JSON.stringify({
+                    inventory_id: invId,
+                    shop_item_id: shopItemId,
+                    item_name: itemName,
+                    previous_quantity: oldQty,
+                    new_quantity: 0,
+                    timestamp: new Date().toISOString()
+                })]
+            );
+
+            await client.query('COMMIT');
+
+            sysLog('Admin Item Revoked', {
+                tag: 'SECURITY',
+                user: interaction.user.id,
+                target: targetUserId,
+                guild: guildId,
+                detail: `Admin ${interaction.user.id} set ${itemName} quantity to 0 (revoked ${oldQty} copies) for ${targetUserId}`
+            });
+
+            sendLog(interaction.guild, 'inventory', 'red', '🗑️ Item Revoked (Admin)',
+                `**Item:** **${itemName}** \`(all ${oldQty} removed)\`\n` +
+                `**Target:** <@${targetUserId}> (${targetLogName})\n` +
+                `**Admin:** ${adminLogName} (via User Inventory Settings)`
+            );
         } else {
-            removedQty = inputQty;
-            newQty = oldQty - inputQty;
+            // Update quantity directly to requested amount
             await client.query('UPDATE user_inventory SET quantity = $1 WHERE id = $2', [newQty, invId]);
+
+            // Audit Logging in audit_logs table
+            await client.query(
+                `INSERT INTO audit_logs (guild_id, user_id, action_type, target_type, target_id, details)
+                 VALUES ($1, $2, 'ADMIN_SET_QUANTITY', 'user', $3, $4)`,
+                [guildId, interaction.user.id, targetUserId, JSON.stringify({
+                    inventory_id: invId,
+                    shop_item_id: shopItemId,
+                    item_name: itemName,
+                    previous_quantity: oldQty,
+                    new_quantity: newQty,
+                    timestamp: new Date().toISOString()
+                })]
+            );
+
+            await client.query('COMMIT');
+
+            sysLog('Admin Item Quantity Set', {
+                tag: 'SECURITY',
+                user: interaction.user.id,
+                target: targetUserId,
+                guild: guildId,
+                detail: `Admin ${interaction.user.id} changed ${itemName} quantity from ${oldQty} to ${newQty} for ${targetUserId}`
+            });
+
+            sendLog(interaction.guild, 'inventory', 'blue', '⚙️ Item Quantity Updated (Admin)',
+                `**Item:** **${itemName}**\n` +
+                `**Quantity Changed:** \`${oldQty}\` ➜ \`${newQty}\`\n` +
+                `**Target:** <@${targetUserId}> (${targetLogName})\n` +
+                `**Admin:** ${adminLogName} (via User Inventory Settings)`
+            );
         }
-
-        // Audit Logging in audit_logs table
-        await client.query(
-            `INSERT INTO audit_logs (guild_id, user_id, action_type, target_type, target_id, details)
-             VALUES ($1, $2, 'ADMIN_REMOVE_ITEM', 'user', $3, $4)`,
-            [guildId, interaction.user.id, targetUserId, JSON.stringify({
-                inventory_id: invId,
-                shop_item_id: shopItemId,
-                item_name: itemName,
-                quantity_removed: removedQty,
-                previous_quantity: oldQty,
-                new_quantity: newQty,
-                timestamp: new Date().toISOString()
-            })]
-        );
-
-        await client.query('COMMIT');
-
-        const adminLogName = getUserLogName(interaction);
-        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-        const targetLogName = targetMember ? getUserLogName(targetMember) : targetUserId;
-
-        sysLog('Admin Removed Items', {
-            tag: 'SECURITY',
-            user: interaction.user.id,
-            target: targetUserId,
-            guild: guildId,
-            detail: `Admin ${interaction.user.id} removed ${removedQty}x "${itemName}" from ${targetUserId} (New Total: ${newQty})`
-        });
-
-        sendLog(interaction.guild, 'inventory', 'red', '🗑️ Items Removed (Admin)',
-            `**Item:** **${itemName}** \`(x${removedQty})\`\n` +
-            `**Target:** <@${targetUserId}> (${targetLogName})\n` +
-            `**Remaining Stack:** \`${newQty}\`\n` +
-            `**Admin:** ${adminLogName} (via User Inventory Settings)`
-        );
 
         pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
 
@@ -1118,9 +1142,9 @@ export async function handleAdminRemoveModal(interaction) {
         await client.query('ROLLBACK').catch(() => {});
         sysError('Admin Remove Item Error', err, { user: interaction.user.id, guild: guildId, targetUserId });
         if (interaction.deferred || interaction.replied) {
-            return interaction.followUp({ content: `❌ Error removing items: ${err.message}`, flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: `❌ Error setting item quantity: ${err.message}`, flags: MessageFlags.Ephemeral });
         } else {
-            return interaction.reply({ content: `❌ Error removing items: ${err.message}`, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: `❌ Error setting item quantity: ${err.message}`, flags: MessageFlags.Ephemeral });
         }
     } finally {
         client.release();
@@ -1212,7 +1236,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
             items: activeCats,
             page,
             customId,
-            placeholder: '📂 Choose Category to Give...',
+            placeholder: '🎁 Give Items...',
             backOption: { label: 'Back', value: 'give_back_root', emoji: '⬅️' },
             pageNavPrefix: 'give_page_',
             pageSize: 20,
@@ -1228,26 +1252,19 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
 
     // LEVEL 3: ITEMS LIST (Inside specific category, standalone, or loot boxes)
     let folderItems = [];
-    let placeholder = '🎁 Select Item to Give...';
     let backValue = 'give_back_root';
 
     if (currentFolder === 'standalone') {
         folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
-        placeholder = '🏷️ Uncategorized: Select Item to Give...';
         backValue = 'give_back_root';
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxes.map(b => ({ ...b, isChest: true }));
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
-        const catName = lootBoxCatName || 'Loot Boxes';
-        placeholder = `🎁 ${safeTruncate(catName, 20)}: Select Box to Give...`;
         backValue = 'give_back_root';
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
         folderItems = await sortItemsByRolePosition(catItems, guild);
-        const catObj = categories.find(c => c.id === catId);
-        const catName = catObj?.name || 'Category';
-        placeholder = `📂 ${safeTruncate(catName, 20)}: Select Item to Give...`;
         backValue = 'give_back_categories';
     }
 
@@ -1259,7 +1276,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
         items: folderItems,
         page,
         customId,
-        placeholder: safeTruncate(placeholder, 100),
+        placeholder: '🎁 Give Items...',
         backOption: { label: 'Back', value: backValue, emoji: '⬅️' },
         pageNavPrefix: 'give_page_',
         pageSize: 20,
