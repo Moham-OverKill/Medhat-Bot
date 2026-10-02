@@ -21,8 +21,11 @@ import { hasAnyDangerousPermission } from './colors.js';
 import { logServerEvent, sendBulkLog, sysError } from '../utils/logger.js';
 import { getUserDisplayName, getUserLogName, isValidEconomyAmount } from '../shared.js';
 
-// Temporary storage: userId -> input_ids
+// Temporary storage: guildId:userId -> input_ids
 const pendingMassOps = new Map();
+function getMassKey(guildId, userId) {
+    return `${guildId}:${userId}`;
+}
 
 export const itemMassCommand = new SlashCommandBuilder()
   .setName('mass')
@@ -97,7 +100,7 @@ async function handleMassItemSubcommand(interaction) {
     }
     
     // Init State
-    pendingMassOps.set(interaction.user.id, {
+    pendingMassOps.set(getMassKey(interaction.guildId, interaction.user.id), {
         ids: ids,
         categoryId: null,
         packId: null,
@@ -113,7 +116,7 @@ async function handleMassItemSubcommand(interaction) {
 // --- Mass Item Logic ---
 
 async function renderMassPanel(interaction, userId) {
-    const state = pendingMassOps.get(userId);
+    const state = pendingMassOps.get(getMassKey(interaction.guildId, userId));
     if (!state) {
         try {
              await interaction.editReply({ files: [], content: '❌ Session expired. Please run /mass item again.', components: [] });
@@ -227,7 +230,7 @@ async function renderMassPanel(interaction, userId) {
 export async function handleMassSelect(interaction) {
     await interaction.deferUpdate();
     const userId = interaction.user.id;
-    const state = pendingMassOps.get(userId);
+    const state = pendingMassOps.get(getMassKey(interaction.guildId, userId));
     
     if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
 
@@ -249,7 +252,7 @@ export async function handleMassSelect(interaction) {
 export async function handleMassCreateStandalone(interaction) {
     await interaction.deferUpdate();
     const userId = interaction.user.id;
-    const state = pendingMassOps.get(userId);
+    const state = pendingMassOps.get(getMassKey(interaction.guildId, userId));
     
     if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
 
@@ -296,7 +299,7 @@ export async function handleMassModalSubmit(interaction) {
     
     await interaction.deferUpdate();
     
-    const state = pendingMassOps.get(userId);
+    const state = pendingMassOps.get(getMassKey(interaction.guildId, userId));
     if (!state) return interaction.followUp({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
 
     const name = interaction.fields.getTextInputValue('name');
@@ -326,7 +329,7 @@ export async function handleMassModalSubmit(interaction) {
 export async function handleMassSave(interaction) {
     await interaction.deferUpdate();
     const userId = interaction.user.id;
-    const state = pendingMassOps.get(userId);
+    const state = pendingMassOps.get(getMassKey(interaction.guildId, userId));
     
     if (!state) return interaction.editReply({ files: [], content: '❌ Session expired.', components: [] });
     
@@ -448,7 +451,7 @@ export async function handleMassSave(interaction) {
         ].filter(Boolean).join('\n');
         
         await interaction.editReply({ files: [], content: summary, components: [], embeds: [] });
-        pendingMassOps.delete(userId);
+        pendingMassOps.delete(getMassKey(interaction.guildId, userId));
 
         // Bulk Audit Log
         if (created > 0 || updated > 0) {
