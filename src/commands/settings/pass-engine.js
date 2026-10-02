@@ -13,21 +13,7 @@
 import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysLog, sysWarn, sysError, sendLog } from '../../utils/logger.js';
-
-// Dangerous permissions that must never be awarded via the level system
-const DANGEROUS_PERMS = [
-  'Administrator',
-  'ManageGuild',
-  'ManageRoles',
-  'ManageChannels',
-  'KickMembers',
-  'BanMembers',
-  'ManageWebhooks',
-  'ManageMessages',
-  'MentionEveryone',
-  'ModerateMembers',
-  'ViewAuditLog'
-];
+import { DANGEROUS_PERMISSIONS, hasAnyDangerousPermission } from '../../shared.js';
 
 /**
  * Validate a Discord role for safe assignment:
@@ -40,10 +26,13 @@ export function validateRoleForAssignment(role, guild) {
   if (!role || !guild) return '⚠️ Role or guild not found.';
 
   // Dangerous permission check
-  for (const perm of DANGEROUS_PERMS) {
-    if (role.permissions.has(perm)) {
-      return `⚠️ <@&${role.id}> has a dangerous permission (**${perm}**) and cannot be used as a level reward.`;
+  if (hasAnyDangerousPermission(role)) {
+    for (const perm of DANGEROUS_PERMISSIONS) {
+      if (role.permissions.has(perm)) {
+        return `⚠️ <@&${role.id}> has a dangerous permission (**${perm}**) and cannot be used as a level reward.`;
+      }
     }
+    return `⚠️ <@&${role.id}> has dangerous permissions and cannot be used as a level reward.`;
   }
 
   // Hierarchy check
