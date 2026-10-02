@@ -20,7 +20,7 @@ import { sysError, sysLog } from '../utils/logger.js';
  * @returns {Promise<boolean>}
  */
 export async function isServerAdmin(guildId, userId, ownerId = null) {
-  if (!guildId || !userId) return false;
+  if (!guildId || !userId || guildId === 'null' || guildId === 'undefined' || userId === 'null' || userId === 'undefined') return false;
   if (ownerId && userId === ownerId) return true;
 
   try {
@@ -133,7 +133,7 @@ export async function verifyAdminAccess(interaction) {
   const guildId = interaction.guildId;
   const userId = interaction.user?.id;
 
-  if (!guildId || !userId) {
+  if (!guildId || !userId || guildId === 'null' || guildId === 'undefined' || userId === 'null' || userId === 'undefined') {
     const denyPayload = {
       content: '❌ **Access Denied**: Administrative actions can only be performed within a server.',
       flags: MessageFlags.Ephemeral
@@ -170,11 +170,21 @@ export async function verifyAdminAccess(interaction) {
   }
 
   // 2. Discord Administrator Permission Bypass
-  let member = interaction.member;
-  if (!member || !member.permissions) {
-    member = await interaction.guild?.members.fetch(userId).catch(() => null);
+  // Fast path: gateway permission bitfield on interaction payload
+  if (interaction.memberPermissions?.has?.(PermissionFlagsBits.Administrator)) {
+    return true;
   }
-  if (member?.permissions?.has(PermissionFlagsBits.Administrator)) {
+
+  // Fallback: check cached member or fetch from guild
+  let member = interaction.member;
+  if (!member || typeof member.permissions?.has !== 'function') {
+    let guild = interaction.guild;
+    if (!guild && interaction.client) {
+      guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+    }
+    member = await guild?.members?.fetch(userId).catch(() => null);
+  }
+  if (member?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
     return true;
   }
 
@@ -218,12 +228,17 @@ export async function verifyAdminAccess(interaction) {
  */
 export async function hasAdminManagerAccess(interaction) {
   const userId = interaction.user?.id;
-  const guild = interaction.guild;
-  if (!userId || !guild) return false;
+  const guildId = interaction.guildId;
+  if (!userId || !guildId || guildId === 'null' || guildId === 'undefined' || userId === 'null' || userId === 'undefined') return false;
+
+  let guild = interaction.guild;
+  if (!guild && interaction.client) {
+    guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+  }
 
   // 1. Owner check
-  let ownerId = guild.ownerId;
-  if (!ownerId && guild.fetch) {
+  let ownerId = guild?.ownerId;
+  if (!ownerId && guild?.fetch) {
     try {
       const g = await guild.fetch();
       ownerId = g.ownerId;
@@ -231,7 +246,7 @@ export async function hasAdminManagerAccess(interaction) {
   }
   if (!ownerId && interaction.client) {
     try {
-      const g = await interaction.client.guilds.fetch(guild.id).catch(() => null);
+      const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
       ownerId = g?.ownerId;
     } catch {}
   }
@@ -241,12 +256,18 @@ export async function hasAdminManagerAccess(interaction) {
   }
 
   // 2. Discord Administrator permission check
-  let member = interaction.member;
-  if (!member || !member.permissions) {
-    member = await guild.members.fetch(userId).catch(() => null);
+  // Fast path: gateway permission bitfield on interaction payload
+  if (interaction.memberPermissions?.has?.(PermissionFlagsBits.Administrator)) {
+    return true;
   }
 
-  if (member?.permissions?.has(PermissionFlagsBits.Administrator)) {
+  // Fallback: check cached member or fetch from guild
+  let member = interaction.member;
+  if (!member || typeof member.permissions?.has !== 'function') {
+    member = await guild?.members?.fetch(userId).catch(() => null);
+  }
+
+  if (member?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
     return true;
   }
 
