@@ -12,7 +12,7 @@ import {
     PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
@@ -822,7 +822,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
     let placeholder = '🗑️ Remove Items...';
 
     if (currentFolder === 'standalone') {
-        folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        folderItems = await sortItemsByRarity(uncategorizedItems, guild);
         placeholder = '🗑️ Remove Items (Uncategorized)';
         backValue = 'rem_back_root';
     } else if (currentFolder === 'lootboxes') {
@@ -834,7 +834,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
-        folderItems = await sortItemsByRolePosition(catItems, guild);
+        folderItems = await sortItemsByRarity(catItems, guild);
         const catObj = categories.find(c => parseInt(c.id, 10) === catId);
         const catName = catObj?.name || 'Category';
         placeholder = safeTruncate(`🗑️ Remove Items (${catName})`, 100);
@@ -1312,7 +1312,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
     let placeholder = '🎁 Give Items...';
 
     if (currentFolder === 'standalone') {
-        folderItems = await sortItemsByRolePosition(uncategorizedItems, guild);
+        folderItems = await sortItemsByRarity(uncategorizedItems, guild);
         placeholder = '🎁 Give Items (Uncategorized)';
         backValue = 'give_back_root';
     } else if (currentFolder === 'lootboxes') {
@@ -1324,7 +1324,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
     } else if (currentFolder.startsWith('cat_')) {
         const catId = parseInt(currentFolder.replace('cat_', ''), 10);
         const catItems = categorizedItems.filter(i => i.category_id === catId);
-        folderItems = await sortItemsByRolePosition(catItems, guild);
+        folderItems = await sortItemsByRarity(catItems, guild);
         const catObj = categories.find(c => parseInt(c.id, 10) === catId);
         const catName = catObj?.name || 'Category';
         placeholder = safeTruncate(`🎁 Give Items (${catName})`, 100);
