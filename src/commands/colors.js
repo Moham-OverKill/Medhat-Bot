@@ -92,7 +92,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     .filter(c => c.role)
     .sort((a, b) => b.role.position - a.role.position);
 
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 20;
   const totalItems = sortedColors.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const currentPage = Math.min(Math.max(1, parseInt(page, 10) || 1), totalPages);
