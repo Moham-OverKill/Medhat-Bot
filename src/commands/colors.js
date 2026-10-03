@@ -7,8 +7,12 @@ import {
   PermissionFlagsBits,
   StringSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
+  AttachmentBuilder,
   MessageFlags
 } from 'discord.js';
+import { generateColorPanelImage } from '../graphics/colorPaletteCard.js';
 import {
   addColorRole,
   removeColorRole,
@@ -175,7 +179,8 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
   await interaction[responseMethod]({
     content: '',
     embeds: [embed],
-    components: components
+    components: components,
+    files: []
   });
 }
 
@@ -329,12 +334,15 @@ async function findLastPanelNumber(channel, botId) {
 }
 
 /**
- * Handle color react (create button panels)
+ * Render the Color Panel Deployment & Live Preview Screen
  */
-async function handleColorReact(interaction, guildId, isBooster) {
-  // Ensure interaction is deferred exactly once
+export async function showColorDeployPreview(interaction, type = 'normal', targetChannelId = null, previewPanelIndex = 0) {
+  const guildId = interaction.guildId;
+  const isBooster = type === 'booster';
+
+  // Ensure interaction is acknowledged
   if (!interaction.deferred && !interaction.replied) {
-    if (interaction.isAnySelectMenu() || interaction.isButton()) {
+    if (interaction.isButton() || interaction.isAnySelectMenu()) {
       await interaction.deferUpdate().catch(() => {});
     } else {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -343,114 +351,308 @@ async function handleColorReact(interaction, guildId, isBooster) {
 
   const colors = await getColorRoles(guildId, isBooster);
 
-  if (colors.length === 0) {
-    const type = isBooster ? 'booster color' : 'color';
-    const errorMessage = type === 'booster color'
-      ? `❌ Add Booster color roles first!`
-      : `❌ Add color roles first!`;
+  if (!colors || colors.length === 0) {
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`colors_preview_back_${type}`)
+        .setLabel('Back to Colors')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
-    // Show error screen with Back button (replace entire view)
-    const backButton = new ButtonBuilder()
-      .setCustomId(isBooster ? 'boosters:back' : 'colors:back')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary);
+    const responseMethod = (interaction.deferred || interaction.replied)
+      ? 'editReply'
+      : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
-    const backRow = new ActionRowBuilder().addComponents(backButton);
-
-    await interaction.editReply({ files: [], content: errorMessage,
+    return await interaction[responseMethod]({
+      content: `❌ Add ${isBooster ? 'Booster ' : ''}color roles first before deploying a panel!`,
       embeds: [],
-      components: [backRow] });
-    return;
+      components: [backRow],
+      files: []
+    });
   }
 
-  // Fetch guild and roles to get positions and colors
-  const guild = await interaction.client.guilds.fetch(guildId);
+  const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
   const allRoles = await guild.roles.fetch();
 
-  // Map colors with role data and sort by position (descending)
   const sortedColors = colors
-    .map(color => {
-      const role = allRoles.get(color.roleId);
+    .map(c => {
+      const role = allRoles.get(c.roleId);
       return {
-        ...color,
-        role: role,
-        position: role?.position || 0,
-        hexColor: role?.hexColor || '#000000'
+        ...c,
+        role,
+        hexColor: role?.hexColor || '#000000',
+        name: role?.name || `Role ${c.roleId}`,
+        position: role?.position || 0
       };
     })
-    .filter(c => c.role) // Remove deleted roles
-    .sort((a, b) => b.position - a.position); // Sort by position DESC
+    .filter(c => c.role)
+    .sort((a, b) => b.position - a.position);
 
-  const channel = interaction.channel;
-  const type = isBooster ? 'booster' : 'normal';
+  if (sortedColors.length === 0) {
+    const backRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`colors_preview_back_${type}`)
+        .setLabel('Back to Colors')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
-  // Find the highest number from recent color panels to continue numbering
-  const startOffset = await findLastPanelNumber(channel, interaction.client.user.id);
+    const responseMethod = (interaction.deferred || interaction.replied)
+      ? 'editReply'
+      : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
-  // Create panels with up to 10 colors each
-  const panelsCount = Math.ceil(sortedColors.length / 10);
+    return await interaction[responseMethod]({
+      content: '❌ Configured color roles no longer exist on this server.',
+      embeds: [],
+      components: [backRow],
+      files: []
+    });
+  }
 
-  for (let panelIndex = 0; panelIndex < panelsCount; panelIndex++) {
-    const startIdx = panelIndex * 10;
+  const channelId = targetChannelId || interaction.channelId;
+  const PANELS_COUNT = Math.max(1, Math.ceil(sortedColors.length / 10));
+  const currentPanelIdx = Math.min(Math.max(0, parseInt(previewPanelIndex, 10) || 0), PANELS_COUNT - 1);
+
+  const startIdx = currentPanelIdx * 10;
+  const endIdx = Math.min(startIdx + 10, sortedColors.length);
+  const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
+    ...c,
+    index: startIdx + i + 1
+  }));
+
+  const imageBuffer = await generateColorPanelImage(panelColors, {
+    isBooster,
+    title: isBooster ? 'BOOSTER COLORS' : 'NORMAL COLORS',
+    subtitle: 'Select a number button below to equip your color',
+    panelIndex: currentPanelIdx,
+    totalPanels: PANELS_COUNT
+  });
+
+  const attachment = new AttachmentBuilder(imageBuffer, { name: 'color_panel_preview.png' });
+
+  const titlePrefix = isBooster ? 'Booster Colors' : 'Normal Colors';
+  const colorHex = isBooster ? 0xFEE75C : 0x5865F2;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${titlePrefix} Deployment Preview ( ${currentPanelIdx + 1} / ${PANELS_COUNT} )`)
+    .setDescription([
+      `• **Target Channel:** <#${channelId}>`,
+      `• **Total Colors:** ${sortedColors.length} (${PANELS_COUNT} panel${PANELS_COUNT > 1 ? 's' : ''})`,
+      `• **Previewing Panel ${currentPanelIdx + 1}:** Colors ${startIdx + 1} – ${endIdx}`,
+      '',
+      'Review the panel preview image below. Select the target channel and click **Post to Channel** when ready to publish.'
+    ].join('\n'))
+    .setColor(colorHex)
+    .setImage('attachment://color_panel_preview.png');
+
+  const components = [];
+
+  // Row 0: Target Channel Selector
+  const channelSelect = new ChannelSelectMenuBuilder()
+    .setCustomId(`colors_preview_channel_${type}_${currentPanelIdx}`)
+    .setPlaceholder('Select target channel for color panel deployment...')
+    .setChannelTypes(ChannelType.GuildText);
+  if (channelId) {
+    channelSelect.setDefaultChannels([channelId]);
+  }
+  components.push(new ActionRowBuilder().addComponents(channelSelect));
+
+  // Row 1: Panel Navigation (if multiple panels)
+  if (PANELS_COUNT > 1) {
+    const navRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`colors_preview_prev_${type}_${currentPanelIdx}_${channelId}`)
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(currentPanelIdx <= 0),
+      new ButtonBuilder()
+        .setCustomId(`colors_preview_next_${type}_${currentPanelIdx}_${channelId}`)
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(currentPanelIdx >= PANELS_COUNT - 1)
+    );
+    components.push(navRow);
+  }
+
+  // Row 2: Back and Post buttons
+  const actionRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`colors_preview_back_${type}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`colors_preview_publish_${type}_${channelId}`)
+      .setLabel('Post to Channel')
+      .setEmoji('🚀')
+      .setStyle(ButtonStyle.Success)
+  );
+  components.push(actionRow);
+
+  const responseMethod = (interaction.deferred || interaction.replied)
+    ? 'editReply'
+    : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+  await interaction[responseMethod]({
+    content: '',
+    embeds: [embed],
+    components,
+    files: [attachment]
+  });
+}
+
+/**
+ * Deploy generated color panels to the selected target channel
+ */
+async function deployColorPanels(interaction, type, channelId) {
+  const guildId = interaction.guildId;
+  const isBooster = type === 'booster';
+  const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
+  const targetChannel = await guild.channels.fetch(channelId).catch(() => null);
+
+  if (!targetChannel || !targetChannel.isTextBased()) {
+    return interaction.followUp({
+      content: '❌ Invalid target channel. Please select an active text channel.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  // Permission verification
+  const botMember = await guild.members.fetchMe().catch(() => null);
+  const perms = targetChannel.permissionsFor(botMember);
+  if (!perms?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles])) {
+    return interaction.editReply({
+      content: `❌ **Missing Permissions:** I need permissions to **View Channel**, **Send Messages**, and **Attach Files** in <#${channelId}>.`,
+      embeds: [],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`colors_preview_back_${type}`)
+            .setLabel('Back to Colors')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      ],
+      files: []
+    });
+  }
+
+  const colors = await getColorRoles(guildId, isBooster);
+  const allRoles = await guild.roles.fetch();
+
+  const sortedColors = colors
+    .map(c => {
+      const role = allRoles.get(c.roleId);
+      return {
+        ...c,
+        role,
+        hexColor: role?.hexColor || '#000000',
+        name: role?.name || `Role ${c.roleId}`,
+        position: role?.position || 0
+      };
+    })
+    .filter(c => c.role)
+    .sort((a, b) => b.position - a.position);
+
+  if (sortedColors.length === 0) {
+    return interaction.followUp({
+      content: '❌ No valid color roles available to post.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const PANELS_COUNT = Math.ceil(sortedColors.length / 10);
+
+  for (let p = 0; p < PANELS_COUNT; p++) {
+    const startIdx = p * 10;
     const endIdx = Math.min(startIdx + 10, sortedColors.length);
-    const panelColors = sortedColors.slice(startIdx, endIdx);
+    const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
+      ...c,
+      index: startIdx + i + 1
+    }));
 
-    const content = buildColorPanelContent(panelColors, startIdx + startOffset, isBooster);
+    const imageBuffer = await generateColorPanelImage(panelColors, {
+      isBooster,
+      title: isBooster ? 'BOOSTER COLORS' : 'NORMAL COLORS',
+      subtitle: 'Select a number button below to equip your color',
+      panelIndex: p,
+      totalPanels: PANELS_COUNT
+    });
 
-    // Create buttons (2 rows of 5)
+    const panelAttachment = new AttachmentBuilder(imageBuffer, { name: `colors_${type}_${p + 1}.png` });
+
+    // Create 2 rows of up to 5 buttons each
     const rows = [];
-
-    for (let rowIndex = 0; rowIndex < 2; rowIndex++) {
-      const rowStart = rowIndex * 5;
+    for (let r = 0; r < 2; r++) {
+      const rowStart = r * 5;
       const rowEnd = Math.min(rowStart + 5, panelColors.length);
-
       if (rowStart >= panelColors.length) break;
 
       const buttons = [];
       for (let i = rowStart; i < rowEnd; i++) {
-        const globalIndex = startIdx + startOffset + i + 1;
-        const paddedLabel = String(globalIndex).padStart(2, '0');
+        const colorItem = panelColors[i];
+        const paddedLabel = String(colorItem.index).padStart(2, '0');
         buttons.push(
           new ButtonBuilder()
-            .setCustomId(`color_${type}_${panelColors[i].roleId}`)
+            .setCustomId(`color_${type}_${colorItem.roleId}`)
             .setLabel(paddedLabel)
-            .setStyle(ButtonStyle.Primary) // Blue buttons
+            .setStyle(ButtonStyle.Primary)
         );
       }
-
       if (buttons.length > 0) {
         rows.push(new ActionRowBuilder().addComponents(buttons));
       }
     }
 
     try {
-      await channel.send({
-        content: content,
+      await targetChannel.send({
+        files: [panelAttachment],
         components: rows
       });
-    } catch (error) {
-      sysError('Failed to send color panel message', error, { guild: guildId, channel: channel.id });
-      
-      const errorMsg = error.code === 50013 || error.code === 50007
-        ? '❌ **Missing Permissions:** I do not have permission to send messages in this channel.'
-        : '❌ **Error:** I could not send the color panel to this channel.';
-
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
-      } else {
-        await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
-      }
-      return; // Stop processing further panels if one fails
+    } catch (sendErr) {
+      sysError('Failed to send visual color panel', sendErr, { guild: guildId, channel: channelId });
+      return interaction.editReply({
+        content: `❌ Failed to send color panel ${p + 1} to <#${channelId}>: ${sendErr?.message || 'Discord error'}`,
+        embeds: [],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`colors_preview_back_${type}`)
+              .setLabel('Back to Colors')
+              .setEmoji('⬅️')
+              .setStyle(ButtonStyle.Secondary)
+          )
+        ],
+        files: []
+      });
     }
   }
 
-  // Send quiet confirmation without touching control panel
-  if (interaction.isAnySelectMenu()) {
-    // Control panel stays visible, no message needed
-  } else {
-    await interaction.editReply(`Panels created.`);
-  }
+  const logName = getUserLogName(interaction);
+  sendLog(guild, 'audit', 'cyan', `🎨 ${isBooster ? 'Booster ' : ''}Color Panels Deployed`,
+    `**Admin:** \`${logName}\`\n**Target Channel:** <#${channelId}>\n**Panels:** ${PANELS_COUNT} (${sortedColors.length} colors)`
+  );
+
+  const successEmbed = new EmbedBuilder()
+    .setTitle('Color Panels Deployed')
+    .setDescription(`Successfully published **${PANELS_COUNT}** ${isBooster ? 'Booster' : 'Normal'} color panel${PANELS_COUNT > 1 ? 's' : ''} to <#${channelId}>.`)
+    .setColor(isBooster ? 0xFEE75C : 0x5865F2);
+
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`colors_preview_back_${type}`)
+      .setLabel('Back to Colors')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await interaction.editReply({
+    content: '',
+    embeds: [successEmbed],
+    components: [backRow],
+    files: []
+  });
 }
 
 /**
@@ -509,12 +711,44 @@ export async function handleColorsComponent(interaction) {
       }
     }
 
-    // 4. Handle Create Panel Buttons
+    // 4. Handle Create Panel Buttons (Open Deployment Preview)
     if (customId === 'colors_create_normal') {
-      return await handleColorReact(interaction, guildId, false);
+      return await showColorDeployPreview(interaction, 'normal');
     }
     if (customId === 'colors_create_booster') {
-      return await handleColorReact(interaction, guildId, true);
+      return await showColorDeployPreview(interaction, 'booster');
+    }
+
+    // 5. Handle Deployment Preview Interactions
+    if (customId.startsWith('colors_preview_channel_')) {
+      const parts = customId.split('_'); // ['colors', 'preview', 'channel', type, panelIdx]
+      const type = parts[3];
+      const panelIdx = parseInt(parts[4], 10) || 0;
+      const selectedChannel = interaction.values[0];
+      return await showColorDeployPreview(interaction, type, selectedChannel, panelIdx);
+    }
+
+    if (customId.startsWith('colors_preview_prev_') || customId.startsWith('colors_preview_next_')) {
+      const parts = customId.split('_'); // ['colors', 'preview', 'prev'|'next', type, panelIdx, channelId]
+      const dir = parts[2];
+      const type = parts[3];
+      const panelIdx = parseInt(parts[4], 10) || 0;
+      const channelId = parts[5];
+      const targetPanel = dir === 'next' ? panelIdx + 1 : panelIdx - 1;
+      return await showColorDeployPreview(interaction, type, channelId, targetPanel);
+    }
+
+    if (customId.startsWith('colors_preview_back_')) {
+      const parts = customId.split('_'); // ['colors', 'preview', 'back', type]
+      const type = parts[3] === 'booster' ? 'booster' : 'normal';
+      return await showColorPanel(interaction, type, 1);
+    }
+
+    if (customId.startsWith('colors_preview_publish_')) {
+      const parts = customId.split('_'); // ['colors', 'preview', 'publish', type, channelId]
+      const type = parts[3] === 'booster' ? 'booster' : 'normal';
+      const channelId = parts[4];
+      return await deployColorPanels(interaction, type, channelId);
     }
 
     sysLog('Unmatched color interaction', { id: customId });
