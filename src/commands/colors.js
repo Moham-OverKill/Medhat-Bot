@@ -79,7 +79,7 @@ export async function handleColorsCommand(interaction) {
 /**
  * Render the unified Color Dashboard
  */
-export async function showColorPanel(interaction, type = 'normal') {
+export async function showColorPanel(interaction, type = 'normal', page = 1) {
   const guildId = interaction.guildId;
   const isBoosterTab = type === 'booster';
   const colors = await getColorRoles(guildId, isBoosterTab);
@@ -92,28 +92,39 @@ export async function showColorPanel(interaction, type = 'normal') {
     .filter(c => c.role)
     .sort((a, b) => b.role.position - a.role.position);
 
+  const PAGE_SIZE = 10;
+  const totalItems = sortedColors.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, parseInt(page, 10) || 1), totalPages);
+
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const endIdx = startIdx + PAGE_SIZE;
+  const pageColors = sortedColors.slice(startIdx, endIdx);
+
   const titlePrefix = isBoosterTab ? 'Booster Colors' : 'Normal Colors';
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
+  const description = pageColors.length > 0 
+    ? pageColors.map((c, i) => `**${startIdx + i + 1} |** <@&${c.roleId}>`).join('\n')
+    : '_No colors configured yet._';
+
   const embed = new EmbedBuilder()
     .setTitle(titlePrefix)
-    .setDescription(sortedColors.length > 0 
-      ? sortedColors.map((c, i) => `**${i + 1} |** <@&${c.roleId}>`).join('\n')
-      : '_No colors configured yet._')
-    .setColor(colorHex);
-    // Removed Footer/Footer description
+    .setDescription(description)
+    .setColor(colorHex)
+    .setFooter({ text: `Page ${currentPage} of ${totalPages} • Total: ${totalItems} colors` });
 
   const components = [];
 
   // Row 1: Add Role
   const addSelector = new RoleSelectMenuBuilder()
-    .setCustomId(`colors_add_${type}`)
+    .setCustomId(`colors_add_${type}_${currentPage}`)
     .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
   // Row 2: Remove Role (Native Searchable Selector for perfect symmetry)
   const removeSelector = new RoleSelectMenuBuilder()
-    .setCustomId(`colors_remove_${type}`)
+    .setCustomId(`colors_remove_${type}_${currentPage}`)
     .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
@@ -136,9 +147,19 @@ export async function showColorPanel(interaction, type = 'normal') {
   const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
-      .setLabel('Back') // Updated label
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`colors_page_prev_${type}_${currentPage}`)
+      .setEmoji('◀️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(currentPage <= 1),
+    new ButtonBuilder()
+      .setCustomId(`colors_page_next_${type}_${currentPage}`)
+      .setEmoji('▶️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(currentPage >= totalPages),
     new ButtonBuilder()
       .setCustomId(`colors_create_${type}`)
       .setLabel('Create Panel')
@@ -452,30 +473,44 @@ export async function handleColorsComponent(interaction) {
 
     // 1. Handle Tab Switching
     if (customId === 'colors_tab_normal') {
-      return await showColorPanel(interaction, 'normal');
+      return await showColorPanel(interaction, 'normal', 1);
     }
     if (customId === 'colors_tab_booster') {
-      return await showColorPanel(interaction, 'booster');
+      return await showColorPanel(interaction, 'booster', 1);
     }
 
-    // 2. Handle Add/Remove via Select Menus
+    // 2. Handle Pagination Navigation
+    if (customId.startsWith('colors_page_')) {
+      const parts = customId.split('_'); // ['colors', 'page', 'prev'|'next', type, currentPage]
+      const dir = parts[2];
+      const type = parts[3] === 'booster' ? 'booster' : 'normal';
+      const pageNum = parseInt(parts[4], 10) || 1;
+      const targetPage = dir === 'next' ? pageNum + 1 : pageNum - 1;
+      return await showColorPanel(interaction, type, targetPage);
+    }
+
+    // 3. Handle Add/Remove via Select Menus
     if (interaction.isAnySelectMenu()) {
       if (customId.startsWith('colors_add_')) {
-        const type = customId.endsWith('booster') ? 'booster' : 'normal';
+        const parts = customId.split('_');
+        const type = parts[2] === 'booster' ? 'booster' : 'normal';
+        const page = parseInt(parts[3], 10) || 1;
         const roleId = interaction.values[0];
-        sysLog('Adding color role', { roleId, type, guild: guildId });
-        return await processRoleAddition(interaction, guildId, roleId, type === 'booster');
+        sysLog('Adding color role', { roleId, type, page, guild: guildId });
+        return await processRoleAddition(interaction, guildId, roleId, type === 'booster', page);
       }
 
       if (customId.startsWith('colors_remove_')) {
-        const type = customId.endsWith('booster') ? 'booster' : 'normal';
+        const parts = customId.split('_');
+        const type = parts[2] === 'booster' ? 'booster' : 'normal';
+        const page = parseInt(parts[3], 10) || 1;
         const roleId = interaction.values[0];
-        sysLog('Removing color role', { roleId, type, guild: guildId });
-        return await processRoleRemoval(interaction, guildId, roleId, type === 'booster');
+        sysLog('Removing color role', { roleId, type, page, guild: guildId });
+        return await processRoleRemoval(interaction, guildId, roleId, type === 'booster', page);
       }
     }
 
-    // 3. Handle Create Panel Buttons
+    // 4. Handle Create Panel Buttons
     if (customId === 'colors_create_normal') {
       return await handleColorReact(interaction, guildId, false);
     }
@@ -507,7 +542,7 @@ export async function handleColorsComponent(interaction) {
 /**
  * Shared logic for adding a color role
  */
-async function processRoleAddition(interaction, guildId, roleId, isBooster) {
+async function processRoleAddition(interaction, guildId, roleId, isBooster, page = 1) {
   const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
   const role = await guild.roles.fetch(roleId).catch(() => null);
 
@@ -542,7 +577,7 @@ async function processRoleAddition(interaction, guildId, roleId, isBooster) {
       `**Admin:** \`${logName}\`\n**Action:** Added ${role} to the list.`
     );
     // Refresh dashboard
-    return await showColorPanel(interaction, isBooster ? 'booster' : 'normal');
+    return await showColorPanel(interaction, isBooster ? 'booster' : 'normal', page);
   } else {
     return interaction.followUp({ content: `❌ Database error: ${result.error}`, flags: MessageFlags.Ephemeral });
   }
@@ -551,7 +586,7 @@ async function processRoleAddition(interaction, guildId, roleId, isBooster) {
 /**
  * Shared logic for removing a color role
  */
-async function processRoleRemoval(interaction, guildId, roleId, isBooster) {
+async function processRoleRemoval(interaction, guildId, roleId, isBooster, page = 1) {
   const result = await removeColorRole(guildId, roleId, isBooster);
   
   if (result.deleted) {
@@ -561,7 +596,7 @@ async function processRoleRemoval(interaction, guildId, roleId, isBooster) {
       `**Admin:** \`${logName}\`\n**Action:** Removed role ID \`${roleId}\` from the list.`
     );
     // Refresh dashboard
-    return await showColorPanel(interaction, isBooster ? 'booster' : 'normal');
+    return await showColorPanel(interaction, isBooster ? 'booster' : 'normal', page);
   } else {
     return interaction.followUp({ 
       content: `❌ That role is not in the ${isBooster ? 'Booster' : 'Normal'} color list.`, 

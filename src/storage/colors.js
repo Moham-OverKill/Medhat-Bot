@@ -11,6 +11,10 @@ export function initializeColorsDB() {
  * Add a color role (Migrated to Postgres)
  */
 export async function addColorRole(guildId, roleId, isBooster = false) {
+  if (!guildId || !roleId) {
+    return { success: false, error: 'Invalid guild or role ID' };
+  }
+
   const pool = getPool();
   const table = isBooster ? 'booster_colors' : 'colors';
   
@@ -20,13 +24,10 @@ export async function addColorRole(guildId, roleId, isBooster = false) {
        ON CONFLICT (guild_id, role_id) DO NOTHING`,
       [guildId, roleId]
     );
-    // Postgres doesn't return "rows affected" easily for ON CONFLICT DO NOTHING unless we check,
-    // but generally if no error, it succeeded (or already existed).
-    // We can assume success for this UI.
     return { success: true };
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: `Adding color role: ${roleId}` });
-    return { success: false, error: 'Database error' };
+    return { success: false, error: error?.message || 'Database error' };
   }
 }
 

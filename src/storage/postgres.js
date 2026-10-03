@@ -694,6 +694,12 @@ async function createTables() {
       );
     `);
 
+    // Ensure unique constraints exist for ON CONFLICT support
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_colors_guild_role ON colors(guild_id, role_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_booster_colors_guild_role ON booster_colors(guild_id, role_id);
+    `);
+
     // Table for booster roles configuration
     await pool.query(`
       CREATE TABLE IF NOT EXISTS booster_roles (

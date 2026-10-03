@@ -557,11 +557,12 @@ async function handleMassColorSubcommand(interaction) {
 
         const guild = await interaction.client.guilds.fetch(guildId);
         const botMember = await guild.members.fetchMe().catch(() => null);
+        const allRoles = await guild.roles.fetch().catch(() => null);
         let added = 0, removed = 0, skipped = 0;
         const errors = [];
 
         for (const roleId of roleIds) {
-          const role = await guild.roles.fetch(roleId).catch(() => null);
+          const role = allRoles?.get(roleId) || guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
 
           if (!role) {
             errors.push(`<@&${roleId}> not found`);
@@ -590,6 +591,7 @@ async function handleMassColorSubcommand(interaction) {
             if (result.success) {
               added++;
             } else {
+              errors.push(`${role.name}: ${result.error || 'Database error'}`);
               skipped++;
             }
           } else if (mode === 'remove') {
@@ -597,6 +599,7 @@ async function handleMassColorSubcommand(interaction) {
             if (result.deleted) {
               removed++;
             } else {
+              errors.push(`${role.name}: not in color list`);
               skipped++;
             }
           }
