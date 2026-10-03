@@ -109,10 +109,9 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     : '_No colors configured yet._';
 
   const embed = new EmbedBuilder()
-    .setTitle(titlePrefix)
+    .setTitle(`${titlePrefix} ( ${currentPage} / ${totalPages} )`)
     .setDescription(description)
-    .setColor(colorHex)
-    .setFooter({ text: `Page ${currentPage} of ${totalPages} • Total: ${totalItems} colors` });
+    .setColor(colorHex);
 
   const components = [];
 
@@ -128,7 +127,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
-  // Row 3: The Tabs (Strict layout requested)
+  // Row 3: Tabs & Pagination Controls
   const tabsRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('colors_tab_normal')
@@ -139,17 +138,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       .setCustomId('colors_tab_booster')
       .setLabel('Booster Colors')
       .setEmoji('🚀')
-      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
-  );
-  components.push(tabsRow);
-
-  // Row 4: Navigation/Actions (Strict layout requested)
-  const actionRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('settings_back')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`colors_page_prev_${type}_${currentPage}`)
       .setEmoji('◀️')
@@ -159,7 +148,17 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       .setCustomId(`colors_page_next_${type}_${currentPage}`)
       .setEmoji('▶️')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage >= totalPages),
+      .setDisabled(currentPage >= totalPages)
+  );
+  components.push(tabsRow);
+
+  // Row 4: Navigation / Actions
+  const actionRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings_back')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`colors_create_${type}`)
       .setLabel('Create Panel')
