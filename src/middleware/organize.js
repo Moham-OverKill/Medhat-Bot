@@ -84,6 +84,9 @@ export async function isActivityIgnored(guildId, channelId) {
  */
 export function invalidateFilterCache(guildId) {
   filterCache.delete(guildId);
+  import('./emoji-filter.js')
+    .then(({ invalidateEmojiBlacklistCache }) => invalidateEmojiBlacklistCache(guildId))
+    .catch(() => {});
 }
 
 /**
