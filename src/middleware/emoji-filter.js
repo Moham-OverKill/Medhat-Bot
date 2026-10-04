@@ -8,6 +8,10 @@ export const DEFAULT_BLACKLISTED_EMOJIS = ['🖕', '🍆', '🍑', '💦'];
 const emojiBlacklistCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+// Rate limit cooldown for channel renames: channelId -> timestamp (Discord limit: 2 renames per 10m)
+const channelRenameCooldowns = new Map();
+const CHANNEL_RENAME_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Load emoji blacklist config for a guild from database
  */
@@ -85,7 +89,8 @@ export function containsBlacklistedEmoji(text, blacklist) {
 }
 
 /**
- * Strip all blacklisted emojis from a text string while keeping the rest intact
+ * Strip all blacklisted emojis from a text string while keeping the rest intact.
+ * Handles Unicode variation selectors, skin tone modifiers (\u1F3FB-\u1F3FF), and custom emojis.
  */
 export function stripBlacklistedEmojis(text, blacklist) {
   if (!text || typeof text !== 'string' || !blacklist || blacklist.length === 0) return text || '';
@@ -101,13 +106,15 @@ export function stripBlacklistedEmojis(text, blacklist) {
     } else {
       const cleanItem = typeof item === 'string' ? item.replace(/\uFE0F/g, '') : '';
       if (cleanItem) {
-        result = result.split(cleanItem).join('');
-        result = result.split(item).join('');
+        // Strip clean item with optional skin tone modifier
+        const re = new RegExp(cleanItem + '(?:[\u{1F3FB}-\u{1F3FF}])?', 'gu');
+        result = result.replace(re, '');
       }
     }
   }
 
-  return result.replace(/\uFE0F/g, '');
+  // Strip dangling variation selectors and skin tone modifier artifacts
+  return result.replace(/\uFE0F/g, '').replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '');
 }
 
 /**
@@ -132,7 +139,8 @@ export function isReactionBlacklisted(reactionEmoji, blacklist) {
 }
 
 /**
- * Vector 1: Scan and delete messages containing blacklisted emojis
+ * Vector 1: Scan and delete messages containing blacklisted emojis.
+ * Also scans Discord native polls (question and answer options).
  */
 export async function processMessageEmojiFilter(message) {
   if (!message || !message.guild || !message.author || message.author.bot || message.webhookId) return false;
@@ -141,8 +149,32 @@ export async function processMessageEmojiFilter(message) {
   const config = await getGuildEmojiBlacklist(guildId);
   if (!config.enabled || config.blacklist.length === 0) return false;
 
+  let hasRestricted = false;
   const content = message.content || '';
-  if (!containsBlacklistedEmoji(content, config.blacklist)) return false;
+
+  if (containsBlacklistedEmoji(content, config.blacklist)) {
+    hasRestricted = true;
+  }
+
+  // Check Discord native poll if present
+  if (!hasRestricted && message.poll) {
+    if (containsBlacklistedEmoji(message.poll.question?.text, config.blacklist)) {
+      hasRestricted = true;
+    } else if (message.poll.answers) {
+      for (const answer of message.poll.answers.values()) {
+        if (containsBlacklistedEmoji(answer.text, config.blacklist)) {
+          hasRestricted = true;
+          break;
+        }
+        if (answer.emoji && isReactionBlacklisted(answer.emoji, config.blacklist)) {
+          hasRestricted = true;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!hasRestricted) return false;
 
   const botMember = message.guild.members.me;
   if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
@@ -244,9 +276,9 @@ export async function processMemberNicknameEmojiFilter(member) {
 }
 
 /**
- * Vector 4: Sanitize channel names (text, voice, forums, categories)
+ * Vector 4: Sanitize channel names and channel topics (text, voice, threads, forums, categories)
  * STRICT SAFETY GUARDRAIL: UNDER NO CIRCUMSTANCES SHALL A CHANNEL BE DELETED.
- * Only renames the channel to strip forbidden emojis.
+ * Only renames the channel or updates topic to strip forbidden emojis.
  */
 export async function processChannelNameEmojiFilter(channel) {
   if (!channel || !channel.guild || !channel.name) return false;
@@ -255,49 +287,85 @@ export async function processChannelNameEmojiFilter(channel) {
   const config = await getGuildEmojiBlacklist(guildId);
   if (!config.enabled || config.blacklist.length === 0) return false;
 
-  if (!containsBlacklistedEmoji(channel.name, config.blacklist)) return false;
-
   const botMember = channel.guild.members.me;
-  if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-    sysWarn('Cannot sanitize channel name — missing ManageChannels', { guild: guildId, channel: channel.id });
+  const hasManageChannels = botMember && (
+    botMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+    botMember.permissions.has(PermissionsBitField.Flags.Administrator)
+  );
+
+  if (!hasManageChannels) {
+    sysWarn('Cannot sanitize channel — missing ManageChannels', { guild: guildId, channel: channel.id });
     return false;
   }
 
-  let sanitized = stripBlacklistedEmojis(channel.name, config.blacklist).trim();
-  if (!sanitized) {
-    sanitized = channel.isVoiceBased?.() ? 'voice-channel' : 'channel';
+  let didSanitize = false;
+
+  // 1. Channel Topic Check
+  if (channel.topic && containsBlacklistedEmoji(channel.topic, config.blacklist) && typeof channel.setTopic === 'function') {
+    const cleanTopic = stripBlacklistedEmojis(channel.topic, config.blacklist).trim();
+    await channel.setTopic(cleanTopic, 'Restricted emoji removed from topic').catch(() => {});
+    didSanitize = true;
+    sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Topic Sanitized',
+      `**Channel:** <#${channel.id}> (\`${channel.name}\`)\n` +
+      `**Sanitized Topic:** \`${cleanTopic.slice(0, 150)}\``
+    );
   }
-  sanitized = sanitized.slice(0, 100);
 
-  if (sanitized === channel.name) return false;
+  // 2. Channel Name Check with anti-spam rate limit protection
+  if (containsBlacklistedEmoji(channel.name, config.blacklist)) {
+    const lastRename = channelRenameCooldowns.get(channel.id) || 0;
+    if (Date.now() - lastRename < CHANNEL_RENAME_COOLDOWN_MS) {
+      // Cooldown active to avoid Discord API 429
+      return didSanitize;
+    }
 
-  const oldName = channel.name;
-  // Strictly rename only — NEVER delete channel
-  await channel.setName(sanitized, 'Restricted emoji removed from channel name').catch(() => {});
+    let sanitized = stripBlacklistedEmojis(channel.name, config.blacklist).trim();
+    if (!sanitized) {
+      sanitized = channel.isVoiceBased?.() ? 'voice-channel' : 'channel';
+    }
+    sanitized = sanitized.slice(0, 100);
 
-  sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Renamed',
-    `**Channel:** <#${channel.id}> (\`${oldName}\`)\n` +
-    `**Sanitized Name:** \`${sanitized}\``
-  );
-  return true;
+    if (sanitized !== channel.name) {
+      channelRenameCooldowns.set(channel.id, Date.now());
+      const oldName = channel.name;
+      // Strictly rename only — NEVER delete channel
+      await channel.setName(sanitized, 'Restricted emoji removed from channel name').catch(() => {});
+      didSanitize = true;
+
+      sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Renamed',
+        `**Channel:** <#${channel.id}> (\`${oldName}\`)\n` +
+        `**Sanitized Name:** \`${sanitized}\``
+      );
+    }
+  }
+
+  return didSanitize;
 }
 
 /**
- * Vector 5: Sanitize voice channel status
+ * Vector 5: Sanitize call status / voice channel status
  * STRICT SAFETY GUARDRAIL: UNDER NO CIRCUMSTANCES SHALL A CHANNEL BE DELETED.
  */
 export async function processVoiceStatusEmojiFilter(client, guildId, channelId, statusText) {
-  if (!client || !guildId || !channelId || !statusText) return false;
+  if (!client || !guildId || !channelId) return false;
+  if (!statusText || typeof statusText !== 'string') return false;
 
   const config = await getGuildEmojiBlacklist(guildId);
   if (!config.enabled || config.blacklist.length === 0) return false;
 
   if (!containsBlacklistedEmoji(statusText, config.blacklist)) return false;
 
-  const guild = client.guilds.cache.get(guildId);
-  const botMember = guild?.members?.me;
-  if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-    sysWarn('Cannot sanitize voice status — missing ManageChannels', { guild: guildId, channel: channelId });
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+  const botMember = guild?.members?.me || await guild?.members?.fetchMe().catch(() => null);
+
+  const hasVoiceStatusPerm = botMember && (
+    botMember.permissions.has(PermissionsBitField.Flags.SetVoiceChannelStatus) ||
+    botMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+    botMember.permissions.has(PermissionsBitField.Flags.Administrator)
+  );
+
+  if (!hasVoiceStatusPerm) {
+    sysWarn('Cannot sanitize call/voice status — missing SetVoiceChannelStatus/ManageChannels', { guild: guildId, channel: channelId });
     return false;
   }
 
@@ -306,14 +374,112 @@ export async function processVoiceStatusEmojiFilter(client, guildId, channelId, 
   // Strictly update status via REST API — NEVER delete channel
   await client.rest.put(Routes.channelVoiceStatus(channelId), {
     body: { status: sanitized }
-  }).catch(() => {});
+  }).catch((err) => {
+    sysError('Failed to sanitize voice status via REST', err, { guild: guildId, channel: channelId });
+  });
 
   if (guild) {
-    sendLog(guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Voice Status Sanitized',
+    sendLog(guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Call Status Sanitized',
       `**Channel:** <#${channelId}>\n` +
-      `**Old Status:** \`${statusText}\`\n` +
-      `**Sanitized Status:** \`${sanitized || '(empty)'}\``
+      `**Old Call Status:** \`${statusText}\`\n` +
+      `**Sanitized Call Status:** \`${sanitized || '(cleared)'}\``
     );
   }
   return true;
+}
+
+/**
+ * Comprehensive retroactive sweep of all channels, topics, and member nicknames across the server
+ */
+export async function sweepServerEmojiViolations(guild) {
+  if (!guild) return { channels: 0, topics: 0, nicknames: 0 };
+  const guildId = guild.id;
+
+  const config = await getGuildEmojiBlacklist(guildId);
+  if (!config.enabled || config.blacklist.length === 0) {
+    return { channels: 0, topics: 0, nicknames: 0 };
+  }
+
+  const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  if (!botMember) return { channels: 0, topics: 0, nicknames: 0 };
+
+  const hasManageChannels = botMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+                            botMember.permissions.has(PermissionsBitField.Flags.Administrator);
+  const hasManageNicknames = botMember.permissions.has(PermissionsBitField.Flags.ManageNicknames) ||
+                             botMember.permissions.has(PermissionsBitField.Flags.Administrator);
+
+  let channelsCleaned = 0;
+  let topicsCleaned = 0;
+  let nicknamesCleaned = 0;
+
+  // 1. Sweep Channels & Threads
+  if (hasManageChannels) {
+    try {
+      const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+      for (const ch of channels.values()) {
+        if (!ch) continue;
+
+        // Check topic
+        if (ch.topic && containsBlacklistedEmoji(ch.topic, config.blacklist) && typeof ch.setTopic === 'function') {
+          const cleanTopic = stripBlacklistedEmojis(ch.topic, config.blacklist).trim();
+          await ch.setTopic(cleanTopic, 'Sweep: Restricted emoji removed from topic').catch(() => {});
+          topicsCleaned++;
+        }
+
+        // Check name
+        if (ch.name && containsBlacklistedEmoji(ch.name, config.blacklist)) {
+          let sanitized = stripBlacklistedEmojis(ch.name, config.blacklist).trim();
+          if (!sanitized) sanitized = ch.isVoiceBased?.() ? 'voice-channel' : 'channel';
+          sanitized = sanitized.slice(0, 100);
+          if (sanitized !== ch.name) {
+            await ch.setName(sanitized, 'Sweep: Restricted emoji removed from name').catch(() => {});
+            channelsCleaned++;
+          }
+        }
+      }
+    } catch (err) {
+      sysError('Sweep channels error', err, { guild: guildId });
+    }
+  }
+
+  // 2. Sweep Nicknames
+  if (hasManageNicknames) {
+    try {
+      const members = await guild.members.fetch().catch(() => guild.members.cache);
+      for (const mem of members.values()) {
+        if (!mem || mem.user?.bot || mem.id === guild.ownerId) continue;
+        if (mem.roles.highest.position >= botMember.roles.highest.position) continue;
+
+        const currentName = mem.nickname || mem.user.displayName || mem.user.username;
+        if (containsBlacklistedEmoji(currentName, config.blacklist)) {
+          let sanitized = stripBlacklistedEmojis(currentName, config.blacklist).trim();
+          if (!sanitized) {
+            sanitized = stripBlacklistedEmojis(mem.user.username, config.blacklist).trim() || 'Member';
+          }
+          sanitized = sanitized.slice(0, 32);
+          if (sanitized !== mem.nickname) {
+            await mem.setNickname(sanitized, 'Sweep: Restricted emoji removed from nickname').catch(() => {});
+            nicknamesCleaned++;
+          }
+        }
+      }
+    } catch (err) {
+      sysError('Sweep nicknames error', err, { guild: guildId });
+    }
+  }
+
+  sysLog('Emoji Blacklist Server Sweep Completed', {
+    guild: guildId,
+    channels: channelsCleaned,
+    topics: topicsCleaned,
+    nicknames: nicknamesCleaned
+  });
+
+  sendLog(guild, 'audit', 'cyan', 'Emoji Blacklist Server Sweep Completed',
+    `• **Channels Renamed:** ${channelsCleaned}\n` +
+    `• **Topics Sanitized:** ${topicsCleaned}\n` +
+    `• **Nicknames Sanitized:** ${nicknamesCleaned}`
+  );
+
+  return { channels: channelsCleaned, topics: topicsCleaned, nicknames: nicknamesCleaned };
 }

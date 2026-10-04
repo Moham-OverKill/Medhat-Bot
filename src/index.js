@@ -694,17 +694,45 @@ client.on(Events.ChannelCreate, async (channel) => {
   });
 });
 
-// Channel Updated (Renamed)
+// Channel Updated (Renamed or Topic changed)
 client.on(Events.ChannelUpdate, async (oldChannel, newChannel) => {
   if (!newChannel.guild) return;
   return runInGuildContext(newChannel.guild.id, async () => {
     try {
-      if (oldChannel.name !== newChannel.name) {
+      if (oldChannel.name !== newChannel.name || oldChannel.topic !== newChannel.topic) {
         const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
         await processChannelNameEmojiFilter(newChannel);
       }
     } catch (err) {
       sysError('ChannelUpdate Emoji Guard Failed', err, { guild: newChannel.guild?.id, channel: newChannel.id });
+    }
+  });
+});
+
+// Thread / Forum Post Created
+client.on(Events.ThreadCreate, async (thread) => {
+  if (!thread.guild) return;
+  return runInGuildContext(thread.guild.id, async () => {
+    try {
+      const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processChannelNameEmojiFilter(thread);
+    } catch (err) {
+      sysError('ThreadCreate Emoji Guard Failed', err, { guild: thread.guild?.id, thread: thread.id });
+    }
+  });
+});
+
+// Thread / Forum Post Updated
+client.on(Events.ThreadUpdate, async (oldThread, newThread) => {
+  if (!newThread.guild) return;
+  return runInGuildContext(newThread.guild.id, async () => {
+    try {
+      if (oldThread.name !== newThread.name) {
+        const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+        await processChannelNameEmojiFilter(newThread);
+      }
+    } catch (err) {
+      sysError('ThreadUpdate Emoji Guard Failed', err, { guild: newThread.guild?.id, thread: newThread.id });
     }
   });
 });

@@ -865,6 +865,16 @@ async function processRoleAddition(interaction, guildId, roleId, isBooster, page
     });
   }
 
+  // VALIDATION: Emoji Blacklist
+  const { getGuildEmojiBlacklist, containsBlacklistedEmoji } = await import('../middleware/emoji-filter.js');
+  const emojiConfig = await getGuildEmojiBlacklist(guildId);
+  if (emojiConfig.enabled && containsBlacklistedEmoji(role.name, emojiConfig.blacklist)) {
+    return interaction.followUp({
+      content: `❌ Role **${role.name}** contains a restricted emoji and cannot be added.`,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
   // VALIDATION: Already in list (any list to prevent confusion)
   const existingNormal = await getColorRoles(guildId, false);
   const existingBooster = await getColorRoles(guildId, true);

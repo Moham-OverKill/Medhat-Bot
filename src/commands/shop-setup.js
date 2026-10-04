@@ -2341,6 +2341,15 @@ export async function handleCategoryModalSubmit(interaction) {
       return interaction.followUp({ content: '❌ Invalid Category Type. Use 0 for Multi (Stack) or 1 for Single (Swap).', flags: MessageFlags.Ephemeral });
     }
 
+    const { getGuildEmojiBlacklist, containsBlacklistedEmoji } = await import('../middleware/emoji-filter.js');
+    const emojiConfig = await getGuildEmojiBlacklist(interaction.guildId);
+    if (emojiConfig.enabled && containsBlacklistedEmoji(name, emojiConfig.blacklist)) {
+      return interaction.followUp({
+        content: `❌ Category name **${name}** contains a restricted emoji and cannot be used.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
     if (isEdit) {
       // ========== EDIT FLOW ==========
       const res = await query('UPDATE shop_categories SET name = $1, category_type = $2 WHERE id = $3 AND guild_id = $4 RETURNING *', [name, type, categoryId, interaction.guildId]);
@@ -4908,6 +4917,15 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     // Mutual fallback: If only one is entered, use for both
     if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
     if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
+
+    const { getGuildEmojiBlacklist, containsBlacklistedEmoji } = await import('../middleware/emoji-filter.js');
+    const emojiConfig = await getGuildEmojiBlacklist(interaction.guildId);
+    if (emojiConfig.enabled && containsBlacklistedEmoji(name, emojiConfig.blacklist)) {
+      return interaction.followUp({
+        content: `❌ Name **${name}** contains a restricted emoji and cannot be used.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     const newBox = await createLootBox(interaction.guildId, { name, imageUrl, openedImageUrl });
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
