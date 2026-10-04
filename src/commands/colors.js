@@ -154,9 +154,8 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     // Previous page navigation option if past page 1
     if (currentPage > 1) {
       removeOptions.push({
-        label: '◀️ Previous Page',
-        value: `page_${currentPage - 1}`,
-        description: `Navigate to page ${currentPage - 1}`
+        label: 'Previous',
+        value: `page_${currentPage - 1}`
       });
     }
 
@@ -167,17 +166,15 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       const roleName = c.role?.name || `Role ${c.roleId}`;
       removeOptions.push({
         label: `[${globalNum}] ${roleName}`.slice(0, 100),
-        value: c.roleId,
-        description: (c.role?.hexColor || '#000000').toUpperCase()
+        value: c.roleId
       });
     }
 
     // Next page navigation option if before last page
     if (currentPage < totalPages) {
       removeOptions.push({
-        label: '▶️ Next Page',
-        value: `page_${currentPage + 1}`,
-        description: `Navigate to page ${currentPage + 1}`
+        label: 'Next',
+        value: `page_${currentPage + 1}`
       });
     }
 
