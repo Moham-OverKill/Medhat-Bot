@@ -9,7 +9,8 @@ import {
     MessageFlags,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    StringSelectMenuBuilder
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sendLog, sysLog, sysError } from '../../utils/logger.js';
@@ -27,13 +28,14 @@ const FILTER_TYPES = {
 };
 
 const DEFAULT_REACTIONS = ['👍', '❤️', '😂', '😭'];
+export const DEFAULT_BLACKLISTED_EMOJIS = ['🖕', '🍆', '🍑', '💦'];
 
 /**
  * Helper to parse ordered reaction emojis from text input.
  * Supports Unicode emojis, <:name:id>, <a:name:id>, snowflake IDs, and :name: lookups.
  */
-export function parseReactionEmojis(input, guild = null, client = null) {
-    if (!input || !input.trim()) return [...DEFAULT_REACTIONS];
+export function parseReactionEmojis(input, guild = null, client = null, defaultFallback = DEFAULT_REACTIONS) {
+    if (!input || !input.trim()) return [...defaultFallback];
 
     const tokenRegex = /(<a?:[a-zA-Z0-9_]+:\d{17,20}>)|(\b\d{17,20}\b)|(:[a-zA-Z0-9_]+:)|(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic}|\uFE0F|\p{Emoji_Modifier})*)/gu;
 
@@ -61,7 +63,7 @@ export function parseReactionEmojis(input, guild = null, client = null) {
         }
     }
 
-    return results.length > 0 ? results.slice(0, 20) : [...DEFAULT_REACTIONS];
+    return results.length > 0 ? results.slice(0, 20) : [...defaultFallback];
 }
 
 /**
@@ -379,6 +381,92 @@ export async function handleOrganizeSettings(interaction) {
 }
 
 /**
+ * Render the Emoji Moderation / Reaction Blacklist Panel
+ */
+export async function renderEmojiModerationPanel(interaction) {
+    const guildId = interaction.guildId;
+    const filters = await getFilters(guildId);
+
+    const blacklist = Array.isArray(filters.reaction_blacklist)
+        ? filters.reaction_blacklist
+        : [...DEFAULT_BLACKLISTED_EMOJIS];
+    const isEnabled = filters.reaction_blacklist_enabled !== false;
+
+    const embed = new EmbedBuilder()
+        .setTitle('Organize — Emoji Blacklist')
+        .setDescription(
+            'Configure blacklisted emojis and reactions. When enabled, restricted emojis are prevented and removed across server channels.\n\n' +
+            `• **Status:** ${isEnabled ? '`🟢 Enabled`' : '`🔴 Disabled`'}\n` +
+            `• **Total Blacklisted:** \`${blacklist.length}\`\n\n` +
+            '**Current Blacklist:**\n' +
+            (blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._')
+        )
+        .setColor(0x2B2D31);
+
+    const components = [];
+
+    // Row 1: Remove an emoji select menu (if blacklist has items)
+    if (blacklist.length > 0) {
+        const selectOptions = blacklist.slice(0, 25).map((em, idx) => {
+            let label = em;
+            if (em.startsWith('<') && em.endsWith('>')) {
+                const parts = em.slice(1, -1).split(':');
+                label = parts[1] || em;
+            }
+            return {
+                label: `Remove ${label}`.slice(0, 100),
+                value: String(idx)
+            };
+        });
+
+        const removeSelect = new StringSelectMenuBuilder()
+            .setCustomId('organize_emoji_remove_select')
+            .setPlaceholder('➖ Select an emoji to remove from blacklist...')
+            .addOptions(selectOptions);
+
+        components.push(new ActionRowBuilder().addComponents(removeSelect));
+    }
+
+    // Row 2: Action buttons (Toggle, Add, Reset)
+    const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('organize_emoji_toggle')
+            .setLabel(isEnabled ? 'Disable' : 'Enable')
+            .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId('organize_emoji_add')
+            .setLabel('Add Emojis')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId('organize_emoji_reset')
+            .setLabel('Reset Defaults')
+            .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(actionRow);
+
+    // Row 3: Navigation (Back to Organize)
+    const navRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_organize')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(navRow);
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components,
+        files: []
+    });
+}
+
+/**
  * Main component router for all organize_* interactions
  */
 export async function handleOrganizeComponent(interaction) {
@@ -403,6 +491,24 @@ export async function handleOrganizeComponent(interaction) {
             .setPlaceholder('e.g. 👍 ❤️ 😂 😭 or custom :emojis: / IDs')
             .setValue(autoReactEmojis.join(' '))
             .setRequired(false)
+            .setMaxLength(1000);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(emojiInput));
+        return interaction.showModal(modal);
+    }
+
+    // Modal to add blacklisted emojis (DO NOT DEFER)
+    if (customId === 'organize_emoji_add') {
+        const modal = new ModalBuilder()
+            .setCustomId('organize_emoji_add_modal')
+            .setTitle('Blacklist Emojis');
+
+        const emojiInput = new TextInputBuilder()
+            .setCustomId('organize_emoji_add_input')
+            .setLabel('Emojis to Blacklist')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Paste emojis or custom IDs separated by spaces (e.g. 🖕 🍆 🍑 💦)')
+            .setRequired(true)
             .setMaxLength(1000);
 
         modal.addComponents(new ActionRowBuilder().addComponents(emojiInput));
@@ -444,6 +550,108 @@ export async function handleOrganizeComponent(interaction) {
         return renderPanel(interaction, 'auto_react');
     }
 
+    // Handle modal submit for adding blacklisted emojis
+    if (customId === 'organize_emoji_add_modal') {
+        const guildId = interaction.guildId;
+        const rawInput = interaction.fields.getTextInputValue('organize_emoji_add_input');
+        const parsedEmojis = parseReactionEmojis(rawInput, interaction.guild, interaction.client, []);
+
+        if (parsedEmojis.length > 0) {
+            const filters = await getFilters(guildId);
+            const currentBlacklist = Array.isArray(filters.reaction_blacklist)
+                ? filters.reaction_blacklist
+                : [...DEFAULT_BLACKLISTED_EMOJIS];
+
+            const updatedBlacklist = [...currentBlacklist];
+            for (const em of parsedEmojis) {
+                if (!updatedBlacklist.includes(em)) {
+                    updatedBlacklist.push(em);
+                }
+            }
+
+            const updatedFilters = { ...filters, reaction_blacklist: updatedBlacklist };
+            const { setGuildConfig } = await import('../../storage/config.js');
+            await setGuildConfig(guildId, { channel_filters: updatedFilters });
+            invalidateFilterCache(guildId);
+
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', 'Emoji Blacklist Updated',
+                `**Admin:** \`${logName}\`\n` +
+                `**Added:** ${parsedEmojis.join(' ')}\n` +
+                `**Total:** ${updatedBlacklist.length}`
+            );
+        }
+
+        return renderEmojiModerationPanel(interaction);
+    }
+
+    // Handle emoji removal from blacklist via select menu
+    if (customId === 'organize_emoji_remove_select') {
+        const guildId = interaction.guildId;
+        const removeIdx = parseInt(interaction.values[0], 10);
+        const filters = await getFilters(guildId);
+        const currentBlacklist = Array.isArray(filters.reaction_blacklist)
+            ? filters.reaction_blacklist
+            : [...DEFAULT_BLACKLISTED_EMOJIS];
+
+        if (!isNaN(removeIdx) && removeIdx >= 0 && removeIdx < currentBlacklist.length) {
+            const removedEmoji = currentBlacklist.splice(removeIdx, 1)[0];
+            const updatedFilters = { ...filters, reaction_blacklist: currentBlacklist };
+            const { setGuildConfig } = await import('../../storage/config.js');
+            await setGuildConfig(guildId, { channel_filters: updatedFilters });
+            invalidateFilterCache(guildId);
+
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', 'Emoji Removed from Blacklist',
+                `**Admin:** \`${logName}\`\n**Removed:** ${removedEmoji}`
+            );
+        }
+
+        return renderEmojiModerationPanel(interaction);
+    }
+
+    // Reset emoji blacklist to defaults
+    if (customId === 'organize_emoji_reset') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const updatedFilters = { ...filters, reaction_blacklist: [...DEFAULT_BLACKLISTED_EMOJIS] };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Emoji Blacklist Reset to Defaults',
+            `**Admin:** \`${logName}\`\n**Defaults:** ${DEFAULT_BLACKLISTED_EMOJIS.join(' ')}`
+        );
+
+        return renderEmojiModerationPanel(interaction);
+    }
+
+    // Toggle emoji blacklist active state
+    if (customId === 'organize_emoji_toggle') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const currentlyEnabled = filters.reaction_blacklist_enabled !== false;
+        const newStatus = !currentlyEnabled;
+
+        const updatedFilters = { ...filters, reaction_blacklist_enabled: newStatus };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', `Emoji Blacklist ${newStatus ? 'Enabled' : 'Disabled'}`,
+            `**Admin:** \`${logName}\``
+        );
+
+        return renderEmojiModerationPanel(interaction);
+    }
+
+    // Open Emoji Blacklist panel
+    if (customId === 'organize_emojis') {
+        return renderEmojiModerationPanel(interaction);
+    }
+
     // Main Organize Hub
     if (customId === 'settings_organize') {
         return showOrganizeMenu(interaction);
@@ -460,8 +668,8 @@ export async function handleOrganizeComponent(interaction) {
         return showInterfaceMainMenu(interaction);
     }
 
-    // Placeholder modules (Emojis, Forums)
-    if (customId === 'organize_emojis' || customId === 'organize_forums') {
+    // Placeholder modules (Forums)
+    if (customId === 'organize_forums') {
         return interaction.followUp({
             content: 'This module is coming soon.',
             flags: MessageFlags.Ephemeral
