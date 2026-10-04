@@ -118,6 +118,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       ...c,
       name: c.role?.name || `Color ${startIdx + i + 1}`,
       hexColor: c.role?.hexColor || '#000000',
+      colors: c.role?.colors || null,
       index: startIdx + i + 1
     }));
 
@@ -471,6 +472,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
   const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
   const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
     ...c,
+    colors: c.role?.colors || null,
     index: startIdx + i + 1
   }));
 
@@ -617,6 +619,7 @@ async function deployColorPanels(interaction, type, channelId) {
     const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
     const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
       ...c,
+      colors: c.role?.colors || null,
       index: startIdx + i + 1
     }));
 
