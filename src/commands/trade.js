@@ -787,8 +787,16 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
                 inline: true
             }
         )
-        .setColor(0x3498DB)
-        .setFooter({ text: '⚠️ Standard 10% fee applies (0% for Boosters)' });
+        .setColor(0x3498DB);
+
+    const senderMember = (interaction.guild && setup.senderId)
+        ? await interaction.guild.members.fetch(setup.senderId).catch(() => interaction.member)
+        : interaction.member;
+    const isBooster = await isMemberBooster(senderMember);
+
+    if (!isBooster) {
+        embed.setFooter({ text: '⚠️ Standard 10% fee applies (0% for Boosters)' });
+    }
 
     // Row 1: Coins (Give/Request)
     const row1 = new ActionRowBuilder().addComponents(
