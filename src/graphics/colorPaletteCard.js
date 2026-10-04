@@ -103,24 +103,50 @@ export async function generateColorPanelImage(panelColors = []) {
 
   const squareSize = 100;
   const gap = 12;
-  const padding = 8;
-  const radius = 16;
+  const framePadding = 16;
+  const outerMargin = 8;
+  const squareRadius = 14;
+  const frameRadius = 22;
 
-  const canvasW = padding * 2 + cols * squareSize + (cols - 1) * gap;
-  const canvasH = padding * 2 + rows * squareSize + (rows - 1) * gap;
+  const gridW = cols * squareSize + (cols - 1) * gap;
+  const gridH = rows * squareSize + (rows - 1) * gap;
+
+  const frameW = gridW + framePadding * 2;
+  const frameH = gridH + framePadding * 2;
+
+  const canvasW = frameW + outerMargin * 2;
+  const canvasH = frameH + outerMargin * 2;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // Background is transparent - no fills or containers
+  const frameX = outerMargin;
+  const frameY = outerMargin;
+
+  // 1. Draw Frame Background (Sleek dark Discord card surface)
+  ctx.fillStyle = '#1E1F22';
+  roundRect(ctx, frameX, frameY, frameW, frameH, frameRadius);
+  ctx.fill();
+
+  // 2. Draw Frame Outer Stroke
+  ctx.strokeStyle = '#2B2D31';
+  ctx.lineWidth = 2;
+  roundRect(ctx, frameX, frameY, frameW, frameH, frameRadius);
+  ctx.stroke();
+
+  // 3. Subtle Frame Inner Highlight
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, frameX + 1, frameY + 1, frameW - 2, frameH - 2, frameRadius - 1);
+  ctx.stroke();
 
   for (let i = 0; i < count; i++) {
     const item = panelColors[i];
     const col = i % cols;
     const row = Math.floor(i / cols);
 
-    const x = padding + col * (squareSize + gap);
-    const y = padding + row * (squareSize + gap);
+    const x = frameX + framePadding + col * (squareSize + gap);
+    const y = frameY + framePadding + row * (squareSize + gap);
 
     const baseHex = normalizeHex(item.hexColor || item.role?.hexColor);
     const labelNum = String(item.index || (i + 1)).padStart(2, '0');
@@ -157,14 +183,14 @@ export async function generateColorPanelImage(panelColors = []) {
 
     // 1. Draw colored square
     ctx.fillStyle = fillStyle;
-    roundRect(ctx, x, y, squareSize, squareSize, radius);
+    roundRect(ctx, x, y, squareSize, squareSize, squareRadius);
     ctx.fill();
 
     // 2. Subtle contour border for contrast against dark/light themes
     const textColor = getContrastTextColor(avgLum);
     ctx.strokeStyle = textColor === '#000000' ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.25)';
     ctx.lineWidth = 1.5;
-    roundRect(ctx, x, y, squareSize, squareSize, radius);
+    roundRect(ctx, x, y, squareSize, squareSize, squareRadius);
     ctx.stroke();
 
     // 3. Draw number centered inside the square with subtle drop shadow for crisp readability

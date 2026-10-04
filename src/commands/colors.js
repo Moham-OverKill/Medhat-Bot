@@ -464,7 +464,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
   }
 
   const channelId = targetChannelId || interaction.channelId;
-  const PANEL_CHUNK = 20;
+  const PANEL_CHUNK = 10;
   const PANELS_COUNT = Math.max(1, Math.ceil(sortedColors.length / PANEL_CHUNK));
   const currentPanelIdx = Math.min(Math.max(0, parseInt(previewPanelIndex, 10) || 0), PANELS_COUNT - 1);
 
@@ -633,7 +633,7 @@ async function deployColorPanels(interaction, type, channelId) {
     });
   }
 
-  const PANEL_CHUNK = 20;
+  const PANEL_CHUNK = 10;
   const PANELS_COUNT = Math.ceil(sortedColors.length / PANEL_CHUNK);
 
   for (let p = 0; p < PANELS_COUNT; p++) {
@@ -649,9 +649,9 @@ async function deployColorPanels(interaction, type, channelId) {
 
     const panelAttachment = new AttachmentBuilder(imageBuffer, { name: `colors_${type}_${p + 1}.png` });
 
-    // Create up to 4 rows of 5 buttons each (matching the 5x4 grid)
+    // Create up to 2 rows of 5 buttons each (matching the 5x2 grid)
     const rows = [];
-    for (let r = 0; r < 4; r++) {
+    for (let r = 0; r < 2; r++) {
       const rowStart = r * 5;
       const rowEnd = Math.min(rowStart + 5, panelColors.length);
       if (rowStart >= panelColors.length) break;
