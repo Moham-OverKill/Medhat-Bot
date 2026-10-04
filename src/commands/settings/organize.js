@@ -28,7 +28,7 @@ const FILTER_TYPES = {
 };
 
 const DEFAULT_REACTIONS = ['👍', '❤️', '😂', '😭'];
-export const DEFAULT_BLACKLISTED_EMOJIS = ['🖕', '🍆', '🍑', '💦'];
+export const DEFAULT_BLACKLISTED_EMOJIS = Object.freeze(['🖕', '🍆', '🍑', '💦']);
 
 /**
  * Helper to parse ordered reaction emojis from text input.
@@ -480,29 +480,23 @@ export async function renderEmojiModerationPanel(interaction) {
     if (blacklist.length > 0) {
         const selectOptions = blacklist.slice(0, 25).map((em, idx) => {
             let label = em;
-            let description = undefined;
             if (em.startsWith('<') && em.endsWith('>')) {
                 const parts = em.slice(1, -1).split(':');
-                const emojiName = parts[1] || 'custom';
-                const emojiId = parts[2] || '';
-                label = `Remove ${emojiName}`;
-                if (emojiId) description = `ID: ${emojiId}`;
+                label = parts[2] || parts[1] || em;
             } else if (/^\d{17,20}$/.test(em)) {
-                label = `Remove Custom`;
-                description = `ID: ${em}`;
+                label = em;
             } else {
-                label = `Remove ${em}`;
+                label = em;
             }
             return {
-                label: label.slice(0, 100),
-                description,
+                label: (label || 'unknown').slice(0, 100),
                 value: String(idx)
             };
         });
 
         const removeSelect = new StringSelectMenuBuilder()
             .setCustomId('organize_emoji_remove_select')
-            .setPlaceholder('➖ Select an emoji to remove from blacklist...')
+            .setPlaceholder('Select an emoji to remove from blacklist...')
             .addOptions(selectOptions);
 
         components.push(new ActionRowBuilder().addComponents(removeSelect));
