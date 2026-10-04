@@ -393,15 +393,46 @@ export async function renderEmojiModerationPanel(interaction) {
     const isEnabled = filters.reaction_blacklist_enabled !== false;
 
     const embed = new EmbedBuilder()
-        .setTitle('Organize — Emoji Blacklist')
-        .setDescription(
-            'Configure blacklisted emojis and reactions. When enabled, restricted emojis are prevented and removed across server channels.\n\n' +
-            `• **Status:** ${isEnabled ? '`🟢 Enabled`' : '`🔴 Disabled`'}\n` +
-            `• **Total Blacklisted:** \`${blacklist.length}\`\n\n` +
-            '**Current Blacklist:**\n' +
-            (blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._')
-        )
-        .setColor(0x2B2D31);
+        .setTitle('Organize — Emoji Blacklist');
+
+    // Check bot permissions for diagnostics
+    const botMember = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
+    const requiredPermissions = [
+        { flag: PermissionsBitField.Flags.ManageMessages, name: 'Manage Messages', purpose: 'Messages & Reactions' },
+        { flag: PermissionsBitField.Flags.ManageChannels, name: 'Manage Channels', purpose: 'Channel Names & Voice Status' },
+        { flag: PermissionsBitField.Flags.ManageNicknames, name: 'Manage Nicknames', purpose: 'User Display Names' }
+    ];
+
+    const missingPermissions = [];
+    if (botMember) {
+        for (const req of requiredPermissions) {
+            if (!botMember.permissions.has(req.flag)) {
+                missingPermissions.push(req);
+            }
+        }
+    }
+
+    const statusLine = `• **Status:** ${isEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
+    const totalLine = `• **Total Blacklisted:** \`${blacklist.length}\``;
+    const listDisplay = blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._';
+
+    embed.setDescription(
+        'Configure blacklisted emojis. When enabled, restricted emojis are detected and removed across messages, reactions, user nicknames, channel names, and voice status/channel names.\n\n' +
+        `${statusLine}\n` +
+        `${totalLine}\n` +
+        listDisplay
+    );
+    embed.setColor(missingPermissions.length > 0 ? 0xE67E22 : 0x2B2D31);
+
+    if (missingPermissions.length > 0) {
+        embed.addFields({
+            name: '⚠️ Missing Permissions',
+            value: 'The bot requires the following permissions to enforce all moderation vectors:\n' +
+                missingPermissions.map(p => `• **${p.name}** — _${p.purpose}_`).join('\n') +
+                '\n_Please enable these permissions in Server Settings > Roles._',
+            inline: false
+        });
+    }
 
     const components = [];
 
@@ -427,7 +458,7 @@ export async function renderEmojiModerationPanel(interaction) {
         components.push(new ActionRowBuilder().addComponents(removeSelect));
     }
 
-    // Row 2: Action buttons (Toggle, Add, Reset)
+    // Row 1: Action buttons (Toggle, Add Emojis)
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('organize_emoji_toggle')
@@ -436,15 +467,11 @@ export async function renderEmojiModerationPanel(interaction) {
         new ButtonBuilder()
             .setCustomId('organize_emoji_add')
             .setLabel('Add Emojis')
-            .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-            .setCustomId('organize_emoji_reset')
-            .setLabel('Reset Defaults')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Primary)
     );
     components.push(actionRow);
 
-    // Row 3: Navigation (Back to Organize)
+    // Row 2: Navigation (Back to Organize — always on the far left)
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_organize')
