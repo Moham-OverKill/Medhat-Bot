@@ -642,7 +642,7 @@ async function deployColorPanels(interaction, type, channelId) {
           new ButtonBuilder()
             .setCustomId(`color_${type}_${colorItem.roleId}`)
             .setLabel(paddedLabel)
-            .setStyle(ButtonStyle.Primary)
+            .setStyle(ButtonStyle.Secondary)
         );
       }
       if (buttons.length > 0) {
