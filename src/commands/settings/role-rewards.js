@@ -162,7 +162,7 @@ export async function showRolesMenu(interaction) {
         .setTitle('Roles Management')
         .setDescription(
             'Configure server roles and automation.\n\n' +
-            '• **Auto Roles** — Automated role rewards for top members\n' +
+            '• **Top Roles** — Automated role rewards for top members\n' +
             '• **Self Roles** — Self-assignable roles for members (Coming Soon)'
         )
         .setColor(0x5865F2);
@@ -170,8 +170,8 @@ export async function showRolesMenu(interaction) {
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_roles_auto')
-            .setLabel('Auto Roles')
-            .setEmoji('🤖')
+            .setLabel('Top Roles')
+            .setEmoji('🏆')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_roles_self')
@@ -238,7 +238,7 @@ export async function showRoleRewardsMenu(interaction) {
     const streakStatus  = config.streak_role_enabled  ? '🟢' : '🔴';
 
     const embed = new EmbedBuilder()
-        .setTitle('Auto Roles')
+        .setTitle('Top Roles')
         .setDescription(
             `Configure automated roles awarded to top members each hour.\n\n` +
             `${mvpStatus} **MVP** — Daily activity champions\n` +
