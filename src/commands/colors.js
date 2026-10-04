@@ -121,13 +121,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       index: startIdx + i + 1
     }));
 
-    const imageBuffer = await generateColorPanelImage(paletteItems, {
-      isBooster: isBoosterTab,
-      title: isBoosterTab ? 'BOOSTER COLORS' : 'NORMAL COLORS',
-      subtitle: 'Use the selectors below to manage colors, or click Create Panel to deploy',
-      panelIndex: currentPage - 1,
-      totalPanels: totalPages
-    });
+    const imageBuffer = await generateColorPanelImage(paletteItems);
 
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'colors_dashboard.png' });
     embed.setImage('attachment://colors_dashboard.png');
@@ -430,23 +424,18 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
   }
 
   const channelId = targetChannelId || interaction.channelId;
-  const PANELS_COUNT = Math.max(1, Math.ceil(sortedColors.length / 10));
+  const PANEL_CHUNK = 20;
+  const PANELS_COUNT = Math.max(1, Math.ceil(sortedColors.length / PANEL_CHUNK));
   const currentPanelIdx = Math.min(Math.max(0, parseInt(previewPanelIndex, 10) || 0), PANELS_COUNT - 1);
 
-  const startIdx = currentPanelIdx * 10;
-  const endIdx = Math.min(startIdx + 10, sortedColors.length);
+  const startIdx = currentPanelIdx * PANEL_CHUNK;
+  const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
   const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
     ...c,
     index: startIdx + i + 1
   }));
 
-  const imageBuffer = await generateColorPanelImage(panelColors, {
-    isBooster,
-    title: isBooster ? 'BOOSTER COLORS' : 'NORMAL COLORS',
-    subtitle: 'Select a number button below to equip your color',
-    panelIndex: currentPanelIdx,
-    totalPanels: PANELS_COUNT
-  });
+  const imageBuffer = await generateColorPanelImage(panelColors);
 
   const attachment = new AttachmentBuilder(imageBuffer, { name: 'color_panel_preview.png' });
 
@@ -581,29 +570,24 @@ async function deployColorPanels(interaction, type, channelId) {
     });
   }
 
-  const PANELS_COUNT = Math.ceil(sortedColors.length / 10);
+  const PANEL_CHUNK = 20;
+  const PANELS_COUNT = Math.ceil(sortedColors.length / PANEL_CHUNK);
 
   for (let p = 0; p < PANELS_COUNT; p++) {
-    const startIdx = p * 10;
-    const endIdx = Math.min(startIdx + 10, sortedColors.length);
+    const startIdx = p * PANEL_CHUNK;
+    const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
     const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
       ...c,
       index: startIdx + i + 1
     }));
 
-    const imageBuffer = await generateColorPanelImage(panelColors, {
-      isBooster,
-      title: isBooster ? 'BOOSTER COLORS' : 'NORMAL COLORS',
-      subtitle: 'Select a number button below to equip your color',
-      panelIndex: p,
-      totalPanels: PANELS_COUNT
-    });
+    const imageBuffer = await generateColorPanelImage(panelColors);
 
     const panelAttachment = new AttachmentBuilder(imageBuffer, { name: `colors_${type}_${p + 1}.png` });
 
-    // Create 2 rows of up to 5 buttons each
+    // Create up to 4 rows of 5 buttons each (matching the 5x4 grid)
     const rows = [];
-    for (let r = 0; r < 2; r++) {
+    for (let r = 0; r < 4; r++) {
       const rowStart = r * 5;
       const rowEnd = Math.min(rowStart + 5, panelColors.length);
       if (rowStart >= panelColors.length) break;

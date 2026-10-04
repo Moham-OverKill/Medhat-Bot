@@ -7,25 +7,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const fontsDir = path.resolve(__dirname, '../assets/fonts');
 
-// Register bundled fonts for consistent cross-platform typography
+// Register bundled fonts for consistent typography
 try {
-  const cairoPath = path.join(fontsDir, 'Cairo.ttf');
-  const notoPath = path.join(fontsDir, 'NotoSansArabic.ttf');
   const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
   const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
-  const emojiPath = path.join(fontsDir, 'seguiemj.ttf');
-
-  if (fs.existsSync(cairoPath)) GlobalFonts.registerFromPath(cairoPath, 'Cairo');
-  if (fs.existsSync(notoPath)) GlobalFonts.registerFromPath(notoPath, 'Noto Sans Arabic');
   if (fs.existsSync(boldPath)) GlobalFonts.registerFromPath(boldPath, 'Roboto-Bold');
   if (fs.existsSync(regularPath)) GlobalFonts.registerFromPath(regularPath, 'Roboto');
-  if (fs.existsSync(emojiPath)) GlobalFonts.registerFromPath(emojiPath, 'Segoe UI Emoji');
 } catch {
   // Ignore duplicate registration errors
 }
 
-const boldFontStack = '"Roboto-Bold", "Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI", Arial, sans-serif';
-const regularFontStack = '"Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI", Arial, sans-serif';
+const fontStack = '"Roboto-Bold", "Roboto", "Segoe UI", Arial, sans-serif';
 
 /**
  * Draw a rounded rectangle on a 2D canvas context
@@ -49,210 +41,87 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 /**
- * Truncate text with ellipsis if it exceeds maxWidth
- */
-function truncateText(ctx, text, maxWidth) {
-  if (!text) return '';
-  if (ctx.measureText(text).width <= maxWidth) return text;
-
-  let truncated = text;
-  while (truncated.length > 1 && ctx.measureText(truncated + '...').width > maxWidth) {
-    truncated = truncated.slice(0, -1);
-  }
-  return truncated.trim() + '...';
-}
-
-/**
  * Check if a hex color is valid
  */
 function normalizeHex(hex) {
   if (!hex || typeof hex !== 'string') return '#80848E';
   let cleaned = hex.trim();
   if (!cleaned.startsWith('#')) cleaned = '#' + cleaned;
-  if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(cleaned)) {
+  if (cleaned.length === 4) {
+    cleaned = '#' + cleaned[1] + cleaned[1] + cleaned[2] + cleaned[2] + cleaned[3] + cleaned[3];
+  }
+  if (/^#([0-9A-Fa-f]{6})$/.test(cleaned)) {
     return cleaned;
   }
   return '#80848E';
 }
 
 /**
- * Generate a visual color palette banner image
+ * Determine contrast text color (white or black) based on color luminance
+ */
+function getContrastTextColor(hex) {
+  const cleaned = normalizeHex(hex);
+  const r = parseInt(cleaned.slice(1, 3), 16) || 0;
+  const g = parseInt(cleaned.slice(3, 5), 16) || 0;
+  const b = parseInt(cleaned.slice(5, 7), 16) || 0;
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq >= 140 ? '#000000' : '#FFFFFF';
+}
+
+/**
+ * Generate a transparent PNG grid with 5x4 colored squares and numbers inside.
+ * No headers, titles, hex codes, or external containers.
  * 
- * @param {Array<{ roleId: string, name: string, hexColor?: string, index: number }>} panelColors
- * @param {object} [options]
- * @param {string} [options.title] - Header title (e.g. 'NORMAL COLORS' or 'BOOSTER COLORS')
- * @param {string} [options.subtitle] - Header subtitle
- * @param {boolean} [options.isBooster] - Whether this panel uses booster theme styling
- * @param {number} [options.panelIndex] - Current panel zero-based index
- * @param {number} [options.totalPanels] - Total number of panels
+ * @param {Array<{ roleId: string, name?: string, hexColor?: string, index: number }>} panelColors
  * @returns {Promise<Buffer>}
  */
-export async function generateColorPanelImage(panelColors = [], options = {}) {
-  const isBooster = Boolean(options.isBooster);
-  const title = options.title || (isBooster ? 'BOOSTER COLORS' : 'NORMAL COLORS');
-  const subtitle = options.subtitle || 'Select a number button below to equip your color';
-  const panelIndex = typeof options.panelIndex === 'number' ? options.panelIndex : 0;
-  const totalPanels = typeof options.totalPanels === 'number' ? options.totalPanels : 1;
-
-  const canvasW = 1000;
-  const headerH = 74;
-  const cardW = 176;
-  const cardH = 118;
-  const gapX = 16;
-  const gapY = 16;
-  const marginY_bottom = 24;
-  const marginX = Math.round((canvasW - (5 * cardW + 4 * gapX)) / 2); // 28px
-
+export async function generateColorPanelImage(panelColors = []) {
   const count = panelColors.length;
-  const rows = Math.max(1, Math.ceil(count / 5));
-  const canvasH = headerH + (rows * cardH) + ((rows - 1) * gapY) + marginY_bottom;
+  const cols = 5;
+  const rows = Math.max(1, Math.ceil(count / cols));
+
+  const squareSize = 100;
+  const gap = 12;
+  const padding = 8;
+  const radius = 16;
+
+  const canvasW = padding * 2 + cols * squareSize + (cols - 1) * gap;
+  const canvasH = padding * 2 + rows * squareSize + (rows - 1) * gap;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // 1. Background fill
-  ctx.fillStyle = '#111214';
-  roundRect(ctx, 0, 0, canvasW, canvasH, 16);
-  ctx.fill();
+  // Background is transparent - no fills or containers
 
-  // Subtle background glow based on theme
-  const accentColor = isBooster ? '#FEE75C' : '#5865F2';
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, canvasH);
-  bgGrad.addColorStop(0, isBooster ? 'rgba(254, 231, 92, 0.08)' : 'rgba(88, 101, 242, 0.08)');
-  bgGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = bgGrad;
-  roundRect(ctx, 0, 0, canvasW, canvasH, 16);
-  ctx.fill();
-
-  // Outer border
-  ctx.strokeStyle = '#232428';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, 0, 0, canvasW, canvasH, 16);
-  ctx.stroke();
-
-  // 2. Header
-  // Left accent pill
-  ctx.fillStyle = accentColor;
-  roundRect(ctx, marginX, 24, 4, 28, 2);
-  ctx.fill();
-
-  // Title text
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold 19px ${boldFontStack}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(title, marginX + 14, 38);
-
-  // Subtitle text
-  ctx.fillStyle = '#949BA4';
-  ctx.font = `12px ${regularFontStack}`;
-  ctx.fillText(subtitle, marginX + 14, 55);
-
-  // Badge on the right
-  const badgeText = totalPanels > 1
-    ? `PANEL ${panelIndex + 1} / ${totalPanels}`
-    : `${count} COLOR${count === 1 ? '' : 'S'}`;
-
-  ctx.font = `bold 11px ${boldFontStack}`;
-  const badgeWidth = ctx.measureText(badgeText).width + 20;
-  const badgeX = canvasW - marginX - badgeWidth;
-  const badgeY = 27;
-
-  ctx.fillStyle = '#1E1F22';
-  roundRect(ctx, badgeX, badgeY, badgeWidth, 22, 6);
-  ctx.fill();
-
-  ctx.strokeStyle = '#2B2D31';
-  ctx.lineWidth = 1;
-  roundRect(ctx, badgeX, badgeY, badgeWidth, 22, 6);
-  ctx.stroke();
-
-  ctx.fillStyle = '#B5BAC1';
-  ctx.textAlign = 'center';
-  ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + 15);
-
-  // 3. Render Color Cards
   for (let i = 0; i < count; i++) {
     const item = panelColors[i];
-    const col = i % 5;
-    const row = Math.floor(i / 5);
+    const col = i % cols;
+    const row = Math.floor(i / cols);
 
-    const x = marginX + col * (cardW + gapX);
-    const y = headerH + row * (cardH + gapY);
+    const x = padding + col * (squareSize + gap);
+    const y = padding + row * (squareSize + gap);
 
     const hex = normalizeHex(item.hexColor);
     const labelNum = String(item.index || (i + 1)).padStart(2, '0');
-    const roleName = item.name || `Color ${labelNum}`;
 
-    // Card background
-    ctx.fillStyle = '#1E1F22';
-    roundRect(ctx, x, y, cardW, cardH, 10);
+    // 1. Draw colored square
+    ctx.fillStyle = hex;
+    roundRect(ctx, x, y, squareSize, squareSize, radius);
     ctx.fill();
 
-    // Card border
-    ctx.strokeStyle = '#2B2D31';
-    ctx.lineWidth = 1;
-    roundRect(ctx, x, y, cardW, cardH, 10);
+    // 2. Subtle contour border for contrast against dark/light themes
+    const textColor = getContrastTextColor(hex);
+    ctx.strokeStyle = textColor === '#000000' ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x, y, squareSize, squareSize, radius);
     ctx.stroke();
 
-    // Subtle top accent line using the role's color
-    ctx.fillStyle = hex;
-    roundRect(ctx, x + 20, y + 2, cardW - 40, 2.5, 1.5);
-    ctx.fill();
-
-    // Number badge (top-left)
-    const numBadgeW = 30;
-    const numBadgeH = 18;
-    ctx.fillStyle = '#2B2D31';
-    roundRect(ctx, x + 10, y + 10, numBadgeW, numBadgeH, 5);
-    ctx.fill();
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = `bold 11px ${boldFontStack}`;
+    // 3. Draw number centered inside the square
+    ctx.fillStyle = textColor;
+    ctx.font = `bold 36px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(labelNum, x + 10 + numBadgeW / 2, y + 10 + numBadgeH / 2);
-
-    // Hex code (top-right)
-    ctx.fillStyle = '#80848E';
-    ctx.font = `11px ${regularFontStack}`;
-    ctx.textAlign = 'right';
-    ctx.fillText(hex.toUpperCase(), x + cardW - 10, y + 10 + numBadgeH / 2);
-
-    // Color swatch circle (center)
-    const swatchCx = x + cardW / 2;
-    const swatchCy = y + 54;
-    const swatchRadius = 18;
-
-    // Soft drop glow under swatch
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(swatchCx, swatchCy, swatchRadius + 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.fill();
-    ctx.restore();
-
-    // Main circle fill
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(swatchCx, swatchCy, swatchRadius, 0, Math.PI * 2);
-    ctx.fillStyle = hex;
-    ctx.fill();
-
-    // Circle subtle inner/outer ring for contrast
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-
-    // Role Name (bottom)
-    ctx.fillStyle = '#F2F3F5';
-    ctx.font = `bold 12px ${boldFontStack}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-
-    const truncatedName = truncateText(ctx, roleName, cardW - 16);
-    ctx.fillText(truncatedName, x + cardW / 2, y + cardH - 12);
+    ctx.fillText(labelNum, x + squareSize / 2, y + squareSize / 2);
   }
 
   return canvas.toBuffer('image/png');
