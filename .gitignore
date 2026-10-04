@@ -13,3 +13,13 @@ Thumbs.db
 data/
 *.db
 *.sqlite
+
+# text editors
+nvim.log
+*.swp
+*.swo
+*.swn
+*~
+.netrwhist
+*.sublime-workspace
+*.sublime-project
