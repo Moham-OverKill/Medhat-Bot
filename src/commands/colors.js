@@ -558,12 +558,24 @@ async function deployColorPanels(interaction, type, channelId) {
   const guildId = interaction.guildId;
   const isBooster = type === 'booster';
   const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
-  const targetChannel = await guild.channels.fetch(channelId).catch(() => null);
+  const targetChannel = (channelId && channelId === interaction.channelId && interaction.channel)
+    ? interaction.channel
+    : await guild.channels.fetch(channelId).catch(() => null);
 
   if (!targetChannel || !targetChannel.isTextBased()) {
-    return interaction.followUp({
+    return interaction.editReply({
       content: '❌ Invalid target channel. Please select an active text channel.',
-      flags: MessageFlags.Ephemeral
+      embeds: [],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`colors_preview_back_${type}`)
+            .setLabel('Back to Colors')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      ],
+      files: []
     });
   }
 
@@ -605,9 +617,19 @@ async function deployColorPanels(interaction, type, channelId) {
     .sort((a, b) => b.position - a.position);
 
   if (sortedColors.length === 0) {
-    return interaction.followUp({
+    return interaction.editReply({
       content: '❌ No valid color roles available to post.',
-      flags: MessageFlags.Ephemeral
+      embeds: [],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`colors_preview_back_${type}`)
+            .setLabel('Back to Colors')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      ],
+      files: []
     });
   }
 
@@ -763,12 +785,12 @@ export async function handleColorsComponent(interaction) {
       }
     }
 
-    // 4. Handle Create Panel Buttons (Open Deployment Preview)
+    // 4. Handle Create Panel Buttons (Instant deploy to current channel where command was executed)
     if (customId === 'colors_create_normal') {
-      return await showColorDeployPreview(interaction, 'normal');
+      return await deployColorPanels(interaction, 'normal', interaction.channelId);
     }
     if (customId === 'colors_create_booster') {
-      return await showColorDeployPreview(interaction, 'booster');
+      return await deployColorPanels(interaction, 'booster', interaction.channelId);
     }
 
     // 5. Handle Deployment Preview Interactions
