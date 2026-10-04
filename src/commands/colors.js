@@ -1090,7 +1090,7 @@ export async function handleColorButton(interaction) {
         `**Action:** Removed color role <@&${roleId}>.`
       );
       await interaction.editReply({
-        content: `✅ Removed <@&${roleId}> from you.`,
+        content: `Color <@&${roleId}> Removed`,
       });
     } else {
       // Remove all other color roles first (ONLY if manageable)
@@ -1125,7 +1125,7 @@ export async function handleColorButton(interaction) {
         `**Action:** Picked color role <@&${roleId}>.`
       );
       await interaction.editReply({
-        content: `✅ Gave you <@&${roleId}>!`,
+        content: `Color <@&${roleId}> Selected`,
       });
     }
   } catch (error) {
