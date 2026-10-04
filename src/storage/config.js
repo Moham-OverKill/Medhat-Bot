@@ -287,7 +287,17 @@ export async function saveGuildConfigs(configs) {
             `INSERT INTO guild_configs (guild_id, config, updated_at)
              VALUES ($1, $2::jsonb, NOW())
              ON CONFLICT (guild_id)
-             DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+             DO UPDATE SET config = (
+               CASE 
+                 WHEN $2::jsonb ? 'channel_filters' AND jsonb_typeof($2::jsonb->'channel_filters') = 'object' THEN 
+                   (COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb) || 
+                   jsonb_build_object('channel_filters', 
+                     COALESCE(guild_configs.config->'channel_filters', '{}'::jsonb) || ($2::jsonb->'channel_filters')
+                   )
+                 ELSE 
+                   COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb
+               END
+             ), updated_at = NOW()
              RETURNING config`,
             [guildId, JSON.stringify(sanitized)]
           );
@@ -357,12 +367,22 @@ export async function setGuildConfig(guildId, config) {
   
   try {
     const pool = getPool();
-    // Atomic PostgreSQL JSONB merge - only updates sanitized keys, preserving all other existing keys
+    // Atomic PostgreSQL JSONB merge - deep merges channel_filters to prevent accidental resets
     const result = await pool.query(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (guild_id)
-       DO UPDATE SET config = COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+       DO UPDATE SET config = (
+         CASE 
+           WHEN $2::jsonb ? 'channel_filters' AND jsonb_typeof($2::jsonb->'channel_filters') = 'object' THEN 
+             (COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb) || 
+             jsonb_build_object('channel_filters', 
+               COALESCE(guild_configs.config->'channel_filters', '{}'::jsonb) || ($2::jsonb->'channel_filters')
+             )
+           ELSE 
+             COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb
+         END
+       ), updated_at = NOW()
        RETURNING config`,
       [guildId, JSON.stringify(sanitized)]
     );
