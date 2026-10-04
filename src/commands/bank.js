@@ -1131,53 +1131,61 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
       }
     });
 
-    // Row 1: Sorting Buttons [ 🔤 A-Z ] | [ 🕒 Date ] | [ ✨ Rarity ] | [ 📦 Quantity ]
-    const isAzActive = sortPreference === 'az' || sortPreference === 'za';
-    const isDateActive = sortPreference === 'date' || sortPreference === 'date_desc' || sortPreference === 'date_asc';
-    const isRarityActive = sortPreference === 'rarity' || sortPreference === 'rarity_desc' || sortPreference === 'rarity_asc';
-    const isQuantityActive = sortPreference === 'quantity' || sortPreference === 'quantity_desc' || sortPreference === 'quantity_asc';
+    const components = [];
 
-    const azLabel = sortPreference === 'za' ? 'Z-A' : 'A-Z';
-    const dateLabel = sortPreference === 'date_asc' ? 'Date ⬆' : (isDateActive ? 'Date ⬇' : 'Date');
-    const rarityLabel = sortPreference === 'rarity_asc' ? 'Rarity ⬆' : (isRarityActive ? 'Rarity ⬇' : 'Rarity');
-    const quantityLabel = sortPreference === 'quantity_asc' ? 'Quantity ⬆' : (isQuantityActive ? 'Quantity ⬇' : 'Quantity');
+    // Only show "Sort By" buttons when there are more than 5 items in the list
+    if (items.length > 5) {
+      // Row 1: Sorting Buttons [ 🔤 A-Z ] | [ 🕒 Date ] | [ ✨ Rarity ] | [ 📦 Quantity ]
+      const isAzActive = sortPreference === 'az' || sortPreference === 'za';
+      const isDateActive = sortPreference === 'date' || sortPreference === 'date_desc' || sortPreference === 'date_asc';
+      const isRarityActive = sortPreference === 'rarity' || sortPreference === 'rarity_desc' || sortPreference === 'rarity_asc';
+      const isQuantityActive = sortPreference === 'quantity' || sortPreference === 'quantity_desc' || sortPreference === 'quantity_asc';
 
-    const sortButtonsRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_sort_az_${catIdStr}`)
-        .setLabel(azLabel)
-        .setEmoji('🔤')
-        .setStyle(isAzActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_sort_date_${catIdStr}`)
-        .setLabel(dateLabel)
-        .setEmoji('🕒')
-        .setStyle(isDateActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_sort_rarity_${catIdStr}`)
-        .setLabel(rarityLabel)
-        .setEmoji('✨')
-        .setStyle(isRarityActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_sort_quantity_${catIdStr}`)
-        .setLabel(quantityLabel)
-        .setEmoji('📦')
-        .setStyle(isQuantityActive ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    );
+      const azLabel = sortPreference === 'za' ? 'Z-A' : 'A-Z';
+      const dateLabel = sortPreference === 'date_asc' ? 'Date ⬆' : (isDateActive ? 'Date ⬇' : 'Date');
+      const rarityLabel = sortPreference === 'rarity_asc' ? 'Rarity ⬆' : (isRarityActive ? 'Rarity ⬇' : 'Rarity');
+      const quantityLabel = sortPreference === 'quantity_asc' ? 'Quantity ⬆' : (isQuantityActive ? 'Quantity ⬇' : 'Quantity');
 
-    // Row 2: Item Select Menu
+      const sortButtonsRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_sort_az_${catIdStr}`)
+          .setLabel(azLabel)
+          .setEmoji('🔤')
+          .setStyle(isAzActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_sort_date_${catIdStr}`)
+          .setLabel(dateLabel)
+          .setEmoji('🕒')
+          .setStyle(isDateActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_sort_rarity_${catIdStr}`)
+          .setLabel(rarityLabel)
+          .setEmoji('✨')
+          .setStyle(isRarityActive ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`bank_inv_sort_quantity_${catIdStr}`)
+          .setLabel(quantityLabel)
+          .setEmoji('📦')
+          .setStyle(isQuantityActive ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      );
+      components.push(sortButtonsRow);
+    }
+
+    // Row: Item Select Menu
     const rowSelect = new ActionRowBuilder().addComponents(selectMenu);
+    components.push(rowSelect);
 
-    // Row 3: Action Row (Back button)
+    // Row: Action Row (Back button)
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('bank_inventory').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
+    components.push(rowBack);
 
     await interaction.editReply({
       files: [],
       content: null,
       embeds: [embed],
-      components: [sortButtonsRow, rowSelect, rowBack]
+      components
     });
 
   } catch (error) {
