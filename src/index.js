@@ -394,6 +394,7 @@ client.once(Events.ClientReady, async () => {
         const { reconcileGuildInventory } = await import('./economy/shop.js');
         const { reconcileGuildNotifications } = await import('./storage/notifications.js');
         const { reconcileMissingLevelRewards } = await import('./commands/settings/pass-engine.js');
+        const { sweepServerEmojiViolations } = await import('./middleware/emoji-filter.js');
         for (const guild of client.guilds.cache.values()) {
           await reconcileGuildInventory(guild).catch(err =>
             sysError('Inventory Reconciliation Error', err, { guild: guild.id })
@@ -403,6 +404,9 @@ client.once(Events.ClientReady, async () => {
           );
           await reconcileMissingLevelRewards(guild.id).catch(err =>
             sysError('Level Rewards Reconciliation Error', err, { guild: guild.id })
+          );
+          await sweepServerEmojiViolations(guild).catch(err =>
+            sysError('Emoji Blacklist Startup Sweep Error', err, { guild: guild.id })
           );
           await new Promise(r => setTimeout(r, 2000)); // 2s between guilds
         }
