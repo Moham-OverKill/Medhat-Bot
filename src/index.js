@@ -657,20 +657,32 @@ client.on(Events.GuildChannelDelete, async (channel) => {
 // EMOJI BLACKLIST MODERATION LISTENERS
 // ============================================
 
-// Member Nickname Updates
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+// Member Nickname / Role Updates
+client.on(Events.GuildMemberUpdate, async (_oldMember, newMember) => {
   return runInGuildContext(newMember.guild?.id, async () => {
     try {
-      const oldNick = oldMember.nickname || oldMember.user.displayName;
-      const newNick = newMember.nickname || newMember.user.displayName;
-      if (oldNick !== newNick) {
-        const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
-        await processMemberNicknameEmojiFilter(newMember);
-      }
+      const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processMemberNicknameEmojiFilter(newMember);
     } catch (err) {
       sysError('GuildMemberUpdate Emoji Guard Failed', err, { guild: newMember.guild?.id, user: newMember.id });
     }
   });
+});
+
+// Global User Profile Updates (Username / Display Name changed across Discord)
+client.on(Events.UserUpdate, async (_oldUser, newUser) => {
+  if (newUser.bot) return;
+  try {
+    for (const guild of client.guilds.cache.values()) {
+      const member = guild.members.cache.get(newUser.id);
+      if (member) {
+        const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
+        await processMemberNicknameEmojiFilter(member).catch(() => {});
+      }
+    }
+  } catch (err) {
+    sysError('UserUpdate Emoji Guard Failed', err, { user: newUser.id });
+  }
 });
 
 // Member Join
@@ -685,7 +697,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
   });
 });
 
-// Channel Created (Text, Voice, Forum, Stage, etc.)
+// Channel Created (Text, Voice, Forum, Stage, Category, etc.)
 client.on(Events.ChannelCreate, async (channel) => {
   if (!channel.guild) return;
   return runInGuildContext(channel.guild.id, async () => {
@@ -698,15 +710,13 @@ client.on(Events.ChannelCreate, async (channel) => {
   });
 });
 
-// Channel Updated (Renamed or Topic changed)
-client.on(Events.ChannelUpdate, async (oldChannel, newChannel) => {
+// Channel Updated (Renamed, Topic changed, Category changed, etc.)
+client.on(Events.ChannelUpdate, async (_oldChannel, newChannel) => {
   if (!newChannel.guild) return;
   return runInGuildContext(newChannel.guild.id, async () => {
     try {
-      if (oldChannel.name !== newChannel.name || oldChannel.topic !== newChannel.topic) {
-        const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
-        await processChannelNameEmojiFilter(newChannel);
-      }
+      const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processChannelNameEmojiFilter(newChannel);
     } catch (err) {
       sysError('ChannelUpdate Emoji Guard Failed', err, { guild: newChannel.guild?.id, channel: newChannel.id });
     }
@@ -727,14 +737,12 @@ client.on(Events.ThreadCreate, async (thread) => {
 });
 
 // Thread / Forum Post Updated
-client.on(Events.ThreadUpdate, async (oldThread, newThread) => {
+client.on(Events.ThreadUpdate, async (_oldThread, newThread) => {
   if (!newThread.guild) return;
   return runInGuildContext(newThread.guild.id, async () => {
     try {
-      if (oldThread.name !== newThread.name) {
-        const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
-        await processChannelNameEmojiFilter(newThread);
-      }
+      const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processChannelNameEmojiFilter(newThread);
     } catch (err) {
       sysError('ThreadUpdate Emoji Guard Failed', err, { guild: newThread.guild?.id, thread: newThread.id });
     }
