@@ -104,7 +104,7 @@ export async function generateColorPanelImage(panelColors = [], options = {}) {
   const marginX = Math.round((canvasW - (5 * cardW + 4 * gapX)) / 2); // 28px
 
   const count = panelColors.length;
-  const rows = count > 5 ? 2 : 1;
+  const rows = Math.max(1, Math.ceil(count / 5));
   const canvasH = headerH + (rows * cardH) + ((rows - 1) * gapY) + marginY_bottom;
 
   const canvas = createCanvas(canvasW, canvasH);
