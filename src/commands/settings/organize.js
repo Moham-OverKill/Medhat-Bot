@@ -381,6 +381,34 @@ export async function handleOrganizeSettings(interaction) {
 }
 
 /**
+ * Check whether an emoji entry is a custom emoji (<...>) or a snowflake ID.
+ */
+export function isCustomEmojiOrId(em) {
+    if (!em || typeof em !== 'string') return false;
+    const trimmed = em.trim();
+    return (trimmed.startsWith('<') && trimmed.endsWith('>')) || /^\d{17,20}$/.test(trimmed);
+}
+
+/**
+ * Sort blacklist so standard Unicode emojis always appear first,
+ * and custom emojis / snowflake IDs are always grouped strictly at the bottom.
+ */
+export function sortBlacklist(list) {
+    if (!Array.isArray(list)) return [];
+    const standard = [];
+    const custom = [];
+    for (const em of list) {
+        if (!em || typeof em !== 'string' || !em.trim()) continue;
+        if (isCustomEmojiOrId(em)) {
+            custom.push(em.trim());
+        } else {
+            standard.push(em.trim());
+        }
+    }
+    return [...standard, ...custom];
+}
+
+/**
  * Format active blacklist items cleanly:
  * Standard emojis are separated by commas, and custom emoji IDs are summarized at the end as "and X customs".
  */
@@ -394,12 +422,7 @@ function formatBlacklistDisplay(blacklist) {
 
     for (const em of blacklist) {
         if (!em) continue;
-        const isCustom = typeof em === 'string' && (
-            (em.startsWith('<') && em.endsWith('>')) ||
-            /^\d{17,20}$/.test(em)
-        );
-
-        if (isCustom) {
+        if (isCustomEmojiOrId(em)) {
             customCount++;
         } else {
             standardEmojis.push(em);
@@ -422,13 +445,14 @@ function formatBlacklistDisplay(blacklist) {
 /**
  * Render the Emoji Moderation / Reaction Blacklist Panel
  */
-export async function renderEmojiModerationPanel(interaction) {
+export async function renderEmojiModerationPanel(interaction, page = 0) {
     const guildId = interaction.guildId;
     const filters = await getFilters(guildId);
 
-    const blacklist = Array.isArray(filters.reaction_blacklist)
+    const rawBlacklist = Array.isArray(filters.reaction_blacklist)
         ? filters.reaction_blacklist
         : [...DEFAULT_BLACKLISTED_EMOJIS];
+    const blacklist = sortBlacklist(rawBlacklist);
     const isEnabled = filters.reaction_blacklist_enabled === true;
 
     const embed = new EmbedBuilder()
@@ -476,9 +500,27 @@ export async function renderEmojiModerationPanel(interaction) {
 
     const components = [];
 
+    const PAGE_SIZE = 20;
+    const totalPages = Math.max(1, Math.ceil(blacklist.length / PAGE_SIZE));
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+    const startIndex = currentPage * PAGE_SIZE;
+    const pageItems = blacklist.slice(startIndex, startIndex + PAGE_SIZE);
+
     // Row 1: Remove an emoji select menu (if blacklist has items)
     if (blacklist.length > 0) {
-        const selectOptions = blacklist.slice(0, 25).map((em, idx) => {
+        const selectOptions = [];
+
+        // If multiple pages and not on first page, add Previous navigation inside the dropdown
+        if (totalPages > 1 && currentPage > 0) {
+            selectOptions.push({
+                label: 'Previous',
+                value: `__page_prev:${currentPage - 1}__`,
+                description: `Go to page ${currentPage} of ${totalPages}`,
+                emoji: '⬅️'
+            });
+        }
+
+        for (const em of pageItems) {
             let label = em;
             if (em.startsWith('<') && em.endsWith('>')) {
                 const parts = em.slice(1, -1).split(':');
@@ -488,21 +530,57 @@ export async function renderEmojiModerationPanel(interaction) {
             } else {
                 label = em;
             }
-            return {
+            selectOptions.push({
                 label: (label || 'unknown').slice(0, 100),
-                value: String(idx)
-            };
-        });
+                value: em.slice(0, 100)
+            });
+        }
+
+        // If multiple pages and not on last page, add Next navigation inside the dropdown
+        if (totalPages > 1 && currentPage < totalPages - 1) {
+            selectOptions.push({
+                label: 'Next',
+                value: `__page_next:${currentPage + 1}__`,
+                description: `Go to page ${currentPage + 2} of ${totalPages}`,
+                emoji: '➡️'
+            });
+        }
+
+        const placeholder = totalPages > 1
+            ? `Select an emoji to remove (Page ${currentPage + 1}/${totalPages})...`
+            : 'Select an emoji to remove from blacklist...';
 
         const removeSelect = new StringSelectMenuBuilder()
-            .setCustomId('organize_emoji_remove_select')
-            .setPlaceholder('Select an emoji to remove from blacklist...')
+            .setCustomId(`organize_emoji_remove_select_${currentPage}`)
+            .setPlaceholder(placeholder)
             .addOptions(selectOptions);
 
         components.push(new ActionRowBuilder().addComponents(removeSelect));
     }
 
-    // Row 1: Action buttons (Add Emojis on left, Disable/Enable on right)
+    // Row 2: Pagination buttons if list spans multiple pages
+    if (totalPages > 1) {
+        const pageRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`organize_emoji_page_prev_${currentPage - 1}`)
+                .setLabel('Previous')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage <= 0),
+            new ButtonBuilder()
+                .setCustomId('organize_emoji_page_info')
+                .setLabel(`Page ${currentPage + 1} of ${totalPages}`)
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true),
+            new ButtonBuilder()
+                .setCustomId(`organize_emoji_page_next_${currentPage + 1}`)
+                .setLabel('Next')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage >= totalPages - 1)
+        );
+        components.push(pageRow);
+    }
+
+    // Row 3: Action buttons (Add Emojis on left, Disable/Enable on right)
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('organize_emoji_add')
@@ -515,7 +593,7 @@ export async function renderEmojiModerationPanel(interaction) {
     );
     components.push(actionRow);
 
-    // Row 2: Navigation (Back to Organize — always on the far left)
+    // Row 4: Navigation (Back to Organize — always on the far left)
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_organize')
@@ -629,9 +707,10 @@ export async function handleOrganizeComponent(interaction) {
 
         if (parsedEmojis.length > 0) {
             const filters = await getFilters(guildId);
-            const currentBlacklist = Array.isArray(filters.reaction_blacklist)
+            const rawBlacklist = Array.isArray(filters.reaction_blacklist)
                 ? filters.reaction_blacklist
                 : [...DEFAULT_BLACKLISTED_EMOJIS];
+            const currentBlacklist = sortBlacklist(rawBlacklist);
 
             const updatedBlacklist = [...currentBlacklist];
             for (const em of parsedEmojis) {
@@ -640,7 +719,8 @@ export async function handleOrganizeComponent(interaction) {
                 }
             }
 
-            const updatedFilters = { ...filters, reaction_blacklist: updatedBlacklist };
+            const sortedBlacklist = sortBlacklist(updatedBlacklist);
+            const updatedFilters = { ...filters, reaction_blacklist: sortedBlacklist };
             const { setGuildConfig } = await import('../../storage/config.js');
             await setGuildConfig(guildId, { channel_filters: updatedFilters });
             invalidateFilterCache(guildId);
@@ -649,25 +729,50 @@ export async function handleOrganizeComponent(interaction) {
             sendLog(interaction.guild, 'audit', 'cyan', 'Emoji Blacklist Updated',
                 `**Admin:** \`${logName}\`\n` +
                 `**Added:** ${parsedEmojis.join(' ')}\n` +
-                `**Total:** ${updatedBlacklist.length}`
+                `**Total:** ${sortedBlacklist.length}`
             );
         }
 
-        return renderEmojiModerationPanel(interaction);
+        return renderEmojiModerationPanel(interaction, 0);
+    }
+
+    // Handle Emoji Blacklist pagination buttons
+    if (customId.startsWith('organize_emoji_page_prev_') || customId.startsWith('organize_emoji_page_next_')) {
+        const targetPage = parseInt(customId.split('_').pop(), 10);
+        return renderEmojiModerationPanel(interaction, isNaN(targetPage) ? 0 : targetPage);
     }
 
     // Handle emoji removal from blacklist via select menu
-    if (customId === 'organize_emoji_remove_select') {
+    if (customId.startsWith('organize_emoji_remove_select')) {
         const guildId = interaction.guildId;
-        const removeIdx = parseInt(interaction.values[0], 10);
+        const pagePart = customId.replace('organize_emoji_remove_select_', '').replace('organize_emoji_remove_select', '');
+        const currentPage = parseInt(pagePart, 10) || 0;
+        const selectedValue = interaction.values?.[0];
+
+        // Handle navigation inside select menu dropdown
+        if (selectedValue?.startsWith('__page_')) {
+            const targetPage = parseInt(selectedValue.split(':')[1] || '0', 10);
+            return renderEmojiModerationPanel(interaction, isNaN(targetPage) ? 0 : targetPage);
+        }
+
         const filters = await getFilters(guildId);
-        const currentBlacklist = Array.isArray(filters.reaction_blacklist)
+        const rawBlacklist = Array.isArray(filters.reaction_blacklist)
             ? filters.reaction_blacklist
             : [...DEFAULT_BLACKLISTED_EMOJIS];
+        const currentBlacklist = sortBlacklist(rawBlacklist);
 
-        if (!isNaN(removeIdx) && removeIdx >= 0 && removeIdx < currentBlacklist.length) {
+        const removeIdx = currentBlacklist.findIndex(item => {
+            if (item === selectedValue) return true;
+            const itemId = item.match(/\d{17,20}/)?.[0];
+            const valId = selectedValue?.match(/\d{17,20}/)?.[0];
+            if (itemId && valId && itemId === valId) return true;
+            return false;
+        });
+
+        if (removeIdx !== -1) {
             const removedEmoji = currentBlacklist.splice(removeIdx, 1)[0];
-            const updatedFilters = { ...filters, reaction_blacklist: currentBlacklist };
+            const updatedBlacklist = sortBlacklist(currentBlacklist);
+            const updatedFilters = { ...filters, reaction_blacklist: updatedBlacklist };
             const { setGuildConfig } = await import('../../storage/config.js');
             await setGuildConfig(guildId, { channel_filters: updatedFilters });
             invalidateFilterCache(guildId);
@@ -676,16 +781,20 @@ export async function handleOrganizeComponent(interaction) {
             sendLog(interaction.guild, 'audit', 'cyan', 'Emoji Removed from Blacklist',
                 `**Admin:** \`${logName}\`\n**Removed:** ${removedEmoji}`
             );
+
+            const maxPage = Math.max(0, Math.ceil(updatedBlacklist.length / 20) - 1);
+            const nextRenderPage = Math.min(currentPage, maxPage);
+            return renderEmojiModerationPanel(interaction, nextRenderPage);
         }
 
-        return renderEmojiModerationPanel(interaction);
+        return renderEmojiModerationPanel(interaction, currentPage);
     }
 
     // Reset emoji blacklist to defaults
     if (customId === 'organize_emoji_reset') {
         const guildId = interaction.guildId;
         const filters = await getFilters(guildId);
-        const updatedFilters = { ...filters, reaction_blacklist: [...DEFAULT_BLACKLISTED_EMOJIS] };
+        const updatedFilters = { ...filters, reaction_blacklist: sortBlacklist([...DEFAULT_BLACKLISTED_EMOJIS]) };
         const { setGuildConfig } = await import('../../storage/config.js');
         await setGuildConfig(guildId, { channel_filters: updatedFilters });
         invalidateFilterCache(guildId);
@@ -695,7 +804,7 @@ export async function handleOrganizeComponent(interaction) {
             `**Admin:** \`${logName}\`\n**Defaults:** ${DEFAULT_BLACKLISTED_EMOJIS.join(' ')}`
         );
 
-        return renderEmojiModerationPanel(interaction);
+        return renderEmojiModerationPanel(interaction, 0);
     }
 
     // Toggle emoji blacklist active state
@@ -722,12 +831,12 @@ export async function handleOrganizeComponent(interaction) {
                 .catch(() => {});
         }
 
-        return renderEmojiModerationPanel(interaction);
+        return renderEmojiModerationPanel(interaction, 0);
     }
 
     // Open Emoji Blacklist panel
     if (customId === 'organize_emojis') {
-        return renderEmojiModerationPanel(interaction);
+        return renderEmojiModerationPanel(interaction, 0);
     }
 
     // Main Organize Hub
