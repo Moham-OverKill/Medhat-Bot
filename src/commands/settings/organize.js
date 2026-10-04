@@ -417,7 +417,7 @@ export async function renderEmojiModerationPanel(interaction) {
     const listDisplay = blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._';
 
     embed.setDescription(
-        'Configure blacklisted emojis. When enabled, restricted emojis are detected and removed across messages, reactions, user nicknames, channel names, and voice status/channel names.\n\n' +
+        'Restricted emojis are detected and removed across messages, reactions, user nicknames, channel names, and voice status/channel names.\n\n' +
         `${statusLine}\n` +
         `${totalLine}\n` +
         listDisplay
