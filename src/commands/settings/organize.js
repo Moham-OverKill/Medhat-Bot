@@ -381,6 +381,45 @@ export async function handleOrganizeSettings(interaction) {
 }
 
 /**
+ * Format active blacklist items cleanly:
+ * Standard emojis are separated by commas, and custom emoji IDs are summarized at the end as "and X customs".
+ */
+function formatBlacklistDisplay(blacklist) {
+    if (!Array.isArray(blacklist) || blacklist.length === 0) {
+        return '_No emojis blacklisted._';
+    }
+
+    const standardEmojis = [];
+    let customCount = 0;
+
+    for (const em of blacklist) {
+        if (!em) continue;
+        const isCustom = typeof em === 'string' && (
+            (em.startsWith('<') && em.endsWith('>')) ||
+            /^\d{17,20}$/.test(em)
+        );
+
+        if (isCustom) {
+            customCount++;
+        } else {
+            standardEmojis.push(em);
+        }
+    }
+
+    const customText = customCount > 0 ? `${customCount} custom${customCount === 1 ? '' : 's'}` : '';
+
+    if (standardEmojis.length > 0 && customCount > 0) {
+        return `${standardEmojis.join(', ')} and ${customText}`;
+    } else if (standardEmojis.length > 0) {
+        return standardEmojis.join(', ');
+    } else if (customCount > 0) {
+        return customText;
+    }
+
+    return '_No emojis blacklisted._';
+}
+
+/**
  * Render the Emoji Moderation / Reaction Blacklist Panel
  */
 export async function renderEmojiModerationPanel(interaction) {
@@ -415,7 +454,7 @@ export async function renderEmojiModerationPanel(interaction) {
 
     const statusLine = `• **Status:** ${isEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
     const totalLine = `• **Total Blacklisted:** \`${blacklist.length}\``;
-    const listDisplay = blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._';
+    const listDisplay = formatBlacklistDisplay(blacklist);
 
     embed.setDescription(
         'Restricted emojis are detected and removed across messages, polls, reactions, user nicknames, channel names, channel topics, and voice statuses.\n\n' +
@@ -441,12 +480,22 @@ export async function renderEmojiModerationPanel(interaction) {
     if (blacklist.length > 0) {
         const selectOptions = blacklist.slice(0, 25).map((em, idx) => {
             let label = em;
+            let description = undefined;
             if (em.startsWith('<') && em.endsWith('>')) {
                 const parts = em.slice(1, -1).split(':');
-                label = parts[1] || em;
+                const emojiName = parts[1] || 'custom';
+                const emojiId = parts[2] || '';
+                label = `Remove ${emojiName}`;
+                if (emojiId) description = `ID: ${emojiId}`;
+            } else if (/^\d{17,20}$/.test(em)) {
+                label = `Remove Custom`;
+                description = `ID: ${em}`;
+            } else {
+                label = `Remove ${em}`;
             }
             return {
-                label: `Remove ${label}`.slice(0, 100),
+                label: label.slice(0, 100),
+                description,
                 value: String(idx)
             };
         });
