@@ -390,7 +390,7 @@ export async function renderEmojiModerationPanel(interaction) {
     const blacklist = Array.isArray(filters.reaction_blacklist)
         ? filters.reaction_blacklist
         : [...DEFAULT_BLACKLISTED_EMOJIS];
-    const isEnabled = filters.reaction_blacklist_enabled !== false;
+    const isEnabled = filters.reaction_blacklist_enabled === true;
 
     const embed = new EmbedBuilder()
         .setTitle('Organize — Emoji Blacklist');
@@ -659,7 +659,7 @@ export async function handleOrganizeComponent(interaction) {
     if (customId === 'organize_emoji_toggle') {
         const guildId = interaction.guildId;
         const filters = await getFilters(guildId);
-        const currentlyEnabled = filters.reaction_blacklist_enabled !== false;
+        const currentlyEnabled = filters.reaction_blacklist_enabled === true;
         const newStatus = !currentlyEnabled;
 
         const updatedFilters = { ...filters, reaction_blacklist_enabled: newStatus };

@@ -27,7 +27,7 @@ async function loadGuildEmojiBlacklist(guildId) {
     const blacklist = Array.isArray(filters?.reaction_blacklist)
       ? filters.reaction_blacklist
       : [...DEFAULT_BLACKLISTED_EMOJIS];
-    const enabled = filters?.reaction_blacklist_enabled !== false;
+    const enabled = filters?.reaction_blacklist_enabled === true;
 
     const entry = {
       blacklist,
@@ -40,7 +40,7 @@ async function loadGuildEmojiBlacklist(guildId) {
     sysError('Failed to load emoji blacklist cache', error, { guild: guildId });
     return {
       blacklist: [...DEFAULT_BLACKLISTED_EMOJIS],
-      enabled: true,
+      enabled: false,
       cachedAt: Date.now()
     };
   }
