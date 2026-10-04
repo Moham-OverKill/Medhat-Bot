@@ -8,10 +8,6 @@ export const DEFAULT_BLACKLISTED_EMOJIS = Object.freeze(['🖕', '🍆', '🍑',
 const emojiBlacklistCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Rate limit cooldown for channel renames: channelId -> timestamp (Discord limit: 2 renames per 10m)
-const channelRenameCooldowns = new Map();
-const CHANNEL_RENAME_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
-
 // Anti-concurrency guard to prevent overlapping background sweeps
 const activeSweeps = new Set();
 
@@ -106,6 +102,9 @@ export function stripBlacklistedEmojis(text, blacklist) {
       const emojiId = customMatch[2];
       result = result.replace(new RegExp('<a?:[a-zA-Z0-9_]+:' + emojiId + '>', 'g'), '');
       result = result.replace(new RegExp(emojiId, 'g'), '');
+    } else if (typeof item === 'string' && /^\d{17,20}$/.test(item)) {
+      result = result.replace(new RegExp('<a?:[a-zA-Z0-9_]+:' + item + '>', 'g'), '');
+      result = result.replace(new RegExp(item, 'g'), '');
     } else {
       const cleanItem = typeof item === 'string' ? item.replace(/\uFE0F/g, '') : '';
       if (cleanItem) {
@@ -126,16 +125,18 @@ export function stripBlacklistedEmojis(text, blacklist) {
 export function isReactionBlacklisted(reactionEmoji, blacklist) {
   if (!reactionEmoji || !blacklist || blacklist.length === 0) return false;
   const emojiId = reactionEmoji.id;
-  const emojiName = reactionEmoji.name ? reactionEmoji.name.replace(/\uFE0F/g, '') : '';
+  const emojiName = reactionEmoji.name ? reactionEmoji.name.replace(/\uFE0F/g, '').replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '') : '';
 
   for (const item of blacklist) {
     if (!item) continue;
     const customMatch = typeof item === 'string' && item.match(/^<a?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
     if (customMatch) {
       if (emojiId && emojiId === customMatch[2]) return true;
+    } else if (typeof item === 'string' && /^\d{17,20}$/.test(item)) {
+      if (emojiId && emojiId === item) return true;
     } else {
-      const cleanItem = typeof item === 'string' ? item.replace(/\uFE0F/g, '') : '';
-      if (cleanItem && emojiName === cleanItem) return true;
+      const cleanItem = typeof item === 'string' ? item.replace(/\uFE0F/g, '').replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '') : '';
+      if (cleanItem && (emojiName === cleanItem || emojiName.includes(cleanItem))) return true;
     }
   }
   return false;
@@ -239,23 +240,40 @@ export async function processMemberNicknameEmojiFilter(member) {
   if (!member || !member.guild || member.user?.bot) return false;
   const guildId = member.guild.id;
 
-  // STRICT SAFETY GUARDRAIL: Never touch server owner
-  if (member.id === member.guild.ownerId) return false;
-
   const config = await getGuildEmojiBlacklist(guildId);
   if (!config.enabled || config.blacklist.length === 0) return false;
 
   const currentNick = member.nickname || member.user.displayName || member.user.username;
   if (!containsBlacklistedEmoji(currentNick, config.blacklist)) return false;
 
-  const botMember = member.guild.members.me;
-  if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageNicknames)) {
+  const botMember = member.guild.members.me || await member.guild.members.fetchMe().catch(() => null);
+  if (!botMember) return false;
+
+  const hasManageNicknames = botMember.permissions.has(PermissionsBitField.Flags.ManageNicknames) ||
+                             botMember.permissions.has(PermissionsBitField.Flags.Administrator);
+
+  if (!hasManageNicknames) {
     sysWarn('Cannot sanitize nickname — missing ManageNicknames', { guild: guildId, user: member.id });
     return false;
   }
 
-  // STRICT SAFETY GUARDRAIL: Role hierarchy check
-  if (member.roles.highest.position >= botMember.roles.highest.position) {
+  const isOwner = member.id === member.guild.ownerId;
+  const isAboveBot = member.roles.highest.position >= botMember.roles.highest.position;
+
+  if (isOwner || isAboveBot) {
+    sysWarn('Nickname moderation blocked by Discord permission hierarchy', {
+      guild: guildId,
+      user: member.id,
+      isOwner,
+      isAboveBot
+    });
+
+    sendLog(member.guild, 'audit', 'orange', 'Emoji Blacklist Violation — Nickname Moderation Blocked',
+      `**User:** <@${member.id}> (\`${member.user.tag || member.user.username}\`)\n` +
+      `**Detected Name:** \`${currentNick}\`\n` +
+      `**Status:** Blocked by Discord Permission Hierarchy\n` +
+      `**Reason:** ${isOwner ? 'Discord API prevents bots from modifying the Server Owner\'s nickname.' : 'The user\'s role is higher than or equal to the bot\'s highest role. To moderate this user, drag the bot\'s role above their role in Server Settings > Roles.'}`
+    );
     return false;
   }
 
@@ -267,15 +285,18 @@ export async function processMemberNicknameEmojiFilter(member) {
 
   if (sanitized === member.nickname) return false;
 
-  // Strictly rename only — NEVER kick or ban
-  await member.setNickname(sanitized, 'Restricted emoji removed from nickname').catch(() => {});
-
-  sendLog(member.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Nickname Sanitized',
-    `**User:** <@${member.id}> (\`${member.user.tag || member.user.username}\`)\n` +
-    `**Old Name:** \`${currentNick}\`\n` +
-    `**Sanitized Name:** \`${sanitized}\``
-  );
-  return true;
+  try {
+    await member.setNickname(sanitized, 'Restricted emoji removed from nickname');
+    sendLog(member.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Nickname Sanitized',
+      `**User:** <@${member.id}> (\`${member.user.tag || member.user.username}\`)\n` +
+      `**Old Name:** \`${currentNick}\`\n` +
+      `**Sanitized Name:** \`${sanitized}\``
+    );
+    return true;
+  } catch (err) {
+    sysError('Failed to sanitize member nickname', err, { guild: guildId, user: member.id });
+    return false;
+  }
 }
 
 /**
@@ -290,7 +311,7 @@ export async function processChannelNameEmojiFilter(channel) {
   const config = await getGuildEmojiBlacklist(guildId);
   if (!config.enabled || config.blacklist.length === 0) return false;
 
-  const botMember = channel.guild.members.me;
+  const botMember = channel.guild.members.me || await channel.guild.members.fetchMe().catch(() => null);
   const hasManageChannels = botMember && (
     botMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
     botMember.permissions.has(PermissionsBitField.Flags.Administrator)
@@ -306,7 +327,9 @@ export async function processChannelNameEmojiFilter(channel) {
   // 1. Channel Topic Check
   if (channel.topic && containsBlacklistedEmoji(channel.topic, config.blacklist) && typeof channel.setTopic === 'function') {
     const cleanTopic = stripBlacklistedEmojis(channel.topic, config.blacklist).trim();
-    await channel.setTopic(cleanTopic, 'Restricted emoji removed from topic').catch(() => {});
+    await channel.setTopic(cleanTopic, 'Restricted emoji removed from topic').catch((err) => {
+      sysError('Failed to sanitize channel topic', err, { channel: channel.id });
+    });
     didSanitize = true;
     sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Topic Sanitized',
       `**Channel:** <#${channel.id}> (\`${channel.name}\`)\n` +
@@ -314,14 +337,8 @@ export async function processChannelNameEmojiFilter(channel) {
     );
   }
 
-  // 2. Channel Name Check with anti-spam rate limit protection
+  // 2. Channel Name Check (Zero artificial cooldown: always attempts immediate rename)
   if (containsBlacklistedEmoji(channel.name, config.blacklist)) {
-    const lastRename = channelRenameCooldowns.get(channel.id) || 0;
-    if (Date.now() - lastRename < CHANNEL_RENAME_COOLDOWN_MS) {
-      // Cooldown active to avoid Discord API 429
-      return didSanitize;
-    }
-
     let sanitized = stripBlacklistedEmojis(channel.name, config.blacklist).trim();
     if (!sanitized) {
       sanitized = channel.isVoiceBased?.() ? 'voice-channel' : 'channel';
@@ -329,16 +346,32 @@ export async function processChannelNameEmojiFilter(channel) {
     sanitized = sanitized.slice(0, 100);
 
     if (sanitized !== channel.name) {
-      channelRenameCooldowns.set(channel.id, Date.now());
       const oldName = channel.name;
-      // Strictly rename only — NEVER delete channel
-      await channel.setName(sanitized, 'Restricted emoji removed from channel name').catch(() => {});
-      didSanitize = true;
+      try {
+        await channel.setName(sanitized, 'Restricted emoji removed from channel name');
+        didSanitize = true;
 
-      sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Renamed',
-        `**Channel:** <#${channel.id}> (\`${oldName}\`)\n` +
-        `**Sanitized Name:** \`${sanitized}\``
-      );
+        sendLog(channel.guild, 'audit', 'crimson', 'Emoji Blacklist Violation — Channel Renamed',
+          `**Channel:** <#${channel.id}> (\`${oldName}\`)\n` +
+          `**Sanitized Name:** \`${sanitized}\``
+        );
+      } catch (err) {
+        if (err?.status === 429 || err?.message?.includes('rate limit')) {
+          const retryAfterMs = (err.retryAfter ? err.retryAfter * 1000 : 10000);
+          sysWarn('Channel rename rate limited by Discord — queuing retry', { channel: channel.id, retryAfterMs });
+          setTimeout(async () => {
+            try {
+              const fresh = await channel.fetch().catch(() => null);
+              if (fresh && containsBlacklistedEmoji(fresh.name, config.blacklist)) {
+                const clean = stripBlacklistedEmojis(fresh.name, config.blacklist).trim() || (fresh.isVoiceBased?.() ? 'voice-channel' : 'channel');
+                await fresh.setName(clean.slice(0, 100), 'Restricted emoji removed from channel name (rate limit retry)').catch(() => {});
+              }
+            } catch (_) {}
+          }, retryAfterMs);
+        } else {
+          sysError('Failed to rename channel', err, { channel: channel.id });
+        }
+      }
     }
   }
 
