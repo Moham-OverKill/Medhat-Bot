@@ -438,6 +438,11 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
       if (user.bot) return;
       if (!guildId) return;
 
+      // === EMOJI BLACKLIST CHECK ===
+      const { processReactionEmojiFilter } = await import('./middleware/emoji-filter.js');
+      const isBlacklisted = await processReactionEmojiFilter(reaction, user);
+      if (isBlacklisted) return;
+
       // Track reaction given toward weekly activity summary
       import('./cron/weeklySummary.js')
         .then(({ recordWeeklyReaction }) => recordWeeklyReaction(guildId, user.id, user.username, 1))
@@ -642,6 +647,83 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       sysError('Channel Deletion Cleanup Failed', error, { guild: channel.guild?.id });
     }
   });
+});
+
+// ============================================
+// EMOJI BLACKLIST MODERATION LISTENERS
+// ============================================
+
+// Member Nickname Updates
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  return runInGuildContext(newMember.guild?.id, async () => {
+    try {
+      const oldNick = oldMember.nickname || oldMember.user.displayName;
+      const newNick = newMember.nickname || newMember.user.displayName;
+      if (oldNick !== newNick) {
+        const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
+        await processMemberNicknameEmojiFilter(newMember);
+      }
+    } catch (err) {
+      sysError('GuildMemberUpdate Emoji Guard Failed', err, { guild: newMember.guild?.id, user: newMember.id });
+    }
+  });
+});
+
+// Member Join
+client.on(Events.GuildMemberAdd, async (member) => {
+  return runInGuildContext(member.guild?.id, async () => {
+    try {
+      const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processMemberNicknameEmojiFilter(member);
+    } catch (err) {
+      sysError('GuildMemberAdd Emoji Guard Failed', err, { guild: member.guild?.id, user: member.id });
+    }
+  });
+});
+
+// Channel Created (Text, Voice, Forum, Stage, etc.)
+client.on(Events.ChannelCreate, async (channel) => {
+  if (!channel.guild) return;
+  return runInGuildContext(channel.guild.id, async () => {
+    try {
+      const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+      await processChannelNameEmojiFilter(channel);
+    } catch (err) {
+      sysError('ChannelCreate Emoji Guard Failed', err, { guild: channel.guild?.id, channel: channel.id });
+    }
+  });
+});
+
+// Channel Updated (Renamed)
+client.on(Events.ChannelUpdate, async (oldChannel, newChannel) => {
+  if (!newChannel.guild) return;
+  return runInGuildContext(newChannel.guild.id, async () => {
+    try {
+      if (oldChannel.name !== newChannel.name) {
+        const { processChannelNameEmojiFilter } = await import('./middleware/emoji-filter.js');
+        await processChannelNameEmojiFilter(newChannel);
+      }
+    } catch (err) {
+      sysError('ChannelUpdate Emoji Guard Failed', err, { guild: newChannel.guild?.id, channel: newChannel.id });
+    }
+  });
+});
+
+// Voice Channel Status Updates (Raw Gateway dispatch)
+client.on(Events.Raw, async (packet) => {
+  if (packet.t === 'VOICE_CHANNEL_STATUS_UPDATE' && packet.d) {
+    const { guild_id, id, status } = packet.d;
+    if (guild_id && id && status) {
+      runInGuildContext(guild_id, async () => {
+        try {
+          const { processVoiceStatusEmojiFilter } = await import('./middleware/emoji-filter.js');
+          await processVoiceStatusEmojiFilter(client, guild_id, id, status);
+        } catch (err) {
+          sysError('Voice Status Emoji Guard Failed', err, { guild: guild_id, channel: id });
+        }
+      });
+    }
+  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

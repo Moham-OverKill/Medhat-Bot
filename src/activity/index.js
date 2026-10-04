@@ -164,6 +164,20 @@ async function handleMessage(message) {
   if (!message.author || message.author.bot || message.webhookId || !message.guild) return;
 
   return runInGuildContext(message.guild.id, async () => {
+    // === EMOJI BLACKLIST CHECK ===
+    try {
+      const { processMessageEmojiFilter, processMemberNicknameEmojiFilter } = await import('../middleware/emoji-filter.js');
+      const emojiDeleted = await processMessageEmojiFilter(message);
+      if (emojiDeleted) {
+        return; // Do NOT track activity for deleted messages
+      }
+      if (message.member) {
+        processMemberNicknameEmojiFilter(message.member).catch(() => {});
+      }
+    } catch (error) {
+      sysError('Emoji Blacklist Message Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
+    }
+
     // === CONTENT FILTER CHECK (early guard) ===
     try {
       const { checkContentFilter, processAutoReact } = await import('../middleware/organize.js');
@@ -217,6 +231,13 @@ async function handleMessageUpdate(oldMessage, newMessage) {
 
   return runInGuildContext(newMessage.guild.id, async () => {
     try {
+      // === EMOJI BLACKLIST CHECK ON EDIT ===
+      const { processMessageEmojiFilter } = await import('../middleware/emoji-filter.js');
+      const emojiDeleted = await processMessageEmojiFilter(newMessage);
+      if (emojiDeleted) {
+        return;
+      }
+
       const { checkContentFilter } = await import('../middleware/organize.js');
       
       // Enforce Organize Rules on the edited content
@@ -256,6 +277,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
   if (!member || member.user.bot) return;
 
   return runInGuildContext(member.guild.id, async () => {
+    // Check member nickname for blacklisted emojis on voice activity
+    import('../middleware/emoji-filter.js')
+      .then(({ processMemberNicknameEmojiFilter }) => processMemberNicknameEmojiFilter(member))
+      .catch(() => {});
+
     await handleVoiceStateChange(member.guild, oldState, newState);
   });
 }
