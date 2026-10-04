@@ -584,7 +584,7 @@ export async function handleOrganizeComponent(interaction) {
             .setCustomId('organize_emoji_add_input')
             .setLabel('Emojis to Blacklist')
             .setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Paste emojis or custom IDs separated by spaces (e.g. 🖕 🍆 🍑 💦)')
+            .setPlaceholder('Enter Emojis/IDs ( 🖕, 🍆, 🍑, 💦 )')
             .setRequired(true)
             .setMaxLength(1000);
 
