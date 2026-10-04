@@ -418,7 +418,7 @@ export async function renderEmojiModerationPanel(interaction) {
     const listDisplay = blacklist.length > 0 ? blacklist.join('   ') : '_No emojis blacklisted._';
 
     embed.setDescription(
-        'Restricted emojis are detected and removed across messages, reactions, user nicknames, channel names, and voice status/channel names.\n\n' +
+        'Restricted emojis are detected and removed across messages, polls, reactions, user nicknames, channel names, channel topics, and voice statuses.\n\n' +
         `${statusLine}\n` +
         `${totalLine}\n` +
         listDisplay
@@ -459,20 +459,16 @@ export async function renderEmojiModerationPanel(interaction) {
         components.push(new ActionRowBuilder().addComponents(removeSelect));
     }
 
-    // Row 1: Action buttons (Toggle, Add Emojis, Sweep Server)
+    // Row 1: Action buttons (Add Emojis on left, Disable/Enable on right)
     const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('organize_emoji_toggle')
-            .setLabel(isEnabled ? 'Disable' : 'Enable')
-            .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId('organize_emoji_add')
             .setLabel('Add Emojis')
             .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
-            .setCustomId('organize_emoji_sweep')
-            .setLabel('Sweep Server')
-            .setStyle(ButtonStyle.Secondary)
+            .setCustomId('organize_emoji_toggle')
+            .setLabel(isEnabled ? 'Disable' : 'Enable')
+            .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
     components.push(actionRow);
 
@@ -676,17 +672,13 @@ export async function handleOrganizeComponent(interaction) {
             `**Admin:** \`${logName}\``
         );
 
-        return renderEmojiModerationPanel(interaction);
-    }
+        // When enabled, automatically sweep existing server items in the background
+        if (newStatus && interaction.guild) {
+            import('../../middleware/emoji-filter.js')
+                .then(({ sweepServerEmojiViolations }) => sweepServerEmojiViolations(interaction.guild))
+                .catch(() => {});
+        }
 
-    // Trigger full retroactive server sweep
-    if (customId === 'organize_emoji_sweep') {
-        const { sweepServerEmojiViolations } = await import('../../middleware/emoji-filter.js');
-        const results = await sweepServerEmojiViolations(interaction.guild);
-        await interaction.followUp({
-            content: `Server sweep completed:\n• **${results.channels}** channel(s) renamed\n• **${results.topics}** channel topic(s) sanitized\n• **${results.nicknames}** member nickname(s) sanitized`,
-            flags: MessageFlags.Ephemeral
-        });
         return renderEmojiModerationPanel(interaction);
     }
 
