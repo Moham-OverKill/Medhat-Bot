@@ -108,14 +108,33 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
   const titlePrefix = isBoosterTab ? 'Booster Colors' : 'Normal Colors';
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
-  const description = pageColors.length > 0 
-    ? pageColors.map((c, i) => `**${startIdx + i + 1} |** <@&${c.roleId}>`).join('\n')
-    : '_No colors configured yet._';
-
+  let files = [];
   const embed = new EmbedBuilder()
     .setTitle(`${titlePrefix} ( ${currentPage} / ${totalPages} )`)
-    .setDescription(description)
     .setColor(colorHex);
+
+  if (pageColors.length > 0) {
+    const paletteItems = pageColors.map((c, i) => ({
+      ...c,
+      name: c.role?.name || `Color ${startIdx + i + 1}`,
+      hexColor: c.role?.hexColor || '#000000',
+      index: startIdx + i + 1
+    }));
+
+    const imageBuffer = await generateColorPanelImage(paletteItems, {
+      isBooster: isBoosterTab,
+      title: isBoosterTab ? 'BOOSTER COLORS' : 'NORMAL COLORS',
+      subtitle: 'Use the selectors below to manage colors, or click Create Panel to deploy',
+      panelIndex: currentPage - 1,
+      totalPanels: totalPages
+    });
+
+    const attachment = new AttachmentBuilder(imageBuffer, { name: 'colors_dashboard.png' });
+    embed.setImage('attachment://colors_dashboard.png');
+    files = [attachment];
+  } else {
+    embed.setDescription('_No colors configured yet. Use the selector below to add a color role._');
+  }
 
   const components = [];
 
@@ -180,7 +199,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     content: '',
     embeds: [embed],
     components: components,
-    files: []
+    files: files
   });
 }
 
