@@ -138,10 +138,52 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
-  // Row 2: Remove Role (Native Searchable Selector for perfect symmetry)
-  const removeSelector = new RoleSelectMenuBuilder()
+  // Row 2: Remove Role (Select menu showing only configured colors)
+  const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}_${currentPage}`)
     .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
+
+  if (sortedColors.length === 0) {
+    removeSelector
+      .setPlaceholder('No colors configured to remove')
+      .setDisabled(true)
+      .addOptions([{ label: 'No colors available', value: 'none' }]);
+  } else {
+    const removeOptions = [];
+
+    // Previous page navigation option if past page 1
+    if (currentPage > 1) {
+      removeOptions.push({
+        label: '◀️ Previous Page',
+        value: `page_${currentPage - 1}`,
+        description: `Navigate to page ${currentPage - 1}`
+      });
+    }
+
+    // Colors on current page
+    for (let i = 0; i < pageColors.length; i++) {
+      const c = pageColors[i];
+      const globalNum = startIdx + i + 1;
+      const roleName = c.role?.name || `Role ${c.roleId}`;
+      removeOptions.push({
+        label: `[${globalNum}] ${roleName}`.slice(0, 100),
+        value: c.roleId,
+        description: (c.role?.hexColor || '#000000').toUpperCase()
+      });
+    }
+
+    // Next page navigation option if before last page
+    if (currentPage < totalPages) {
+      removeOptions.push({
+        label: '▶️ Next Page',
+        value: `page_${currentPage + 1}`,
+        description: `Navigate to page ${currentPage + 1}`
+      });
+    }
+
+    removeSelector.addOptions(removeOptions);
+  }
+
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
   // Row 3: Tabs & Pagination Controls
@@ -708,9 +750,16 @@ export async function handleColorsComponent(interaction) {
         const parts = customId.split('_');
         const type = parts[2] === 'booster' ? 'booster' : 'normal';
         const page = parseInt(parts[3], 10) || 1;
-        const roleId = interaction.values[0];
-        sysLog('Removing color role', { roleId, type, page, guild: guildId });
-        return await processRoleRemoval(interaction, guildId, roleId, type === 'booster', page);
+        const selectedValue = interaction.values[0];
+
+        // Handle page navigation options from inside the select menu
+        if (selectedValue.startsWith('page_')) {
+          const targetPage = parseInt(selectedValue.split('_')[1], 10) || 1;
+          return await showColorPanel(interaction, type, targetPage);
+        }
+
+        sysLog('Removing color role', { roleId: selectedValue, type, page, guild: guildId });
+        return await processRoleRemoval(interaction, guildId, selectedValue, type === 'booster', page);
       }
     }
 
