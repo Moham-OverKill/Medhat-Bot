@@ -334,13 +334,13 @@ export async function showOrganizeMenu(interaction) {
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('organize_filters')
-            .setLabel('Filters')
-            .setEmoji('🧹')
+            .setLabel('Links')
+            .setEmoji('🔗')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('organize_emojis')
             .setLabel('Emojis')
-            .setEmoji('😀')
+            .setEmoji('😵')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('organize_forums')
