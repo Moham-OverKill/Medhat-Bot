@@ -1352,6 +1352,30 @@ async function createTables() {
       ).catch(() => {});
     }
 
+    // Self-healing migration: Reconcile battlepass reward inventory deficits
+    try {
+      const checkMig = await pool.query(
+        "SELECT 1 FROM bot_migrations WHERE migration_name = 'reconcile_bp_rewards_deficit_v1'"
+      );
+      if (checkMig.rows.length === 0) {
+        const guildRes = await pool.query(
+          "SELECT DISTINCT guild_id FROM (SELECT guild_id FROM battlepass_config UNION SELECT guild_id FROM battlepass_rewards) g"
+        );
+        const { reconcileMissingLevelRewards } = await import('../commands/settings/pass-engine.js');
+        for (const gRow of guildRes.rows) {
+          await reconcileMissingLevelRewards(gRow.guild_id, null).catch(err => {
+            sysError('Startup BP Reconciliation Failed', err, { guild: gRow.guild_id });
+          });
+        }
+        await pool.query(
+          "INSERT INTO bot_migrations (migration_name, details) VALUES ('reconcile_bp_rewards_deficit_v1', '{}'::jsonb) ON CONFLICT DO NOTHING"
+        );
+        sysLog('Startup BP Reconciliation Complete', { detail: `Reconciled ${guildRes.rows.length} guilds` });
+      }
+    } catch (e) {
+      sysError('Startup BP Reconciliation Migration Error', e);
+    }
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
