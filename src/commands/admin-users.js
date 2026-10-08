@@ -476,8 +476,20 @@ export async function handleLevelModal(interaction) {
             [targetUserId, guildId, targetMember?.user?.username || 'User', targetXp]
         );
 
+        // Purge any claims above new level so future progression triggers cleanly
+        await pool.query(
+            `DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed > $3`,
+            [guildId, targetUserId, newLevel]
+        );
+        await pool.query(
+            `DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND level > $3`,
+            [guildId, targetUserId, newLevel]
+        );
+
+        const { alignMemberLevelRole, syncUserLevelRewards, reconcileMissingLevelRewards } = await import('./settings/pass-engine.js');
+        await alignMemberLevelRole(guildId, targetUserId, newLevel, interaction.client).catch(() => {});
+
         if (newLevel > 0) {
-            const { syncUserLevelRewards, reconcileMissingLevelRewards } = await import('./settings/pass-engine.js');
             await syncUserLevelRewards(guildId, targetUserId, targetMember?.user?.username || 'User', interaction.client);
             await reconcileMissingLevelRewards(guildId, targetUserId).catch(() => {});
         }

@@ -506,14 +506,6 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       if (reward.reward_type === 'item') {
         // Guard 1: Item must exist in shop, be active, have a valid role, and not be a pack
         if (!reward.shop_item_id || !reward.item_role_id || reward.item_is_active !== true || reward.item_type === 'pack') {
-          if (reward.reward_id) {
-            await client2.query(
-              `UPDATE user_pass_reward_claims
-               SET quantity_claimed = quantity_claimed + $1
-               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
-              [qty, guildId, userId, reward.reward_id]
-            );
-          }
           continue;
         }
 
@@ -526,14 +518,6 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
               const secErr = validateRoleForAssignment(role, guild);
               if (secErr) {
                 sysWarn('Battlepass Level Reward Blocked: Dangerous Role', { guild: guildId, user: userId, role: reward.item_role_id, detail: secErr });
-                if (reward.reward_id) {
-                  await client2.query(
-                    `UPDATE user_pass_reward_claims
-                     SET quantity_claimed = quantity_claimed + $1
-                     WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
-                    [qty, guildId, userId, reward.reward_id]
-                  );
-                }
                 continue;
               }
             }
@@ -577,14 +561,6 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
       } else if (reward.reward_type === 'chest') {
         // Guard: Loot box must exist in this guild
         if (!reward.loot_box_id || !reward.valid_box_id) {
-          if (reward.reward_id) {
-            await client2.query(
-              `UPDATE user_pass_reward_claims
-               SET quantity_claimed = quantity_claimed + $1
-               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
-              [qty, guildId, userId, reward.reward_id]
-            );
-          }
           continue;
         }
 
@@ -641,15 +617,6 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
             quantity: qty
           });
 
-          if (reward.reward_id) {
-            await client2.query(
-              `UPDATE user_pass_reward_claims
-               SET quantity_claimed = quantity_claimed + $1
-               WHERE guild_id = $2 AND user_id = $3 AND reward_id = $4`,
-              [qty, guildId, userId, reward.reward_id]
-            );
-          }
-        } else {
           if (reward.reward_id) {
             await client2.query(
               `UPDATE user_pass_reward_claims
@@ -880,6 +847,7 @@ export async function getUserPassProgress(guildId, userId) {
     const { getDiscordClient } = await import('../../activity/index.js');
     const client = getDiscordClient();
     await syncUserLevelRewards(guildId, userId, username, client).catch(() => {});
+    await reconcileMissingLevelRewards(guildId, userId).catch(() => {});
   }
 
   const { level: currentLevel, xpIntoCurrentLevel, xpForNextLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
@@ -1156,6 +1124,17 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       const maxClaimLevel = parseInt(u.max_claim_level || 0, 10);
       // Strictly bound to legitimate earned level based on accumulated XP
       const reachedLevel = xpLevel;
+
+      // 1. Purge ghost/unearned claims above legitimate earned level
+      await pool.query(
+        `DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed > $3`,
+        [guildId, uid, reachedLevel]
+      );
+      await pool.query(
+        `DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND level > $3`,
+        [guildId, uid, reachedLevel]
+      );
+
       if (reachedLevel <= 0) {
         if (userId) {
           sysLog('Self-Healing: User Level Inactive', {
@@ -1167,253 +1146,313 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
         continue;
       }
 
-      const missingRewards = [];
+      let missingReconciledCount = 0;
+
+      // 2. Multi-rewards configured in battlepass_rewards
       for (const br of allRewardsRes.rows) {
         if (br.level > reachedLevel) continue;
-        const key = userId ? br.reward_id : `${uid}_${br.reward_id}`;
-        const claimedQty = claimedRewardMap.get(key) || 0;
         const targetQty = Math.min(100, Math.max(1, parseInt(br.quantity || 1, 10)));
-        if (claimedQty < targetQty) {
-          missingRewards.push({
-            ...br,
-            quantity: targetQty - claimedQty
-          });
-        }
-      }
 
-      const missingLegacyChests = legacyConfigChests.rows.filter(bc => {
-        if (bc.level > reachedLevel) return false;
-        const key = userId ? bc.level : `${uid}_${bc.level}`;
-        return !claimedLegacyLevels.has(key);
-      });
+        if (br.reward_type === 'item' && br.shop_item_id) {
+          if (!br.item_role_id || br.item_is_active !== true || br.item_type === 'pack') continue;
 
-      for (const row of missingRewards) {
-        const { reward_id, level, reward_type, shop_item_id, loot_box_id, quantity, item_role_id, chest_name, item_name, item_is_active, item_type, valid_box_id } = row;
-        const qty = Math.min(100, Math.max(1, parseInt(quantity || 1, 10)));
+          // Check held in inventory
+          const heldRes = await pool.query(
+            `SELECT ui.id, COALESCE(ui.quantity, 1) as quantity
+             FROM user_inventory ui
+             WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
+               AND ui.expires_at IS NULL
+             ORDER BY ui.is_active DESC, ui.id ASC`,
+            [uid, guildId, br.shop_item_id]
+          );
+          const heldQty = heldRes.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
 
-        if (reward_type === 'chest' && loot_box_id) {
-          if (!valid_box_id) {
-            await pool.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, uid, level, reward_id, qty]
-            );
-            if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
-            else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
-            continue;
+          // Check traded out
+          const tradedRes = await pool.query(
+            `SELECT COALESCE(SUM(COALESCE(NULLIF(elem->>'qty', '')::INT, 1)), 0)::INT as total_traded
+             FROM trades t, jsonb_array_elements(t.sender_items) elem
+             WHERE t.status = 'accepted' AND t.guild_id = $1 AND t.sender_id = $2
+               AND (elem->>'shop_item_id')::INT = $3`,
+            [guildId, uid, br.shop_item_id]
+          );
+          const tradedQty = parseInt(tradedRes.rows[0]?.total_traded || 0, 10);
+
+          const totalAccounted = heldQty + tradedQty;
+          const deficit = Math.max(0, targetQty - totalAccounted);
+
+          if (deficit > 0) {
+            if (heldRes.rows.length > 0) {
+              await pool.query(
+                `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+                [deficit, heldRes.rows[0].id]
+              );
+              sysLog('Self-Healing: Stacked Missing Level Item', {
+                user: uid,
+                guild: guildId,
+                detail: `Level ${br.level} | +${deficit}x ${br.item_name || 'Item'} (Deficit filled)`
+              });
+            } else {
+              await pool.query(
+                `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+                 VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+                [uid, guildId, br.shop_item_id, br.item_role_id || null, deficit]
+              );
+              sysLog('Self-Healing: Granted Missing Level Item', {
+                user: uid,
+                guild: guildId,
+                detail: `Level ${br.level} | ${deficit}x ${br.item_name || 'Item'} (Deficit filled)`
+              });
+            }
+            missingReconciledCount++;
           }
 
-          const shopItemRes = await pool.query(
-            `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
-            [loot_box_id, guildId]
+          // Ensure ledger records are synchronized
+          await pool.query(
+            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (guild_id, user_id, reward_id)
+             DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
+            [guildId, uid, br.level, br.reward_id, targetQty]
           );
-          let chestShopItemId = shopItemRes.rows[0]?.id;
-          let chestRoleId = shopItemRes.rows[0]?.role_id || `LOOT_BOX_${loot_box_id}`;
+          await pool.query(
+            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+            [uid, guildId, br.level]
+          );
+
+        } else if (br.reward_type === 'chest' && br.loot_box_id) {
+          if (!br.valid_box_id) continue;
+
+          let chestShopItemId = br.shop_item_id;
+          let chestRoleId = br.item_role_id || `LOOT_BOX_${br.loot_box_id}`;
 
           if (!chestShopItemId) {
-            const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [loot_box_id, guildId]);
+            const shopItemRes = await pool.query(
+              `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+              [br.loot_box_id, guildId]
+            );
+            chestShopItemId = shopItemRes.rows[0]?.id;
+            chestRoleId = shopItemRes.rows[0]?.role_id || chestRoleId;
+          }
+
+          if (!chestShopItemId) {
+            const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [br.loot_box_id, guildId]);
             if (boxRow.rows.length > 0) {
               const newShopItem = await pool.query(
                 `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
                  VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
                  RETURNING id, role_id`,
-                [guildId, boxRow.rows[0].name, `LOOT_BOX_${loot_box_id}`, loot_box_id]
+                [guildId, boxRow.rows[0].name, `LOOT_BOX_${br.loot_box_id}`, br.loot_box_id]
               );
               chestShopItemId = newShopItem.rows[0]?.id;
               chestRoleId = newShopItem.rows[0]?.role_id || chestRoleId;
             }
           }
 
-          // Check if user already holds this chest
-          const levelInvCheck = await pool.query(
-            `SELECT ui.id, ui.quantity FROM user_inventory ui
+          if (!chestShopItemId) continue;
+
+          // Check held in inventory
+          const heldRes = await pool.query(
+            `SELECT ui.id, COALESCE(ui.quantity, 1) as quantity
+             FROM user_inventory ui
              LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
-             WHERE ui.user_id = $1 AND ui.guild_id = $2
+             WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.expires_at IS NULL
                AND (
                  (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
                  OR si.loot_box_id = $4
                  OR ui.role_id = ('LOOT_BOX_' || $4::text)
                  OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
                )
-             ORDER BY ui.id ASC LIMIT 1`,
-            [uid, guildId, chestShopItemId, loot_box_id]
+             ORDER BY ui.is_active DESC, ui.id ASC`,
+            [uid, guildId, chestShopItemId, br.loot_box_id]
           );
+          const heldQty = heldRes.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
 
-          if (levelInvCheck.rows.length > 0) {
-            await pool.query(
-              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
-              [qty, levelInvCheck.rows[0].id]
-            );
-            sysLog('Self-Healing: Stacked Missing Level Chest', {
-              user: uid,
-              guild: guildId,
-              detail: `Level ${level} | +${qty}x ${chest_name || 'Chest'} (Total: ${parseInt(levelInvCheck.rows[0].quantity || 1, 10) + qty})`
-            });
-          } else if (chestShopItemId) {
-            await pool.query(
-              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
-              [uid, guildId, chestShopItemId, chestRoleId, qty]
-            );
-            sysLog('Self-Healing: Granted Missing Level Chest', {
-              user: uid,
-              guild: guildId,
-              detail: `Level ${level} | ${qty}x ${chest_name || 'Chest'} (Reward ID: ${reward_id})`
-            });
+          // Check opened chests
+          const openedRes = await pool.query(
+            `SELECT COUNT(*)::INTEGER as count FROM transactions
+             WHERE user_id = $1 AND guild_id = $2
+               AND type = 'loot_box_reward'
+               AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
+            [uid, guildId, br.loot_box_id, br.chest_name || 'Chest']
+          );
+          const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+
+          // Check traded out
+          const tradedRes = await pool.query(
+            `SELECT COALESCE(SUM(COALESCE(NULLIF(elem->>'qty', '')::INT, 1)), 0)::INT as total_traded
+             FROM trades t, jsonb_array_elements(t.sender_items) elem
+             WHERE t.status = 'accepted' AND t.guild_id = $1 AND t.sender_id = $2
+               AND (
+                 (elem->>'loot_box_id')::INT = $3
+                 OR elem->>'role_id' = ('LOOT_BOX_' || $3::text)
+                 OR elem->>'role_id' = ('CHEST_' || $3::text)
+               )`,
+            [guildId, uid, br.loot_box_id]
+          );
+          const tradedQty = parseInt(tradedRes.rows[0]?.total_traded || 0, 10);
+
+          const totalAccounted = heldQty + openedQty + tradedQty;
+          const deficit = Math.max(0, targetQty - totalAccounted);
+
+          if (deficit > 0) {
+            if (heldRes.rows.length > 0) {
+              await pool.query(
+                `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+                [deficit, heldRes.rows[0].id]
+              );
+              sysLog('Self-Healing: Stacked Missing Level Chest', {
+                user: uid,
+                guild: guildId,
+                detail: `Level ${br.level} | +${deficit}x ${br.chest_name || 'Chest'} (Deficit filled)`
+              });
+            } else {
+              await pool.query(
+                `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+                 VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+                [uid, guildId, chestShopItemId, chestRoleId, deficit]
+              );
+              sysLog('Self-Healing: Granted Missing Level Chest', {
+                user: uid,
+                guild: guildId,
+                detail: `Level ${br.level} | ${deficit}x ${br.chest_name || 'Chest'} (Deficit filled)`
+              });
+            }
+            missingReconciledCount++;
           }
 
+          // Ensure ledger records are synchronized
           await pool.query(
             `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (guild_id, user_id, reward_id)
-             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-            [guildId, uid, level, reward_id, qty]
+             DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
+            [guildId, uid, br.level, br.reward_id, targetQty]
           );
           await pool.query(
             `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [uid, guildId, level]
+            [uid, guildId, br.level]
           );
-          if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
-          else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
-
-        } else if (reward_type === 'item' && shop_item_id) {
-          if (!item_role_id || item_is_active !== true || item_type === 'pack') {
-            await pool.query(
-              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (guild_id, user_id, reward_id)
-               DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-              [guildId, uid, level, reward_id, qty]
-            );
-            if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
-            else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
-            continue;
-          }
-
-          const levelItemInvCheck = await pool.query(
-            `SELECT id, quantity FROM user_inventory 
-             WHERE user_id = $1 AND guild_id = $2 
-               AND shop_item_id = $3
-               AND (UPPER(COALESCE(source, '')) IN ('LEVEL', 'BATTLEPASS') OR LOWER(COALESCE(purchase_source, '')) IN ('level', 'battlepass'))
-             ORDER BY id ASC LIMIT 1`,
-            [uid, guildId, shop_item_id]
-          );
-
-          if (levelItemInvCheck.rows.length > 0) {
-            await pool.query(
-              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
-              [qty, levelItemInvCheck.rows[0].id]
-            );
-            sysLog('Self-Healing: Stacked Missing Level Item', {
-              user: uid,
-              guild: guildId,
-              detail: `Level ${level} | +${qty}x ${item_name || 'Item'}`
-            });
-          } else {
-            await pool.query(
-              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
-              [uid, guildId, shop_item_id, item_role_id || null, qty]
-            );
-            sysLog('Self-Healing: Granted Missing Level Item', {
-              user: uid,
-              guild: guildId,
-              detail: `Level ${level} | ${qty}x ${item_name || 'Item'} (Reward ID: ${reward_id})`
-            });
-          }
-
-          await pool.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (guild_id, user_id, reward_id)
-             DO UPDATE SET quantity_claimed = user_pass_reward_claims.quantity_claimed + EXCLUDED.quantity_claimed`,
-            [guildId, uid, level, reward_id, qty]
-          );
-          await pool.query(
-            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [uid, guildId, level]
-          );
-          if (userId) claimedRewardMap.set(reward_id, (claimedRewardMap.get(reward_id) || 0) + qty);
-          else claimedRewardMap.set(`${uid}_${reward_id}`, (claimedRewardMap.get(`${uid}_${reward_id}`) || 0) + qty);
         }
       }
 
-      for (const row of missingLegacyChests) {
-        const { level, reward_chest_id, shop_item_id, role_id, chest_name, valid_box_id } = row;
-        if (!valid_box_id) continue;
+      // 3. Legacy single-column chests configured in battlepass_config
+      for (const bc of legacyConfigChests.rows) {
+        if (bc.level > reachedLevel || !bc.valid_box_id) continue;
+        const targetQty = 1;
 
-        let chestShopItemId = shop_item_id;
-        let chestRoleId = role_id || `LOOT_BOX_${reward_chest_id}`;
+        let chestShopItemId = bc.shop_item_id;
+        let chestRoleId = bc.role_id || `LOOT_BOX_${bc.reward_chest_id}`;
 
         if (!chestShopItemId) {
-          const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [reward_chest_id, guildId]);
+          const shopItemRes = await pool.query(
+            `SELECT id, role_id FROM shop_items WHERE loot_box_id = $1 AND guild_id = $2 LIMIT 1`,
+            [bc.reward_chest_id, guildId]
+          );
+          chestShopItemId = shopItemRes.rows[0]?.id;
+          chestRoleId = shopItemRes.rows[0]?.role_id || chestRoleId;
+        }
+
+        if (!chestShopItemId) {
+          const boxRow = await pool.query(`SELECT * FROM loot_boxes WHERE id = $1 AND guild_id = $2`, [bc.reward_chest_id, guildId]);
           if (boxRow.rows.length > 0) {
             const newShopItem = await pool.query(
               `INSERT INTO shop_items (guild_id, name, item_type, role_id, is_pack, is_tradable, rarity, loot_box_id, is_active)
                VALUES ($1, $2, 'loot_box', $3, false, true, 'common', $4, true)
                RETURNING id, role_id`,
-              [guildId, boxRow.rows[0].name, `LOOT_BOX_${reward_chest_id}`, reward_chest_id]
+              [guildId, boxRow.rows[0].name, `LOOT_BOX_${bc.reward_chest_id}`, bc.reward_chest_id]
             );
             chestShopItemId = newShopItem.rows[0]?.id;
             chestRoleId = newShopItem.rows[0]?.role_id || chestRoleId;
           }
         }
 
-        const levelInvCheck = await pool.query(
-          `SELECT ui.id, ui.quantity FROM user_inventory ui
+        if (!chestShopItemId) continue;
+
+        // Check held in inventory
+        const heldRes = await pool.query(
+          `SELECT ui.id, COALESCE(ui.quantity, 1) as quantity
+           FROM user_inventory ui
            LEFT JOIN shop_items si ON ui.shop_item_id = si.id AND si.guild_id = ui.guild_id
-           WHERE ui.user_id = $1 AND ui.guild_id = $2
+           WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.expires_at IS NULL
              AND (
                (ui.shop_item_id IS NOT NULL AND ui.shop_item_id = $3)
                OR si.loot_box_id = $4
                OR ui.role_id = ('LOOT_BOX_' || $4::text)
                OR (ui.role_id LIKE 'CHEST_%' AND NULLIF(SUBSTRING(ui.role_id FROM 7), '')::INTEGER = $4)
              )
-           ORDER BY ui.id ASC LIMIT 1`,
-          [uid, guildId, chestShopItemId, reward_chest_id]
+           ORDER BY ui.is_active DESC, ui.id ASC`,
+          [uid, guildId, chestShopItemId, bc.reward_chest_id]
         );
+        const heldQty = heldRes.rows.reduce((sum, r) => sum + parseInt(r.quantity || 1, 10), 0);
 
-        if (levelInvCheck.rows.length > 0) {
-          await pool.query(
-            `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + 1 WHERE id = $2`,
-            [levelInvCheck.rows[0].id]
-          );
-          sysLog('Self-Healing: Stacked Legacy Config Level Chest', {
-            user: uid,
-            guild: guildId,
-            detail: `Level ${level} | +1x ${chest_name || 'Chest'}`
-          });
-        } else if (chestShopItemId) {
-          await pool.query(
-            `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
-             VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', 1)`,
-            [uid, guildId, chestShopItemId, chestRoleId]
-          );
-          sysLog('Self-Healing: Granted Legacy Config Level Chest', {
-            user: uid,
-            guild: guildId,
-            detail: `Level ${level} | 1x ${chest_name || 'Chest'}`
-          });
+        // Check opened chests
+        const openedRes = await pool.query(
+          `SELECT COUNT(*)::INTEGER as count FROM transactions
+           WHERE user_id = $1 AND guild_id = $2
+             AND type = 'loot_box_reward'
+             AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
+          [uid, guildId, bc.reward_chest_id, bc.chest_name || 'Chest']
+        );
+        const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
+
+        // Check traded out
+        const tradedRes = await pool.query(
+          `SELECT COALESCE(SUM(COALESCE(NULLIF(elem->>'qty', '')::INT, 1)), 0)::INT as total_traded
+           FROM trades t, jsonb_array_elements(t.sender_items) elem
+           WHERE t.status = 'accepted' AND t.guild_id = $1 AND t.sender_id = $2
+             AND (
+               (elem->>'loot_box_id')::INT = $3
+               OR elem->>'role_id' = ('LOOT_BOX_' || $3::text)
+               OR elem->>'role_id' = ('CHEST_' || $3::text)
+             )`,
+          [guildId, uid, bc.reward_chest_id]
+        );
+        const tradedQty = parseInt(tradedRes.rows[0]?.total_traded || 0, 10);
+
+        const totalAccounted = heldQty + openedQty + tradedQty;
+        const deficit = Math.max(0, targetQty - totalAccounted);
+
+        if (deficit > 0) {
+          if (heldRes.rows.length > 0) {
+            await pool.query(
+              `UPDATE user_inventory SET quantity = COALESCE(quantity, 1) + $1 WHERE id = $2`,
+              [deficit, heldRes.rows[0].id]
+            );
+            sysLog('Self-Healing: Stacked Legacy Config Level Chest', {
+              user: uid,
+              guild: guildId,
+              detail: `Level ${bc.level} | +${deficit}x ${bc.chest_name || 'Chest'} (Deficit filled)`
+            });
+          } else {
+            await pool.query(
+              `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, is_active, source, purchase_source, quantity)
+               VALUES ($1, $2, $3, $4, false, 'LEVEL', 'level', $5)`,
+              [uid, guildId, chestShopItemId, chestRoleId, deficit]
+            );
+            sysLog('Self-Healing: Granted Legacy Config Level Chest', {
+              user: uid,
+              guild: guildId,
+              detail: `Level ${bc.level} | ${deficit}x ${bc.chest_name || 'Chest'} (Deficit filled)`
+            });
+          }
+          missingReconciledCount++;
         }
+
         await pool.query(
           `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-          [uid, guildId, level]
+          [uid, guildId, bc.level]
         );
-        if (userId) claimedLegacyLevels.add(level);
-        else claimedLegacyLevels.add(`${uid}_${level}`);
       }
 
-      if (userId) {
+      if (userId && missingReconciledCount > 0) {
         sysLog('Level Rewards Verified', {
           tag: 'AUDIT',
           user: uid,
           guild: guildId,
-          detail: `Level: ${reachedLevel} | Missing Reconciled: ${missingRewards.length}`
+          detail: `Level: ${reachedLevel} | Missing Deficits Reconciled: ${missingReconciledCount}`
         });
       }
     }
