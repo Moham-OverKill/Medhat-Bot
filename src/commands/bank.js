@@ -807,15 +807,15 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       if (hasTimer) {
         if (updatedItem.stock === null || updatedItem.stock === undefined) {
           stockHeader = '♾️ Unlimited';
-          stockValue = `Refreshes in <t:${intvStr}:R>`;
+          stockValue = `Refreshes <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
         } else if (isSoldOut) {
           stockHeader = '🔴 Out Of Stock';
-          stockValue = `Restock in <t:${intvStr}:R>`;
+          stockValue = `Restocks <t:${intvStr}:R>`;
           embed.setColor('#808080');
         } else {
-          stockHeader = `🟢 ${updatedItem.stock}/${maxStock || updatedItem.stock} In Stock`;
-          stockValue = `Restock in <t:${intvStr}:R>`;
+          stockHeader = `🟢 ${updatedItem.stock} In Stock`;
+          stockValue = `Restocks <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
         }
       } else {

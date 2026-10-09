@@ -2138,14 +2138,14 @@ export async function handleShopPostPublish(interaction) {
 
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Unlimited';
-        stockValue = `Refreshes in <t:${nextRestockUnix}:R>`;
+        stockValue = `Refreshes <t:${nextRestockUnix}:R>`;
       } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
-        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+        stockValue = `Restocks <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
-        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockValue = `Restocks <t:${nextRestockUnix}:R>`;
       }
     } else {
       if (item.stock === null || item.stock === undefined) {
@@ -4984,14 +4984,14 @@ export async function handleShopPostUpdate(interaction) {
 
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Unlimited';
-        stockValue = `Refreshes in <t:${nextRestockUnix}:R>`;
+        stockValue = `Refreshes <t:${nextRestockUnix}:R>`;
       } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
-        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+        stockValue = `Restocks <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
-        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockValue = `Restocks <t:${nextRestockUnix}:R>`;
       }
     } else {
       if (item.stock === null || item.stock === undefined) {
