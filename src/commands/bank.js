@@ -831,13 +831,28 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         if (row.components && row.components.length > 0) {
           const buyBtn = ButtonBuilder.from(row.components[0]);
           buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
-          const isFree = updatedItem.price === 0;
+          let effectivePrice = Number(updatedItem.price) || 0;
+          const btnCustomId = buyBtn.data?.custom_id || '';
+          if (btnCustomId) {
+            const btnParts = btnCustomId.split('_');
+            const isForce = btnCustomId.startsWith('force_buy_');
+            const offset = isForce ? 0 : 1;
+            const overridePriceStr = btnParts[5 + offset];
+            if (overridePriceStr !== undefined && overridePriceStr !== null && overridePriceStr !== '') {
+              const parsedOverride = Number(overridePriceStr);
+              if (!isNaN(parsedOverride)) {
+                effectivePrice = parsedOverride;
+              }
+            }
+          }
+
+          const isFree = Number(effectivePrice) === 0;
           if (isSoldOut) {
             buyBtn.setLabel(postMode === 'drop' ? 'ALL CLAIMED' : 'SOLD OUT');
           } else if (postMode === 'drop') {
-            buyBtn.setLabel(isFree ? 'CLAIM (FREE)' : `CLAIM (${Number(updatedItem.price).toLocaleString()})`);
+            buyBtn.setLabel(isFree ? 'CLAIM (FREE)' : `CLAIM (${Number(effectivePrice).toLocaleString()})`);
           } else {
-            buyBtn.setLabel(isFree ? 'BUY (FREE)' : `BUY (${Number(updatedItem.price).toLocaleString()})`);
+            buyBtn.setLabel(isFree ? 'BUY (FREE)' : `BUY (${Number(effectivePrice).toLocaleString()})`);
           }
           row.setComponents(buyBtn);
 
