@@ -40,15 +40,12 @@ export async function processAutoRestocks(client) {
     const result = await pool.query(
       `SELECT sp.message_id, sp.guild_id, sp.channel_id, sp.item_id,
               sp.max_stock, sp.restock_interval_seconds, sp.last_restocked_at,
+              sp.claim_limit_per_user,
               si.name as item_name, si.stock as current_stock
        FROM shop_posts sp
        JOIN shop_items si ON sp.item_id = si.id
-       WHERE (sp.post_mode = 'auto' OR (sp.restock_interval_seconds IS NOT NULL AND sp.restock_interval_seconds > 0 AND sp.post_mode != 'drop'))
-         AND sp.max_stock IS NOT NULL
-         AND sp.max_stock > 0
-         AND sp.restock_interval_seconds IS NOT NULL
+       WHERE sp.restock_interval_seconds IS NOT NULL
          AND sp.restock_interval_seconds > 0
-         AND (si.stock IS NULL OR si.stock < sp.max_stock)
          AND (
            sp.last_restocked_at IS NULL
            OR sp.last_restocked_at <= NOW() - (sp.restock_interval_seconds * INTERVAL '1 second')
@@ -61,17 +58,27 @@ export async function processAutoRestocks(client) {
 
     for (const row of result.rows) {
       try {
-        // 1. Update database stock and timestamp
+        // 1. Refill database stock if max_stock is set
+        if (row.max_stock !== null && row.max_stock > 0) {
+          await pool.query(
+            `UPDATE shop_items SET stock = $1 WHERE id = $2`,
+            [row.max_stock, row.item_id]
+          );
+        }
+
+        // 2. Clear user claims for this post so users can claim again in the new cycle
         await pool.query(
-          `UPDATE shop_items SET stock = $1 WHERE id = $2`,
-          [row.max_stock, row.item_id]
+          `DELETE FROM shop_drop_claims WHERE message_id = $1`,
+          [row.message_id]
         );
+
+        // 3. Update shop_posts timestamp and post_mode
         await pool.query(
           `UPDATE shop_posts SET last_restocked_at = NOW(), post_mode = 'auto' WHERE message_id = $1`,
           [row.message_id]
         );
 
-        // 2. Fetch Discord message
+        // 4. Fetch Discord message
         const guild = client.guilds.cache.get(row.guild_id) || await client.guilds.fetch(row.guild_id).catch(() => null);
         if (!guild) continue;
 
@@ -97,7 +104,7 @@ export async function processAutoRestocks(client) {
           await refreshShopMessageUI({ message, guildId: row.guild_id }, row.item_id, row.guild_id);
           sysLog('Auto Shop Restock Executed', {
             guild: row.guild_id,
-            detail: `Item ${row.item_name} restocked to ${row.max_stock} (Message: ${row.message_id})`
+            detail: `Item ${row.item_name} restocked / claims reset (Message: ${row.message_id})`
           });
         }
       } catch (postErr) {

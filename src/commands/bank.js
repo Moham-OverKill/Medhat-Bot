@@ -438,11 +438,12 @@ export async function handleShopBuyButton(interaction) {
       } catch (_) {}
     }
 
-    const isDrop = shopPost?.post_mode === 'drop';
+    const claimLimit = parseInt(shopPost?.claim_limit_per_user, 10) || null;
+    const hasClaimLimit = Boolean(claimLimit && claimLimit > 0);
+    const isDrop = (shopPost?.post_mode === 'drop') || hasClaimLimit;
 
-    // Drop Mode: Per-User Claim Limit Enforcement
-    if (isDrop && interaction.message?.id) {
-      const claimLimit = parseInt(shopPost.claim_limit_per_user, 10) || 1;
+    // Per-User Claim Limit Enforcement
+    if (hasClaimLimit && interaction.message?.id) {
       const userClaimsRes = await pool.query(
         `SELECT claim_count FROM shop_drop_claims WHERE message_id = $1 AND user_id = $2`,
         [interaction.message.id, userId]
@@ -450,7 +451,7 @@ export async function handleShopBuyButton(interaction) {
       const currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
       if (currentClaims >= claimLimit) {
         return interaction.reply({
-          content: `❌ You have reached your claim limit (${claimLimit}) for this drop.`,
+          content: `❌ You have reached your claim limit (${claimLimit}) for this item.`,
           flags: MessageFlags.Ephemeral
         });
       }
@@ -602,8 +603,8 @@ export async function handleShopBuyButton(interaction) {
       }
     }
 
-    // STEP 2.5: Drop Claim Increment
-    if (isDrop && interaction.message?.id) {
+    // STEP 2.5: Drop / Claim Increment
+    if (hasClaimLimit && interaction.message?.id) {
       await pool.query(
         `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
          VALUES ($1, $2, $3, 1, NOW())
@@ -747,11 +748,10 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         delete embed.data.thumbnail;
       }
 
-      // Check if post is a Drop or Auto mode post from shop_posts, defaulting to normal (Stocks Mode) with no timer
-      let postMode = 'normal';
       let maxStock = null;
       let restockIntervalSeconds = null;
       let claimLimit = null;
+      let intvStr = null;
       if (msg.id) {
         try {
           const pool = (await import('../storage/postgres.js')).getPool();
@@ -760,18 +760,14 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             [msg.id]
           );
           if (spRes.rows.length > 0) {
-            const rawMode = spRes.rows[0].post_mode;
             const rawInterval = spRes.rows[0].restock_interval_seconds;
             const lastRestockedAt = spRes.rows[0].last_restocked_at;
             const createdAt = spRes.rows[0].created_at;
-            if (rawMode === 'drop') {
-              postMode = 'drop';
-              claimLimit = spRes.rows[0].claim_limit_per_user || 1;
-            } else if (rawMode === 'auto' && rawInterval && rawInterval > 0) {
-              postMode = 'auto';
-              restockIntervalSeconds = rawInterval;
-              maxStock = spRes.rows[0].max_stock;
+            claimLimit = spRes.rows[0].claim_limit_per_user || null;
+            maxStock = spRes.rows[0].max_stock;
 
+            if (rawInterval && rawInterval > 0) {
+              restockIntervalSeconds = rawInterval;
               const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : new Date(createdAt || Date.now()).getTime();
               let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
               if (nextRestockMs <= Date.now()) {
@@ -780,40 +776,59 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
                 nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
               }
               intvStr = Math.floor(nextRestockMs / 1000);
-            } else {
-              postMode = 'normal';
-              restockIntervalSeconds = null;
-              maxStock = null;
             }
           }
         } catch (_) {}
       }
 
+      const hasTimer = Boolean(restockIntervalSeconds && restockIntervalSeconds > 0);
+      const hasLimit = Boolean(claimLimit && claimLimit > 0);
+      const isSoldOut = updatedItem.stock !== null && updatedItem.stock !== undefined && updatedItem.stock <= 0;
+
       let stockHeader = '♾️ Stock';
       let stockValue = 'Unlimited';
-      if (updatedItem.stock !== null && updatedItem.stock !== undefined) {
-        if (updatedItem.stock <= 0) {
+      if (hasTimer) {
+        const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
+        if (updatedItem.stock === null || updatedItem.stock === undefined) {
+          stockHeader = '♾️ Stock';
+          stockValue = `${limitPrefix}Refreshes in <t:${intvStr}:R>`;
+          embed.setColor('#3498DB');
+        } else if (isSoldOut) {
           stockHeader = '🔴 Out Of Stock';
-          if (postMode === 'drop') {
-            stockValue = 'All Claimed';
-          } else if (postMode === 'auto' && intvStr) {
-            stockValue = `Restock in <t:${intvStr}:R>`;
-          } else {
-            stockValue = 'Sold Out';
-          }
-          embed.setColor('#808080'); // Gray out sold out
+          stockValue = `${limitPrefix}Restock in <t:${intvStr}:R>`;
+          embed.setColor('#808080');
         } else {
-          embed.setColor('#3498DB'); // Blue when in stock
-          if (postMode === 'drop') {
-            stockHeader = '🎁 Drop Stock';
-            stockValue = `**${updatedItem.stock}** Available${claimLimit ? ` (Limit: ${claimLimit}/user)` : ''}`;
-          } else if (postMode === 'auto') {
-            stockHeader = `🟢 ${updatedItem.stock}/${maxStock || updatedItem.stock} In Stock`;
-            stockValue = intvStr ? `Restock in <t:${intvStr}:R>` : 'Active';
-          } else {
-            stockHeader = `🟢 ${updatedItem.stock} In Stock`;
-            stockValue = 'Available';
-          }
+          stockHeader = `🟢 ${updatedItem.stock}/${maxStock || updatedItem.stock} In Stock`;
+          stockValue = `${limitPrefix}Restock in <t:${intvStr}:R>`;
+          embed.setColor('#3498DB');
+        }
+      } else if (hasLimit) {
+        if (updatedItem.stock === null || updatedItem.stock === undefined) {
+          stockHeader = '♾️ Stock';
+          stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
+          embed.setColor('#3498DB');
+        } else if (isSoldOut) {
+          stockHeader = '🔴 Out Of Stock';
+          stockValue = 'All Claimed';
+          embed.setColor('#808080');
+        } else {
+          stockHeader = '🎁 Drop Stock';
+          stockValue = `**${updatedItem.stock}** Available (Limit: ${claimLimit}/user)`;
+          embed.setColor('#3498DB');
+        }
+      } else {
+        if (updatedItem.stock === null || updatedItem.stock === undefined) {
+          stockHeader = '♾️ Stock';
+          stockValue = 'Unlimited';
+          embed.setColor('#3498DB');
+        } else if (isSoldOut) {
+          stockHeader = '🔴 Out Of Stock';
+          stockValue = 'Sold Out';
+          embed.setColor('#808080');
+        } else {
+          stockHeader = `🟢 ${updatedItem.stock} In Stock`;
+          stockValue = 'Available';
+          embed.setColor('#3498DB');
         }
       }
 
@@ -825,7 +840,6 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       });
       embed.setFields(updatedFields);
 
-      const isSoldOut = updatedItem.stock !== null && updatedItem.stock <= 0;
       if (interaction.message.components && interaction.message.components.length > 0) {
         const row = ActionRowBuilder.from(interaction.message.components[0]);
         if (row.components && row.components.length > 0) {
@@ -847,12 +861,22 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           }
 
           const isFree = Number(effectivePrice) === 0;
-          if (isSoldOut) {
-            buyBtn.setLabel(postMode === 'drop' ? 'ALL CLAIMED' : 'SOLD OUT');
-          } else if (postMode === 'drop') {
-            buyBtn.setLabel(isFree ? 'CLAIM (FREE)' : `CLAIM (${Number(effectivePrice).toLocaleString()})`);
+          if (hasLimit) {
+            if (isSoldOut) {
+              buyBtn.setLabel('ALL CLAIMED');
+            } else if (isFree) {
+              buyBtn.setLabel('CLAIM (FREE)');
+            } else {
+              buyBtn.setLabel(`CLAIM (${Number(effectivePrice).toLocaleString()})`);
+            }
           } else {
-            buyBtn.setLabel(isFree ? 'BUY (FREE)' : `BUY (${Number(effectivePrice).toLocaleString()})`);
+            if (isSoldOut) {
+              buyBtn.setLabel('SOLD OUT');
+            } else if (isFree) {
+              buyBtn.setLabel('BUY (FREE)');
+            } else {
+              buyBtn.setLabel(`BUY (${Number(effectivePrice).toLocaleString()})`);
+            }
           }
           row.setComponents(buyBtn);
 
