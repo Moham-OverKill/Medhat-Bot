@@ -16,6 +16,7 @@ import { seedMvpCacheFromDb } from './mvp/mvpCache.js';
 import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { startExpirationScheduler } from './cron/expirations.js';
+import { startShopRestockScheduler } from './cron/shop-restock.js';
 import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
@@ -344,6 +345,7 @@ client.once(Events.ClientReady, async () => {
     startQuestScheduler(client);
     startLeaderboardScheduler(client); // Also runs KotH every hour
     startExpirationScheduler(client);
+    startShopRestockScheduler(client);
     startWeeklySummaryScheduler(client);
 
     // Sweep and purge any departed bot admins across all guilds (runs non-blocking in background)

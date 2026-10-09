@@ -1259,16 +1259,42 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_embed_group_posts_group ON server_embed_group_posts(group_id);
 
       CREATE TABLE IF NOT EXISTS shop_posts (
-        message_id VARCHAR(32) PRIMARY KEY,
-        guild_id VARCHAR(32) NOT NULL,
-        channel_id VARCHAR(32) NOT NULL,
+        message_id VARCHAR(64) PRIMARY KEY,
+        guild_id VARCHAR(64) NOT NULL,
+        channel_id VARCHAR(64) NOT NULL,
         item_id INTEGER NOT NULL,
         custom_image_url TEXT,
+        post_mode VARCHAR(16) NOT NULL DEFAULT 'normal',
+        claim_limit_per_user INTEGER DEFAULT NULL,
+        restock_interval_seconds INTEGER DEFAULT NULL,
+        last_restocked_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+        max_stock INTEGER DEFAULT NULL,
+        auto_equip BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_shop_posts_guild ON shop_posts(guild_id, item_id);
+      CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto';
+
+      CREATE TABLE IF NOT EXISTS shop_drop_claims (
+        message_id VARCHAR(64) NOT NULL,
+        guild_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        claim_count INTEGER NOT NULL DEFAULT 1,
+        last_claimed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (message_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_shop_drop_claims_msg ON shop_drop_claims(message_id);
+      CREATE INDEX IF NOT EXISTS idx_shop_drop_claims_user ON shop_drop_claims(guild_id, user_id);
     `);
+
+    // Shop posts migrations for existing tables
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS post_mode VARCHAR(16) NOT NULL DEFAULT 'normal'`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS claim_limit_per_user INTEGER DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS restock_interval_seconds INTEGER DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS last_restocked_at TIMESTAMP WITH TIME ZONE DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS max_stock INTEGER DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS auto_equip BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
 
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});

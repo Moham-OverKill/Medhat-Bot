@@ -68,6 +68,8 @@ import {
   handleShopPostStart,
   handleShopPostItemSelect,
   handleShopPostChannelSelect,
+  handleShopPostModeSelect,
+  handleShopPostAutoEquipToggle,
   handleShopPostSellerSelect,
   handleShopPostDescBtn,
   handleShopPostPayoutBtn,
@@ -233,6 +235,8 @@ export function setupComponentHandlers(client) {
           interaction.customId.startsWith('shop_post_desc_modal') ||
           interaction.customId.startsWith('shop_post_payout_modal') ||
           interaction.customId.startsWith('shop_post_stock_modal') ||
+          interaction.customId.startsWith('shop_post_drop_modal') ||
+          interaction.customId.startsWith('shop_post_auto_modal') ||
           interaction.customId.startsWith('shop_post_price_modal')
         ) {
           await handleShopPostModalSubmit(interaction);
@@ -489,6 +493,10 @@ export function setupComponentHandlers(client) {
         await handleShopPostItemSelect(interaction);
       } else if (customId === 'shop_post_channel_select') {
         await handleShopPostChannelSelect(interaction);
+      } else if (customId === 'shop_post_mode_select') {
+        await handleShopPostModeSelect(interaction);
+      } else if (customId === 'shop_post_auto_equip_toggle') {
+        await handleShopPostAutoEquipToggle(interaction);
       }
       // Setup Modal Routing
       else if (customId === 'shop_post_seller_select') {
