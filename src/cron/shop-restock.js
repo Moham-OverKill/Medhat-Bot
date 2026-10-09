@@ -43,13 +43,15 @@ export async function processAutoRestocks(client) {
               si.name as item_name, si.stock as current_stock
        FROM shop_posts sp
        JOIN shop_items si ON sp.item_id = si.id
-       WHERE sp.post_mode = 'auto'
+       WHERE (sp.post_mode = 'auto' OR (sp.restock_interval_seconds IS NOT NULL AND sp.restock_interval_seconds > 0 AND sp.post_mode != 'drop'))
          AND sp.max_stock IS NOT NULL
+         AND sp.max_stock > 0
          AND sp.restock_interval_seconds IS NOT NULL
+         AND sp.restock_interval_seconds > 0
          AND (si.stock IS NULL OR si.stock < sp.max_stock)
          AND (
            sp.last_restocked_at IS NULL
-           OR sp.last_restocked_at <= NOW() - (sp.restock_interval_seconds || ' seconds')::interval
+           OR sp.last_restocked_at <= NOW() - (sp.restock_interval_seconds * INTERVAL '1 second')
          )
        ORDER BY sp.last_restocked_at ASC NULLS FIRST
        LIMIT 10`
@@ -65,7 +67,7 @@ export async function processAutoRestocks(client) {
           [row.max_stock, row.item_id]
         );
         await pool.query(
-          `UPDATE shop_posts SET last_restocked_at = NOW() WHERE message_id = $1`,
+          `UPDATE shop_posts SET last_restocked_at = NOW(), post_mode = 'auto' WHERE message_id = $1`,
           [row.message_id]
         );
 
