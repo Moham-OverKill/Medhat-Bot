@@ -1237,8 +1237,6 @@ export async function handleShopPostStart(interaction) {
   } else {
     if (!state.itemId) {
       statusDesc = '⚠️ Select an item to post';
-    } else if (!state.channelId) {
-      statusDesc = '⚠️ Set a channel to post the item to';
     } else if (state.overridePrice === null) {
       statusDesc = '⚠️ Set a price for that item';
     } else if ((state.postMode === 'drop' || state.postMode === 'auto') && !state.stockConfigured) {
