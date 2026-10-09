@@ -1230,17 +1230,19 @@ export async function handleShopPostStart(interaction) {
   let statusDesc = '';
   if (state.isEditing) {
     if (state.overridePrice === null) {
-      statusDesc = '⚠️ Set a price for that item';
+      statusDesc = '⚠️ Set Price';
     } else if (!state.stockConfigured) {
-      statusDesc = '⚠️ Configure the stock using the Config button first';
+      statusDesc = '⚠️ Set Stocks';
     }
   } else {
     if (!state.itemId) {
-      statusDesc = '⚠️ Select an item to post';
+      statusDesc = '⚠️ Set Item';
     } else if (state.overridePrice === null) {
-      statusDesc = '⚠️ Set a price for that item';
-    } else if ((state.postMode === 'drop' || state.postMode === 'auto') && !state.stockConfigured) {
-      statusDesc = `⚠️ Configure ${state.postMode === 'drop' ? 'drop stock' : 'auto restock'} using the Config button`;
+      statusDesc = '⚠️ Set Price';
+    } else if (state.postMode === 'drop' && !state.stockConfigured) {
+      statusDesc = '⚠️ Set Stocks';
+    } else if (state.postMode === 'auto' && !state.stockConfigured) {
+      statusDesc = '⚠️ Set Timer';
     }
   }
 
