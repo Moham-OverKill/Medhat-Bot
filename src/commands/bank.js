@@ -17,7 +17,7 @@ import { handleInteractionError, diagnoseChannelPermissions } from '../utils/err
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRolePosition, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
@@ -314,7 +314,7 @@ export async function handleShopCategorySelect(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const categoryId = parseInt(interaction.values[0]);
     const rawItems = await getShopItems(interaction.guildId, categoryId);
-    const items = await sortItemsByRolePosition(rawItems, interaction.guild);
+    const items = await sortItemsByRarity(rawItems, interaction.guild);
 
     if (items.length === 0) {
       return interaction.editReply({ files: [], content: 'This category is empty.' });
