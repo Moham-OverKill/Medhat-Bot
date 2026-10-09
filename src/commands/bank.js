@@ -405,6 +405,41 @@ export async function handleShopItemSelect(interaction) {
   }
 }
 
+/**
+ * If a purchase/claim attempt fails on an auto-equip post, attempt to equip an existing
+ * unequipped copy of that item from the user's inventory without purchasing a new one.
+ * @returns {Promise<string|null>} The item name if successfully equipped, or null.
+ */
+async function tryAutoEquipExisting(userId, guildId, itemId, member) {
+  try {
+    const pool = (await import('../storage/postgres.js')).getPool();
+    const invRes = await pool.query(
+      `SELECT ui.id, ui.is_active, ui.expires_at, si.name, si.role_id
+       FROM user_inventory ui
+       JOIN shop_items si ON ui.shop_item_id = si.id
+       WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.shop_item_id = $3
+         AND ui.is_active = false
+       ORDER BY ui.id ASC
+       LIMIT 1`,
+      [userId, guildId, itemId]
+    );
+
+    if (invRes.rows.length === 0) return null;
+    const invItem = invRes.rows[0];
+    if (!invItem.role_id) return null;
+
+    const { toggleEquipItem } = await import('../economy/shop.js');
+    const equipRes = await toggleEquipItem(userId, guildId, invItem.id, member, { equipOnly: true });
+    if (equipRes.success && equipRes.action !== 'already_equipped') {
+      return invItem.name;
+    }
+    return null;
+  } catch (err) {
+    sysWarn('Auto-Equip Existing Fallback Error', { user: userId, guild: guildId, itemId, error: err?.message });
+    return null;
+  }
+}
+
 export async function handleShopBuyButton(interaction) {
   try {
     const isForce = interaction.customId.startsWith('force_buy_');
@@ -596,25 +631,33 @@ export async function handleShopBuyButton(interaction) {
     });
 
     if (!result.success) {
+      let equippedNotice = '';
+      if (shopPost?.auto_equip === true) {
+        const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
+        if (equippedName) {
+          equippedNotice = `\n✅ Equipped your existing **${equippedName}**!`;
+        }
+      }
+
       if (result.error === 'Insufficient balance') {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0);
         const missing = Math.max(0, itemPrice - currentBal);
         return interaction.editReply({
-          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`,
+          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.${equippedNotice}`,
           components: []
         });
       } else if (result.error.includes('higher than my highest role')) {
-        return interaction.editReply({ files: [], content: '\u274C Error: I cannot assign this role. Please contact an admin.',
+        return interaction.editReply({ files: [], content: `\u274C Error: I cannot assign this role. Please contact an admin.${equippedNotice}`,
           components: [] });
       } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
         return interaction.editReply({
-          content: `\u2755 ${result.error}`,
+          content: `\u2755 ${result.error}${equippedNotice}`,
           components: []
         });
       } else {
         return interaction.editReply({
-          content: `\u274C ${result.error}`,
+          content: `\u274C ${result.error}${equippedNotice}`,
           components: []
         });
       }
@@ -999,9 +1042,31 @@ export async function handleShopBuyModalSubmit(interaction) {
     });
 
     if (!result.success) {
+      let equippedNotice = '';
+      if (shopPost?.auto_equip === true) {
+        const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
+        if (equippedName) {
+          equippedNotice = `\n✅ Equipped your existing **${equippedName}**!`;
+        }
+      }
+
+      if (result.error === 'Insufficient balance') {
+        const { getShopItem } = await import('../economy/shop.js');
+        const itemForPrice = await getShopItem(itemId, guildId);
+        const unitPrice = overridePrice !== null && overridePrice !== undefined ? overridePrice : (itemForPrice ? (parseInt(itemForPrice.price, 10) || 0) : 0);
+        const totalCost = unitPrice * qty;
+        const userBalData = await getUserBalance(guildId, userId);
+        const currentBal = parseInt(userBalData?.balance || 0);
+        const missing = Math.max(0, totalCost - currentBal);
+        return interaction.editReply({
+          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.${equippedNotice}`,
+          components: []
+        });
+      }
+
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
       return interaction.editReply({
-        content: isCapOrOwned ? `❔ ${result.error}` : `❌ ${result.error}`,
+        content: isCapOrOwned ? `❔ ${result.error}${equippedNotice}` : `❌ ${result.error}${equippedNotice}`,
         components: []
       });
     }
