@@ -659,13 +659,15 @@ export async function handleShopBuyButton(interaction) {
     let msg;
     const boughtQty = result.quantity || 1;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
-    const actionVerb = isDrop ? 'Claimed' : 'Bought';
+    const isFree = Number(result.pricePaid ?? 0) === 0;
+    const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
     const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
+    const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
 
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
     } else {
-      msg = `\u2705 ${actionVerb} ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `\u2705 ${actionVerb} ${boughtLabel}${equipSuffix}${balanceSuffix}`;
     }
     return interaction.editReply({ files: [], content: msg,
       components: [] });
@@ -1038,15 +1040,17 @@ export async function handleShopBuyModalSubmit(interaction) {
       }
     }
 
-    const actionVerb = isDrop ? 'Claimed' : 'Bought';
+    const isFree = Number(result.pricePaid ?? 0) === 0;
+    const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
     const boughtQty = result.quantity || qty;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
     const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
+    const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     let msg;
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
     } else {
-      msg = `✅ ${actionVerb} ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ ${actionVerb} ${boughtLabel}${equipSuffix}${balanceSuffix}`;
     }
     return interaction.editReply({ files: [], content: msg, components: [] });
 
