@@ -1295,6 +1295,9 @@ async function createTables() {
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS max_stock INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS auto_equip BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto'`).catch(() => {});
+    await pool.query(`UPDATE shop_posts SET post_mode = 'normal' WHERE post_mode IS NULL OR post_mode NOT IN ('normal', 'drop', 'auto')`).catch(() => {});
+    await pool.query(`UPDATE shop_posts SET restock_interval_seconds = NULL, max_stock = NULL WHERE post_mode = 'normal' AND restock_interval_seconds IS NOT NULL`).catch(() => {});
+    await pool.query(`UPDATE shop_posts SET post_mode = 'normal', restock_interval_seconds = NULL WHERE post_mode = 'auto' AND (restock_interval_seconds IS NULL OR restock_interval_seconds <= 0)`).catch(() => {});
 
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
