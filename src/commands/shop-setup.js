@@ -1205,7 +1205,7 @@ export async function handleShopPostStart(interaction) {
 
   let panelTitle = 'Posting an item';
   if (state.isEditing) {
-    panelTitle = selectedItem ? `Editing ${selectedItem.name}` : 'Edit Shop Post';
+    panelTitle = selectedItem ? `Editing ${selectedItem.name}` : 'Editing an item';
   } else if (selectedItem) {
     panelTitle = `Posting ${selectedItem.name}`;
   }
@@ -1213,51 +1213,6 @@ export async function handleShopPostStart(interaction) {
   const embed = new EmbedBuilder()
     .setTitle(panelTitle)
     .setColor(0x9B59B6);
-
-  // Show item image as small thumbnail preview in the staging embed
-  if (selectedItem) {
-    const previewImg = state.imageUrl || getItemImage(selectedItem);
-    if (previewImg) embed.setThumbnail(previewImg);
-  }
-
-  // Prioritized status description
-  let statusDesc = '';
-  if (state.isEditing) {
-    if (state.overridePrice === null) {
-      statusDesc = 'Set a price for that item';
-    } else if (!state.stockConfigured) {
-      statusDesc = 'Configure the stock using the Config button first';
-    }
-  } else {
-    if (!state.itemId) {
-      statusDesc = 'Select an item to post';
-    } else if (!isPack && state.overridePrice === null) {
-      statusDesc = 'Set a price for that item';
-    } else if ((state.postMode === 'drop' || state.postMode === 'auto') && !state.stockConfigured) {
-      statusDesc = `Configure ${state.postMode === 'drop' ? 'drop stock' : 'auto restock'} using the Config button`;
-    }
-  }
-  
-  embed.setDescription(statusDesc || null);
-
-  let modeSummary = 'Normal';
-  if (state.postMode === 'drop') {
-    modeSummary = `Drop (Pool: ${state.stock !== null ? state.stock : 'Unlimited'}, Limit: ${state.claimLimit || 1}/user)`;
-  } else if (state.postMode === 'auto') {
-    const intvStr = state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : 'Not Set';
-    modeSummary = `Auto (Cap: ${state.maxStock !== null ? state.maxStock : 'N/A'}, Every ${intvStr})`;
-  } else {
-    modeSummary = `Normal (Stock: ${state.stock !== null ? state.stock : 'Unlimited'})`;
-  }
-
-  const autoEquipSummary = (isPack || (selectedItem && selectedItem.item_type === 'loot_box')) ? 'N/A' : (state.autoEquip ? 'ON' : 'OFF');
-  const priceSummary = state.overridePrice !== null ? (state.overridePrice === 0 ? 'FREE' : `${state.overridePrice.toLocaleString()} coins`) : 'Not Set';
-
-  embed.addFields(
-    { name: 'Mode & Stock', value: modeSummary, inline: true },
-    { name: 'Price', value: priceSummary, inline: true },
-    { name: 'Auto Equip', value: autoEquipSummary, inline: true }
-  );
 
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
@@ -1303,6 +1258,12 @@ export async function handleShopPostStart(interaction) {
         page,
         customId: 'shop_post_item_select',
         placeholder: '📂 Choose Category Folder...',
+        backOption: {
+          label: 'Back',
+          value: 'folder_reset',
+          emoji: '⬅️',
+          description: 'Return to folder list'
+        },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
         mapOption: c => ({
@@ -1356,6 +1317,12 @@ export async function handleShopPostStart(interaction) {
         page,
         customId: 'shop_post_item_select',
         placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`,
+        backOption: {
+          label: 'Back',
+          value: state.postFilter?.startsWith('cat_') ? 'folder_categorized' : 'folder_reset',
+          emoji: '⬅️',
+          description: state.postFilter?.startsWith('cat_') ? 'Return to category list' : 'Return to folder list'
+        },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
         mapOption: i => ({
@@ -1400,7 +1367,7 @@ export async function handleShopPostStart(interaction) {
       {
         label: 'Normal Mode',
         value: 'normal',
-        description: 'Standard shop post with regular stock',
+        description: 'Items remain available until stock runs out',
         emoji: '🏬',
         default: state.postMode === 'normal'
       },
@@ -1439,7 +1406,7 @@ export async function handleShopPostStart(interaction) {
                      state.postMode !== 'normal' ||
                      state.autoEquip !== false;
 
-  // Row 4: Config Buttons (Compact: [Desc] [Image] [Payout] [Price])
+  // Row 4: Action Buttons - Row 1 ([Desc] [Image] [Payout] [Price] [Config])
   const configRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('shop_post_desc_btn')
@@ -1464,6 +1431,12 @@ export async function handleShopPostStart(interaction) {
       .setLabel('Price')
       .setEmoji('🏷️')
       .setStyle((state.overridePrice !== null && state.overridePrice !== 0) ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(!isItemSelected),
+    new ButtonBuilder()
+      .setCustomId('shop_post_stock_btn')
+      .setLabel('Config')
+      .setEmoji('⚙️')
+      .setStyle(state.stockConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
@@ -1510,15 +1483,6 @@ export async function handleShopPostStart(interaction) {
         .setDisabled(!isModified)
     );
   }
-
-  actionComponents.push(
-    new ButtonBuilder()
-      .setCustomId('shop_post_stock_btn')
-      .setLabel('Config')
-      .setEmoji('⚙️')
-      .setStyle(state.stockConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected)
-  );
 
   actionComponents.push(
     new ButtonBuilder()
@@ -1630,7 +1594,7 @@ export async function handleShopPostItemSelect(interaction) {
   }
 
   // --- Folder Navigation Routing ---
-  if (itemId === 'folder_reset') {
+  if (itemId === 'folder_reset' || itemId === 'folder_back') {
     state.postStep = 0;
     state.postFilter = null;
     state.postPage = 1;
