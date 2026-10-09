@@ -756,12 +756,14 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         try {
           const pool = (await import('../storage/postgres.js')).getPool();
           const spRes = await pool.query(
-            `SELECT post_mode, max_stock, restock_interval_seconds, claim_limit_per_user FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+            `SELECT post_mode, max_stock, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
             [msg.id]
           );
           if (spRes.rows.length > 0) {
             const rawMode = spRes.rows[0].post_mode;
             const rawInterval = spRes.rows[0].restock_interval_seconds;
+            const lastRestockedAt = spRes.rows[0].last_restocked_at;
+            const createdAt = spRes.rows[0].created_at;
             if (rawMode === 'drop') {
               postMode = 'drop';
               claimLimit = spRes.rows[0].claim_limit_per_user || 1;
@@ -769,6 +771,15 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
               postMode = 'auto';
               restockIntervalSeconds = rawInterval;
               maxStock = spRes.rows[0].max_stock;
+
+              const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : new Date(createdAt || Date.now()).getTime();
+              let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
+              if (nextRestockMs <= Date.now()) {
+                const elapsed = Date.now() - baseTime;
+                const cycles = Math.floor(elapsed / (restockIntervalSeconds * 1000)) + 1;
+                nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
+              }
+              intvStr = Math.floor(nextRestockMs / 1000);
             } else {
               postMode = 'normal';
               restockIntervalSeconds = null;
@@ -778,23 +789,15 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         } catch (_) {}
       }
 
-      let intvStr = '';
-      if (postMode === 'auto' && restockIntervalSeconds && restockIntervalSeconds > 0) {
-        if (restockIntervalSeconds % 86400 === 0) intvStr = `${restockIntervalSeconds / 86400}d`;
-        else if (restockIntervalSeconds % 3600 === 0) intvStr = `${restockIntervalSeconds / 3600}h`;
-        else if (restockIntervalSeconds % 60 === 0) intvStr = `${restockIntervalSeconds / 60}m`;
-        else intvStr = `${Math.floor(restockIntervalSeconds / 60)}m`;
-      }
-
       let stockHeader = '♾️ Stock';
       let stockValue = 'Unlimited';
       if (updatedItem.stock !== null && updatedItem.stock !== undefined) {
         if (updatedItem.stock <= 0) {
-          stockHeader = postMode === 'drop' ? '🔴 Drop Stock' : '🔴 Stock';
+          stockHeader = '🔴 Out Of Stock';
           if (postMode === 'drop') {
             stockValue = 'All Claimed';
           } else if (postMode === 'auto' && intvStr) {
-            stockValue = `Sold Out (Refills every ${intvStr})`;
+            stockValue = `Restock in <t:${intvStr}:R>`;
           } else {
             stockValue = 'Sold Out';
           }
@@ -805,17 +808,17 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             stockHeader = '🎁 Drop Stock';
             stockValue = `**${updatedItem.stock}** Available${claimLimit ? ` (Limit: ${claimLimit}/user)` : ''}`;
           } else if (postMode === 'auto') {
-            stockHeader = '🟢 Stock';
-            stockValue = `**${updatedItem.stock}/${maxStock || updatedItem.stock}**${intvStr ? ` (Refills every ${intvStr})` : ''}`;
+            stockHeader = `🟢 ${updatedItem.stock}/${maxStock || updatedItem.stock} In Stock`;
+            stockValue = intvStr ? `Restock in <t:${intvStr}:R>` : 'Active';
           } else {
-            stockHeader = '🟢 Stock';
-            stockValue = `**${updatedItem.stock}** Left`;
+            stockHeader = `🟢 ${updatedItem.stock} In Stock`;
+            stockValue = 'Available';
           }
         }
       }
 
       const updatedFields = (embed.data.fields || []).map(f => {
-        if (f.name && f.name.includes('Stock')) {
+        if (f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock') || f.name.includes('Claimed'))) {
           return { name: stockHeader, value: stockValue, inline: true };
         }
         return f;
