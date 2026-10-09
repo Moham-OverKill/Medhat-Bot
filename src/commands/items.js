@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getShopCategories, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
-import { getItemRarityEmoji, RARITY_WEIGHTS, safeSetButtonEmoji } from '../shared.js';
+import { getItemRarityEmoji, RARITY_WEIGHTS, safeSetButtonEmoji, sortItemsByRarity } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { sysError } from '../utils/logger.js';
 
@@ -100,27 +100,8 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     currentCategory = availableCategories[0];
   }
 
-  // Sort items strictly by rarity (Legendary > Epic > Rare > Uncommon > Common)
-  currentCategory.items = [...currentCategory.items].sort((a, b) => {
-    const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
-    const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
-    if (weightB !== weightA) return weightB - weightA;
-
-    // Secondary: Discord role position (if available)
-    if (guild?.roles?.cache && a.role_id && b.role_id) {
-      const roleA = guild.roles.cache.get(a.role_id.split(/[,\s]+/)[0]);
-      const roleB = guild.roles.cache.get(b.role_id.split(/[,\s]+/)[0]);
-      if (roleA && roleB && roleB.position !== roleA.position) {
-        return roleB.position - roleA.position;
-      }
-    }
-
-    const nameA = String(a.name || '').trim();
-    const nameB = String(b.name || '').trim();
-    const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
-    if (cmp !== 0) return cmp;
-    return (a.id || 0) - (b.id || 0);
-  });
+  // Sort items strictly by 1- Rarity, 2- Quantity, 3- A-Z
+  currentCategory.items = await sortItemsByRarity(currentCategory.items, guild);
 
   // Pagination for items list
   const pageSize = 20;

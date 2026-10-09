@@ -51,7 +51,7 @@ import {
 } from '../economy/lootbox.js';
 import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
-import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
+import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 
 // Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
@@ -1282,7 +1282,7 @@ export async function handleShopPostStart(interaction) {
 
       if (state.postFilter === 'standalone') {
         filtered = itemsAll.filter(i => !i.category_id && !i.is_pack && i.item_type !== 'loot_box');
-        filtered = await sortItemsByRolePosition(filtered, interaction.guild);
+        filtered = await sortItemsByRarity(filtered, interaction.guild);
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
       } else if (state.postFilter === 'packs') {
@@ -1297,7 +1297,7 @@ export async function handleShopPostStart(interaction) {
       } else if (state.postFilter?.startsWith('cat_')) {
         const catId = parseInt(state.postFilter.split('_').pop());
         filtered = itemsAll.filter(i => i.category_id === catId && !i.is_pack && i.item_type !== 'loot_box');
-        filtered = await sortItemsByRolePosition(filtered, interaction.guild);
+        filtered = await sortItemsByRarity(filtered, interaction.guild);
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
         groupPrefix = '🏷️';
       }
@@ -2813,7 +2813,7 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
       return interaction.guild.roles.cache.has(roleId); // Role must exist
     });
 
-    const sortedStandalone = await sortItemsByRolePosition(standalone, interaction.guild);
+    const sortedStandalone = await sortItemsByRarity(standalone, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
@@ -2904,7 +2904,7 @@ export async function handleEditCategoryAddItemsSelect(interaction) {
       const roleId = i.role_id.split(/[,\s]+/)[0];
       return interaction.guild.roles.cache.has(roleId);
     });
-    const sortedStandaloneRemaining = await sortItemsByRolePosition(standalone, interaction.guild);
+    const sortedStandaloneRemaining = await sortItemsByRarity(standalone, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
@@ -2963,7 +2963,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
     const categoryId = interaction.customId.split('_').pop();
 
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
-    const sortedItems = await sortItemsByRolePosition(items, interaction.guild);
+    const sortedItems = await sortItemsByRarity(items, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`) // Back to category management
@@ -3036,7 +3036,7 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
 
     // 3. Fetch remaining items in this category
     const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
-    const sortedItems = await sortItemsByRolePosition(items, interaction.guild);
+    const sortedItems = await sortItemsByRarity(items, interaction.guild);
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`shop_cat_manage_${categoryId}`)
@@ -3401,7 +3401,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
       // 3. ITEM VIEW - List items inside a specific Category or Uncategorized
       const targetCategoryId = folder === 'cat_null' ? null : parseInt(folder.replace('cat_', ''), 10);
       let folderItems = singleItems.filter(i => i.category_id === targetCategoryId);
-      folderItems = await sortItemsByRolePosition(folderItems, interaction.guild);
+      folderItems = await sortItemsByRarity(folderItems, interaction.guild);
 
       if (folderItems.length === 0) {
          pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root', page: 1 });
@@ -3944,7 +3944,7 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
         true
       );
       let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
-      siblingShopItems = await sortItemsByRolePosition(siblingShopItems, interaction.guild);
+      siblingShopItems = await sortItemsByRarity(siblingShopItems, interaction.guild);
 
       if (siblingShopItems.length > 1) {
         const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
@@ -4367,7 +4367,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
     else if (layer === 'browse_uncategorized') {
       // --- LAYER 1: UN-CATEGORIZED ITEMS ---
       const standaloneItems = availableItems.filter(i => !i.category_id);
-      const sortedStandalone = await sortItemsByRolePosition(standaloneItems, interaction.guild);
+      const sortedStandalone = await sortItemsByRarity(standaloneItems, interaction.guild);
       
       const { selectMenu } = buildPaginatedSelectMenu({
         items: sortedStandalone,
@@ -4388,7 +4388,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       // --- LAYER 2: ITEMS INSIDE A CATEGORY ---
       const categoryId = parseInt(layer);
       const itemsInCat = availableItems.filter(i => i.category_id === categoryId);
-      const sortedInCat = await sortItemsByRolePosition(itemsInCat, interaction.guild);
+      const sortedInCat = await sortItemsByRarity(itemsInCat, interaction.guild);
       
       const { selectMenu } = buildPaginatedSelectMenu({
         items: sortedInCat,
@@ -4558,7 +4558,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
     const allItems = await getShopItems(interaction.guildId, null, 'name', true);
     const contentIds = currentContentIds.map(id => parseInt(id));
     const packItems = allItems.filter(i => contentIds.includes(i.id));
-    const sortedPackItems = await sortItemsByRolePosition(packItems, interaction.guild);
+    const sortedPackItems = await sortItemsByRarity(packItems, interaction.guild);
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
     const { selectMenu } = buildPaginatedSelectMenu({
