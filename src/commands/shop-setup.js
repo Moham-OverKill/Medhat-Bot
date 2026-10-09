@@ -1398,7 +1398,7 @@ export async function handleShopPostStart(interaction) {
     .setPlaceholder('Select Posting Mode')
     .addOptions([
       {
-        label: 'Normal Mode',
+        label: 'Stocks Mode',
         value: 'normal',
         description: 'Items remain available until stock runs out',
         emoji: '🏬',
