@@ -747,7 +747,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         delete embed.data.thumbnail;
       }
 
-      // Check if post is a Drop or Auto mode post from shop_posts
+      // Check if post is a Drop or Auto mode post from shop_posts, defaulting to normal (Stocks Mode) with no timer
       let postMode = 'normal';
       let maxStock = null;
       let restockIntervalSeconds = null;
@@ -760,16 +760,26 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             [msg.id]
           );
           if (spRes.rows.length > 0) {
-            postMode = spRes.rows[0].post_mode || 'normal';
-            maxStock = spRes.rows[0].max_stock;
-            restockIntervalSeconds = spRes.rows[0].restock_interval_seconds;
-            claimLimit = spRes.rows[0].claim_limit_per_user;
+            const rawMode = spRes.rows[0].post_mode;
+            const rawInterval = spRes.rows[0].restock_interval_seconds;
+            if (rawMode === 'drop') {
+              postMode = 'drop';
+              claimLimit = spRes.rows[0].claim_limit_per_user || 1;
+            } else if (rawMode === 'auto' && rawInterval && rawInterval > 0) {
+              postMode = 'auto';
+              restockIntervalSeconds = rawInterval;
+              maxStock = spRes.rows[0].max_stock;
+            } else {
+              postMode = 'normal';
+              restockIntervalSeconds = null;
+              maxStock = null;
+            }
           }
         } catch (_) {}
       }
 
       let intvStr = '';
-      if (restockIntervalSeconds) {
+      if (postMode === 'auto' && restockIntervalSeconds && restockIntervalSeconds > 0) {
         if (restockIntervalSeconds % 86400 === 0) intvStr = `${restockIntervalSeconds / 86400}d`;
         else if (restockIntervalSeconds % 3600 === 0) intvStr = `${restockIntervalSeconds / 3600}h`;
         else if (restockIntervalSeconds % 60 === 0) intvStr = `${restockIntervalSeconds / 60}m`;

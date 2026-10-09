@@ -1171,11 +1171,16 @@ export async function handleShopPostStart(interaction) {
   state.postFilter = state.postFilter ?? null;
   state.isEditing = state.isEditing ?? false;
   state.stockConfigured = state.stockConfigured ?? false;
-  state.postMode = state.postMode || 'normal';
+  state.postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
   state.autoEquip = state.autoEquip ?? false;
   state.claimLimit = state.claimLimit ?? 1;
-  state.restockIntervalSeconds = state.restockIntervalSeconds ?? null;
-  state.maxStock = state.maxStock ?? null;
+  if (state.postMode === 'normal' && (!state.restockIntervalSeconds || state.restockIntervalSeconds <= 0)) {
+    state.restockIntervalSeconds = null;
+    state.maxStock = null;
+  } else {
+    state.restockIntervalSeconds = state.restockIntervalSeconds ?? null;
+    state.maxStock = state.maxStock ?? null;
+  }
 
   pendingPosts.set(userId, state);
 
@@ -2178,9 +2183,9 @@ export async function handleShopPostPublish(interaction) {
       embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
     }
 
-    const postMode = state.postMode || 'normal';
+    const postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
     const autoEquip = state.autoEquip === true;
-    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds);
+    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
     const effectivePostMode = isAutoRestock ? 'auto' : postMode;
     const claimLimit = postMode === 'drop' ? (state.claimLimit || 1) : null;
     const restockIntervalSeconds = isAutoRestock ? state.restockIntervalSeconds : null;
@@ -4876,11 +4881,13 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       }
     }
 
-    const postMode = (postRow?.post_mode === 'drop') ? 'drop' : 'normal';
+    const isConfiguredDrop = postRow?.post_mode === 'drop';
+    const isConfiguredAuto = postRow?.post_mode === 'auto' && Boolean(postRow?.restock_interval_seconds && postRow.restock_interval_seconds > 0);
+    const postMode = isConfiguredDrop ? 'drop' : 'normal';
     const autoEquip = postRow?.auto_equip === true;
-    const claimLimit = postRow?.claim_limit_per_user || 1;
-    const restockIntervalSeconds = postRow?.restock_interval_seconds || null;
-    const maxStock = postRow?.max_stock || null;
+    const claimLimit = isConfiguredDrop ? (postRow?.claim_limit_per_user || 1) : 1;
+    const restockIntervalSeconds = isConfiguredAuto ? postRow.restock_interval_seconds : null;
+    const maxStock = isConfiguredAuto ? postRow.max_stock : null;
 
     // Initialize state
     const userId = interaction.user.id;
@@ -5025,9 +5032,9 @@ export async function handleShopPostUpdate(interaction) {
       embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
     }
 
-    const postMode = state.postMode || 'normal';
+    const postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
     const autoEquip = state.autoEquip === true;
-    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds);
+    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
     const effectivePostMode = isAutoRestock ? 'auto' : postMode;
     const claimLimit = postMode === 'drop' ? (state.claimLimit || 1) : null;
     const restockIntervalSeconds = isAutoRestock ? state.restockIntervalSeconds : null;
