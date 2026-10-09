@@ -1261,8 +1261,7 @@ export async function handleShopPostStart(interaction) {
         backOption: {
           label: 'Back',
           value: 'folder_reset',
-          emoji: '⬅️',
-          description: 'Return to folder list'
+          emoji: '⬅️'
         },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
@@ -1320,8 +1319,7 @@ export async function handleShopPostStart(interaction) {
         backOption: {
           label: 'Back',
           value: state.postFilter?.startsWith('cat_') ? 'folder_categorized' : 'folder_reset',
-          emoji: '⬅️',
-          description: state.postFilter?.startsWith('cat_') ? 'Return to category list' : 'Return to folder list'
+          emoji: '⬅️'
         },
         pageNavPrefix: 'shop_post_page_',
         pageSize: 20,
