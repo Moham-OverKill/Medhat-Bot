@@ -1311,11 +1311,12 @@ export async function handleShopPostStart(interaction) {
       }
 
       const page = state.postPage || 1;
+      const displayPrefix = (groupPrefix && !groupPrefix.startsWith('<')) ? `${groupPrefix} ` : '';
       const { selectMenu } = buildPaginatedSelectMenu({
         items: filtered,
         page,
         customId: 'shop_post_item_select',
-        placeholder: `${groupPrefix} ${groupName.slice(0, 20)}: Pick one`,
+        placeholder: `${displayPrefix}${groupName.slice(0, 30)}: Pick one`,
         backOption: {
           label: 'Back',
           value: state.postFilter?.startsWith('cat_') ? 'folder_categorized' : 'folder_reset',
