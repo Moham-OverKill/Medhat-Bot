@@ -139,7 +139,7 @@ export async function handleShopSetup(interaction) {
       .addFields(
         { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
         { name: '📦 Packs', value: `${packCount}`, inline: true },
-        { name: '🎭 Items', value: `${itemsCount}`, inline: true }
+        { name: '🏷️ Items', value: `${itemsCount}`, inline: true }
       );
 
     const row1 = new ActionRowBuilder()
@@ -217,7 +217,7 @@ export async function handleShopAdminAdd(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_add_type_item')
         .setLabel('Item')
-        .setEmoji('🎭')
+        .setEmoji('🏷️')
         .setStyle(ButtonStyle.Success)
     );
 
@@ -255,7 +255,7 @@ export async function handleShopAdminEdit(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_edit_item')
         .setLabel('Item')
-        .setEmoji('🎭')
+        .setEmoji('🏷️')
         .setStyle(ButtonStyle.Primary)
     );
 
@@ -293,7 +293,7 @@ export async function handleShopAdminDelete(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_delete_item')
         .setLabel('Item')
-        .setEmoji('🎭')
+        .setEmoji('🏷️')
         .setStyle(ButtonStyle.Danger)
     );
 
