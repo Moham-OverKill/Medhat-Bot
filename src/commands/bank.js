@@ -442,13 +442,14 @@ export async function handleShopBuyButton(interaction) {
     const hasClaimLimit = Boolean(claimLimit && claimLimit > 0);
     const isDrop = (shopPost?.post_mode === 'drop') || hasClaimLimit;
 
+    let currentClaims = 0;
     // Per-User Claim Limit Enforcement
     if (hasClaimLimit && interaction.message?.id) {
       const userClaimsRes = await pool.query(
         `SELECT claim_count FROM shop_drop_claims WHERE message_id = $1 AND user_id = $2`,
         [interaction.message.id, userId]
       );
-      const currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
+      currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
       if (currentClaims >= claimLimit) {
         return interaction.reply({
           content: `❌ You have reached your claim limit (${claimLimit}) for this item.`,
@@ -494,12 +495,15 @@ export async function handleShopBuyButton(interaction) {
         }
       }
 
-      // ========== LOCKED / DROP CHECK: Show modal or bypass? ==========
-      // If item is Locked (is_tradable = false) OR this is a Drop, skip the quantity modal and buy directly (1 copy).
-      // If item is Unlocked and not a drop, show a quantity modal so users can buy in bulk.
+      // ========== QUANTITY MODAL CHECK ==========
+      // If item is Locked (is_tradable = false) OR user can only acquire 1 copy, skip the quantity modal and buy directly (1 copy).
+      // If item is Unlocked and user can acquire more than 1 copy, show a quantity modal so users can buy in bulk.
       if (item) {
         const isLocked = item.is_tradable === false;
-        if (!isLocked && !isDrop && !isForce) {
+        const remainingClaims = hasClaimLimit ? (claimLimit - currentClaims) : null;
+        const canBuyMultiple = (!hasClaimLimit || (remainingClaims !== null && remainingClaims > 1)) && (item.stock === null || item.stock > 1);
+
+        if (!isLocked && canBuyMultiple && !isForce) {
           // Check stock before showing modal
           if (item.stock !== null && item.stock <= 0) {
             return interaction.reply({
@@ -525,25 +529,38 @@ export async function handleShopBuyButton(interaction) {
             });
           }
 
-          // Placeholder: "999" if unlimited stock (item.stock === null), otherwise current stock count
-          const placeholderText = item.stock !== null ? String(item.stock) : '999';
+          // Calculate maximum amount user can possibly buy in this purchase
+          let maxAllowed = remainingCap;
+          if (item.stock !== null) {
+            maxAllowed = Math.min(maxAllowed, item.stock);
+          }
+          if (remainingClaims !== null) {
+            maxAllowed = Math.min(maxAllowed, remainingClaims);
+          }
 
-          // Show quantity modal
-          const modal = new ModalBuilder()
-            .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
-            .setTitle(`Buy: ${item.name}`);
+          if (maxAllowed > 1) {
+            const placeholderText = String(maxAllowed);
+            const inputLabel = (hasClaimLimit && remainingClaims !== null)
+              ? `Enter quantity (Max ${maxAllowed})`
+              : 'Enter the amount you want to buy';
 
-          const qtyInput = new TextInputBuilder()
-            .setCustomId('buy_quantity')
-            .setLabel('Enter the amount you want to buy')
-            .setPlaceholder(placeholderText)
-            .setMinLength(1)
-            .setMaxLength(3)
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+            // Show quantity modal
+            const modal = new ModalBuilder()
+              .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
+              .setTitle(`Buy: ${item.name}`);
 
-          modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
-          return await interaction.showModal(modal);
+            const qtyInput = new TextInputBuilder()
+              .setCustomId('buy_quantity')
+              .setLabel(inputLabel.slice(0, 45))
+              .setPlaceholder(placeholderText)
+              .setMinLength(1)
+              .setMaxLength(String(maxAllowed).length > 3 ? String(maxAllowed).length : 3)
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+            return await interaction.showModal(modal);
+          }
         }
       }
     }
@@ -923,6 +940,47 @@ export async function handleShopBuyModalSubmit(interaction) {
     const guildId = interaction.guildId;
     const member = interaction.member;
 
+    const pool = getPool();
+    let shopPost = null;
+    if (interaction.message?.id) {
+      try {
+        const postRes = await pool.query(
+          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock
+           FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [interaction.message.id]
+        );
+        shopPost = postRes.rows[0] || null;
+      } catch (_) {}
+    }
+
+    const claimLimit = parseInt(shopPost?.claim_limit_per_user, 10) || null;
+    const hasClaimLimit = Boolean(claimLimit && claimLimit > 0);
+    const isDrop = (shopPost?.post_mode === 'drop') || hasClaimLimit;
+
+    // Per-User Claim Limit Enforcement
+    if (hasClaimLimit && interaction.message?.id) {
+      const userClaimsRes = await pool.query(
+        `SELECT claim_count FROM shop_drop_claims WHERE message_id = $1 AND user_id = $2`,
+        [interaction.message.id, userId]
+      );
+      const currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
+      const remainingClaims = Math.max(0, claimLimit - currentClaims);
+
+      if (currentClaims >= claimLimit) {
+        return interaction.editReply({
+          content: `❌ You have reached your claim limit (${claimLimit}) for this item.`,
+          components: []
+        });
+      }
+
+      if (qty > remainingClaims) {
+        return interaction.editReply({
+          content: `❌ You can only claim up to **${remainingClaims}** more of this item (Limit: ${claimLimit}).`,
+          components: []
+        });
+      }
+    }
+
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const customPayout = parseInt(payoutStr) || 0;
@@ -946,6 +1004,19 @@ export async function handleShopBuyModalSubmit(interaction) {
       });
     }
 
+    // STEP 2.5: Drop / Claim Increment
+    if (hasClaimLimit && interaction.message?.id) {
+      await pool.query(
+        `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (message_id, user_id)
+         DO UPDATE SET claim_count = shop_drop_claims.claim_count + $4, last_claimed_at = NOW()`,
+        [interaction.message.id, guildId, userId, qty]
+      ).catch(claimErr => {
+        sysError('Drop Claim Increment Error in Modal', claimErr, { messageId: interaction.message.id, userId });
+      });
+    }
+
     // Refresh live shop message embed stock counter upon purchase completion (safely isolated)
     try {
       await refreshShopMessageUI(interaction, itemId, guildId);
@@ -955,25 +1026,19 @@ export async function handleShopBuyModalSubmit(interaction) {
 
     // Auto-Equip Execution if post has auto_equip = true
     let autoEquipped = false;
-    if (interaction.message?.id && result.inventoryId && result.item?.role_id) {
+    if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
-        const pool = (await import('../storage/postgres.js')).getPool();
-        const postRes = await pool.query(
-          `SELECT auto_equip FROM shop_posts WHERE message_id = $1 LIMIT 1`,
-          [interaction.message.id]
-        );
-        if (postRes.rows[0]?.auto_equip === true) {
-          const { toggleEquipItem } = await import('../economy/shop.js');
-          const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
-          if (equipRes.success && equipRes.action !== 'already_equipped') {
-            autoEquipped = true;
-          }
+        const { toggleEquipItem } = await import('../economy/shop.js');
+        const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
+        if (equipRes.success && equipRes.action !== 'already_equipped') {
+          autoEquipped = true;
         }
       } catch (equipErr) {
         sysWarn('Auto-Equip Modal Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
       }
     }
 
+    const actionVerb = isDrop ? 'Claimed' : 'Bought';
     const boughtQty = result.quantity || qty;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
     const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
@@ -981,7 +1046,7 @@ export async function handleShopBuyModalSubmit(interaction) {
     if (result.packInfo && result.packInfo.ownedCount > 0) {
       msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     } else {
-      msg = `✅ Bought ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ ${actionVerb} ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
     return interaction.editReply({ files: [], content: msg, components: [] });
 
