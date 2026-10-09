@@ -1806,15 +1806,15 @@ export async function handleShopPostStockBtn(interaction) {
 
       const dropStockInput = new TextInputBuilder()
         .setCustomId('drop_stock')
-        .setLabel('Total Drop Stock Pool')
+        .setLabel('Stocks')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. 50 (Total quantity available)')
+        .setPlaceholder('0 = Unlimited')
         .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
         .setRequired(true);
 
       const claimLimitInput = new TextInputBuilder()
         .setCustomId('claim_limit')
-        .setLabel('Max Claims Per User (Default: 1)')
+        .setLabel('Max Claims Per User')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('1')
         .setValue(state.claimLimit ? String(state.claimLimit) : '1')
@@ -1834,15 +1834,15 @@ export async function handleShopPostStockBtn(interaction) {
 
       const maxStockInput = new TextInputBuilder()
         .setCustomId('max_stock')
-        .setLabel('Stock Capacity / Pool')
+        .setLabel('Stocks')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. 100 (Max stock capacity)')
+        .setPlaceholder('0 = Unlimited')
         .setValue((state.maxStock !== null && state.maxStock !== undefined) ? String(state.maxStock) : ((state.stock !== null && state.stock !== undefined) ? String(state.stock) : ''))
         .setRequired(true);
 
       const intervalInput = new TextInputBuilder()
         .setCustomId('restock_interval')
-        .setLabel('Restock Interval (5m to 30d)')
+        .setLabel('Timer')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('e.g. 30m, 6h, 1d, 7d')
         .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
