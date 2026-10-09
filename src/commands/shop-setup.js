@@ -1166,7 +1166,7 @@ export async function handleShopPostStart(interaction) {
   state.description = state.description ?? null;
   state.payout = state.payout ?? null;
   state.stock = state.stock ?? null;
-  state.overridePrice = state.overridePrice ?? null;
+  state.overridePrice = state.overridePrice ?? 0;
   state.postStep = (state.postStep === undefined || state.postStep === null) ? 0 : state.postStep;
   state.postFilter = state.postFilter ?? null;
   state.isEditing = state.isEditing ?? false;
@@ -1184,7 +1184,7 @@ export async function handleShopPostStart(interaction) {
   const isPack = selectedItem && (selectedItem.item_type === 'pack' || selectedItem.is_pack);
 
   // Validation for button states
-  const canPublish = state.itemId && state.channelId && state.overridePrice !== null;
+  const canPublish = Boolean(state.itemId && state.channelId);
   const canSetPayout = selectedItem && !isPack && state.sellerId;
 
   // Determine seller display
@@ -1228,17 +1228,11 @@ export async function handleShopPostStart(interaction) {
 
   // Prioritized status description
   let statusDesc = '';
-  if (state.isEditing) {
-    if (state.overridePrice === null) {
-      statusDesc = '⚠️ Set Price';
-    }
-  } else {
+  if (!state.isEditing) {
     if (!state.itemId) {
       statusDesc = '⚠️ Set Item';
     } else if (!state.channelId) {
       statusDesc = '⚠️ Set Channel';
-    } else if (state.overridePrice === null) {
-      statusDesc = '⚠️ Set Price';
     }
   }
 
@@ -1404,7 +1398,7 @@ export async function handleShopPostStart(interaction) {
                      state.imageUrl !== null || 
                      state.payout !== null || 
                      state.stock !== null || 
-                     state.overridePrice !== null ||
+                     (state.overridePrice !== null && state.overridePrice !== 0) ||
                      state.claimLimit !== null ||
                      state.restockIntervalSeconds !== null ||
                      state.autoEquip !== false;
@@ -1458,9 +1452,9 @@ export async function handleShopPostStart(interaction) {
 
   let canSubmit = false;
   if (state.isEditing) {
-    canSubmit = state.overridePrice !== null;
+    canSubmit = true;
   } else {
-    canSubmit = Boolean(state.itemId && state.channelId && state.overridePrice !== null);
+    canSubmit = Boolean(state.itemId && state.channelId);
   }
   confirmBtn.setDisabled(!canSubmit);
 
@@ -1578,7 +1572,7 @@ export async function handleShopPostItemSelect(interaction) {
     state = {
       itemId: null, channelId: null, sellerId: null,
       imageUrl: null, description: null, payout: null, stock: null,
-      overridePrice: null, postStep: 0, postFilter: null,
+      overridePrice: 0, postStep: 0, postFilter: null,
       isEditing: false, stockConfigured: false, fromGateway: false
     };
   }
@@ -1624,8 +1618,8 @@ export async function handleShopPostItemSelect(interaction) {
     const items = await getShopItems(interaction.guildId, null, 'name', true);
     const selectedItem = items.find(i => i.id === parseInt(itemId));
 
-    // For new posts, everything must start over as null/unconfigured
-    state.overridePrice = null;
+    // For new posts, price defaults to 0 (free) unless overridden
+    state.overridePrice = 0;
     state.stock = null;
     state.stockConfigured = false;
 
@@ -1656,7 +1650,7 @@ export async function handleShopPostChannelSelect(interaction) {
     state = {
       itemId: null, channelId: null, sellerId: null,
       imageUrl: null, description: null, payout: null, stock: null,
-      overridePrice: null, postStep: 0, postFilter: null,
+      overridePrice: 0, postStep: 0, postFilter: null,
       isEditing: false, stockConfigured: false, fromGateway: false
     };
   }
@@ -1679,7 +1673,7 @@ export async function handleShopPostSellerSelect(interaction) {
     state = {
       itemId: null, channelId: null, sellerId: null,
       imageUrl: null, description: null, payout: null, stock: null,
-      overridePrice: null, postStep: 0, postFilter: null,
+      overridePrice: 0, postStep: 0, postFilter: null,
       isEditing: false, stockConfigured: false, fromGateway: false
     };
   }
@@ -1753,8 +1747,8 @@ export async function handleShopPostPriceBtn(interaction) {
     .setLabel('Price')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('0 = Free')
-    .setValue((state.overridePrice !== null && state.overridePrice !== undefined) ? state.overridePrice.toString() : '')
-    .setRequired(true);
+    .setValue((state.overridePrice !== null && state.overridePrice !== undefined && state.overridePrice !== 0) ? state.overridePrice.toString() : '')
+    .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(priceInput));
   await interaction.showModal(modal);
@@ -1849,7 +1843,7 @@ export async function handleShopPostReset(interaction) {
     state.stock = null;
     state.description = null;
     state.imageUrl = null;
-    state.overridePrice = null;
+    state.overridePrice = 0;
     state.postStep = 0;
     state.postFilter = null;
     state.stockConfigured = false;
@@ -1898,7 +1892,7 @@ export async function handleShopPostModalSubmit(interaction) {
       state = {
         itemId: null, channelId: interaction.channelId, sellerId: null,
         imageUrl: null, description: null, payout: null, stock: null,
-        overridePrice: null, postStep: 0, postFilter: null,
+        overridePrice: 0, postStep: 0, postFilter: null,
         isEditing: false, stockConfigured: false, fromGateway: false,
         postMode: 'normal', autoEquip: false, claimLimit: null,
         restockIntervalSeconds: null, maxStock: null
@@ -1973,15 +1967,15 @@ export async function handleShopPostModalSubmit(interaction) {
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim();
       
-      if (val === '') {
-        return interaction.followUp({ content: 'Price is required. Please enter a valid price (0 for free).', flags: MessageFlags.Ephemeral });
+      if (val === '' || val === '0' || val.toLowerCase() === 'free') {
+        state.overridePrice = 0;
+      } else {
+        const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
+        if (newPrice < 0) {
+          return interaction.followUp({ content: 'Please enter a valid non-negative whole number (or leave empty for 0 = free).', flags: MessageFlags.Ephemeral });
+        }
+        state.overridePrice = newPrice;
       }
-
-      const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
-      if (newPrice < 0) {
-        return interaction.followUp({ content: 'Please enter a valid non-negative whole number.', flags: MessageFlags.Ephemeral });
-      }
-      state.overridePrice = newPrice;
     }
 
     pendingPosts.set(userId, state);
@@ -2036,14 +2030,10 @@ export async function handleShopPostPublish(interaction) {
       }
     }
 
-    // Price is now always provided via overridePrice (required before publishing)
-    const effectivePrice = state.overridePrice !== null && state.overridePrice !== undefined
+    // Price defaults to overridePrice, item.price, or 0 (0 = free)
+    const effectivePrice = (state.overridePrice !== null && state.overridePrice !== undefined)
       ? Number(state.overridePrice)
-      : null;
-
-    if (effectivePrice === null) {
-      return interaction.followUp({ content: '❌ You must set a price using the **Set Price** button before publishing.', flags: MessageFlags.Ephemeral });
-    }
+      : (item.price !== null && item.price !== undefined ? Number(item.price) : 0);
 
     const isFree = effectivePrice === 0;
 
@@ -2177,7 +2167,7 @@ export async function handleShopPostPublish(interaction) {
     // Format: bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
     const sellerPart = sellerId || '0';
     const payoutPart = payout || '0';
-    const overridePart = state.overridePrice !== null ? state.overridePrice : '';
+    const overridePart = (effectivePrice !== null && effectivePrice !== undefined) ? effectivePrice : '';
     
     let buttonLabel = '';
     if (isSoldOut) {
@@ -2268,7 +2258,7 @@ export async function handleShopPostPublish(interaction) {
       description: null,
       payout: null,
       stock: null,
-      overridePrice: null,
+      overridePrice: 0,
       postStep: 0,
       postFilter: null
     });
@@ -4662,7 +4652,7 @@ export async function handleShopPostNewLayout(interaction) {
       stock: null,
       description: null,
       imageUrl: null,
-      overridePrice: null,
+      overridePrice: 0,
       postStep: 0,
       postFilter: null,
       isEditing: false,
@@ -4834,7 +4824,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       payout,
       description,
       imageUrl,
-      overridePrice: overridePrice !== null ? overridePrice : item.price,
+      overridePrice: overridePrice !== null ? overridePrice : (item.price ?? 0),
       stock: scrapedStock,
       stockConfigured: true,
       isEditing: true,
@@ -4888,10 +4878,10 @@ export async function handleShopPostUpdate(interaction) {
       return interaction.followUp({ content: '❌ Item not found in database.', flags: MessageFlags.Ephemeral });
     }
 
-    const effectivePrice = overridePrice !== null && overridePrice !== undefined ? Number(overridePrice) : null;
-    if (effectivePrice === null) {
-      return interaction.followUp({ content: '❌ You must set a price before updating.', flags: MessageFlags.Ephemeral });
-    }
+    // Price defaults to overridePrice, item.price, or 0 (0 = free)
+    const effectivePrice = (overridePrice !== null && overridePrice !== undefined)
+      ? Number(overridePrice)
+      : (item.price !== null && item.price !== undefined ? Number(item.price) : 0);
 
     const isFree = effectivePrice === 0;
 
@@ -5021,7 +5011,7 @@ export async function handleShopPostUpdate(interaction) {
     // Build Buy / Claim button
     const sellerPart = sellerId || '0';
     const payoutPart = payout || '0';
-    const overridePart = overridePrice !== null ? overridePrice : '';
+    const overridePart = (effectivePrice !== null && effectivePrice !== undefined) ? effectivePrice : '';
 
     let buttonLabel = '';
     if (isSoldOut) {
