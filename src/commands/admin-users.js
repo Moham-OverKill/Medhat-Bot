@@ -12,7 +12,7 @@ import {
     PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRolePosition, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';

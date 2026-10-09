@@ -216,8 +216,11 @@ export const RARITY_WEIGHTS = {
 };
 
 /**
- * Helper: Sort items strictly by rarity (highest first: Mythic > Legendary > Epic > Rare > Uncommon > Common),
- * then by Discord role position, then by name.
+ * Helper: Sort items strictly by:
+ * 1- Rarity (Highest first: Mythic > Legendary > Epic > Rare > Uncommon > Common)
+ * 2- Quantity (Highest quantity first)
+ * 3- A-Z (Alphabetical)
+ * Tie-breaker: ID
  * Also filters out ghost role items if roleCache is available.
  */
 export async function sortItemsByRarity(items, guild) {
@@ -233,33 +236,25 @@ export async function sortItemsByRarity(items, guild) {
     }
   }
 
-  // Map items with their role position
-  const itemsWithPosition = items.map(item => {
-    let position = -1;
-    if (item.role_id && roleCache) {
-      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-      const role = roleCache.get(firstRoleId);
-      if (role) {
-        position = role.position;
-      }
-    }
-    return { ...item, _rolePosition: position };
-  });
+  const sorted = [...items];
 
-  // Sort: Rarity descending, then role position, then name
-  itemsWithPosition.sort((a, b) => {
+  // Sort: 1- Rarity, 2- Quantity, 3- A-Z, 4- ID
+  sorted.sort((a, b) => {
+    // 1- Rarity
     const weightA = RARITY_WEIGHTS[String(a.rarity || 'common').toLowerCase()] ?? 1;
     const weightB = RARITY_WEIGHTS[String(b.rarity || 'common').toLowerCase()] ?? 1;
     if (weightB !== weightA) {
       return weightB - weightA;
     }
 
-    if (a._rolePosition >= 0 && b._rolePosition >= 0 && a._rolePosition !== b._rolePosition) {
-      return b._rolePosition - a._rolePosition;
+    // 2- Quantity
+    const qtyA = parseInt(a.quantity, 10) || (a.quantity !== undefined ? Number(a.quantity) : 0);
+    const qtyB = parseInt(b.quantity, 10) || (b.quantity !== undefined ? Number(b.quantity) : 0);
+    if (qtyB !== qtyA) {
+      return qtyB - qtyA;
     }
-    if (a._rolePosition >= 0 && b._rolePosition < 0) return -1;
-    if (b._rolePosition >= 0 && a._rolePosition < 0) return 1;
 
+    // 3- A-Z
     const nameA = String(a.name || '').trim();
     const nameB = String(b.name || '').trim();
     const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
@@ -268,9 +263,9 @@ export async function sortItemsByRarity(items, guild) {
     return (a.id || 0) - (b.id || 0);
   });
 
-  if (!roleCache) return itemsWithPosition;
+  if (!roleCache) return sorted;
 
-  return itemsWithPosition.filter(item => {
+  return sorted.filter(item => {
     if (!item.role_id) return true;
     const firstRoleId = item.role_id.split(/[,\s]+/)[0];
     return roleCache.get(firstRoleId) !== undefined;

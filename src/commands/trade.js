@@ -15,7 +15,7 @@ import {
     AttachmentBuilder
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRolePosition } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -1152,7 +1152,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
 
     if (currentFolder === 'standalone') {
         const rawItems = tradableItems.filter(i => !i.category_id && !isChest(i));
-        folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
+        folderItems = await sortItemsByRarity(rawItems, interaction.guild);
         groupName = 'Uncategorized';
         groupPrefix = '🏷️';
         backValue = `trade_folder_back_${isGive ? 'give' : 'req'}_root`;
@@ -1165,7 +1165,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
     } else {
         const catId = typeof currentFolder === 'number' ? currentFolder : parseInt(currentFolder, 10);
         const rawItems = tradableItems.filter(i => i.category_id === catId && !isChest(i));
-        folderItems = await sortItemsByRolePosition(rawItems, interaction.guild);
+        folderItems = await sortItemsByRarity(rawItems, interaction.guild);
         const categories = await getShopCategories(setup.guildId);
         groupName = categories.find(c => c.id === catId)?.name || 'Category';
         groupPrefix = '🏷️';
