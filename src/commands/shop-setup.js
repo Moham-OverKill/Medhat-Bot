@@ -1214,6 +1214,40 @@ export async function handleShopPostStart(interaction) {
     .setTitle(panelTitle)
     .setColor(0x9B59B6);
 
+  // Show item image as small thumbnail preview in the staging embed
+  if (selectedItem) {
+    let previewImg = state.imageUrl || getItemImage(selectedItem);
+    if (!previewImg && (selectedItem.item_type === 'loot_box' || selectedItem.loot_box_id)) {
+      try {
+        const box = await getLootBox(selectedItem.loot_box_id || selectedItem.id, guildId);
+        if (box) previewImg = box.image_url || box.opened_image_url;
+      } catch (_) {}
+    }
+    if (previewImg) embed.setThumbnail(previewImg);
+  }
+
+  // Prioritized status description
+  let statusDesc = '';
+  if (state.isEditing) {
+    if (state.overridePrice === null) {
+      statusDesc = '⚠️ Set a price for that item';
+    } else if (!state.stockConfigured) {
+      statusDesc = '⚠️ Configure the stock using the Config button first';
+    }
+  } else {
+    if (!state.itemId) {
+      statusDesc = '⚠️ Select an item to post';
+    } else if (!state.channelId) {
+      statusDesc = '⚠️ Set a channel to post the item to';
+    } else if (state.overridePrice === null) {
+      statusDesc = '⚠️ Set a price for that item';
+    } else if ((state.postMode === 'drop' || state.postMode === 'auto') && !state.stockConfigured) {
+      statusDesc = `⚠️ Configure ${state.postMode === 'drop' ? 'drop stock' : 'auto restock'} using the Config button`;
+    }
+  }
+
+  embed.setDescription(statusDesc || null);
+
   // --- Item Navigation Wizard ---
   const categories = await getShopCategories(guildId);
   const itemsAll = await getShopItems(guildId, null, 'name', false); // Post flow: Active items only
