@@ -424,6 +424,38 @@ export async function handleShopBuyButton(interaction) {
     const userId = interaction.user.id;
     const member = interaction.member;
 
+    // Fetch shop post configuration from database if message ID exists
+    const pool = getPool();
+    let shopPost = null;
+    if (interaction.message?.id) {
+      try {
+        const postRes = await pool.query(
+          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock
+           FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [interaction.message.id]
+        );
+        shopPost = postRes.rows[0] || null;
+      } catch (_) {}
+    }
+
+    const isDrop = shopPost?.post_mode === 'drop';
+
+    // Drop Mode: Per-User Claim Limit Enforcement
+    if (isDrop && interaction.message?.id) {
+      const claimLimit = parseInt(shopPost.claim_limit_per_user, 10) || 1;
+      const userClaimsRes = await pool.query(
+        `SELECT claim_count FROM shop_drop_claims WHERE message_id = $1 AND user_id = $2`,
+        [interaction.message.id, userId]
+      );
+      const currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
+      if (currentClaims >= claimLimit) {
+        return interaction.reply({
+          content: `❌ You have reached your claim limit (${claimLimit}) for this drop.`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
+    }
+
     // Self-heal image on the shop post message if missing from Discord embed
     if (interaction.message && !interaction.message.embeds?.[0]?.image?.url) {
       await refreshShopMessageUI(interaction, itemId, guildId).catch(err => {
@@ -461,12 +493,12 @@ export async function handleShopBuyButton(interaction) {
         }
       }
 
-      // ========== LOCKED CHECK: Show modal or bypass? ==========
-      // If item is Locked (is_tradable = false), skip the quantity modal and buy directly (1 copy).
-      // If item is Unlocked, show a quantity modal so users can buy in bulk.
+      // ========== LOCKED / DROP CHECK: Show modal or bypass? ==========
+      // If item is Locked (is_tradable = false) OR this is a Drop, skip the quantity modal and buy directly (1 copy).
+      // If item is Unlocked and not a drop, show a quantity modal so users can buy in bulk.
       if (item) {
         const isLocked = item.is_tradable === false;
-        if (!isLocked && !isForce) {
+        if (!isLocked && !isDrop && !isForce) {
           // Check stock before showing modal
           if (item.stock !== null && item.stock <= 0) {
             return interaction.reply({
@@ -570,6 +602,34 @@ export async function handleShopBuyButton(interaction) {
       }
     }
 
+    // STEP 2.5: Drop Claim Increment
+    if (isDrop && interaction.message?.id) {
+      await pool.query(
+        `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
+         VALUES ($1, $2, $3, 1, NOW())
+         ON CONFLICT (message_id, user_id)
+         DO UPDATE SET claim_count = shop_drop_claims.claim_count + 1, last_claimed_at = NOW()`,
+        [interaction.message.id, guildId, userId]
+      ).catch(claimErr => {
+        sysError('Drop Claim Increment Error', claimErr, { messageId: interaction.message.id, userId });
+      });
+    }
+
+    // STEP 2.6: Auto-Equip Execution
+    let autoEquipped = false;
+    if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
+      try {
+        const { toggleEquipItem } = await import('../economy/shop.js');
+        const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
+        if (equipRes.success && equipRes.action !== 'already_equipped') {
+          autoEquipped = true;
+        }
+      } catch (equipErr) {
+        // Silent fallback: Do not display second warning, item remains safely in inventory
+        sysWarn('Auto-Equip Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
+      }
+    }
+
     // STEP 3: Live UI Refresh (Safely isolated so post-purchase UI updates cannot break success response)
     try {
       await refreshShopMessageUI(interaction, itemId, guildId);
@@ -581,10 +641,13 @@ export async function handleShopBuyButton(interaction) {
     let msg;
     const boughtQty = result.quantity || 1;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
+    const actionVerb = isDrop ? 'Claimed' : 'Bought';
+    const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
+
     if (result.packInfo && result.packInfo.ownedCount > 0) {
       msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     } else {
-      msg = `\u2705 Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `\u2705 ${actionVerb} ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
     return interaction.editReply({ files: [], content: msg,
       components: [] });
@@ -684,15 +747,60 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         delete embed.data.thumbnail;
       }
 
+      // Check if post is a Drop or Auto mode post from shop_posts
+      let postMode = 'normal';
+      let maxStock = null;
+      let restockIntervalSeconds = null;
+      let claimLimit = null;
+      if (msg.id) {
+        try {
+          const pool = (await import('../storage/postgres.js')).getPool();
+          const spRes = await pool.query(
+            `SELECT post_mode, max_stock, restock_interval_seconds, claim_limit_per_user FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+            [msg.id]
+          );
+          if (spRes.rows.length > 0) {
+            postMode = spRes.rows[0].post_mode || 'normal';
+            maxStock = spRes.rows[0].max_stock;
+            restockIntervalSeconds = spRes.rows[0].restock_interval_seconds;
+            claimLimit = spRes.rows[0].claim_limit_per_user;
+          }
+        } catch (_) {}
+      }
+
+      let intvStr = '';
+      if (restockIntervalSeconds) {
+        if (restockIntervalSeconds % 86400 === 0) intvStr = `${restockIntervalSeconds / 86400}d`;
+        else if (restockIntervalSeconds % 3600 === 0) intvStr = `${restockIntervalSeconds / 3600}h`;
+        else if (restockIntervalSeconds % 60 === 0) intvStr = `${restockIntervalSeconds / 60}m`;
+        else intvStr = `${Math.floor(restockIntervalSeconds / 60)}m`;
+      }
+
       let stockHeader = '♾️ Stock';
       let stockValue = 'Unlimited';
       if (updatedItem.stock !== null && updatedItem.stock !== undefined) {
         if (updatedItem.stock <= 0) {
-          stockHeader = '🔴 Stock';
-          stockValue = 'Sold Out';
+          stockHeader = postMode === 'drop' ? '🔴 Drop Stock' : '🔴 Stock';
+          if (postMode === 'drop') {
+            stockValue = 'All Claimed';
+          } else if (postMode === 'auto' && intvStr) {
+            stockValue = `Sold Out (Refills every ${intvStr})`;
+          } else {
+            stockValue = 'Sold Out';
+          }
+          embed.setColor('#808080'); // Gray out sold out
         } else {
-          stockHeader = '🟢 Stock';
-          stockValue = `**${updatedItem.stock}** Left`;
+          embed.setColor('#3498DB'); // Blue when in stock
+          if (postMode === 'drop') {
+            stockHeader = '🎁 Drop Stock';
+            stockValue = `**${updatedItem.stock}** Available${claimLimit ? ` (Limit: ${claimLimit}/user)` : ''}`;
+          } else if (postMode === 'auto') {
+            stockHeader = '🟢 Stock';
+            stockValue = `**${updatedItem.stock}/${maxStock || updatedItem.stock}**${intvStr ? ` (Refills every ${intvStr})` : ''}`;
+          } else {
+            stockHeader = '🟢 Stock';
+            stockValue = `**${updatedItem.stock}** Left`;
+          }
         }
       }
 
@@ -710,6 +818,14 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         if (row.components && row.components.length > 0) {
           const buyBtn = ButtonBuilder.from(row.components[0]);
           buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
+          const isFree = updatedItem.price === 0;
+          if (isSoldOut) {
+            buyBtn.setLabel(postMode === 'drop' ? 'ALL CLAIMED' : 'SOLD OUT');
+          } else if (postMode === 'drop') {
+            buyBtn.setLabel(isFree ? 'CLAIM (FREE)' : `CLAIM (${Number(updatedItem.price).toLocaleString()})`);
+          } else {
+            buyBtn.setLabel(isFree ? 'BUY (FREE)' : `BUY (${Number(updatedItem.price).toLocaleString()})`);
+          }
           row.setComponents(buyBtn);
 
           const editedMsg = await interaction.message.edit({
@@ -797,13 +913,35 @@ export async function handleShopBuyModalSubmit(interaction) {
       sysError('Shop UI Refresh Error', uiErr, { user: userId, guild: guildId });
     }
 
+    // Auto-Equip Execution if post has auto_equip = true
+    let autoEquipped = false;
+    if (interaction.message?.id && result.inventoryId && result.item?.role_id) {
+      try {
+        const pool = (await import('../storage/postgres.js')).getPool();
+        const postRes = await pool.query(
+          `SELECT auto_equip FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [interaction.message.id]
+        );
+        if (postRes.rows[0]?.auto_equip === true) {
+          const { toggleEquipItem } = await import('../economy/shop.js');
+          const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
+          if (equipRes.success && equipRes.action !== 'already_equipped') {
+            autoEquipped = true;
+          }
+        }
+      } catch (equipErr) {
+        sysWarn('Auto-Equip Modal Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
+      }
+    }
+
     const boughtQty = result.quantity || qty;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
+    const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
     let msg;
     if (result.packInfo && result.packInfo.ownedCount > 0) {
       msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     } else {
-      msg = `✅ Bought ${boughtLabel}! New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+      msg = `✅ Bought ${boughtLabel}${equipSuffix} New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     }
     return interaction.editReply({ files: [], content: msg, components: [] });
 

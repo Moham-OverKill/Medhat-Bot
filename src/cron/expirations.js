@@ -84,6 +84,14 @@ export async function processGlobalExpiredItems(client) {
         sysError('Expiration Role Strip Error', roleErr, { user: item.user_id, guild: item.guild_id });
       }
 
+      // 2.5 Cascading unequip: deactivate any active items requiring this expired prerequisite
+      try {
+        const { cascadeUnequipDependents } = await import('../economy/shop.js');
+        await cascadeUnequipDependents(item.user_id, item.guild_id, item.shop_item_id, member);
+      } catch (cascadeErr) {
+        sysError('Cascading Sweeper Unequip Failed', cascadeErr, { user: item.user_id, guild: item.guild_id });
+      }
+
       // 3. System and Guild Audit Logs
       sysLog('Item Expired (Sweeper)', {
         user: item.user_id,
