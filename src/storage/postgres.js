@@ -1274,7 +1274,6 @@ async function createTables() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_shop_posts_guild ON shop_posts(guild_id, item_id);
-      CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto';
 
       CREATE TABLE IF NOT EXISTS shop_drop_claims (
         message_id VARCHAR(64) NOT NULL,
@@ -1295,6 +1294,7 @@ async function createTables() {
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS last_restocked_at TIMESTAMP WITH TIME ZONE DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS max_stock INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS auto_equip BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto'`).catch(() => {});
 
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
