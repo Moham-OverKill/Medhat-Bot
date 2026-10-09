@@ -1810,6 +1810,14 @@ export async function handleShopPostStockBtn(interaction) {
       .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
       .setRequired(false);
 
+    const claimLimitInput = new TextInputBuilder()
+      .setCustomId('claim_limit')
+      .setLabel('Max Claims (Per User)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('0 = Unlimited')
+      .setValue((state.claimLimit !== null && state.claimLimit !== undefined) ? String(state.claimLimit) : '')
+      .setRequired(false);
+
     const intervalInput = new TextInputBuilder()
       .setCustomId('restock_interval')
       .setLabel('Timer')
@@ -1818,18 +1826,10 @@ export async function handleShopPostStockBtn(interaction) {
       .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
       .setRequired(false);
 
-    const claimLimitInput = new TextInputBuilder()
-      .setCustomId('claim_limit')
-      .setLabel('Max Claims Per User')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Unlimited')
-      .setValue((state.claimLimit !== null && state.claimLimit !== undefined) ? String(state.claimLimit) : '')
-      .setRequired(false);
-
     modal.addComponents(
       new ActionRowBuilder().addComponents(stockInput),
-      new ActionRowBuilder().addComponents(intervalInput),
-      new ActionRowBuilder().addComponents(claimLimitInput)
+      new ActionRowBuilder().addComponents(claimLimitInput),
+      new ActionRowBuilder().addComponents(intervalInput)
     );
     await interaction.showModal(modal);
   } catch (error) {
