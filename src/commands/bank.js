@@ -486,8 +486,11 @@ export async function handleShopBuyButton(interaction) {
       );
       currentClaims = parseInt(userClaimsRes.rows[0]?.claim_count || 0, 10);
       if (currentClaims >= claimLimit) {
+        const limitEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`❌ You have reached your claim limit (${claimLimit}) for this item.`);
         return interaction.reply({
-          content: `❌ You have reached your claim limit (${claimLimit}) for this item.`,
+          embeds: [limitEmbed],
           flags: MessageFlags.Ephemeral
         });
       }
@@ -522,8 +525,12 @@ export async function handleShopBuyButton(interaction) {
             detail: `Action: ShopBuy | ItemID: ${itemId}`
           });
 
+          const prereqEmbed = new EmbedBuilder()
+            .setColor('#E74C3C')
+            .setDescription(`\u274C You don't meet the requirements to equip this!`);
+
           return await interaction.reply({
-            content: `\u274C You don't meet the requirements to equip this!`,
+            embeds: [prereqEmbed],
             components: [warnRow],
             flags: MessageFlags.Ephemeral
           });
@@ -531,71 +538,84 @@ export async function handleShopBuyButton(interaction) {
       }
 
       // ========== QUANTITY MODAL CHECK ==========
-      // If item is Locked (is_tradable = false) OR user can only acquire 1 copy, skip the quantity modal and buy directly (1 copy).
-      // If item is Unlocked and user can acquire more than 1 copy, show a quantity modal so users can buy in bulk.
+      // Skip the quantity modal and buy directly (1 copy) if:
+      // 1. Item is Locked (is_tradable === false) or a pack
+      // 2. Admin set claim limit per user to 1 (or only 1 claim remaining)
+      // 3. There is only 1 left in stock (stock <= 1)
+      // 4. Max allowed copies user can acquire is 1 (maxAllowed <= 1)
       if (item) {
+        // Immediate check: out of stock
+        if (item.stock !== null && item.stock <= 0) {
+          const stockEmbed = new EmbedBuilder()
+            .setColor('#E74C3C')
+            .setDescription('\u274C This item is out of stock.');
+          return interaction.reply({
+            embeds: [stockEmbed],
+            flags: MessageFlags.Ephemeral
+          });
+        }
+
         const isLocked = item.is_tradable === false;
-        const remainingClaims = hasClaimLimit ? (claimLimit - currentClaims) : null;
-        const canBuyMultiple = (!hasClaimLimit || (remainingClaims !== null && remainingClaims > 1)) && (item.stock === null || item.stock > 1);
+        const isPack = item.item_type === 'pack';
+        const remainingClaims = hasClaimLimit ? Math.max(0, claimLimit - currentClaims) : null;
+        const isSingleClaimLimit = hasClaimLimit && (claimLimit <= 1 || (remainingClaims !== null && remainingClaims <= 1));
+        const isSingleStock = item.stock !== null && item.stock <= 1;
 
-        if (!isLocked && canBuyMultiple && !isForce) {
-          // Check stock before showing modal
-          if (item.stock !== null && item.stock <= 0) {
-            return interaction.reply({
-              content: '\u274C This item is out of stock.',
-              flags: MessageFlags.Ephemeral
-            });
-          }
-
-          // Fetch current user inventory count for this item
+        // Fetch current user inventory count for this item
+        let remainingCap = 999;
+        if (!isLocked && !isPack) {
           const pool = getPool();
           const qtyRes = await pool.query(
             `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total
              FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3`,
             [userId, guildId, itemId]
           );
-          const alreadyOwned = parseInt(qtyRes.rows[0]?.total || 0);
-          const remainingCap = 999 - alreadyOwned;
+          const alreadyOwned = parseInt(qtyRes.rows[0]?.total || 0, 10);
+          remainingCap = 999 - alreadyOwned;
 
           if (remainingCap <= 0) {
+            const capEmbed = new EmbedBuilder()
+              .setColor('#F1C40F')
+              .setDescription('\u2755 You have reached the maximum of 999 copies of this item.');
             return interaction.reply({
-              content: '\u2755 You have reached the maximum of 999 copies of this item.',
+              embeds: [capEmbed],
               flags: MessageFlags.Ephemeral
             });
           }
+        }
 
-          // Calculate maximum amount user can possibly buy in this purchase
-          let maxAllowed = remainingCap;
-          if (item.stock !== null) {
-            maxAllowed = Math.min(maxAllowed, item.stock);
-          }
-          if (remainingClaims !== null) {
-            maxAllowed = Math.min(maxAllowed, remainingClaims);
-          }
+        let maxAllowed = remainingCap;
+        if (item.stock !== null) {
+          maxAllowed = Math.min(maxAllowed, item.stock);
+        }
+        if (remainingClaims !== null) {
+          maxAllowed = Math.min(maxAllowed, remainingClaims);
+        }
 
-          if (maxAllowed > 1) {
-            const placeholderText = String(maxAllowed);
-            const inputLabel = (hasClaimLimit && remainingClaims !== null)
-              ? `Enter quantity (Max ${maxAllowed})`
-              : 'Enter the amount you want to buy';
+        const canShowModal = !isLocked && !isPack && !isSingleClaimLimit && !isSingleStock && (maxAllowed > 1);
 
-            // Show quantity modal
-            const modal = new ModalBuilder()
-              .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
-              .setTitle(`Buy: ${item.name}`);
+        if (canShowModal) {
+          const placeholderText = String(maxAllowed);
+          const inputLabel = (hasClaimLimit && remainingClaims !== null)
+            ? `Enter quantity (Max ${maxAllowed})`
+            : 'Enter the amount you want to buy';
 
-            const qtyInput = new TextInputBuilder()
-              .setCustomId('buy_quantity')
-              .setLabel(inputLabel.slice(0, 45))
-              .setPlaceholder(placeholderText)
-              .setMinLength(1)
-              .setMaxLength(String(maxAllowed).length > 3 ? String(maxAllowed).length : 3)
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true);
+          // Show quantity modal
+          const modal = new ModalBuilder()
+            .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
+            .setTitle(`Buy: ${item.name}`);
 
-            modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
-            return await interaction.showModal(modal);
-          }
+          const qtyInput = new TextInputBuilder()
+            .setCustomId('buy_quantity')
+            .setLabel(inputLabel.slice(0, 45))
+            .setPlaceholder(placeholderText)
+            .setMinLength(1)
+            .setMaxLength(String(maxAllowed).length > 3 ? String(maxAllowed).length : 3)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+          modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+          return await interaction.showModal(modal);
         }
       }
     }
@@ -631,33 +651,44 @@ export async function handleShopBuyButton(interaction) {
     });
 
     if (!result.success) {
-      let equippedNotice = '';
       if (shopPost?.auto_equip === true) {
-        const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
-        if (equippedName) {
-          equippedNotice = `\n✅ Equipped your existing **${equippedName}**!`;
-        }
+        await tryAutoEquipExisting(userId, guildId, itemId, member);
       }
 
       if (result.error === 'Insufficient balance') {
         const userBalData = await getUserBalance(guildId, userId);
-        const currentBal = parseInt(userBalData?.balance || 0);
+        const currentBal = parseInt(userBalData?.balance || 0, 10);
         const missing = Math.max(0, itemPrice - currentBal);
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
         return interaction.editReply({
-          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.${equippedNotice}`,
+          embeds: [errEmbed],
           components: []
         });
       } else if (result.error.includes('higher than my highest role')) {
-        return interaction.editReply({ files: [], content: `\u274C Error: I cannot assign this role. Please contact an admin.${equippedNotice}`,
-          components: [] });
-      } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`\u274C Error: I cannot assign this role. Please contact an admin.`);
         return interaction.editReply({
-          content: `\u2755 ${result.error}${equippedNotice}`,
+          files: [],
+          embeds: [errEmbed],
+          components: []
+        });
+      } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
+        const warnEmbed = new EmbedBuilder()
+          .setColor('#F1C40F')
+          .setDescription(`\u2755 ${result.error}`);
+        return interaction.editReply({
+          embeds: [warnEmbed],
           components: []
         });
       } else {
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`\u274C ${result.error}`);
         return interaction.editReply({
-          content: `\u274C ${result.error}${equippedNotice}`,
+          embeds: [errEmbed],
           components: []
         });
       }
@@ -677,14 +708,10 @@ export async function handleShopBuyButton(interaction) {
     }
 
     // STEP 2.6: Auto-Equip Execution
-    let autoEquipped = false;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
         const { toggleEquipItem } = await import('../economy/shop.js');
-        const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
-        if (equipRes.success && equipRes.action !== 'already_equipped') {
-          autoEquipped = true;
-        }
+        await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         // Silent fallback: Do not display second warning, item remains safely in inventory
         sysWarn('Auto-Equip Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
@@ -704,25 +731,33 @@ export async function handleShopBuyButton(interaction) {
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
     const isFree = Number(result.pricePaid ?? 0) === 0;
     const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
-    const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
     const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
 
     if (result.packInfo && result.packInfo.ownedCount > 0) {
       msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
     } else {
-      msg = `\u2705 ${actionVerb} ${boughtLabel}${equipSuffix}${balanceSuffix}`;
+      msg = `\u2705 ${actionVerb} ${boughtLabel}!${balanceSuffix}`;
     }
-    return interaction.editReply({ files: [], content: msg,
-      components: [] });
+
+    const successEmbed = new EmbedBuilder()
+      .setColor('#2ECC71')
+      .setDescription(msg);
+
+    return interaction.editReply({
+      files: [],
+      embeds: [successEmbed],
+      components: []
+    });
 
   } catch (error) {
     sysError('Transaction Audit Failure', error, { user: interaction.user.id, guild: interaction.guildId, detail: 'Shop purchase handler' });
     const errMsg = `\u274C An error occurred. Please try again.`;
+    const errEmbed = new EmbedBuilder().setColor('#E74C3C').setDescription(errMsg);
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ files: [], content: errMsg, components: [] });
+        await interaction.editReply({ files: [], embeds: [errEmbed], components: [] });
       } else {
-        await interaction.reply({ content: errMsg, flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
       }
     } catch (_) { }
   }
@@ -975,8 +1010,11 @@ export async function handleShopBuyModalSubmit(interaction) {
     const qty = parseInt(rawQty, 10);
 
     if (isNaN(qty) || qty < 1 || qty > 999) {
+      const errEmbed = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setDescription('❌ Please enter a valid quantity between 1 and 999.');
       return interaction.editReply({
-        content: '❌ Please enter a valid quantity between 1 and 999.',
+        embeds: [errEmbed],
         components: []
       });
     }
@@ -1012,15 +1050,21 @@ export async function handleShopBuyModalSubmit(interaction) {
       const remainingClaims = Math.max(0, claimLimit - currentClaims);
 
       if (currentClaims >= claimLimit) {
+        const limitEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`❌ You have reached your claim limit (${claimLimit}) for this item.`);
         return interaction.editReply({
-          content: `❌ You have reached your claim limit (${claimLimit}) for this item.`,
+          embeds: [limitEmbed],
           components: []
         });
       }
 
       if (qty > remainingClaims) {
+        const limitEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`❌ You can only claim up to **${remainingClaims}** more of this item (Limit: ${claimLimit}).`);
         return interaction.editReply({
-          content: `❌ You can only claim up to **${remainingClaims}** more of this item (Limit: ${claimLimit}).`,
+          embeds: [limitEmbed],
           components: []
         });
       }
@@ -1042,12 +1086,8 @@ export async function handleShopBuyModalSubmit(interaction) {
     });
 
     if (!result.success) {
-      let equippedNotice = '';
       if (shopPost?.auto_equip === true) {
-        const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
-        if (equippedName) {
-          equippedNotice = `\n✅ Equipped your existing **${equippedName}**!`;
-        }
+        await tryAutoEquipExisting(userId, guildId, itemId, member);
       }
 
       if (result.error === 'Insufficient balance') {
@@ -1056,17 +1096,23 @@ export async function handleShopBuyModalSubmit(interaction) {
         const unitPrice = overridePrice !== null && overridePrice !== undefined ? overridePrice : (itemForPrice ? (parseInt(itemForPrice.price, 10) || 0) : 0);
         const totalCost = unitPrice * qty;
         const userBalData = await getUserBalance(guildId, userId);
-        const currentBal = parseInt(userBalData?.balance || 0);
+        const currentBal = parseInt(userBalData?.balance || 0, 10);
         const missing = Math.max(0, totalCost - currentBal);
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
         return interaction.editReply({
-          content: `❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.${equippedNotice}`,
+          embeds: [errEmbed],
           components: []
         });
       }
 
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
+      const errEmbed = new EmbedBuilder()
+        .setColor(isCapOrOwned ? '#F1C40F' : '#E74C3C')
+        .setDescription(isCapOrOwned ? `❔ ${result.error}` : `❌ ${result.error}`);
       return interaction.editReply({
-        content: isCapOrOwned ? `❔ ${result.error}${equippedNotice}` : `❌ ${result.error}${equippedNotice}`,
+        embeds: [errEmbed],
         components: []
       });
     }
@@ -1092,14 +1138,10 @@ export async function handleShopBuyModalSubmit(interaction) {
     }
 
     // Auto-Equip Execution if post has auto_equip = true
-    let autoEquipped = false;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
         const { toggleEquipItem } = await import('../economy/shop.js');
-        const equipRes = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
-        if (equipRes.success && equipRes.action !== 'already_equipped') {
-          autoEquipped = true;
-        }
+        await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         sysWarn('Auto-Equip Modal Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
       }
@@ -1109,15 +1151,17 @@ export async function handleShopBuyModalSubmit(interaction) {
     const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
     const boughtQty = result.quantity || qty;
     const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
-    const equipSuffix = autoEquipped ? ' and equipped it!' : '!';
     const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     let msg;
     if (result.packInfo && result.packInfo.ownedCount > 0) {
       msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
     } else {
-      msg = `✅ ${actionVerb} ${boughtLabel}${equipSuffix}${balanceSuffix}`;
+      msg = `✅ ${actionVerb} ${boughtLabel}!${balanceSuffix}`;
     }
-    return interaction.editReply({ files: [], content: msg, components: [] });
+    const successEmbed = new EmbedBuilder()
+      .setColor('#2ECC71')
+      .setDescription(msg);
+    return interaction.editReply({ files: [], embeds: [successEmbed], components: [] });
 
   } catch (error) {
     const code = error?.code;
@@ -1127,7 +1171,10 @@ export async function handleShopBuyModalSubmit(interaction) {
     }
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ files: [], content: '❌ An error occurred. Please try again.', components: [] });
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription('❌ An error occurred. Please try again.');
+        await interaction.editReply({ files: [], embeds: [errEmbed], components: [] });
       }
     } catch (_) { }
   }
@@ -1136,11 +1183,13 @@ export async function handleShopBuyModalSubmit(interaction) {
 // Deprecated confirmation handlers (kept to prevent import errors if referenced, but unused)
 
 export async function handleShopConfirmBuy(interaction) {
-  await interaction.reply({ content: '❌ This interaction is outdated.', flags: MessageFlags.Ephemeral });
+  const embed = new EmbedBuilder().setColor('#E74C3C').setDescription('❌ This interaction is outdated.');
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 export async function handleShopCancelBuy(interaction) {
-  await interaction.reply({ content: '❌ This interaction is outdated.', flags: MessageFlags.Ephemeral });
+  const embed = new EmbedBuilder().setColor('#E74C3C').setDescription('❌ This interaction is outdated.');
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -2446,8 +2495,12 @@ export async function handleItemClaim(interaction) {
               detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
+            const prereqEmbed = new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription(`\u274C You don't meet the requirements to equip this!`);
+
             return await interaction.reply({
-              content: `\u274C You don't meet the requirements to equip this!`,
+              embeds: [prereqEmbed],
               components: [warnRow],
               flags: MessageFlags.Ephemeral
             });
@@ -2484,7 +2537,11 @@ export async function handleItemClaim(interaction) {
         ? `\u2705 You have reclaimed your own dropped **${claimLabel}**!`
         : `\u2705 You have successfully claimed **${claimLabel}**!`;
       
-      await interaction.editReply({ files: [], content: successMsg }).catch(() => { });
+      const claimSuccessEmbed = new EmbedBuilder()
+        .setColor('#2ECC71')
+        .setDescription(successMsg);
+
+      await interaction.editReply({ files: [], embeds: [claimSuccessEmbed] }).catch(() => { });
 
       // 2. Update Public Message
       // Find the public message (even if we're on a private warning interaction)
@@ -2543,7 +2600,7 @@ export async function handleItemClaim(interaction) {
   } catch (error) {
     const errorMsgStr = error.message || '';
     const isAlreadyOwned = errorMsgStr.includes('already own');
-    const errorMessage = isAlreadyOwned ? `❕ You already have that item.` : `❌ ${error.message}`;
+    const errorMessage = isAlreadyOwned ? `\u2755 You already have that item.` : `\u274C ${error.message}`;
 
     // DISTINGUISH: Validation Errors (User fault) vs System Errors (Bot fault)
     const isValidationError = errorMsgStr.includes('server for at least') ||
@@ -2558,12 +2615,16 @@ export async function handleItemClaim(interaction) {
       sysError('Critical Claim Error', error, { user: interaction.user.id, guild: interaction.guildId });
     }
 
+    const claimErrEmbed = new EmbedBuilder()
+      .setColor(isAlreadyOwned ? '#F1C40F' : '#E74C3C')
+      .setDescription(errorMessage);
+
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => { });
+      await interaction.reply({ embeds: [claimErrEmbed], flags: MessageFlags.Ephemeral }).catch(() => { });
     } else {
       // Private error response (Interaction is ephemeral-deferred)
       // Clear components so the "Claim Anyway" button vanishes on error
-      await interaction.editReply({ files: [], content: errorMessage, components: [] }).catch(() => { });
+      await interaction.editReply({ files: [], embeds: [claimErrEmbed], components: [] }).catch(() => { });
     }
   }
 }
