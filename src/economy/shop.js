@@ -446,6 +446,16 @@ export async function deleteShopItem(itemId, guildId = null) {
     await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
     await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, String(guildId)]);
 
+    // Cleanup associated shop posts and drop claims
+    try {
+      const postRes = await query('SELECT message_id FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+      if (postRes.rows.length > 0) {
+        const msgIds = postRes.rows.map(r => r.message_id);
+        await query('DELETE FROM shop_drop_claims WHERE message_id = ANY($1)', [msgIds]);
+        await query('DELETE FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+      }
+    } catch (_) {}
+
     sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}`, guild: String(guildId) });
     return true;
   } catch (error) {
@@ -553,22 +563,46 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       continue;
     }
 
-  // 2. Standard Item Check (Inventory Ownership)
+  // 2. Standard Item Check (Active for Timed Items, Inventory Ownership for Permanent)
   if (Number.isInteger(req)) {
-    // SELF-HEALING: Verify item still exists in shop_items
-    const itemExists = await pool.query('SELECT 1 FROM shop_items WHERE id = $1', [req]);
-    if (itemExists.rowCount === 0) {
+    // SELF-HEALING: Verify item still exists in shop_items and check its duration configuration
+    const reqItemRes = await pool.query(
+      'SELECT id, name, duration_seconds, duration_hours FROM shop_items WHERE id = $1',
+      [req]
+    );
+    if (reqItemRes.rowCount === 0) {
       sysLog('Self-Healing Prereq', { guild: guildId, detail: `Ghost prerequisite detected: Item ${req} no longer exists. Skipping.` });
       continue;
     }
 
-    const res = await pool.query(
-      'SELECT id FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3',
-      [userId, guildId, req]
+    const reqItem = reqItemRes.rows[0];
+    const isTimed = Boolean(
+      (reqItem.duration_seconds && reqItem.duration_seconds > 0) ||
+      (reqItem.duration_hours && reqItem.duration_hours > 0)
     );
-    
-    if (res.rows.length === 0) {
-      missingItemIds.push(req);
+
+    if (isTimed) {
+      // Structural Fix: Timed prerequisite items MUST be currently active and unexpired
+      const activeRes = await pool.query(
+        `SELECT id FROM user_inventory
+         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+           AND is_active = true
+           AND expires_at IS NOT NULL
+           AND expires_at > NOW()`,
+        [userId, guildId, req]
+      );
+      if (activeRes.rowCount === 0) {
+        missingItemIds.push(req);
+      }
+    } else {
+      // Permanent items require standard inventory ownership
+      const res = await pool.query(
+        'SELECT id FROM user_inventory WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3',
+        [userId, guildId, req]
+      );
+      if (res.rowCount === 0) {
+        missingItemIds.push(req);
+      }
     }
     continue;
   }
@@ -1120,7 +1154,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     };
 
     // Add Main Item — pass the full requested qty (locked always uses 1 enforced above)
-    const { isActive: mainActive } = await addToInventory(item, 'shop', isLocked ? 1 : qty);
+    const { inventoryItem: mainInvItem, isActive: mainActive } = await addToInventory(item, 'shop', isLocked ? 1 : qty);
 
     // Handle Pack Contents — grant ALL bundled items (quantity stacking applies per item)
     // Locked items inside a pack still obey the 1-copy rule.
@@ -1334,7 +1368,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       item,
       quantity: isLocked ? 1 : qty,
       pricePaid: totalCost,
-      packInfo: packInfo
+      packInfo: packInfo,
+      inventoryId: mainInvItem?.id || null
     };
 
   } catch (error) {
@@ -2149,7 +2184,7 @@ export async function cleanupDeletedRole(guildId, roleId) {
  * - Deactivate: Remove Discord role, set is_active=false (item stays in inventory)
  * - Checks expiry before allowing activation
  */
-export async function toggleEquipItem(userId, guildId, inventoryId, member) {
+export async function toggleEquipItem(userId, guildId, inventoryId, member, options = {}) {
   const pool = getPool();
   const client = await pool.connect();
 
@@ -2173,7 +2208,14 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
     }
 
     const item = result.rows[0];
-    const newStatus = !item.is_active; // Toggle
+
+    // If caller specified equipOnly and item is already active, return cleanly as a no-op
+    if (options.equipOnly && item.is_active) {
+      await client.query('COMMIT');
+      return { success: true, is_active: true, name: item.name, action: 'already_equipped' };
+    }
+
+    const newStatus = options.equipOnly ? true : !item.is_active; // Equip-only or Toggle
     
     // ========== NEW: Prerequisite Check for Equip ==========
     if (newStatus) {
@@ -2286,7 +2328,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
       // Get ALL active items in this category (excluding the clicked one)
       // ADMIN IMMUNITY: We explicitly exclude 'SYNC' items so Admin-granted roles stay active
       const allCategoryItems = await client.query(
-        `SELECT i.id, s.role_id
+        `SELECT i.id, s.role_id, i.expires_at
              FROM user_inventory i
              JOIN shop_items s ON i.shop_item_id = s.id
              WHERE i.user_id = $1 AND i.guild_id = $2 
@@ -2295,6 +2337,19 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member) {
              AND i.source != 'SYNC'`,
         [userId, guildId, item.category_id, inventoryId]
       );
+
+      // If equipOnly (auto-equip), prevent killing an active running temporary item timer in this category slot
+      if (options.equipOnly) {
+        const activeTemp = allCategoryItems.rows.find(ci => ci.expires_at && new Date(ci.expires_at) > new Date());
+        if (activeTemp) {
+          await client.query('ROLLBACK');
+          return {
+            success: false,
+            error: 'Active temporary item countdown in this category slot prevented auto-activation.',
+            categoryCollision: true
+          };
+        }
+      }
 
       // Wipe others belonging to the same category
       for (const catItem of allCategoryItems.rows) {
@@ -2419,6 +2474,9 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       // 4. Log to Audit
       sysLog('Item Expired', { user: userId, guild: guildId, detail: `Item: ${itemName} | Quantity Remaining: ${currentQty - 1} | Reason: Lazy Purge` });
       
+      // Cascading unequip: deactivate any active items requiring this expired prerequisite
+      await cascadeUnequipDependents(userId, guildId, item.shop_item_id, member);
+
       try {
         const remainingNotice = currentQty > 1 ? ` (1 copy consumed, ${currentQty - 1} remaining in inventory)` : '';
         sendLog(
@@ -2437,6 +2495,84 @@ export async function purgeUserInventory(userId, guildId, member = null) {
   } catch (error) {
     logSystemError(`Failed to purge user inventory for ${userId}: ${sanitizeError(error)}`);
     return 0;
+  }
+}
+
+/**
+ * Cascading Unequip Routine
+ * Evaluates all active inventory items for a user and deactivates any item
+ * whose temporary prerequisites have expired.
+ *
+ * @param {string} userId - Discord user ID
+ * @param {string} guildId - Discord guild ID
+ * @param {number} expiredShopItemId - Shop item ID that just expired
+ * @param {import('discord.js').GuildMember|null} member - Optional Discord GuildMember for role removal
+ * @param {object|null} clientDb - Optional pg client if already inside a transaction
+ */
+export async function cascadeUnequipDependents(userId, guildId, expiredShopItemId, member = null, clientDb = null) {
+  if (!userId || !guildId || !expiredShopItemId) return;
+  const pool = clientDb || getPool();
+
+  try {
+    const activeDependents = await pool.query(
+      `SELECT i.id, i.role_id, s.id as shop_item_id, s.name, s.required_items
+       FROM user_inventory i
+       JOIN shop_items s ON i.shop_item_id = s.id
+       WHERE i.user_id = $1 AND i.guild_id = $2 
+         AND i.is_active = true 
+         AND s.required_items IS NOT NULL`,
+      [userId, guildId]
+    );
+
+    if (activeDependents.rows.length === 0) return;
+
+    for (const dep of activeDependents.rows) {
+      const reqList = Array.isArray(dep.required_items) ? dep.required_items : [];
+      if (!reqList.includes(expiredShopItemId)) continue;
+
+      // Deactivate dependent item in database
+      await pool.query(
+        `UPDATE user_inventory SET is_active = false WHERE id = $1`,
+        [dep.id]
+      );
+
+      // Revoke associated Discord roles
+      if (member && dep.role_id) {
+        const botHighest = member.guild?.members?.me?.roles?.highest;
+        const roleIds = dep.role_id.split(/[,\s]+/);
+
+        for (const rid of roleIds) {
+          const role = member.guild?.roles?.cache?.get(rid);
+          if (role && botHighest && botHighest.comparePositionTo(role) > 0) {
+            try {
+              await member.roles.remove(role, `Cascading unequip: prerequisite item ${expiredShopItemId} expired`);
+            } catch (err) {
+              sysError('Cascading Role Strip Failed', err, { user: userId, role: rid });
+            }
+          }
+        }
+      }
+
+      sysLog('Cascading Item Unequipped', {
+        user: userId,
+        guild: guildId,
+        detail: `Item ${dep.name} unequipped due to expiration of prerequisite item ID ${expiredShopItemId}`
+      });
+
+      if (member?.guild) {
+        try {
+          sendLog(
+            member.guild,
+            'inventory',
+            'orange',
+            'Unequipped Prerequisite Dependent',
+            `<@${userId}>'s item **${dep.name}** was unequipped because its prerequisite expired.`
+          );
+        } catch (_) {}
+      }
+    }
+  } catch (error) {
+    sysError('Cascading Unequip Failed', error, { user: userId, guild: guildId, expiredItem: expiredShopItemId });
   }
 }
 
