@@ -381,7 +381,7 @@ export async function handleShopItemSelect(interaction) {
     }
 
     const priceVal = Number(item.price);
-    const buyButtonLabel = priceVal === 0 ? 'BUY (FREE)' : `BUY (${priceVal.toLocaleString()})`;
+    const buyButtonLabel = priceVal === 0 ? 'CLAIM' : `BUY (${priceVal.toLocaleString()})`;
     const buyButton = new ButtonBuilder()
       .setCustomId(`bank_shop_buy_${itemId}`)
       .setLabel(buyButtonLabel)
@@ -672,9 +672,10 @@ export async function handleShopBuyButton(interaction) {
 export async function refreshShopMessageUI(interaction, itemId, guildId) {
   const gId = guildId || interaction?.guildId;
   try {
-    const msg = interaction.message;
+    const msg = interaction.message || (interaction.edit ? interaction : null);
     if (!msg) return;
-    if (msg.author?.id && interaction.client?.user?.id && msg.author.id !== interaction.client.user.id) return;
+    const client = interaction.client || msg?.client;
+    if (msg.author?.id && client?.user?.id && msg.author.id !== client.user.id) return;
 
     const { getShopItem, getItemImage } = await import('../economy/shop.js');
     const updatedItem = await getShopItem(itemId, gId);
@@ -782,44 +783,28 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       }
 
       const hasTimer = Boolean(restockIntervalSeconds && restockIntervalSeconds > 0);
-      const hasLimit = Boolean(claimLimit && claimLimit > 0);
       const isSoldOut = updatedItem.stock !== null && updatedItem.stock !== undefined && updatedItem.stock <= 0;
 
-      let stockHeader = '♾️ Stock';
-      let stockValue = 'Unlimited';
+      let stockHeader = '♾️ Unlimited';
+      let stockValue = 'Available';
       if (hasTimer) {
-        const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
         if (updatedItem.stock === null || updatedItem.stock === undefined) {
-          stockHeader = '♾️ Stock';
-          stockValue = `${limitPrefix}Refreshes in <t:${intvStr}:R>`;
+          stockHeader = '♾️ Unlimited';
+          stockValue = `Refreshes in <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
         } else if (isSoldOut) {
           stockHeader = '🔴 Out Of Stock';
-          stockValue = `${limitPrefix}Restock in <t:${intvStr}:R>`;
+          stockValue = `Restock in <t:${intvStr}:R>`;
           embed.setColor('#808080');
         } else {
           stockHeader = `🟢 ${updatedItem.stock}/${maxStock || updatedItem.stock} In Stock`;
-          stockValue = `${limitPrefix}Restock in <t:${intvStr}:R>`;
-          embed.setColor('#3498DB');
-        }
-      } else if (hasLimit) {
-        if (updatedItem.stock === null || updatedItem.stock === undefined) {
-          stockHeader = '♾️ Stock';
-          stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
-          embed.setColor('#3498DB');
-        } else if (isSoldOut) {
-          stockHeader = '🔴 Out Of Stock';
-          stockValue = 'All Claimed';
-          embed.setColor('#808080');
-        } else {
-          stockHeader = '🎁 Drop Stock';
-          stockValue = `**${updatedItem.stock}** Available (Limit: ${claimLimit}/user)`;
+          stockValue = `Restock in <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
         }
       } else {
         if (updatedItem.stock === null || updatedItem.stock === undefined) {
-          stockHeader = '♾️ Stock';
-          stockValue = 'Unlimited';
+          stockHeader = '♾️ Unlimited';
+          stockValue = 'Available';
           embed.setColor('#3498DB');
         } else if (isSoldOut) {
           stockHeader = '🔴 Out Of Stock';
@@ -832,16 +817,27 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         }
       }
 
+      let foundStockField = false;
       const updatedFields = (embed.data.fields || []).map(f => {
-        if (f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock') || f.name.includes('Claimed'))) {
+        if (
+          f.name &&
+          (f.name.includes('Stock') ||
+           f.name.includes('Unlimited') ||
+           f.name.includes('Out Of Stock') ||
+           f.name.includes('Claimed'))
+        ) {
+          foundStockField = true;
           return { name: stockHeader, value: stockValue, inline: true };
         }
         return f;
       });
+      if (!foundStockField) {
+        updatedFields.push({ name: stockHeader, value: stockValue, inline: true });
+      }
       embed.setFields(updatedFields);
 
-      if (interaction.message.components && interaction.message.components.length > 0) {
-        const row = ActionRowBuilder.from(interaction.message.components[0]);
+      if (msg.components && msg.components.length > 0) {
+        const row = ActionRowBuilder.from(msg.components[0]);
         if (row.components && row.components.length > 0) {
           const buyBtn = ButtonBuilder.from(row.components[0]);
           buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
@@ -861,26 +857,18 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           }
 
           const isFree = Number(effectivePrice) === 0;
-          if (hasLimit) {
-            if (isSoldOut) {
-              buyBtn.setLabel('ALL CLAIMED');
-            } else if (isFree) {
-              buyBtn.setLabel('CLAIM (FREE)');
-            } else {
-              buyBtn.setLabel(`CLAIM (${Number(effectivePrice).toLocaleString()})`);
-            }
+          let buttonLabel = '';
+          if (isSoldOut) {
+            buttonLabel = 'SOLD OUT';
+          } else if (isFree) {
+            buttonLabel = 'CLAIM';
           } else {
-            if (isSoldOut) {
-              buyBtn.setLabel('SOLD OUT');
-            } else if (isFree) {
-              buyBtn.setLabel('BUY (FREE)');
-            } else {
-              buyBtn.setLabel(`BUY (${Number(effectivePrice).toLocaleString()})`);
-            }
+            buttonLabel = `BUY (${Number(effectivePrice).toLocaleString()})`;
           }
+          buyBtn.setLabel(buttonLabel);
           row.setComponents(buyBtn);
 
-          const editedMsg = await interaction.message.edit({
+          const editedMsg = await msg.edit({
             embeds: [embed],
             components: [row]
           }).catch((editErr) => {

@@ -101,7 +101,7 @@ export async function processAutoRestocks(client) {
         }
 
         if (message) {
-          await refreshShopMessageUI({ message, guildId: row.guild_id }, row.item_id, row.guild_id);
+          await refreshShopMessageUI({ message, client, guildId: row.guild_id }, row.item_id, row.guild_id);
           sysLog('Auto Shop Restock Executed', {
             guild: row.guild_id,
             detail: `Item ${row.item_name} restocked / claims reset (Message: ${row.message_id})`
