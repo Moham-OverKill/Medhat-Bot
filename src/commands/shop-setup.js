@@ -1173,14 +1173,9 @@ export async function handleShopPostStart(interaction) {
   state.stockConfigured = state.stockConfigured ?? false;
   state.postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
   state.autoEquip = state.autoEquip ?? false;
-  state.claimLimit = state.claimLimit ?? 1;
-  if (state.postMode === 'normal' && (!state.restockIntervalSeconds || state.restockIntervalSeconds <= 0)) {
-    state.restockIntervalSeconds = null;
-    state.maxStock = null;
-  } else {
-    state.restockIntervalSeconds = state.restockIntervalSeconds ?? null;
-    state.maxStock = state.maxStock ?? null;
-  }
+  state.claimLimit = state.claimLimit ?? null;
+  state.restockIntervalSeconds = (state.restockIntervalSeconds && state.restockIntervalSeconds > 0) ? state.restockIntervalSeconds : null;
+  state.maxStock = state.maxStock ?? null;
 
   pendingPosts.set(userId, state);
 
@@ -1236,8 +1231,6 @@ export async function handleShopPostStart(interaction) {
   if (state.isEditing) {
     if (state.overridePrice === null) {
       statusDesc = '⚠️ Set Price';
-    } else if (!state.stockConfigured) {
-      statusDesc = '⚠️ Set Stocks';
     }
   } else {
     if (!state.itemId) {
@@ -1246,8 +1239,6 @@ export async function handleShopPostStart(interaction) {
       statusDesc = '⚠️ Set Channel';
     } else if (state.overridePrice === null) {
       statusDesc = '⚠️ Set Price';
-    } else if (state.postMode === 'drop' && !state.stockConfigured) {
-      statusDesc = '⚠️ Set Stocks';
     }
   }
 
@@ -1397,27 +1388,6 @@ export async function handleShopPostStart(interaction) {
     }
   }
 
-  // Mode Select Menu
-  const modeSelect = new StringSelectMenuBuilder()
-    .setCustomId('shop_post_mode_select')
-    .setPlaceholder('Select Posting Mode')
-    .addOptions([
-      {
-        label: 'Stocks Mode',
-        value: 'normal',
-        description: 'Items remain available until stock runs out',
-        emoji: '🏬',
-        default: state.postMode === 'normal'
-      },
-      {
-        label: 'Drop Mode',
-        value: 'drop',
-        description: 'Limited-claim drop with per-user limit',
-        emoji: '🎁',
-        default: state.postMode === 'drop'
-      }
-    ]);
-
   // Seller Select (User Select - Optional, disabled for packs and loot boxes)
   const isServerManaged = isPack || (selectedItem && selectedItem.item_type === 'loot_box');
   const userSelect = new UserSelectMenuBuilder()
@@ -1427,6 +1397,7 @@ export async function handleShopPostStart(interaction) {
   if (state.sellerId && !isServerManaged) userSelect.setDefaultUsers([state.sellerId]);
 
   const isItemSelected = !!state.itemId;
+  const isCustomConfigured = state.stock !== null || state.restockIntervalSeconds !== null || state.claimLimit !== null;
   const isModified = state.itemId !== null || 
                      state.sellerId !== null || 
                      state.description !== null || 
@@ -1434,7 +1405,8 @@ export async function handleShopPostStart(interaction) {
                      state.payout !== null || 
                      state.stock !== null || 
                      state.overridePrice !== null ||
-                     state.postMode !== 'normal' ||
+                     state.claimLimit !== null ||
+                     state.restockIntervalSeconds !== null ||
                      state.autoEquip !== false;
 
   // Row 4: Action Buttons - Row 1 ([Desc] [Image] [Payout] [Price] [Config])
@@ -1467,7 +1439,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId('shop_post_stock_btn')
       .setLabel('Config')
       .setEmoji('⚙️')
-      .setStyle(state.stockConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle(isCustomConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
   );
 
@@ -1486,12 +1458,9 @@ export async function handleShopPostStart(interaction) {
 
   let canSubmit = false;
   if (state.isEditing) {
-    canSubmit = state.overridePrice !== null && state.stockConfigured === true;
+    canSubmit = state.overridePrice !== null;
   } else {
     canSubmit = Boolean(state.itemId && state.channelId && state.overridePrice !== null);
-    if (state.postMode === 'drop') {
-      canSubmit = canSubmit && state.stockConfigured === true;
-    }
   }
   confirmBtn.setDisabled(!canSubmit);
 
@@ -1532,7 +1501,6 @@ export async function handleShopPostStart(interaction) {
   if (!state.isEditing) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
   }
-  components.push(new ActionRowBuilder().addComponents(modeSelect));
   components.push(new ActionRowBuilder().addComponents(userSelect));
   components.push(configRow);
   components.push(actionRow);
@@ -1830,37 +1798,9 @@ export async function handleShopPostStockBtn(interaction) {
     const state = pendingPosts.get(interaction.user.id) || {};
     const postMode = state.postMode || 'normal';
 
-    if (postMode === 'drop') {
-      const modal = new ModalBuilder()
-        .setCustomId(`shop_post_drop_modal_${Date.now()}`)
-        .setTitle('Drop Mode Configuration');
-
-      const dropStockInput = new TextInputBuilder()
-        .setCustomId('drop_stock')
-        .setLabel('Stocks')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0 = Unlimited')
-        .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
-        .setRequired(true);
-
-      const claimLimitInput = new TextInputBuilder()
-        .setCustomId('claim_limit')
-        .setLabel('Max Claims Per User')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1')
-        .setValue(state.claimLimit ? String(state.claimLimit) : '1')
-        .setRequired(false);
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(dropStockInput),
-        new ActionRowBuilder().addComponents(claimLimitInput)
-      );
-      return interaction.showModal(modal);
-    }
-
     const modal = new ModalBuilder()
       .setCustomId(`shop_post_stock_modal_${Date.now()}`)
-      .setTitle('Item Stocks & Timer');
+      .setTitle('Post Configuration');
 
     const stockInput = new TextInputBuilder()
       .setCustomId('stock')
@@ -1878,9 +1818,18 @@ export async function handleShopPostStockBtn(interaction) {
       .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
       .setRequired(false);
 
+    const claimLimitInput = new TextInputBuilder()
+      .setCustomId('claim_limit')
+      .setLabel('Max Claims Per User')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('0 = Unlimited')
+      .setValue((state.claimLimit !== null && state.claimLimit !== undefined) ? String(state.claimLimit) : '')
+      .setRequired(false);
+
     modal.addComponents(
       new ActionRowBuilder().addComponents(stockInput),
-      new ActionRowBuilder().addComponents(intervalInput)
+      new ActionRowBuilder().addComponents(intervalInput),
+      new ActionRowBuilder().addComponents(claimLimitInput)
     );
     await interaction.showModal(modal);
   } catch (error) {
@@ -1906,7 +1855,7 @@ export async function handleShopPostReset(interaction) {
     state.stockConfigured = false;
     state.postMode = 'normal';
     state.autoEquip = false;
-    state.claimLimit = 1;
+    state.claimLimit = null;
     state.restockIntervalSeconds = null;
     state.maxStock = null;
     pendingPosts.set(interaction.user.id, state);
@@ -1951,7 +1900,7 @@ export async function handleShopPostModalSubmit(interaction) {
         imageUrl: null, description: null, payout: null, stock: null,
         overridePrice: null, postStep: 0, postFilter: null,
         isEditing: false, stockConfigured: false, fromGateway: false,
-        postMode: 'normal', autoEquip: false, claimLimit: 1,
+        postMode: 'normal', autoEquip: false, claimLimit: null,
         restockIntervalSeconds: null, maxStock: null
       };
     }
@@ -1973,63 +1922,53 @@ export async function handleShopPostModalSubmit(interaction) {
       }
 
       state.payout = (inputAmount > 0) ? inputAmount : null;
-    } else if (customId === 'shop_post_stock_modal') {
-      const val = (interaction.fields.getTextInputValue('stock') || '').trim().toLowerCase();
+    } else if (customId === 'shop_post_stock_modal' || customId === 'shop_post_drop_modal') {
+      let stockVal = '';
       let timerVal = '';
+      let claimLimitVal = '';
+
+      try {
+        stockVal = (interaction.fields.getTextInputValue('stock') || interaction.fields.getTextInputValue('drop_stock') || '').trim().toLowerCase();
+      } catch (_) {}
       try {
         timerVal = (interaction.fields.getTextInputValue('restock_interval') || '').trim().toLowerCase();
       } catch (_) {}
+      try {
+        claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim().toLowerCase();
+      } catch (_) {}
 
-      if (val === '' || val === '0' || val === 'unlimited') {
+      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited') {
         state.stock = null;
+        state.maxStock = null;
       } else {
-        if (!/^\d+$/.test(val)) {
-          return interaction.followUp({ content: 'Invalid stock. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
+        if (!/^\d+$/.test(stockVal)) {
+          return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or 0 for unlimited.', flags: MessageFlags.Ephemeral });
         }
-        const num = parseInt(val, 10);
+        const num = parseInt(stockVal, 10);
         state.stock = num <= 0 ? null : num;
+        state.maxStock = state.stock;
       }
 
       if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'off') {
         state.restockIntervalSeconds = null;
-        state.maxStock = null;
       } else {
         const intervalSeconds = parseIntervalStringToSeconds(timerVal);
         if (!intervalSeconds) {
           return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or 0 to disable.', flags: MessageFlags.Ephemeral });
         }
-        if (state.stock === null) {
-          return interaction.followUp({ content: 'Auto restock timer requires a specific stock capacity (cannot be Unlimited).', flags: MessageFlags.Ephemeral });
-        }
         state.restockIntervalSeconds = intervalSeconds;
-        state.maxStock = state.stock;
-      }
-      state.stockConfigured = true;
-    } else if (customId === 'shop_post_drop_modal') {
-      const dropStockVal = (interaction.fields.getTextInputValue('drop_stock') || '').trim();
-      const claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim();
-
-      if (!/^\d+$/.test(dropStockVal)) {
-        return interaction.followUp({ content: 'Invalid drop stock pool. Please enter a positive whole number.', flags: MessageFlags.Ephemeral });
-      }
-      const dropStock = parseInt(dropStockVal, 10);
-      if (dropStock <= 0) {
-        return interaction.followUp({ content: 'Drop stock pool must be greater than 0.', flags: MessageFlags.Ephemeral });
       }
 
-      let claimLimit = 1;
-      if (claimLimitVal !== '') {
+      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited') {
+        state.claimLimit = null;
+      } else {
         if (!/^\d+$/.test(claimLimitVal)) {
-          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or 0 for unlimited.', flags: MessageFlags.Ephemeral });
         }
-        claimLimit = parseInt(claimLimitVal, 10);
-        if (claimLimit <= 0) {
-          return interaction.followUp({ content: 'Per-user claim limit must be at least 1.', flags: MessageFlags.Ephemeral });
-        }
+        const num = parseInt(claimLimitVal, 10);
+        state.claimLimit = num <= 0 ? null : num;
       }
 
-      state.stock = dropStock;
-      state.claimLimit = claimLimit;
       state.stockConfigured = true;
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim();
@@ -2183,36 +2122,51 @@ export async function handleShopPostPublish(interaction) {
       embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
     }
 
-    const postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
     const autoEquip = state.autoEquip === true;
-    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
-    const effectivePostMode = isAutoRestock ? 'auto' : postMode;
-    const claimLimit = postMode === 'drop' ? (state.claimLimit || 1) : null;
-    const restockIntervalSeconds = isAutoRestock ? state.restockIntervalSeconds : null;
-    const maxStock = isAutoRestock ? (state.maxStock || item.stock) : null;
-    const lastRestockedAt = isAutoRestock ? new Date() : null;
+    const hasTimer = Boolean(state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
+    const hasLimit = Boolean(state.claimLimit && state.claimLimit > 0);
+    const effectivePostMode = hasTimer ? 'auto' : (hasLimit ? 'drop' : 'normal');
+    const claimLimit = hasLimit ? state.claimLimit : null;
+    const restockIntervalSeconds = hasTimer ? state.restockIntervalSeconds : null;
+    const maxStock = state.stock !== null ? state.stock : null;
+    const lastRestockedAt = hasTimer ? new Date() : null;
 
     // Stock Field (Visual)
     let stockHeader = '♾️ Stock';
     let stockValue = 'Unlimited';
 
-    if (postMode === 'drop') {
-      if (item.stock === null || item.stock === undefined || item.stock <= 0) {
+    if (hasTimer) {
+      const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : Date.now();
+      let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
+      if (nextRestockMs <= Date.now()) {
+        const elapsed = Date.now() - baseTime;
+        const cycles = Math.floor(elapsed / (restockIntervalSeconds * 1000)) + 1;
+        nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
+      }
+      const nextRestockUnix = Math.floor(nextRestockMs / 1000);
+      const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
+
+      if (item.stock === null || item.stock === undefined) {
+        stockHeader = '♾️ Stock';
+        stockValue = `${limitPrefix}Refreshes in <t:${nextRestockUnix}:R>`;
+      } else if (item.stock <= 0) {
+        stockHeader = '🔴 Out Of Stock';
+        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
+      } else {
+        stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
+        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
+      }
+    } else if (hasLimit) {
+      if (item.stock === null || item.stock === undefined) {
+        stockHeader = '♾️ Stock';
+        stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
+      } else if (item.stock <= 0) {
         stockHeader = '🔴 Out Of Stock';
         stockValue = 'All Claimed';
       } else {
         stockHeader = '🎁 Drop Stock';
         stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
       }
-    } else if (isAutoRestock) {
-      const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : Date.now();
-      const nextRestockUnix = Math.floor((baseTime + (restockIntervalSeconds * 1000)) / 1000);
-      if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Out Of Stock';
-      } else {
-        stockHeader = `🟢 ${item.stock}/${maxStock} In Stock`;
-      }
-      stockValue = `Restock in <t:${nextRestockUnix}:R>`;
     } else {
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Stock';
@@ -2220,7 +2174,6 @@ export async function handleShopPostPublish(interaction) {
       } else if (item.stock <= 0) {
         stockHeader = '🔴 Out Of Stock';
         stockValue = 'Sold Out';
-        embed.setColor('#3498DB'); // Always Blue (even if Sold Out)
       } else {
         stockHeader = `🟢 ${item.stock} In Stock`;
         stockValue = 'Available';
@@ -2237,7 +2190,7 @@ export async function handleShopPostPublish(interaction) {
     
     const isSoldOut = item.stock !== null && item.stock <= 0;
     let buttonLabel = '';
-    if (postMode === 'drop') {
+    if (hasLimit) {
       if (isSoldOut) {
         buttonLabel = 'ALL CLAIMED';
       } else if (isFree) {
@@ -4886,13 +4839,11 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       }
     }
 
-    const isConfiguredDrop = postRow?.post_mode === 'drop';
-    const isConfiguredAuto = postRow?.post_mode === 'auto' && Boolean(postRow?.restock_interval_seconds && postRow.restock_interval_seconds > 0);
-    const postMode = isConfiguredDrop ? 'drop' : 'normal';
     const autoEquip = postRow?.auto_equip === true;
-    const claimLimit = isConfiguredDrop ? (postRow?.claim_limit_per_user || 1) : 1;
-    const restockIntervalSeconds = isConfiguredAuto ? postRow.restock_interval_seconds : null;
-    const maxStock = isConfiguredAuto ? postRow.max_stock : null;
+    const claimLimit = postRow?.claim_limit_per_user || null;
+    const restockIntervalSeconds = (postRow?.restock_interval_seconds && postRow.restock_interval_seconds > 0) ? postRow.restock_interval_seconds : null;
+    const maxStock = postRow?.max_stock || null;
+    const postMode = (postRow?.post_mode === 'drop') ? 'drop' : 'normal';
 
     // Initialize state
     const userId = interaction.user.id;
@@ -5039,27 +4990,18 @@ export async function handleShopPostUpdate(interaction) {
       embed.addFields({ name: '⏳ Duration', value: durationText, inline: true });
     }
 
-    const postMode = (state.postMode === 'drop') ? 'drop' : 'normal';
     const autoEquip = state.autoEquip === true;
-    const isAutoRestock = Boolean(postMode !== 'drop' && state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
-    const effectivePostMode = isAutoRestock ? 'auto' : postMode;
-    const claimLimit = postMode === 'drop' ? (state.claimLimit || 1) : null;
-    const restockIntervalSeconds = isAutoRestock ? state.restockIntervalSeconds : null;
-    const maxStock = isAutoRestock ? (state.maxStock || item.stock) : null;
-    const lastRestockedAt = isAutoRestock ? (state.lastRestockedAt || new Date()) : null;
+    const hasTimer = Boolean(state.restockIntervalSeconds && state.restockIntervalSeconds > 0);
+    const hasLimit = Boolean(state.claimLimit && state.claimLimit > 0);
+    const effectivePostMode = hasTimer ? 'auto' : (hasLimit ? 'drop' : 'normal');
+    const claimLimit = hasLimit ? state.claimLimit : null;
+    const restockIntervalSeconds = hasTimer ? state.restockIntervalSeconds : null;
+    const maxStock = state.stock !== null ? state.stock : null;
+    const lastRestockedAt = hasTimer ? (state.lastRestockedAt || new Date()) : null;
 
     let stockHeader = '♾️ Stock';
     let stockValue = 'Unlimited';
-    if (postMode === 'drop') {
-      if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Out Of Stock';
-        stockValue = 'All Claimed';
-        embed.setColor('#808080');
-      } else {
-        stockHeader = '🎁 Drop Stock';
-        stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
-      }
-    } else if (isAutoRestock) {
+    if (hasTimer) {
       const baseTime = state.lastRestockedAt ? new Date(state.lastRestockedAt).getTime() : new Date(state.createdAt || Date.now()).getTime();
       let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
       if (nextRestockMs <= Date.now()) {
@@ -5068,15 +5010,32 @@ export async function handleShopPostUpdate(interaction) {
         nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
       }
       const nextRestockUnix = Math.floor(nextRestockMs / 1000);
+      const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
 
-      const isSoldOut = item.stock === null || item.stock === undefined || item.stock <= 0;
-      if (isSoldOut) {
+      const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
+      if (item.stock === null || item.stock === undefined) {
+        stockHeader = '♾️ Stock';
+        stockValue = `${limitPrefix}Refreshes in <t:${nextRestockUnix}:R>`;
+      } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
+        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock}/${maxStock} In Stock`;
+        stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
+        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
       }
-      stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+    } else if (hasLimit) {
+      if (item.stock === null || item.stock === undefined) {
+        stockHeader = '♾️ Stock';
+        stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
+      } else if (item.stock <= 0) {
+        stockHeader = '🔴 Out Of Stock';
+        stockValue = 'All Claimed';
+        embed.setColor('#808080');
+      } else {
+        stockHeader = '🎁 Drop Stock';
+        stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
+      }
     } else {
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Stock';
@@ -5099,7 +5058,7 @@ export async function handleShopPostUpdate(interaction) {
     const isSoldOut = item.stock !== null && item.stock <= 0;
 
     let buttonLabel = '';
-    if (postMode === 'drop') {
+    if (hasLimit) {
       if (isSoldOut) {
         buttonLabel = 'ALL CLAIMED';
       } else if (isFree) {
