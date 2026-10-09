@@ -2132,8 +2132,9 @@ export async function handleShopPostPublish(interaction) {
     const lastRestockedAt = hasTimer ? new Date() : null;
 
     // Stock Field (Visual)
-    let stockHeader = '♾️ Stock';
-    let stockValue = 'Unlimited';
+    const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
+    let stockHeader = '♾️ Unlimited';
+    let stockValue = 'Available';
 
     if (hasTimer) {
       const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : Date.now();
@@ -2144,36 +2145,26 @@ export async function handleShopPostPublish(interaction) {
         nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
       }
       const nextRestockUnix = Math.floor(nextRestockMs / 1000);
-      const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
 
       if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = `${limitPrefix}Refreshes in <t:${nextRestockUnix}:R>`;
-      } else if (item.stock <= 0) {
+        stockHeader = '♾️ Unlimited';
+        stockValue = `Refreshes in <t:${nextRestockUnix}:R>`;
+      } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
-        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
+        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
+        embed.setColor('#808080');
       } else {
         stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
-        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
-      }
-    } else if (hasLimit) {
-      if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
-      } else if (item.stock <= 0) {
-        stockHeader = '🔴 Out Of Stock';
-        stockValue = 'All Claimed';
-      } else {
-        stockHeader = '🎁 Drop Stock';
-        stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
+        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
       }
     } else {
       if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = 'Unlimited';
-      } else if (item.stock <= 0) {
+        stockHeader = '♾️ Unlimited';
+        stockValue = 'Available';
+      } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
         stockValue = 'Sold Out';
+        embed.setColor('#808080');
       } else {
         stockHeader = `🟢 ${item.stock} In Stock`;
         stockValue = 'Available';
@@ -2188,24 +2179,13 @@ export async function handleShopPostPublish(interaction) {
     const payoutPart = payout || '0';
     const overridePart = state.overridePrice !== null ? state.overridePrice : '';
     
-    const isSoldOut = item.stock !== null && item.stock <= 0;
     let buttonLabel = '';
-    if (hasLimit) {
-      if (isSoldOut) {
-        buttonLabel = 'ALL CLAIMED';
-      } else if (isFree) {
-        buttonLabel = 'CLAIM (FREE)';
-      } else {
-        buttonLabel = `CLAIM (${effectivePrice.toLocaleString()})`;
-      }
+    if (isSoldOut) {
+      buttonLabel = 'SOLD OUT';
+    } else if (isFree) {
+      buttonLabel = 'CLAIM';
     } else {
-      if (isSoldOut) {
-        buttonLabel = 'SOLD OUT';
-      } else if (isFree) {
-        buttonLabel = 'BUY (FREE)';
-      } else {
-        buttonLabel = `BUY (${effectivePrice.toLocaleString()})`;
-      }
+      buttonLabel = `BUY (${Number(effectivePrice).toLocaleString()})`;
     }
     
     const buyButton = new ButtonBuilder()
@@ -4817,7 +4797,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // Scrape stock from embed field if present, falling back to DB stock
     let scrapedStock = item.stock;
     if (firstEmbed && firstEmbed.fields) {
-      const stockField = firstEmbed.fields.find(f => f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock')));
+      const stockField = firstEmbed.fields.find(f => f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock') || f.name.includes('Unlimited')));
       if (stockField) {
         const val = stockField.value || '';
         const nameVal = stockField.name || '';
@@ -4999,8 +4979,9 @@ export async function handleShopPostUpdate(interaction) {
     const maxStock = state.stock !== null ? state.stock : null;
     const lastRestockedAt = hasTimer ? (state.lastRestockedAt || new Date()) : null;
 
-    let stockHeader = '♾️ Stock';
-    let stockValue = 'Unlimited';
+    const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
+    let stockHeader = '♾️ Unlimited';
+    let stockValue = 'Available';
     if (hasTimer) {
       const baseTime = state.lastRestockedAt ? new Date(state.lastRestockedAt).getTime() : new Date(state.createdAt || Date.now()).getTime();
       let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
@@ -5010,37 +4991,23 @@ export async function handleShopPostUpdate(interaction) {
         nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
       }
       const nextRestockUnix = Math.floor(nextRestockMs / 1000);
-      const limitPrefix = hasLimit ? `Limit: ${claimLimit}/user • ` : '';
 
-      const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
       if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = `${limitPrefix}Refreshes in <t:${nextRestockUnix}:R>`;
+        stockHeader = '♾️ Unlimited';
+        stockValue = `Refreshes in <t:${nextRestockUnix}:R>`;
       } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
-        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
+        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
         stockHeader = `🟢 ${item.stock}/${maxStock || item.stock} In Stock`;
-        stockValue = `${limitPrefix}Restock in <t:${nextRestockUnix}:R>`;
-      }
-    } else if (hasLimit) {
-      if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = `Unlimited (Limit: ${claimLimit}/user)`;
-      } else if (item.stock <= 0) {
-        stockHeader = '🔴 Out Of Stock';
-        stockValue = 'All Claimed';
-        embed.setColor('#808080');
-      } else {
-        stockHeader = '🎁 Drop Stock';
-        stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
+        stockValue = `Restock in <t:${nextRestockUnix}:R>`;
       }
     } else {
       if (item.stock === null || item.stock === undefined) {
-        stockHeader = '♾️ Stock';
-        stockValue = 'Unlimited';
-      } else if (item.stock <= 0) {
+        stockHeader = '♾️ Unlimited';
+        stockValue = 'Available';
+      } else if (isSoldOut) {
         stockHeader = '🔴 Out Of Stock';
         stockValue = 'Sold Out';
         embed.setColor('#808080'); // Gray out sold out items
@@ -5055,25 +5022,14 @@ export async function handleShopPostUpdate(interaction) {
     const sellerPart = sellerId || '0';
     const payoutPart = payout || '0';
     const overridePart = overridePrice !== null ? overridePrice : '';
-    const isSoldOut = item.stock !== null && item.stock <= 0;
 
     let buttonLabel = '';
-    if (hasLimit) {
-      if (isSoldOut) {
-        buttonLabel = 'ALL CLAIMED';
-      } else if (isFree) {
-        buttonLabel = 'CLAIM (FREE)';
-      } else {
-        buttonLabel = `CLAIM (${effectivePrice.toLocaleString()})`;
-      }
+    if (isSoldOut) {
+      buttonLabel = 'SOLD OUT';
+    } else if (isFree) {
+      buttonLabel = 'CLAIM';
     } else {
-      if (isSoldOut) {
-        buttonLabel = 'SOLD OUT';
-      } else if (isFree) {
-        buttonLabel = 'BUY (FREE)';
-      } else {
-        buttonLabel = `BUY (${effectivePrice.toLocaleString()})`;
-      }
+      buttonLabel = `BUY (${Number(effectivePrice).toLocaleString()})`;
     }
 
     const buyButton = new ButtonBuilder()
