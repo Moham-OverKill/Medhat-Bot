@@ -2197,34 +2197,33 @@ export async function handleShopPostPublish(interaction) {
     let stockValue = 'Unlimited';
 
     if (postMode === 'drop') {
-      stockHeader = '🎁 Drop Stock';
       if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Drop Stock';
+        stockHeader = '🔴 Out Of Stock';
         stockValue = 'All Claimed';
       } else {
         stockHeader = '🎁 Drop Stock';
         stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
       }
     } else if (isAutoRestock) {
-      const intvStr = formatSecondsToIntervalString(restockIntervalSeconds);
+      const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : Date.now();
+      const nextRestockUnix = Math.floor((baseTime + (restockIntervalSeconds * 1000)) / 1000);
       if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Stock';
-        stockValue = `Sold Out (Refills every ${intvStr})`;
+        stockHeader = '🔴 Out Of Stock';
       } else {
-        stockHeader = '🟢 Stock';
-        stockValue = `**${item.stock}/${maxStock}** (Refills every ${intvStr})`;
+        stockHeader = `🟢 ${item.stock}/${maxStock} In Stock`;
       }
+      stockValue = `Restock in <t:${nextRestockUnix}:R>`;
     } else {
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Stock';
         stockValue = 'Unlimited';
       } else if (item.stock <= 0) {
-        stockHeader = '🔴 Stock';
+        stockHeader = '🔴 Out Of Stock';
         stockValue = 'Sold Out';
         embed.setColor('#3498DB'); // Always Blue (even if Sold Out)
       } else {
-        stockHeader = '🟢 Stock';
-        stockValue = `**${item.stock}** Left`;
+        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockValue = 'Available';
       }
     }
     
@@ -4839,7 +4838,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       try {
         const pool = (await import('../storage/postgres.js')).getPool();
         const spRes = await pool.query(
-          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock
+          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, last_restocked_at, created_at
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [messageId]
         );
@@ -4865,17 +4864,23 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // Scrape stock from embed field if present, falling back to DB stock
     let scrapedStock = item.stock;
     if (firstEmbed && firstEmbed.fields) {
-      const stockField = firstEmbed.fields.find(f => f.name && f.name.includes('Stock'));
+      const stockField = firstEmbed.fields.find(f => f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock')));
       if (stockField) {
-        const val = stockField.value;
-        if (val.includes('Unlimited')) {
+        const val = stockField.value || '';
+        const nameVal = stockField.name || '';
+        if (val.includes('Unlimited') || nameVal.includes('Unlimited')) {
           scrapedStock = null;
-        } else if (val.includes('Sold Out') || val.includes('All Claimed')) {
+        } else if (nameVal.includes('Out Of Stock') || val.includes('Sold Out') || val.includes('All Claimed')) {
           scrapedStock = 0;
         } else {
-          const matchNum = val.match(/\*\*(\d+)\*\*/);
-          if (matchNum) {
-            scrapedStock = parseInt(matchNum[1], 10);
+          const nameMatch = nameVal.match(/🟢\s*(\d+)(?:\/\d+)?\s*In Stock/i);
+          if (nameMatch) {
+            scrapedStock = parseInt(nameMatch[1], 10);
+          } else {
+            const matchNum = val.match(/\*\*(\d+)\*\*/);
+            if (matchNum) {
+              scrapedStock = parseInt(matchNum[1], 10);
+            }
           }
         }
       }
@@ -4911,7 +4916,9 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       autoEquip,
       claimLimit,
       restockIntervalSeconds,
-      maxStock
+      maxStock,
+      lastRestockedAt: postRow?.last_restocked_at || null,
+      createdAt: postRow?.created_at || null
     });
 
     const mock = {
@@ -5039,14 +5046,13 @@ export async function handleShopPostUpdate(interaction) {
     const claimLimit = postMode === 'drop' ? (state.claimLimit || 1) : null;
     const restockIntervalSeconds = isAutoRestock ? state.restockIntervalSeconds : null;
     const maxStock = isAutoRestock ? (state.maxStock || item.stock) : null;
-    const lastRestockedAt = isAutoRestock ? new Date() : null;
+    const lastRestockedAt = isAutoRestock ? (state.lastRestockedAt || new Date()) : null;
 
     let stockHeader = '♾️ Stock';
     let stockValue = 'Unlimited';
     if (postMode === 'drop') {
-      stockHeader = '🎁 Drop Stock';
       if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Drop Stock';
+        stockHeader = '🔴 Out Of Stock';
         stockValue = 'All Claimed';
         embed.setColor('#808080');
       } else {
@@ -5054,26 +5060,34 @@ export async function handleShopPostUpdate(interaction) {
         stockValue = `**${item.stock}** Available (Limit: ${claimLimit}/user)`;
       }
     } else if (isAutoRestock) {
-      const intvStr = formatSecondsToIntervalString(restockIntervalSeconds);
-      if (item.stock === null || item.stock === undefined || item.stock <= 0) {
-        stockHeader = '🔴 Stock';
-        stockValue = `Sold Out (Refills every ${intvStr})`;
+      const baseTime = state.lastRestockedAt ? new Date(state.lastRestockedAt).getTime() : new Date(state.createdAt || Date.now()).getTime();
+      let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
+      if (nextRestockMs <= Date.now()) {
+        const elapsed = Date.now() - baseTime;
+        const cycles = Math.floor(elapsed / (restockIntervalSeconds * 1000)) + 1;
+        nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
+      }
+      const nextRestockUnix = Math.floor(nextRestockMs / 1000);
+
+      const isSoldOut = item.stock === null || item.stock === undefined || item.stock <= 0;
+      if (isSoldOut) {
+        stockHeader = '🔴 Out Of Stock';
         embed.setColor('#808080');
       } else {
-        stockHeader = '🟢 Stock';
-        stockValue = `**${item.stock}/${maxStock}** (Refills every ${intvStr})`;
+        stockHeader = `🟢 ${item.stock}/${maxStock} In Stock`;
       }
+      stockValue = `Restock in <t:${nextRestockUnix}:R>`;
     } else {
       if (item.stock === null || item.stock === undefined) {
         stockHeader = '♾️ Stock';
         stockValue = 'Unlimited';
       } else if (item.stock <= 0) {
-        stockHeader = '🔴 Stock';
+        stockHeader = '🔴 Out Of Stock';
         stockValue = 'Sold Out';
         embed.setColor('#808080'); // Gray out sold out items
       } else {
-        stockHeader = '🟢 Stock';
-        stockValue = `**${item.stock}** Left`;
+        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockValue = 'Available';
       }
     }
     embed.addFields({ name: stockHeader, value: stockValue, inline: true });
