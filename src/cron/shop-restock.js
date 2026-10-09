@@ -58,7 +58,43 @@ export async function processAutoRestocks(client) {
 
     for (const row of result.rows) {
       try {
-        // 1. Refill database stock if max_stock is set
+        // 1. Verify guild exists
+        const guild = client.guilds.cache.get(row.guild_id) || await client.guilds.fetch(row.guild_id).catch(() => null);
+        if (!guild) continue;
+
+        // 2. Verify channel exists
+        const channel = guild.channels.cache.get(row.channel_id) || await guild.channels.fetch(row.channel_id).catch(() => null);
+        if (!channel) {
+          // Channel missing or deleted: clean up orphan post without restocking
+          await pool.query('DELETE FROM shop_posts WHERE message_id = $1', [row.message_id]).catch(() => {});
+          await pool.query('DELETE FROM shop_drop_claims WHERE message_id = $1', [row.message_id]).catch(() => {});
+          sysLog('Shop Post Orphan Cleaned', { detail: `Channel ${row.channel_id} was deleted; removed post ${row.message_id} without restocking` });
+          continue;
+        }
+
+        // 3. Verify message exists in Discord BEFORE modifying shop_items or resetting claims
+        let message = null;
+        try {
+          message = await channel.messages.fetch(row.message_id);
+        } catch (fetchErr) {
+          if (fetchErr.code === 10008 || fetchErr.status === 404) {
+            // Unknown Message: message was deleted to disable the item. Clean up post and DO NOT restock.
+            await pool.query('DELETE FROM shop_posts WHERE message_id = $1', [row.message_id]).catch(() => {});
+            await pool.query('DELETE FROM shop_drop_claims WHERE message_id = $1', [row.message_id]).catch(() => {});
+            sysLog('Shop Post Orphan Cleaned', { detail: `Message ${row.message_id} was deleted; post removed and restock skipped` });
+            continue;
+          }
+          sysError('Auto Restock Message Fetch Error', fetchErr, { messageId: row.message_id, itemId: row.item_id });
+          continue;
+        }
+
+        if (!message) {
+          await pool.query('DELETE FROM shop_posts WHERE message_id = $1', [row.message_id]).catch(() => {});
+          await pool.query('DELETE FROM shop_drop_claims WHERE message_id = $1', [row.message_id]).catch(() => {});
+          continue;
+        }
+
+        // 4. Message exists. Proceed with database restock and UI update:
         if (row.max_stock !== null && row.max_stock > 0) {
           await pool.query(
             `UPDATE shop_items SET stock = $1 WHERE id = $2`,
@@ -66,47 +102,23 @@ export async function processAutoRestocks(client) {
           );
         }
 
-        // 2. Clear user claims for this post so users can claim again in the new cycle
+        // Clear user claims for this post so users can claim again in the new cycle
         await pool.query(
           `DELETE FROM shop_drop_claims WHERE message_id = $1`,
           [row.message_id]
         );
 
-        // 3. Update shop_posts timestamp and post_mode
+        // Update shop_posts timestamp and post_mode
         await pool.query(
           `UPDATE shop_posts SET last_restocked_at = NOW(), post_mode = 'auto' WHERE message_id = $1`,
           [row.message_id]
         );
 
-        // 4. Fetch Discord message
-        const guild = client.guilds.cache.get(row.guild_id) || await client.guilds.fetch(row.guild_id).catch(() => null);
-        if (!guild) continue;
-
-        const channel = guild.channels.cache.get(row.channel_id) || await guild.channels.fetch(row.channel_id).catch(() => null);
-        if (!channel) {
-          // Channel missing or deleted
-          continue;
-        }
-
-        let message = null;
-        try {
-          message = await channel.messages.fetch(row.message_id);
-        } catch (fetchErr) {
-          if (fetchErr.code === 10008) {
-            // Unknown Message: delete orphan record
-            await pool.query('DELETE FROM shop_posts WHERE message_id = $1', [row.message_id]).catch(() => {});
-            sysLog('Shop Post Orphan Cleaned', { detail: `Message ${row.message_id} was deleted by admin` });
-          }
-          continue;
-        }
-
-        if (message) {
-          await refreshShopMessageUI({ message, client, guildId: row.guild_id }, row.item_id, row.guild_id);
-          sysLog('Auto Shop Restock Executed', {
-            guild: row.guild_id,
-            detail: `Item ${row.item_name} restocked / claims reset (Message: ${row.message_id})`
-          });
-        }
+        await refreshShopMessageUI({ message, client, guildId: row.guild_id }, row.item_id, row.guild_id);
+        sysLog('Auto Shop Restock Executed', {
+          guild: row.guild_id,
+          detail: `Item ${row.item_name} restocked / claims reset (Message: ${row.message_id})`
+        });
       } catch (postErr) {
         sysError('Auto Restock Single Post Error', postErr, { messageId: row.message_id, itemId: row.item_id });
       }

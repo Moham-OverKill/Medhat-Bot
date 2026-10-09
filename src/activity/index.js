@@ -46,6 +46,9 @@ export async function initializeActivityTracking(discordClient) {
 
   // Remove old listeners if they exist (prevents memory leak)
   client.removeListener('messageCreate', handleMessage);
+  client.removeListener('messageUpdate', handleMessageUpdate);
+  client.removeListener('messageDelete', handleMessageDelete);
+  client.removeListener('messageDeleteBulk', handleMessageDeleteBulk);
   client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
   client.removeListener('threadCreate', handleThreadCreate);
 
@@ -53,6 +56,7 @@ export async function initializeActivityTracking(discordClient) {
   client.on('messageCreate', handleMessage);
   client.on('messageUpdate', handleMessageUpdate);
   client.on('messageDelete', handleMessageDelete);
+  client.on('messageDeleteBulk', handleMessageDeleteBulk);
   client.on('threadCreate', handleThreadCreate);
 
   // Set up voice state tracking (event-based stopwatch)
@@ -147,6 +151,7 @@ export async function cleanup() {
     client.removeListener('messageCreate', handleMessage);
     client.removeListener('messageUpdate', handleMessageUpdate);
     client.removeListener('messageDelete', handleMessageDelete);
+    client.removeListener('messageDeleteBulk', handleMessageDeleteBulk);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
     client.removeListener('threadCreate', handleThreadCreate);
   }
@@ -254,11 +259,30 @@ async function handleMessageUpdate(oldMessage, newMessage) {
 }
 
 /**
- * Handle message deletions to clean up orphaned bot replies.
+ * Handle message deletions to clean up orphaned bot replies and shop posts.
  */
 async function handleMessageDelete(message) {
   const guildId = message.guild?.id || message.guildId;
   return runInGuildContext(guildId, async () => {
+    // Clean up shop post tracking if the deleted message was a posted shop item/chest/pack
+    try {
+      const { getPool } = await import('../storage/postgres.js');
+      const pool = getPool();
+      const delPost = await pool.query(
+        `DELETE FROM shop_posts WHERE message_id = $1 RETURNING item_id`,
+        [message.id]
+      );
+      if (delPost.rowCount > 0) {
+        await pool.query(`DELETE FROM shop_drop_claims WHERE message_id = $1`, [message.id]).catch(() => {});
+        const { sysLog } = await import('../utils/logger.js');
+        sysLog('Shop Post Cleaned On Message Delete', {
+          messageId: message.id,
+          itemId: delPost.rows[0].item_id,
+          detail: 'Post message deleted - disabled auto restock'
+        });
+      }
+    } catch (_) {}
+
     // Use the local client reference to fetch the channel if message.channel is partial/missing
     const channel = message.channel || await client.channels.fetch(message.channelId).catch(() => null);
     if (!channel) return;
@@ -270,6 +294,28 @@ async function handleMessageDelete(message) {
       // Fail silently, just a cleanup task
     }
   });
+}
+
+/**
+ * Handle bulk message deletions to clean up shop posts and orphaned records.
+ */
+async function handleMessageDeleteBulk(messages) {
+  try {
+    const ids = messages?.map(m => m.id).filter(Boolean);
+    if (!ids || ids.length === 0) return;
+    const { getPool } = await import('../storage/postgres.js');
+    const pool = getPool();
+    const delPosts = await pool.query(
+      `DELETE FROM shop_posts WHERE message_id = ANY($1::varchar[]) RETURNING message_id, item_id`,
+      [ids]
+    );
+    if (delPosts.rowCount > 0) {
+      const delIds = delPosts.rows.map(r => r.message_id);
+      await pool.query(`DELETE FROM shop_drop_claims WHERE message_id = ANY($1::varchar[])`, [delIds]).catch(() => {});
+      const { sysLog } = await import('../utils/logger.js');
+      sysLog('Shop Posts Cleaned On Bulk Delete', { count: delPosts.rowCount, detail: 'Bulk messages deleted - disabled auto restock' });
+    }
+  } catch (_) {}
 }
 
 async function handleVoiceStateUpdate(oldState, newState) {
