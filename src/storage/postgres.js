@@ -1313,6 +1313,16 @@ async function createTables() {
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_message_id TEXT`).catch(() => {});
 
+    // Guild currency name and emoji columns migration
+    await pool.query(`ALTER TABLE guild_configs ADD COLUMN IF NOT EXISTS coin_name VARCHAR(64) DEFAULT 'Coins'`).catch(() => {});
+    await pool.query(`ALTER TABLE guild_configs ADD COLUMN IF NOT EXISTS coin_emoji VARCHAR(128) DEFAULT '🪙'`).catch(() => {});
+    await pool.query(`
+      UPDATE guild_configs
+      SET coin_name = COALESCE(config->>'coin_name', 'Coins'),
+          coin_emoji = COALESCE(config->>'coin_emoji', '🪙')
+      WHERE coin_name IS NULL OR coin_emoji IS NULL
+    `).catch(() => {});
+
     // Self-healing migration: Purge legacy interface appearance customizations
     await pool.query(`
       UPDATE guild_configs

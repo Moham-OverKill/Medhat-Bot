@@ -364,7 +364,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
-        .setLabel('Config')
+        .setLabel('Customize')
         .setEmoji('⚙️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()

@@ -448,7 +448,39 @@ export function registerEmojiResolver(resolver) {
   emojiResolver = resolver;
 }
 
+let nameResolver = null;
+export function registerNameResolver(resolver) {
+  nameResolver = resolver;
+}
+
+export const DEFAULT_COIN_NAME = 'Coins';
 export const DEFAULT_COIN_EMOJI = '🪙';
+
+class DynamicCoinName {
+  toString() {
+    const store = guildContext.getStore();
+    const guildId = store?.guildId;
+    if (guildId && nameResolver) {
+      const customName = nameResolver(guildId);
+      if (customName) return customName;
+    }
+    return DEFAULT_COIN_NAME;
+  }
+
+  forGuild(guildId) {
+    if (guildId && nameResolver) {
+      const customName = nameResolver(guildId);
+      if (customName) return customName;
+    }
+    return DEFAULT_COIN_NAME;
+  }
+
+  [Symbol.toPrimitive](hint) {
+    return this.toString();
+  }
+}
+
+export const COIN_NAME = new DynamicCoinName();
 
 class DynamicCoinEmoji {
   /**
@@ -481,6 +513,35 @@ class DynamicCoinEmoji {
 }
 
 export const COIN_EMOJI = new DynamicCoinEmoji();
+
+/**
+ * Centralized helper to get currency name for a guild.
+ * @param {string} [guildId]
+ * @returns {Promise<string>}
+ */
+export async function getCurrencyName(guildId) {
+  if (!guildId) return DEFAULT_COIN_NAME;
+  if (nameResolver) {
+    const customName = nameResolver(guildId);
+    if (customName) return customName;
+  }
+  try {
+    const { getGuildConfig } = await import('./storage/config.js');
+    const config = await getGuildConfig(guildId);
+    return config?.coin_name || DEFAULT_COIN_NAME;
+  } catch (_) {
+    return DEFAULT_COIN_NAME;
+  }
+}
+
+/**
+ * Centralized helper to get currency emoji for a guild.
+ * @param {string} [guildId]
+ * @returns {Promise<string>}
+ */
+export async function getCurrencyEmoji(guildId) {
+  return COIN_EMOJI.forGuild(guildId);
+}
 
 
 /**

@@ -62,6 +62,7 @@ const CONFIG_SCHEMA = {
   // Vote & Tag Rewards
   vote_reward_amount: { type: 'number', min: 0, required: false },
   tag_reward_amount: { type: 'number', min: 0, required: false },
+  coin_name: { type: 'string', required: false },
   coin_emoji: { type: 'string', required: false },
   bot_nickname: { type: 'string', required: false },
   bot_avatar: { type: 'string', required: false },
@@ -105,6 +106,7 @@ export const CONFIG_DEFAULTS = {
   quests_per_refresh: 3,
   vote_reward_amount: 100,
   tag_reward_amount: 0,
+  coin_name: 'Coins',
   anti_cheat_account_age_gate: false,
   anti_cheat_join_date_gate: false,
   anti_cheat_voice_min_humans: true,
@@ -157,11 +159,16 @@ export function applyConfigDefaults(config) {
 
 export const configCache = new Map();
 
-import { registerEmojiResolver } from '../shared.js';
+import { registerEmojiResolver, registerNameResolver, getCurrencyName, getCurrencyEmoji } from '../shared.js';
 registerEmojiResolver((guildId) => {
   const config = configCache.get(guildId);
   return config?.coin_emoji || null;
 });
+registerNameResolver((guildId) => {
+  const config = configCache.get(guildId);
+  return config?.coin_name || null;
+});
+export { getCurrencyName, getCurrencyEmoji };
 
 /**
  * Validates and sanitizes configuration object against schema
@@ -389,6 +396,15 @@ export async function setGuildConfig(guildId, config) {
     
     const fullConfig = applyConfigDefaults(validateConfig(result.rows[0]?.config || {}));
     configCache.set(guildId, fullConfig);
+
+    // Sync explicit database columns on guild_configs
+    await pool.query(
+      `UPDATE guild_configs SET
+         coin_name = COALESCE(config->>'coin_name', 'Coins'),
+         coin_emoji = COALESCE(config->>'coin_emoji', '🪙')
+       WHERE guild_id = $1`,
+      [guildId]
+    ).catch(() => {});
 
     // Invalidate activity tracker config cache to ensure immediate synchronization across systems
     try {
