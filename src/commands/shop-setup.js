@@ -1746,7 +1746,7 @@ export async function handleShopPostPriceBtn(interaction) {
     .setCustomId('price_input')
     .setLabel('Price')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('0 = Free')
+    .setPlaceholder('Free')
     .setValue((state.overridePrice !== null && state.overridePrice !== undefined && state.overridePrice !== 0) ? state.overridePrice.toString() : '')
     .setRequired(false);
 
@@ -1800,23 +1800,23 @@ export async function handleShopPostStockBtn(interaction) {
       .setCustomId('stock')
       .setLabel('Stocks')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Unlimited')
-      .setValue((state.stock !== null && state.stock !== undefined) ? String(state.stock) : '')
+      .setPlaceholder('Unlimited')
+      .setValue((state.stock !== null && state.stock !== undefined && state.stock > 0) ? String(state.stock) : '')
       .setRequired(false);
 
     const claimLimitInput = new TextInputBuilder()
       .setCustomId('claim_limit')
       .setLabel('Max Claims (Per User)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Unlimited')
-      .setValue((state.claimLimit !== null && state.claimLimit !== undefined) ? String(state.claimLimit) : '')
+      .setPlaceholder('Unlimited')
+      .setValue((state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0) ? String(state.claimLimit) : '')
       .setRequired(false);
 
     const intervalInput = new TextInputBuilder()
       .setCustomId('restock_interval')
       .setLabel('Timer')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Disable')
+      .setPlaceholder('Disabled')
       .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
       .setRequired(false);
 
@@ -1931,33 +1931,33 @@ export async function handleShopPostModalSubmit(interaction) {
         claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim().toLowerCase();
       } catch (_) {}
 
-      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited') {
+      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited' || stockVal === 'null' || stockVal === 'none') {
         state.stock = null;
         state.maxStock = null;
       } else {
         if (!/^\d+$/.test(stockVal)) {
-          return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or 0 for unlimited.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
         }
         const num = parseInt(stockVal, 10);
         state.stock = num <= 0 ? null : num;
         state.maxStock = state.stock;
       }
 
-      if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'off') {
+      if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'disabled' || timerVal === 'off' || timerVal === 'null' || timerVal === 'none') {
         state.restockIntervalSeconds = null;
       } else {
         const intervalSeconds = parseIntervalStringToSeconds(timerVal);
         if (!intervalSeconds) {
-          return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or 0 to disable.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or leave empty to disable.', flags: MessageFlags.Ephemeral });
         }
         state.restockIntervalSeconds = intervalSeconds;
       }
 
-      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited') {
+      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited' || claimLimitVal === 'null' || claimLimitVal === 'none') {
         state.claimLimit = null;
       } else {
         if (!/^\d+$/.test(claimLimitVal)) {
-          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or 0 for unlimited.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
         }
         const num = parseInt(claimLimitVal, 10);
         state.claimLimit = num <= 0 ? null : num;
@@ -1965,14 +1965,14 @@ export async function handleShopPostModalSubmit(interaction) {
 
       state.stockConfigured = true;
     } else if (customId === 'shop_post_price_modal') {
-      const val = (interaction.fields.getTextInputValue('price_input') || '').trim();
+      const val = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
       
-      if (val === '' || val === '0' || val.toLowerCase() === 'free') {
+      if (val === '' || val === '0' || val === 'free' || val === 'null' || val === 'none') {
         state.overridePrice = 0;
       } else {
         const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
         if (newPrice < 0) {
-          return interaction.followUp({ content: 'Please enter a valid non-negative whole number (or leave empty for 0 = free).', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Please enter a valid non-negative whole number (or leave empty for Free).', flags: MessageFlags.Ephemeral });
         }
         state.overridePrice = newPrice;
       }
