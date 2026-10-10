@@ -2063,10 +2063,8 @@ export async function handleShopPostPublish(interaction) {
       .setTitle(item.name)
       .setColor('#3498DB'); 
 
-    // JIT Sync: Always update global price and stock in DB before publishing to ensure state consistency
-    await updateShopItem(itemId, { price: effectivePrice, stock }, interaction.guildId); 
-    item.price = effectivePrice;
-    item.stock = stock;
+    // Post-level stock and price: isolated per post to prevent cross-channel contamination of catalog items
+    const postStock = (state.stock !== null && state.stock !== undefined && state.stock > 0) ? state.stock : null;
 
     // Image: instance-specific override takes priority, then item's default image
     const finalImage = imageUrl || getItemImage(item);
@@ -2122,7 +2120,7 @@ export async function handleShopPostPublish(interaction) {
     const lastRestockedAt = hasTimer ? new Date() : null;
 
     // Stock Field (Visual)
-    const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
+    const isSoldOut = postStock !== null && postStock !== undefined && postStock <= 0;
     let stockHeader = '♾️ Unlimited';
     let stockValue = 'Available';
 
@@ -2136,7 +2134,7 @@ export async function handleShopPostPublish(interaction) {
       }
       const nextRestockUnix = Math.floor(nextRestockMs / 1000);
 
-      if (item.stock === null || item.stock === undefined) {
+      if (postStock === null || postStock === undefined) {
         stockHeader = '♾️ Unlimited';
         stockValue = `Refreshes <t:${nextRestockUnix}:R>`;
       } else if (isSoldOut) {
@@ -2144,11 +2142,11 @@ export async function handleShopPostPublish(interaction) {
         stockValue = `Restocks <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockHeader = `🟢 ${postStock} In Stock`;
         stockValue = `Restocks <t:${nextRestockUnix}:R>`;
       }
     } else {
-      if (item.stock === null || item.stock === undefined) {
+      if (postStock === null || postStock === undefined) {
         stockHeader = '♾️ Unlimited';
         stockValue = 'Available';
       } else if (isSoldOut) {
@@ -2156,7 +2154,7 @@ export async function handleShopPostPublish(interaction) {
         stockValue = 'Sold Out';
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockHeader = `🟢 ${postStock} In Stock`;
         stockValue = 'Available';
       }
     }
@@ -2196,8 +2194,8 @@ export async function handleShopPostPublish(interaction) {
         `INSERT INTO shop_posts (
           message_id, guild_id, channel_id, item_id, custom_image_url,
           post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds,
-          max_stock, last_restocked_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+          max_stock, current_stock, override_price, last_restocked_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
         ON CONFLICT (message_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           item_id = EXCLUDED.item_id,
@@ -2207,12 +2205,14 @@ export async function handleShopPostPublish(interaction) {
           claim_limit_per_user = EXCLUDED.claim_limit_per_user,
           restock_interval_seconds = EXCLUDED.restock_interval_seconds,
           max_stock = EXCLUDED.max_stock,
+          current_stock = EXCLUDED.current_stock,
+          override_price = EXCLUDED.override_price,
           last_restocked_at = EXCLUDED.last_restocked_at,
           updated_at = NOW()`,
         [
           postMsg.id, interaction.guildId, channelId, itemId, finalImage || null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
-          maxStock, lastRestockedAt
+          maxStock, postStock, effectivePrice, lastRestockedAt
         ]
       );
     } catch (_) {}
@@ -4761,7 +4761,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       try {
         const pool = (await import('../storage/postgres.js')).getPool();
         const spRes = await pool.query(
-          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, last_restocked_at, created_at
+          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [messageId]
         );
@@ -4784,9 +4784,11 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() || null
       : null;
 
-    // Scrape stock from embed field if present, falling back to DB stock
+    // Stock priority: postRow.current_stock if tracked in shop_posts, then embed scraped stock, then catalog stock
     let scrapedStock = item.stock;
-    if (firstEmbed && firstEmbed.fields) {
+    if (postRow && postRow.current_stock !== undefined) {
+      scrapedStock = postRow.current_stock;
+    } else if (firstEmbed && firstEmbed.fields) {
       const stockField = firstEmbed.fields.find(f => f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock') || f.name.includes('Unlimited')));
       if (stockField) {
         const val = stockField.value || '';
@@ -4815,6 +4817,10 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     const maxStock = postRow?.max_stock || null;
     const postMode = (postRow?.post_mode === 'drop') ? 'drop' : 'normal';
 
+    const effectiveEditPrice = (postRow && postRow.override_price !== null && postRow.override_price !== undefined)
+      ? postRow.override_price
+      : (overridePrice !== null ? overridePrice : (item.price ?? 0));
+
     // Initialize state
     const userId = interaction.user.id;
     pendingPosts.set(userId, {
@@ -4824,7 +4830,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       payout,
       description,
       imageUrl,
-      overridePrice: overridePrice !== null ? overridePrice : (item.price ?? 0),
+      overridePrice: effectiveEditPrice,
       stock: scrapedStock,
       stockConfigured: true,
       isEditing: true,
@@ -4911,10 +4917,8 @@ export async function handleShopPostUpdate(interaction) {
       return interaction.followUp({ content: '❌ Message not found.', flags: MessageFlags.Ephemeral });
     }
 
-    // JIT DB Update
-    await updateShopItem(itemId, { price: effectivePrice, stock }, interaction.guildId);
-    item.price = effectivePrice;
-    item.stock = stock;
+    // Post-level stock and price: isolated per post to prevent cross-channel contamination of catalog items
+    const postStock = (state.stock !== null && state.stock !== undefined && state.stock > 0) ? state.stock : null;
 
     // Build the updated embed
     const embed = new EmbedBuilder()
@@ -4969,7 +4973,7 @@ export async function handleShopPostUpdate(interaction) {
     const maxStock = state.stock !== null ? state.stock : null;
     const lastRestockedAt = hasTimer ? (state.lastRestockedAt || new Date()) : null;
 
-    const isSoldOut = item.stock !== null && item.stock !== undefined && item.stock <= 0;
+    const isSoldOut = postStock !== null && postStock !== undefined && postStock <= 0;
     let stockHeader = '♾️ Unlimited';
     let stockValue = 'Available';
     if (hasTimer) {
@@ -4982,7 +4986,7 @@ export async function handleShopPostUpdate(interaction) {
       }
       const nextRestockUnix = Math.floor(nextRestockMs / 1000);
 
-      if (item.stock === null || item.stock === undefined) {
+      if (postStock === null || postStock === undefined) {
         stockHeader = '♾️ Unlimited';
         stockValue = `Refreshes <t:${nextRestockUnix}:R>`;
       } else if (isSoldOut) {
@@ -4990,11 +4994,11 @@ export async function handleShopPostUpdate(interaction) {
         stockValue = `Restocks <t:${nextRestockUnix}:R>`;
         embed.setColor('#808080');
       } else {
-        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockHeader = `🟢 ${postStock} In Stock`;
         stockValue = `Restocks <t:${nextRestockUnix}:R>`;
       }
     } else {
-      if (item.stock === null || item.stock === undefined) {
+      if (postStock === null || postStock === undefined) {
         stockHeader = '♾️ Unlimited';
         stockValue = 'Available';
       } else if (isSoldOut) {
@@ -5002,7 +5006,7 @@ export async function handleShopPostUpdate(interaction) {
         stockValue = 'Sold Out';
         embed.setColor('#808080'); // Gray out sold out items
       } else {
-        stockHeader = `🟢 ${item.stock} In Stock`;
+        stockHeader = `🟢 ${postStock} In Stock`;
         stockValue = 'Available';
       }
     }
@@ -5040,8 +5044,8 @@ export async function handleShopPostUpdate(interaction) {
         `INSERT INTO shop_posts (
           message_id, guild_id, channel_id, item_id, custom_image_url,
           post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds,
-          max_stock, last_restocked_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+          max_stock, current_stock, override_price, last_restocked_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
         ON CONFLICT (message_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           item_id = EXCLUDED.item_id,
@@ -5051,12 +5055,14 @@ export async function handleShopPostUpdate(interaction) {
           claim_limit_per_user = EXCLUDED.claim_limit_per_user,
           restock_interval_seconds = EXCLUDED.restock_interval_seconds,
           max_stock = EXCLUDED.max_stock,
+          current_stock = EXCLUDED.current_stock,
+          override_price = EXCLUDED.override_price,
           last_restocked_at = EXCLUDED.last_restocked_at,
           updated_at = NOW()`,
         [
           message.id, interaction.guildId, message.channelId || channel.id, itemId, finalImage || null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
-          maxStock, lastRestockedAt
+          maxStock, postStock, effectivePrice, lastRestockedAt
         ]
       );
 

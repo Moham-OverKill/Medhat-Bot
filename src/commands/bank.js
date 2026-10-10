@@ -465,7 +465,7 @@ export async function handleShopBuyButton(interaction) {
     if (interaction.message?.id) {
       try {
         const postRes = await pool.query(
-          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock
+          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock, current_stock, override_price
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [interaction.message.id]
         );
@@ -544,8 +544,13 @@ export async function handleShopBuyButton(interaction) {
       // 3. There is only 1 left in stock (stock <= 1)
       // 4. Max allowed copies user can acquire is 1 (maxAllowed <= 1)
       if (item) {
+        const hasTrackedPost = Boolean(shopPost);
+        const effectiveStock = (hasTrackedPost && shopPost.current_stock !== undefined)
+          ? shopPost.current_stock
+          : item.stock;
+
         // Immediate check: out of stock
-        if (item.stock !== null && item.stock <= 0) {
+        if (effectiveStock !== null && effectiveStock <= 0) {
           const stockEmbed = new EmbedBuilder()
             .setColor('#E74C3C')
             .setDescription('\u274C This item is out of stock.');
@@ -559,7 +564,7 @@ export async function handleShopBuyButton(interaction) {
         const isPack = item.item_type === 'pack';
         const remainingClaims = hasClaimLimit ? Math.max(0, claimLimit - currentClaims) : null;
         const isSingleClaimLimit = hasClaimLimit && (claimLimit <= 1 || (remainingClaims !== null && remainingClaims <= 1));
-        const isSingleStock = item.stock !== null && item.stock <= 1;
+        const isSingleStock = effectiveStock !== null && effectiveStock <= 1;
 
         // Fetch current user inventory count for this item
         let remainingCap = 999;
@@ -585,8 +590,8 @@ export async function handleShopBuyButton(interaction) {
         }
 
         let maxAllowed = remainingCap;
-        if (item.stock !== null) {
-          maxAllowed = Math.min(maxAllowed, item.stock);
+        if (effectiveStock !== null) {
+          maxAllowed = Math.min(maxAllowed, effectiveStock);
         }
         if (remainingClaims !== null) {
           maxAllowed = Math.min(maxAllowed, remainingClaims);
@@ -647,7 +652,8 @@ export async function handleShopBuyButton(interaction) {
       sellerId,
       payoutAmount,
       overridePrice,
-      quantity: 1
+      quantity: 1,
+      messageId: interaction.message?.id || null
     });
 
     if (!result.success) {
@@ -850,11 +856,13 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       let restockIntervalSeconds = null;
       let claimLimit = null;
       let intvStr = null;
+      let postCurrentStock = undefined;
+      let postOverridePrice = null;
       if (msg.id) {
         try {
           const pool = (await import('../storage/postgres.js')).getPool();
           const spRes = await pool.query(
-            `SELECT post_mode, max_stock, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+            `SELECT post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
             [msg.id]
           );
           if (spRes.rows.length > 0) {
@@ -863,6 +871,8 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             const createdAt = spRes.rows[0].created_at;
             claimLimit = spRes.rows[0].claim_limit_per_user || null;
             maxStock = spRes.rows[0].max_stock;
+            postCurrentStock = spRes.rows[0].current_stock;
+            postOverridePrice = spRes.rows[0].override_price;
 
             if (rawInterval && rawInterval > 0) {
               restockIntervalSeconds = rawInterval;
@@ -879,13 +889,14 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         } catch (_) {}
       }
 
+      const effectiveStock = (postCurrentStock !== undefined) ? postCurrentStock : updatedItem.stock;
       const hasTimer = Boolean(restockIntervalSeconds && restockIntervalSeconds > 0);
-      const isSoldOut = updatedItem.stock !== null && updatedItem.stock !== undefined && updatedItem.stock <= 0;
+      const isSoldOut = effectiveStock !== null && effectiveStock !== undefined && effectiveStock <= 0;
 
       let stockHeader = '♾️ Unlimited';
       let stockValue = 'Available';
       if (hasTimer) {
-        if (updatedItem.stock === null || updatedItem.stock === undefined) {
+        if (effectiveStock === null || effectiveStock === undefined) {
           stockHeader = '♾️ Unlimited';
           stockValue = `Refreshes <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
@@ -894,12 +905,12 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           stockValue = `Restocks <t:${intvStr}:R>`;
           embed.setColor('#808080');
         } else {
-          stockHeader = `🟢 ${updatedItem.stock} In Stock`;
+          stockHeader = `🟢 ${effectiveStock} In Stock`;
           stockValue = `Restocks <t:${intvStr}:R>`;
           embed.setColor('#3498DB');
         }
       } else {
-        if (updatedItem.stock === null || updatedItem.stock === undefined) {
+        if (effectiveStock === null || effectiveStock === undefined) {
           stockHeader = '♾️ Unlimited';
           stockValue = 'Available';
           embed.setColor('#3498DB');
@@ -908,7 +919,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
           stockValue = 'Sold Out';
           embed.setColor('#808080');
         } else {
-          stockHeader = `🟢 ${updatedItem.stock} In Stock`;
+          stockHeader = `🟢 ${effectiveStock} In Stock`;
           stockValue = 'Available';
           embed.setColor('#3498DB');
         }
@@ -938,7 +949,9 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
         if (row.components && row.components.length > 0) {
           const buyBtn = ButtonBuilder.from(row.components[0]);
           buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
-          let effectivePrice = Number(updatedItem.price) || 0;
+          let effectivePrice = (postOverridePrice !== null && postOverridePrice !== undefined)
+            ? Number(postOverridePrice)
+            : (Number(updatedItem.price) || 0);
           const btnCustomId = buyBtn.data?.custom_id || '';
           if (btnCustomId) {
             const btnParts = btnCustomId.split('_');
@@ -1028,7 +1041,7 @@ export async function handleShopBuyModalSubmit(interaction) {
     if (interaction.message?.id) {
       try {
         const postRes = await pool.query(
-          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock
+          `SELECT post_mode, claim_limit_per_user, auto_equip, max_stock, current_stock, override_price
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [interaction.message.id]
         );
@@ -1082,7 +1095,8 @@ export async function handleShopBuyModalSubmit(interaction) {
       sellerId,
       payoutAmount,
       overridePrice,
-      quantity: qty
+      quantity: qty,
+      messageId: interaction.message?.id || null
     });
 
     if (!result.success) {
