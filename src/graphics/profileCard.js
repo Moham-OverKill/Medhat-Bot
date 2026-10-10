@@ -83,7 +83,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 const assetImageCache = new Map();
-const ASSET_CACHE_MAX = 300;
+const ASSET_CACHE_MAX = 80;
 const ASSET_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
 /**
@@ -303,7 +303,7 @@ function drawBadge(ctx, x, centerY, text, textColor, bgColor, borderColor) {
 }
 
 const profileCardBufferCache = new Map();
-const PROFILE_BUFFER_CACHE_MAX = 500;
+const PROFILE_BUFFER_CACHE_MAX = 80;
 
 /**
  * Computes a deterministic SHA-256 hash from all visual profile state attributes.
