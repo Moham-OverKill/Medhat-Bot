@@ -13,7 +13,7 @@ import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { sysLog, sysError } from '../utils/logger.js';
-import { COIN_EMOJI } from '../shared.js';
+import { COIN_EMOJI, getCurrencyName } from '../shared.js';
 
 export const profileCommand = new SlashCommandBuilder()
   .setName('profile')
@@ -137,8 +137,10 @@ export async function handleProfileCommand(interaction) {
     }
 
     // 2. Generate Arcane-style Profile Image Buffer
+    const coinName = config?.coin_name || await getCurrencyName(guildId);
     const imageBuffer = await generateProfileCard({
       guildId,
+      coinName,
       userId,
       displayName: targetMember?.displayName || targetUser.displayName || targetUser.username,
       username: targetUser.username,
