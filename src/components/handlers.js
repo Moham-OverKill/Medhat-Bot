@@ -240,7 +240,7 @@ export function setupComponentHandlers(client) {
           interaction.customId.startsWith('shop_post_price_modal')
         ) {
           await handleShopPostModalSubmit(interaction);
-        } else if (interaction.customId === 'shop_edit_post_url_modal') {
+        } else if (interaction.customId === 'shop_edit_post_url_modal' || interaction.customId.startsWith('shop_edit_post_url_modal:')) {
           await handleShopEditPostUrlSubmit(interaction);
         } else if (interaction.customId.startsWith('mass_modal_create_')) {
           await handleMassModalSubmit(interaction);
@@ -295,6 +295,7 @@ export function setupComponentHandlers(client) {
 
 
       const customId = interaction.customId;
+      const baseCustomId = customId.includes(':') ? customId.split(':')[0] : customId;
 
       // COMMUNITY INTERFACE / SERVER HUB SHORTCUTS
       if (customId.startsWith('hub_btn_')) {
@@ -447,7 +448,7 @@ export function setupComponentHandlers(client) {
         await handleEditCategoryRemoveItemsSelect(interaction);
       }
       // ADMIN SHOP SETUP - MAIN MENU
-      else if (customId === 'shop_admin_home' || customId === 'shop_setup_home') {
+      else if (baseCustomId === 'shop_admin_home' || baseCustomId === 'shop_setup_home') {
         await handleShopSetup(interaction);
       } else if (customId === 'settings_home') {
         await handleSettingsComponent(interaction);
@@ -473,13 +474,13 @@ export function setupComponentHandlers(client) {
         await handleShopAdminEdit(interaction);
       } else if (customId === 'shop_admin_delete' || customId === 'shop_setup_delete') {
         await handleShopAdminDelete(interaction);
-      } else if (customId === 'shop_admin_post' || customId === 'shop_setup_post') {
+      } else if (baseCustomId === 'shop_admin_post' || baseCustomId === 'shop_setup_post') {
         await handleShopPostGate(interaction);
-      } else if (customId === 'shop_post_new_layout') {
+      } else if (baseCustomId === 'shop_post_new_layout') {
         await handleShopPostNewLayout(interaction);
-      } else if (customId === 'shop_post_edit_layout') {
+      } else if (baseCustomId === 'shop_post_edit_layout') {
         await handleShopPostEditLayout(interaction);
-      } else if (customId === 'shop_post_update') {
+      } else if (baseCustomId === 'shop_post_update') {
         await handleShopPostUpdate(interaction);
       } else if (customId.startsWith('shop_pack_add_content_select_')) {
         await handlePackAddContentSelect(interaction);
@@ -489,31 +490,31 @@ export function setupComponentHandlers(client) {
         await handlePackRemoveContentSelect(interaction);
       } else if (customId.startsWith('shop_pack_remove_')) {
         await handlePackRemoveContentStart(interaction);
-      } else if (customId === 'shop_post_item_select') {
+      } else if (baseCustomId === 'shop_post_item_select') {
         await handleShopPostItemSelect(interaction);
-      } else if (customId === 'shop_post_channel_select') {
+      } else if (baseCustomId === 'shop_post_channel_select') {
         await handleShopPostChannelSelect(interaction);
-      } else if (customId === 'shop_post_mode_select') {
+      } else if (baseCustomId === 'shop_post_mode_select') {
         await handleShopPostModeSelect(interaction);
-      } else if (customId === 'shop_post_auto_equip_toggle') {
+      } else if (baseCustomId === 'shop_post_auto_equip_toggle') {
         await handleShopPostAutoEquipToggle(interaction);
       }
       // Setup Modal Routing
-      else if (customId === 'shop_post_seller_select') {
+      else if (baseCustomId === 'shop_post_seller_select') {
         await handleShopPostSellerSelect(interaction);
-      } else if (customId === 'shop_post_desc_btn') {
+      } else if (baseCustomId === 'shop_post_desc_btn') {
         await handleShopPostDescBtn(interaction);
-      } else if (customId === 'shop_post_payout_btn') {
+      } else if (baseCustomId === 'shop_post_payout_btn') {
         await handleShopPostPayoutBtn(interaction);
-      } else if (customId === 'shop_post_image_btn') {
+      } else if (baseCustomId === 'shop_post_image_btn') {
         await handleShopPostImageBtn(interaction);
-      } else if (customId === 'shop_post_publish') {
+      } else if (baseCustomId === 'shop_post_publish') {
         await handleShopPostPublish(interaction);
-      } else if (customId === 'shop_post_price_btn') {
+      } else if (baseCustomId === 'shop_post_price_btn') {
         await handleShopPostPriceBtn(interaction);
-      } else if (customId === 'shop_post_reset') {
+      } else if (baseCustomId === 'shop_post_reset') {
         await handleShopPostReset(interaction);
-      } else if (customId === 'shop_post_stock_btn') {
+      } else if (baseCustomId === 'shop_post_stock_btn') {
         await handleShopPostStockBtn(interaction);
       }
       // ADMIN SHOP SETUP - ADD FLOW
@@ -575,7 +576,7 @@ export function setupComponentHandlers(client) {
         await handleAdminBrowserBackRoot(interaction);
       } else if (customId === 'shop_admin_browser_back_cat') {
         await handleAdminBrowserBackCat(interaction);
-      } else if (customId === 'shop_post_back_folder') {
+      } else if (baseCustomId === 'shop_post_back_folder') {
         await handleShopPostBackFolder(interaction);
       } else if (customId.startsWith('shop_pack_add_back_root_')) {
         await handlePackAddContentStart(interaction, 'root');
