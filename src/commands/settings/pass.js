@@ -1058,6 +1058,14 @@ export async function handlePassComponent(interaction) {
       await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2', [guildId, level]);
       await pool.query('DELETE FROM user_pass_claims WHERE guild_id = $1 AND level_claimed = $2', [guildId, level]);
       await pool.query('DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND level = $2', [guildId, level]);
+      sysLog('Level Deleted', { guild: guildId, user: interaction.user.id, detail: `Level ${level} deleted` });
+      sendLog(
+        interaction.guild,
+        'audit',
+        'red',
+        '🗑️ Level Deleted',
+        `Admin **<@${interaction.user.id}>** deleted **Level ${level}**.`
+      );
       import('../register.js').then(({ syncGuildSlashCommands }) => {
         syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
       }).catch(() => {});
@@ -1544,6 +1552,15 @@ export async function handlePassModal(interaction) {
       await interaction.deferUpdate().catch(() => {});
 
       const pool = getPool();
+      let rewardName = `${type} #${targetId}`;
+      if (type === 'item') {
+        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [targetId]);
+        if (itemRes.rows.length > 0) rewardName = itemRes.rows[0].name;
+      } else {
+        const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [targetId]);
+        if (chestRes.rows.length > 0) rewardName = chestRes.rows[0].name;
+      }
+
       if (quantity === 0) {
         if (type === 'item') {
           await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND shop_item_id = $4', [guildId, level, 'item', targetId]);
@@ -1551,6 +1568,13 @@ export async function handlePassModal(interaction) {
           await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4', [guildId, level, 'chest', targetId]);
         }
         sysLog('Level Reward Removed', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} removed` });
+        sendLog(
+          interaction.guild,
+          'audit',
+          'orange',
+          '🎁 Level Reward Removed',
+          `Admin **<@${interaction.user.id}>** removed **${rewardName}** from **Level ${level}**.`
+        );
       } else {
         if (type === 'item') {
           await pool.query(
@@ -1570,6 +1594,13 @@ export async function handlePassModal(interaction) {
           );
         }
         sysLog('Level Reward Updated', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} qty: ${quantity}` });
+        sendLog(
+          interaction.guild,
+          'audit',
+          'cyan',
+          '🎁 Level Reward Set',
+          `Admin **<@${interaction.user.id}>** set reward for **Level ${level}**: **${rewardName}** (x${quantity.toLocaleString()}).`
+        );
       }
 
       const payload = await getPassDashboardPayload(guildId, page, level, currentFolder, currentRewardPage);

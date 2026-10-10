@@ -13,7 +13,8 @@ import {
   PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
-import { sysError, sysLog } from '../../utils/logger.js';
+import { sysError, sysLog, sendLog } from '../../utils/logger.js';
+import { getUserLogName } from '../../shared.js';
 import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
 import { verifyAndHealMessageImages } from '../../utils/image-healer.js';
 import { sanitizeEmbed } from '../../utils/embed-sanitizer.js';
@@ -741,6 +742,17 @@ async function handleGroupChannelSend(interaction, groupId) {
     });
 
     const jumpUrl = `https://discord.com/channels/${guildId}/${channelId}/${sentMsg.id}`;
+    sendLog(
+      interaction.guild,
+      'audit',
+      'cyan',
+      '📢 Embed Group Posted',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+      `**Group:** ${grp.title || grp.name}\n` +
+      `**Channel:** <#${channelId}>\n` +
+      `**Message:** [Jump to Message](${jumpUrl})`
+    );
+
     await interaction.followUp({
       content: `✅ Embed group **${grp.title || grp.name}** successfully sent to <#${channelId}>! [Jump to Message](${jumpUrl})`,
       flags: MessageFlags.Ephemeral
@@ -1435,6 +1447,18 @@ async function handleEmbedChannelSend(interaction, embedId) {
     detail: `Embed #${embedId} sent to #${targetChannel.name} (MsgID: ${sentMessage.id})`
   });
 
+  const jumpUrl = `https://discord.com/channels/${interaction.guildId}/${channelId}/${sentMessage.id}`;
+  sendLog(
+    interaction.guild,
+    'audit',
+    'cyan',
+    '📢 Custom Embed Posted',
+    `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+    `**Embed ID:** \`#${embedId}\`\n` +
+    `**Channel:** <#${channelId}>\n` +
+    `**Message:** [Jump to Message](${jumpUrl})`
+  );
+
   await interaction.followUp({
     content: `✅ Embed successfully sent to <#${channelId}>.`,
     flags: MessageFlags.Ephemeral
@@ -1874,6 +1898,18 @@ export async function handleEmbedModal(interaction) {
       user: interaction.user.id,
       detail: `ID: ${embedId} live updated in #${channel.name} (MsgID: ${urlMessageId})`
     });
+
+    const liveJumpUrl = `https://discord.com/channels/${guildId}/${urlChannelId}/${urlMessageId}`;
+    sendLog(
+      interaction.guild,
+      'audit',
+      'cyan',
+      '📝 Custom Embed Updated Live',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+      `**Embed ID:** \`#${embedId}\`\n` +
+      `**Channel:** <#${urlChannelId}>\n` +
+      `**Message:** [Jump to Message](${liveJumpUrl})`
+    );
 
     await interaction.followUp({
       content: '✅ Message updated live successfully.',
@@ -2324,6 +2360,19 @@ export async function handleEmbedModal(interaction) {
         user: interaction.user.id,
         detail: `ID: ${groupId} | Message: ${urlMessageId}`
       });
+
+      const groupJumpUrl = `https://discord.com/channels/${guildId}/${urlChannelId}/${urlMessageId}`;
+      sendLog(
+        interaction.guild,
+        'audit',
+        'cyan',
+        '📝 Custom Embed Group Updated Live',
+        `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+        `**Group ID:** \`#${groupId}\`\n` +
+        `**Group:** ${grp.title || grp.name}\n` +
+        `**Channel:** <#${urlChannelId}>\n` +
+        `**Message:** [Jump to Message](${groupJumpUrl})`
+      );
 
       await interaction.followUp({
         content: `✅ Live group message successfully updated! [Jump to Message](https://discord.com/channels/${guildId}/${urlChannelId}/${urlMessageId})`,
