@@ -51,6 +51,7 @@ export async function initializeActivityTracking(discordClient) {
   client.removeListener('messageDeleteBulk', handleMessageDeleteBulk);
   client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
   client.removeListener('threadCreate', handleThreadCreate);
+  client.removeListener('raw', handleRawGatewayPacket);
 
   // Set up message tracking (with anti-spam)
   client.on('messageCreate', handleMessage);
@@ -58,6 +59,7 @@ export async function initializeActivityTracking(discordClient) {
   client.on('messageDelete', handleMessageDelete);
   client.on('messageDeleteBulk', handleMessageDeleteBulk);
   client.on('threadCreate', handleThreadCreate);
+  client.on('raw', handleRawGatewayPacket);
 
   // Set up voice state tracking (event-based stopwatch)
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
@@ -154,6 +156,7 @@ export async function cleanup() {
     client.removeListener('messageDeleteBulk', handleMessageDeleteBulk);
     client.removeListener('voiceStateUpdate', handleVoiceStateUpdate);
     client.removeListener('threadCreate', handleThreadCreate);
+    client.removeListener('raw', handleRawGatewayPacket);
   }
 
   try {
@@ -326,6 +329,44 @@ async function handleMessageDeleteBulk(messages) {
       }
     }
   } catch (_) {}
+}
+
+/**
+ * Raw Gateway packet handler for MESSAGE_DELETE / MESSAGE_DELETE_BULK.
+ * Ensures uncached threads/posts (where starter message ID === thread channel ID) are always detected.
+ */
+async function handleRawGatewayPacket(packet) {
+  if (!packet || !packet.d) return;
+
+  if (packet.t === 'MESSAGE_DELETE') {
+    const { id, channel_id, guild_id } = packet.d;
+    if (id && channel_id && id === channel_id && guild_id) {
+      return runInGuildContext(guild_id, async () => {
+        try {
+          const channel = client.channels.cache.get(channel_id)
+            || await client.channels.fetch(channel_id).catch(() => null);
+          if (channel) {
+            const { handleOrphanedForumPostCleanup } = await import('../middleware/organize.js');
+            await handleOrphanedForumPostCleanup(channel, [id]);
+          }
+        } catch (_) {}
+      });
+    }
+  } else if (packet.t === 'MESSAGE_DELETE_BULK') {
+    const { ids, channel_id, guild_id } = packet.d;
+    if (Array.isArray(ids) && channel_id && ids.includes(channel_id) && guild_id) {
+      return runInGuildContext(guild_id, async () => {
+        try {
+          const channel = client.channels.cache.get(channel_id)
+            || await client.channels.fetch(channel_id).catch(() => null);
+          if (channel) {
+            const { handleOrphanedForumPostCleanup } = await import('../middleware/organize.js');
+            await handleOrphanedForumPostCleanup(channel, ids);
+          }
+        } catch (_) {}
+      });
+    }
+  }
 }
 
 async function handleVoiceStateUpdate(oldState, newState) {

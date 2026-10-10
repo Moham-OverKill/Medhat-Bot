@@ -59,13 +59,14 @@ export const client = new Client({
   ],
   partials: [
     Partials.Message,
+    Partials.Channel,
     Partials.Reaction,
     Partials.User
   ],
   makeCache: Options.cacheWithLimits({
     MessageManager: 25,
     StageInstanceManager: 0,
-    ThreadManager: 0,
+    ThreadManager: 200,
     GuildBanManager: 0,
     GuildInviteManager: 0,
     GuildScheduledEventManager: 0,
@@ -397,6 +398,7 @@ client.once(Events.ClientReady, async () => {
         const { reconcileGuildNotifications } = await import('./storage/notifications.js');
         const { reconcileMissingLevelRewards } = await import('./commands/settings/pass-engine.js');
         const { sweepServerEmojiViolations } = await import('./middleware/emoji-filter.js');
+        const { sweepOrphanedForumPosts } = await import('./middleware/organize.js');
         for (const guild of client.guilds.cache.values()) {
           await reconcileGuildInventory(guild).catch(err =>
             sysError('Inventory Reconciliation Error', err, { guild: guild.id })
@@ -409,6 +411,9 @@ client.once(Events.ClientReady, async () => {
           );
           await sweepServerEmojiViolations(guild).catch(err =>
             sysError('Emoji Blacklist Startup Sweep Error', err, { guild: guild.id })
+          );
+          await sweepOrphanedForumPosts(guild).catch(err =>
+            sysError('Forum Auto-Delete Startup Sweep Error', err, { guild: guild.id })
           );
           await new Promise(r => setTimeout(r, 2000)); // 2s between guilds
         }
