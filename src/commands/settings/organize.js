@@ -712,33 +712,24 @@ export async function renderForumsPanel(interaction) {
         .setChannelTypes(forumChannelTypes);
     components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-    // Row 2: Action buttons
-    const actionButtons = [
-        new ButtonBuilder()
-            .setCustomId('organize_forum_auto_delete_toggle')
-            .setLabel(isAutoDeleteEnabled ? 'Disable' : 'Enable')
-            .setStyle(isAutoDeleteEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
-    ];
-
-    if (configuredChannels.length > 0) {
-        actionButtons.push(
-            new ButtonBuilder()
-                .setCustomId('organize_forum_scope_reset')
-                .setLabel('Reset')
-                .setStyle(ButtonStyle.Secondary)
-        );
-    }
-    components.push(new ActionRowBuilder().addComponents(actionButtons));
-
-    // Row 3: Navigation (Back to Organize)
-    const navRow = new ActionRowBuilder().addComponents(
+    // Button Row: [Back] [Reset] [Enable/Disable]
+    const buttonRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_organize')
             .setLabel('Back')
             .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('organize_forum_scope_reset')
+            .setLabel('Reset')
             .setStyle(ButtonStyle.Secondary)
+            .setDisabled(configuredChannels.length === 0),
+        new ButtonBuilder()
+            .setCustomId('organize_forum_auto_delete_toggle')
+            .setLabel(isAutoDeleteEnabled ? 'Disable' : 'Enable')
+            .setStyle(isAutoDeleteEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
-    components.push(navRow);
+    components.push(buttonRow);
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
