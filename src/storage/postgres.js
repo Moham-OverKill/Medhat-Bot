@@ -1269,6 +1269,8 @@ async function createTables() {
         restock_interval_seconds INTEGER DEFAULT NULL,
         last_restocked_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
         max_stock INTEGER DEFAULT NULL,
+        current_stock INTEGER DEFAULT NULL,
+        override_price INTEGER DEFAULT NULL,
         auto_equip BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -1293,11 +1295,19 @@ async function createTables() {
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS restock_interval_seconds INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS last_restocked_at TIMESTAMP WITH TIME ZONE DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS max_stock INTEGER DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS current_stock INTEGER DEFAULT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS override_price INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS auto_equip BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto'`).catch(() => {});
     // Ensure posts with active restock intervals are recognized as auto restock, and posts without intervals default to normal
     await pool.query(`UPDATE shop_posts SET post_mode = 'auto' WHERE restock_interval_seconds IS NOT NULL AND restock_interval_seconds > 0 AND post_mode != 'drop'`).catch(() => {});
     await pool.query(`UPDATE shop_posts SET post_mode = 'normal', restock_interval_seconds = NULL, max_stock = NULL WHERE (restock_interval_seconds IS NULL OR restock_interval_seconds <= 0) AND post_mode != 'drop'`).catch(() => {});
+    // Self-healing: restore chests/lootboxes in catalog to unlimited stock (NULL) if accidentally zeroed out by post sync
+    await pool.query(`UPDATE shop_items SET stock = NULL WHERE (item_type = 'loot_box' OR loot_box_id IS NOT NULL) AND stock IS NOT NULL AND stock <= 0`).catch(() => {});
+    // Self-healing: posts configured without max_stock or timers have unlimited stock (current_stock = NULL)
+    await pool.query(`UPDATE shop_posts SET current_stock = NULL WHERE (max_stock IS NULL OR max_stock <= 0) AND restock_interval_seconds IS NULL`).catch(() => {});
+    // Posts configured with finite max_stock initialize current_stock if null
+    await pool.query(`UPDATE shop_posts SET current_stock = max_stock WHERE max_stock IS NOT NULL AND max_stock > 0 AND current_stock IS NULL`).catch(() => {});
 
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});

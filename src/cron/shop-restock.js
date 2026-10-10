@@ -40,8 +40,8 @@ export async function processAutoRestocks(client) {
     const result = await pool.query(
       `SELECT sp.message_id, sp.guild_id, sp.channel_id, sp.item_id,
               sp.max_stock, sp.restock_interval_seconds, sp.last_restocked_at,
-              sp.claim_limit_per_user,
-              si.name as item_name, si.stock as current_stock
+              sp.claim_limit_per_user, sp.current_stock,
+              si.name as item_name
        FROM shop_posts sp
        JOIN shop_items si ON sp.item_id = si.id
        WHERE sp.restock_interval_seconds IS NOT NULL
@@ -95,12 +95,8 @@ export async function processAutoRestocks(client) {
         }
 
         // 4. Message exists. Proceed with database restock and UI update:
-        if (row.max_stock !== null && row.max_stock > 0) {
-          await pool.query(
-            `UPDATE shop_items SET stock = $1 WHERE id = $2`,
-            [row.max_stock, row.item_id]
-          );
-        }
+        // Refill post-level stock independently without touching global catalog stock (shop_items)
+        const refilledStock = (row.max_stock !== null && row.max_stock > 0) ? row.max_stock : null;
 
         // Clear user claims for this post so users can claim again in the new cycle
         await pool.query(
@@ -108,10 +104,10 @@ export async function processAutoRestocks(client) {
           [row.message_id]
         );
 
-        // Update shop_posts timestamp and post_mode
+        // Update shop_posts current_stock, timestamp, and post_mode
         await pool.query(
-          `UPDATE shop_posts SET last_restocked_at = NOW(), post_mode = 'auto' WHERE message_id = $1`,
-          [row.message_id]
+          `UPDATE shop_posts SET current_stock = $1, last_restocked_at = NOW(), post_mode = 'auto', updated_at = NOW() WHERE message_id = $2`,
+          [refilledStock, row.message_id]
         );
 
         await refreshShopMessageUI({ message, client, guildId: row.guild_id }, row.item_id, row.guild_id);
