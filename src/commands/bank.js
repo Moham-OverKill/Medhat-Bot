@@ -504,46 +504,17 @@ export async function handleShopBuyButton(interaction) {
       });
     }
 
-    // STEP 0: Interstitial Prerequisite Check
+    // STEP 0: Pre-Purchase & Quantity Modal Checks
     if (!isForce) {
-      const { getShopItem, checkPrerequisites, formatPrerequisiteError } = await import('../economy/shop.js');
+      const { getShopItem, checkPrerequisites } = await import('../economy/shop.js');
       const item = await getShopItem(itemId, guildId);
 
-      if (item && item.required_items) {
-        const prereqs = await checkPrerequisites(member, guildId, item.required_items);
-        if (!prereqs.met) {
-          const warnRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`force_buy_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
-              .setLabel('Buy Anyway')
-              .setEmoji('\u26A0\uFE0F')
-              .setStyle(ButtonStyle.Danger)
-          );
-
-          sysLog('Prereq Warning Triggered', {
-            user: userId,
-            guild: guildId,
-            detail: `Action: ShopBuy | ItemID: ${itemId}`
-          });
-
-          const prereqEmbed = new EmbedBuilder()
-            .setColor('#E74C3C')
-            .setDescription(`\u274C You don't meet the requirements to equip this!`);
-
-          return await interaction.reply({
-            embeds: [prereqEmbed],
-            components: [warnRow],
-            flags: MessageFlags.Ephemeral
-          });
-        }
-      }
-
-      // ========== QUANTITY MODAL CHECK ==========
+      // ========== QUANTITY MODAL & PRE-PURCHASE CHECKS ==========
       // Skip the quantity modal and buy directly (1 copy) if:
       // 1. Item is Locked (is_tradable === false) or a pack
       // 2. Admin set claim limit per user to 1 (or only 1 claim remaining)
       // 3. There is only 1 left in stock (stock <= 1)
-      // 4. Max allowed copies user can acquire is 1 (maxAllowed <= 1)
+      // 4. Max allowed copies user can acquire/afford is 1 (maxAllowed <= 1)
       if (item) {
         const hasTrackedPost = Boolean(shopPost);
         const effectiveStock = (hasTrackedPost && shopPost.current_stock !== undefined)
@@ -590,12 +561,74 @@ export async function handleShopBuyButton(interaction) {
           }
         }
 
+        // Effective unit price check & pre-modal balance verification
+        const unitPrice = (overridePrice !== null && overridePrice !== undefined)
+          ? overridePrice
+          : (shopPost && shopPost.override_price !== null && shopPost.override_price !== undefined
+              ? Number(shopPost.override_price)
+              : (parseInt(item.price, 10) || 0));
+
+        let affordableQty = null;
+        if (unitPrice > 0) {
+          const userBalData = await getUserBalance(guildId, userId);
+          const currentBal = parseInt(userBalData?.balance || 0, 10);
+
+          if (currentBal < unitPrice) {
+            if (shopPost?.auto_equip === true) {
+              await tryAutoEquipExisting(userId, guildId, itemId, member);
+            }
+            const missing = Math.max(0, unitPrice - currentBal);
+            const errEmbed = new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
+            return interaction.reply({
+              embeds: [errEmbed],
+              flags: MessageFlags.Ephemeral
+            });
+          }
+
+          affordableQty = Math.floor(currentBal / unitPrice);
+        }
+
+        // Interstitial Prerequisite Check (after stock, cap, and balance are verified)
+        if (item.required_items) {
+          const prereqs = await checkPrerequisites(member, guildId, item.required_items);
+          if (!prereqs.met) {
+            const warnRow = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`force_buy_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
+                .setLabel('Buy Anyway')
+                .setEmoji('\u26A0\uFE0F')
+                .setStyle(ButtonStyle.Danger)
+            );
+
+            sysLog('Prereq Warning Triggered', {
+              user: userId,
+              guild: guildId,
+              detail: `Action: ShopBuy | ItemID: ${itemId}`
+            });
+
+            const prereqEmbed = new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription(`\u274C You don't meet the requirements to equip this!`);
+
+            return await interaction.reply({
+              embeds: [prereqEmbed],
+              components: [warnRow],
+              flags: MessageFlags.Ephemeral
+            });
+          }
+        }
+
         let maxAllowed = remainingCap;
         if (effectiveStock !== null) {
           maxAllowed = Math.min(maxAllowed, effectiveStock);
         }
         if (remainingClaims !== null) {
           maxAllowed = Math.min(maxAllowed, remainingClaims);
+        }
+        if (affordableQty !== null) {
+          maxAllowed = Math.min(maxAllowed, affordableQty);
         }
 
         const canShowModal = !isLocked && !isPack && !isSingleClaimLimit && !isSingleStock && (maxAllowed > 1);
