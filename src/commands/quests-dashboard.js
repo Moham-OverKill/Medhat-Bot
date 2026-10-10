@@ -12,7 +12,7 @@ import {
   ChannelType
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { COIN_EMOJI } from '../shared.js';
+import { COIN_EMOJI, getUserLogName } from '../shared.js';
 import {
   getQuests,
   getQuest,
@@ -25,7 +25,7 @@ import {
   formatCompactQuest,
   generateDefaultTitle
 } from '../quests/quests.js';
-import { sysError, sysLog } from '../utils/logger.js';
+import { sysError, sysLog, sendLog } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 // Temporary storage for add-Quest flow (userId -> { channelId, channelType })
@@ -237,7 +237,18 @@ export async function handleQuestsScheduleUpdate(interaction) {
       }
     }
 
-    await setGuildConfig(guildId, config);
+    if (scheduleChanged || targetCountChanged) {
+      await setGuildConfig(guildId, config);
+      sendLog(
+        interaction.guild,
+        'audit',
+        'cyan',
+        '⚙️ Quests Schedule Updated',
+        `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+        `**Quests Per Refresh:** \`${config.quests_per_refresh || 3}\`\n` +
+        `**Refreshes Per Day:** \`${config.quests_refreshes_per_day || 1}\``
+      );
+    }
 
     // If quests are enabled:
     const questsEnabled = config.quests_enabled ?? config.missions_enabled ?? false;
@@ -506,6 +517,10 @@ export async function handleAddQuestModal(interaction) {
       return;
     }
 
+    const pendingChannelId = pending.channelId;
+    const pendingChannelType = pending.channelType;
+    const pendingActionType = pending.actionType;
+
     const result = await addQuest(interaction.guildId, {
       channelId: pending.channelId,
       channelType: pending.channelType,
@@ -521,6 +536,19 @@ export async function handleAddQuestModal(interaction) {
       await interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
       return;
     }
+
+    const actionLabel = formatActionType(pendingActionType, pendingChannelType);
+    sendLog(
+      interaction.guild,
+      'audit',
+      'cyan',
+      '🎯 Quest Created',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+      `**Title:** ${customTitle || 'Default'}\n` +
+      `**Channel:** <#${pendingChannelId}>\n` +
+      `**Task:** ${actionLabel} (x${requiredCount.toLocaleString()})\n` +
+      `**Reward:** **${rewardCoins.toLocaleString()}** ${COIN_EMOJI}`
+    );
 
     import('./register.js').then(({ syncGuildSlashCommands }) => {
       syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
@@ -628,6 +656,18 @@ export async function handleEditQuestModal(interaction) {
       return;
     }
 
+    sendLog(
+      interaction.guild,
+      'audit',
+      'cyan',
+      '🎯 Quest Updated',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n` +
+      `**Quest ID:** \`${questId}\`\n` +
+      `**Title:** ${customTitle || 'Default'}\n` +
+      `**Required Count:** \`${requiredCount.toLocaleString()}\`\n` +
+      `**Reward:** **${rewardCoins.toLocaleString()}** ${COIN_EMOJI}`
+    );
+
     // Instantly sync active snapshot & tracking cache with edited values
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId);
@@ -665,6 +705,14 @@ export async function handleDeleteQuest(interaction, questId) {
       await interaction.followUp({ content: '❌ Failed to delete.', flags: MessageFlags.Ephemeral });
       return;
     }
+
+    sendLog(
+      interaction.guild,
+      'audit',
+      'red',
+      '🗑️ Quest Deleted',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n**Quest ID:** \`${questId}\``
+    );
 
     // Instantly purge deleted quest from active snapshot & tracking cache
     const guildId = interaction.guildId;
@@ -768,6 +816,14 @@ export async function handleToggleQuests(interaction) {
       sysLog('Quest System Enabled', { guild: guildId, detail: 'Fresh rotation triggered immediately' });
     }
 
+    sendLog(
+      interaction.guild,
+      'audit',
+      isEnabled ? 'green' : 'crimson',
+      isEnabled ? '🎯 Quests System Enabled' : '🚫 Quests System Disabled',
+      `**Admin:** \`${getUserLogName(interaction)}\`\n**Status:** ${isEnabled ? 'Enabled' : 'Disabled'}`
+    );
+
     import('./register.js').then(({ syncGuildSlashCommands }) => {
       syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
     }).catch(() => {});
@@ -803,6 +859,13 @@ export async function handleQuestsComponent(interaction) {
       const { rotateGuildQuests } = await import('../cron/quests.js');
       const { getPool } = await import('../storage/postgres.js');
       await rotateGuildQuests(interaction.guildId, config, getPool(), interaction.client, { skipNotifications: true });
+      sendLog(
+        interaction.guild,
+        'audit',
+        'blue',
+        '🔄 Quests Manually Rotated',
+        `Admin **<@${interaction.user.id}>** triggered an instant quest rotation.`
+      );
       await showQuestsSchedule(interaction);
     } else if (customId === 'quests_setting_per_refresh' || customId === 'quests_setting_refreshes') {
       await handleQuestsScheduleUpdate(interaction);
