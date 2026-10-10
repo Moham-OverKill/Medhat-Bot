@@ -288,8 +288,9 @@ async function handleMessageDelete(message) {
     if (!channel) return;
     
     try {
-      const { handleFixedEmbedCleanup } = await import('../middleware/organize.js');
+      const { handleFixedEmbedCleanup, handleOrphanedForumPostCleanup } = await import('../middleware/organize.js');
       await handleFixedEmbedCleanup(channel, message.id);
+      await handleOrphanedForumPostCleanup(channel, message.id);
     } catch (error) {
       // Fail silently, just a cleanup task
     }
@@ -314,6 +315,15 @@ async function handleMessageDeleteBulk(messages) {
       await pool.query(`DELETE FROM shop_drop_claims WHERE message_id = ANY($1::varchar[])`, [delIds]).catch(() => {});
       const { sysLog } = await import('../utils/logger.js');
       sysLog('Shop Posts Cleaned On Bulk Delete', { count: delPosts.rowCount, detail: 'Bulk messages deleted - disabled auto restock' });
+    }
+
+    const firstMsg = messages.first?.() || (Array.isArray(messages) ? messages[0] : null);
+    if (firstMsg) {
+      const channel = firstMsg.channel || (firstMsg.channelId && client ? await client.channels.fetch(firstMsg.channelId).catch(() => null) : null);
+      if (channel) {
+        const { handleOrphanedForumPostCleanup } = await import('../middleware/organize.js');
+        await handleOrphanedForumPostCleanup(channel, ids);
+      }
     }
   } catch (_) {}
 }

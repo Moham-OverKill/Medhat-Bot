@@ -334,7 +334,7 @@ export async function showOrganizeMenu(interaction) {
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('organize_filters')
-            .setLabel('Links')
+            .setLabel('Filters')
             .setEmoji('🔗')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
@@ -616,6 +616,104 @@ export async function renderEmojiModerationPanel(interaction, page = 0) {
 }
 
 /**
+ * Render the Forum & Media Channel Automation Panel
+ */
+export async function renderForumsPanel(interaction) {
+    const guildId = interaction.guildId;
+    const filters = await getFilters(guildId);
+
+    const isAutoDeleteEnabled = filters.forum_auto_delete_enabled === true;
+    const configuredChannels = Array.isArray(filters.forum_auto_delete_channels)
+        ? filters.forum_auto_delete_channels
+        : [];
+
+    const botMember = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
+    const hasManageThreads = botMember?.permissions?.has(PermissionsBitField.Flags.ManageThreads);
+
+    const embed = new EmbedBuilder()
+        .setTitle('Organize — Forums & Media');
+
+    const statusLine = `• **Auto-Delete Empty Posts:** ${isAutoDeleteEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
+    const channelsDisplay = configuredChannels.length > 0
+        ? configuredChannels.map(id => `<#${id}>`).join(', ')
+        : '_All Forum & Media Channels_';
+    const scopeLine = `• **Channel Scope:** ${channelsDisplay}`;
+
+    embed.setDescription(
+        'Configure automated lifecycle rules, moderation, and maintenance for Forum and Media channels.\n\n' +
+        `${statusLine}\n` +
+        `${scopeLine}\n\n` +
+        '_When Auto-Delete is active, if the author or a moderator deletes the original starter message of a post, the bot automatically removes the empty thread to prevent dead forum posts._'
+    );
+
+    if (!hasManageThreads) {
+        embed.setColor(0xE67E22);
+        embed.addFields({
+            name: '⚠️ Missing Permissions',
+            value: 'The bot requires the **Manage Threads** permission to automatically delete orphaned forum/media threads.\n_Please grant Manage Threads to the bot role in Server Settings > Roles._',
+            inline: false
+        });
+    } else {
+        embed.setColor(0x2B2D31);
+    }
+
+    const components = [];
+
+    // Row 1: Channel selection menu to optionally restrict target forum/media channels
+    const forumChannelTypes = [ChannelType.GuildForum];
+    if (ChannelType.GuildMedia) {
+        forumChannelTypes.push(ChannelType.GuildMedia);
+    }
+
+    const channelSelect = new ChannelSelectMenuBuilder()
+        .setCustomId('organize_forum_channels_select')
+        .setPlaceholder(configuredChannels.length > 0 ? 'Toggle a forum channel in scope...' : 'Select specific forum channels (Default: All)...')
+        .setChannelTypes(forumChannelTypes);
+    components.push(new ActionRowBuilder().addComponents(channelSelect));
+
+    // Row 2: Action buttons
+    const actionButtons = [
+        new ButtonBuilder()
+            .setCustomId('organize_forum_auto_delete_toggle')
+            .setLabel(isAutoDeleteEnabled ? 'Disable Auto-Delete' : 'Enable Auto-Delete')
+            .setEmoji('🗑️')
+            .setStyle(isAutoDeleteEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+    ];
+
+    if (configuredChannels.length > 0) {
+        actionButtons.push(
+            new ButtonBuilder()
+                .setCustomId('organize_forum_scope_reset')
+                .setLabel('Reset Scope (All Channels)')
+                .setEmoji('🔄')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
+    components.push(new ActionRowBuilder().addComponents(actionButtons));
+
+    // Row 3: Navigation (Back to Organize)
+    const navRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_organize')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(navRow);
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components,
+        files: []
+    });
+}
+
+/**
  * Main component router for all organize_* interactions
  */
 export async function handleOrganizeComponent(interaction) {
@@ -855,12 +953,80 @@ export async function handleOrganizeComponent(interaction) {
         return showInterfaceMainMenu(interaction);
     }
 
-    // Placeholder modules (Forums)
+    // Forums Control Panel
     if (customId === 'organize_forums') {
-        return interaction.followUp({
-            content: 'This module is coming soon.',
-            flags: MessageFlags.Ephemeral
-        });
+        return renderForumsPanel(interaction);
+    }
+
+    // Toggle Forum Auto-Delete
+    if (customId === 'organize_forum_auto_delete_toggle') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const currentlyEnabled = filters.forum_auto_delete_enabled === true;
+        const newStatus = !currentlyEnabled;
+
+        const updatedFilters = { ...filters, forum_auto_delete_enabled: newStatus };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', `Forum Auto-Delete ${newStatus ? 'Enabled' : 'Disabled'}`,
+            `**Admin:** \`${logName}\`\n**Status:** ${newStatus ? 'Enabled' : 'Disabled'}`
+        );
+
+        return renderForumsPanel(interaction);
+    }
+
+    // Toggle channel scope for Forum Auto-Delete
+    if (customId === 'organize_forum_channels_select') {
+        const guildId = interaction.guildId;
+        const channelId = interaction.values[0];
+        const filters = await getFilters(guildId);
+
+        const currentChannels = Array.isArray(filters.forum_auto_delete_channels)
+            ? [...filters.forum_auto_delete_channels]
+            : [];
+
+        const existingIndex = currentChannels.indexOf(channelId);
+        let action;
+        if (existingIndex !== -1) {
+            currentChannels.splice(existingIndex, 1);
+            action = 'removed from scope';
+        } else {
+            currentChannels.push(channelId);
+            action = 'added to scope';
+        }
+
+        const updatedFilters = { ...filters, forum_auto_delete_channels: currentChannels };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Forum Channel Scope Updated',
+            `**Admin:** \`${logName}\`\n**Channel:** <#${channelId}>\n**Action:** ${action}`
+        );
+
+        return renderForumsPanel(interaction);
+    }
+
+    // Reset Forum channel scope to All
+    if (customId === 'organize_forum_scope_reset') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+
+        const updatedFilters = { ...filters, forum_auto_delete_channels: [] };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', 'Forum Channel Scope Reset',
+            `**Admin:** \`${logName}\`\n**Scope:** All Forum & Media Channels`
+        );
+
+        return renderForumsPanel(interaction);
     }
 
     // Filter type buttons — render the same panel with that tab active
