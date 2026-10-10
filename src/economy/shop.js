@@ -844,7 +844,7 @@ export async function reconcileGuildInventory(guild) {
  * @param {boolean} options.skipBalanceDeduction - If true, skip balance check/deduction (used when * @param {Object} options - Additional options including seller information and payout
  */
 export async function purchaseItem(userId, guildId, itemId, member, options = {}) {
-  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null, quantity = 1 } = options;
+  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null, quantity = 1, messageId = null } = options;
   // qty is the validated integer quantity the user wants to buy (always >= 1)
   const qty = Math.max(1, Math.floor(Number(quantity) || 1));
   const pool = getPool();
@@ -912,8 +912,28 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       return { success: false, error: 'This item is no longer available' };
     }
 
-    // Check stock (must have enough for the full requested quantity)
-    if (item.stock !== null && item.stock < qty) {
+    // Check stock: Post-level stock takes precedence over catalog stock when purchase is from a tracked post
+    let postRow = null;
+    if (messageId) {
+      const postRes = await client.query(
+        `SELECT current_stock, max_stock, post_mode FROM shop_posts WHERE message_id = $1 FOR UPDATE`,
+        [messageId]
+      );
+      if (postRes.rows.length > 0) {
+        postRow = postRes.rows[0];
+      }
+    }
+
+    const hasPostStock = Boolean(postRow && postRow.current_stock !== undefined && postRow.current_stock !== null);
+    const isPostUnlimited = Boolean(postRow && postRow.current_stock === null);
+
+    if (hasPostStock) {
+      if (postRow.current_stock < qty) {
+        await client.query('ROLLBACK');
+        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Post out of stock (need ${qty}, have ${postRow.current_stock})` });
+        return { success: false, error: postRow.current_stock <= 0 ? 'Item out of stock' : `Only ${postRow.current_stock} left in stock.` };
+      }
+    } else if (!isPostUnlimited && item.stock !== null && item.stock < qty) {
       await client.query('ROLLBACK');
       sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Out of stock (need ${qty}, have ${item.stock})` });
       return { success: false, error: item.stock <= 0 ? 'Item out of stock' : `Only ${item.stock} left in stock.` };
@@ -1262,8 +1282,13 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       newBalance = parseInt(balResult.rows[0]?.balance || 0, 10);
     }
 
-    // Update stock — decrement by qty
-    if (item.stock !== null) {
+    // Update stock — decrement post-level stock if post-tracked, otherwise catalog item stock
+    if (hasPostStock) {
+      await client.query(
+        'UPDATE shop_posts SET current_stock = current_stock - $1, updated_at = NOW() WHERE message_id = $2',
+        [qty, messageId]
+      );
+    } else if (!isPostUnlimited && item.stock !== null) {
       const effectiveQty = isLocked ? 1 : qty;
       await client.query(
         'UPDATE shop_items SET stock = stock - $1, updated_at = NOW() WHERE id = $2',
