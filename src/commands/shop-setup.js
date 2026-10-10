@@ -14,6 +14,7 @@ import {
   ChannelType,
   MessageFlags
 } from 'discord.js';
+import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName } from '../shared.js';
@@ -54,8 +55,58 @@ import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 
-// Temporary storage for post item flow (User ID -> { itemId, channelId, sellerId, imageUrl, description, payout })
+// Temporary storage for post item flow (Session ID / Message ID -> draft state)
 const pendingPosts = new Map();
+const PENDING_POST_SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Resolve the isolated post-staging session key for an interaction.
+ * Priority:
+ * 1. Explicit session ID cached on the interaction object (_postSessionId)
+ * 2. Session ID encoded in customId suffix (e.g., "shop_post_stock_modal:sessionId")
+ * 3. Discord panel message ID (interaction.message.id) for buttons and select menus
+ * 4. Newly generated 8-char UUID fallback
+ */
+function getPostSessionId(interaction) {
+  if (interaction?._postSessionId) {
+    return interaction._postSessionId;
+  }
+  const rawCustomId = interaction?.customId || '';
+  if (rawCustomId.includes(':')) {
+    const suffix = rawCustomId.split(':')[1]?.trim();
+    if (suffix) {
+      interaction._postSessionId = suffix;
+      return suffix;
+    }
+  }
+  if (interaction?.message?.id) {
+    interaction._postSessionId = interaction.message.id;
+    return interaction.message.id;
+  }
+  const generated = randomUUID().slice(0, 8);
+  if (interaction) {
+    interaction._postSessionId = generated;
+  }
+  return generated;
+}
+
+function setPendingPostSession(sessionId, state) {
+  if (!sessionId || !state) return;
+  state.sessionId = sessionId;
+  state.updatedAt = Date.now();
+  pendingPosts.set(sessionId, state);
+}
+
+// 15-minute abandoned session sweeper evaluating updatedAt on a per-session basis
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, state] of pendingPosts.entries()) {
+    const lastActive = state?.updatedAt || 0;
+    if (now - lastActive > PENDING_POST_SESSION_TTL_MS) {
+      pendingPosts.delete(sessionId);
+    }
+  }
+}, 60 * 1000).unref();
 
 // Temporary storage for edit/delete flows to isolate state from Post flow.
 // (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
@@ -96,6 +147,11 @@ export async function handleShopSetup(interaction) {
   try {
     const { verifyAdminAccess } = await import('../storage/admins.js');
     if (!(await verifyAdminAccess(interaction))) return;
+
+    if (interaction.isMessageComponent && interaction.isMessageComponent()) {
+      const sessionId = getPostSessionId(interaction);
+      pendingPosts.delete(sessionId);
+    }
 
     // Defer if not already deferred
     if (!interaction.deferred && !interaction.replied) {
@@ -1141,7 +1197,7 @@ export function formatSecondsToIntervalString(seconds) {
 export async function handleShopPostStart(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-  const userId = interaction.user.id;
+  const sessionId = getPostSessionId(interaction);
   const guildId = interaction.guildId;
 
   // Fetch ALL items/packs
@@ -1149,14 +1205,14 @@ export async function handleShopPostStart(interaction) {
 
   if (items.length === 0) {
     const emptyRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`shop_admin_home:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
     const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
     return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
   }
 
   // Get current pending state or initialize
-  let state = pendingPosts.get(userId) || {};
+  let state = pendingPosts.get(sessionId) || {};
   
   // Enforce defaults for missing keys (critical for Post-Publish re-render)
   state.itemId = state.itemId ?? null;
@@ -1177,7 +1233,7 @@ export async function handleShopPostStart(interaction) {
   state.restockIntervalSeconds = (state.restockIntervalSeconds && state.restockIntervalSeconds > 0) ? state.restockIntervalSeconds : null;
   state.maxStock = state.maxStock ?? null;
 
-  pendingPosts.set(userId, state);
+  setPendingPostSession(sessionId, state);
 
   // Build embed with current selections
   const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
@@ -1280,7 +1336,7 @@ export async function handleShopPostStart(interaction) {
       const { selectMenu } = buildPaginatedSelectMenu({
         items: activeCategories,
         page,
-        customId: 'shop_post_item_select',
+        customId: `shop_post_item_select:${sessionId}`,
         placeholder: '📂 Choose Category Folder...',
         backOption: {
           label: 'Back',
@@ -1328,7 +1384,7 @@ export async function handleShopPostStart(interaction) {
 
       if (filtered.length === 0) {
         const emptyRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('shop_post_back_folder').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`shop_post_back_folder:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
         const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
         return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
@@ -1339,7 +1395,7 @@ export async function handleShopPostStart(interaction) {
       const { selectMenu } = buildPaginatedSelectMenu({
         items: filtered,
         page,
-        customId: 'shop_post_item_select',
+        customId: `shop_post_item_select:${sessionId}`,
         placeholder: `${displayPrefix}${groupName.slice(0, 30)}: Pick one`,
         backOption: {
           label: 'Back',
@@ -1361,8 +1417,9 @@ export async function handleShopPostStart(interaction) {
 
     // Unified Empty State Fallback for step 0
     if (state.postStep === 0 && itemOptions.length === 0) {
+      const emptyBackBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
       const emptyRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId((state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home')
+        new ButtonBuilder().setCustomId(`${emptyBackBase}:${sessionId}`)
           .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary)
@@ -1376,7 +1433,7 @@ export async function handleShopPostStart(interaction) {
     if (state.postStep === 0) {
       const placeholder = '📦 Select Item/Pack (Required)';
       itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
-        .setCustomId('shop_post_item_select')
+        .setCustomId(`shop_post_item_select:${sessionId}`)
         .setPlaceholder(placeholder)
         .addOptions(itemOptions) : null;
     }
@@ -1385,7 +1442,7 @@ export async function handleShopPostStart(interaction) {
   // Seller Select (User Select - Optional, disabled for packs and loot boxes)
   const isServerManaged = isPack || (selectedItem && selectedItem.item_type === 'loot_box');
   const userSelect = new UserSelectMenuBuilder()
-    .setCustomId('shop_post_seller_select')
+    .setCustomId(`shop_post_seller_select:${sessionId}`)
     .setPlaceholder(isServerManaged ? '👤 Seller disabled for this type' : '👤 Select Seller (Optional)')
     .setDisabled(isServerManaged === true);
   if (state.sellerId && !isServerManaged) userSelect.setDefaultUsers([state.sellerId]);
@@ -1406,31 +1463,31 @@ export async function handleShopPostStart(interaction) {
   // Row 4: Action Buttons - Row 1 ([Desc] [Image] [Payout] [Price] [Config])
   const configRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('shop_post_desc_btn')
+      .setCustomId(`shop_post_desc_btn:${sessionId}`)
       .setLabel('Desc')
       .setEmoji('📝')
       .setStyle(state.description ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected),
     new ButtonBuilder()
-      .setCustomId('shop_post_image_btn')
+      .setCustomId(`shop_post_image_btn:${sessionId}`)
       .setLabel('Image')
       .setEmoji('🖼️')
       .setStyle(state.imageUrl ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected),
     new ButtonBuilder()
-      .setCustomId('shop_post_payout_btn')
+      .setCustomId(`shop_post_payout_btn:${sessionId}`)
       .setLabel('Payout')
       .setEmoji('💰')
       .setStyle(state.payout ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!canSetPayout || !isItemSelected || isServerManaged),
     new ButtonBuilder()
-      .setCustomId('shop_post_price_btn')
+      .setCustomId(`shop_post_price_btn:${sessionId}`)
       .setLabel('Price')
       .setEmoji('🏷️')
       .setStyle((state.overridePrice !== null && state.overridePrice !== 0) ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected),
     new ButtonBuilder()
-      .setCustomId('shop_post_stock_btn')
+      .setCustomId(`shop_post_stock_btn:${sessionId}`)
       .setLabel('Config')
       .setEmoji('⚙️')
       .setStyle(isCustomConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
@@ -1439,13 +1496,14 @@ export async function handleShopPostStart(interaction) {
 
   let postBackCustomId;
   if (state.postStep > 0) {
-    postBackCustomId = 'shop_post_back_folder';
+    postBackCustomId = `shop_post_back_folder:${sessionId}`;
   } else {
-    postBackCustomId = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
+    const backBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
+    postBackCustomId = `${backBase}:${sessionId}`;
   }
 
   const confirmBtn = new ButtonBuilder()
-    .setCustomId(state.isEditing ? 'shop_post_update' : 'shop_post_publish')
+    .setCustomId(`${state.isEditing ? 'shop_post_update' : 'shop_post_publish'}:${sessionId}`)
     .setLabel(state.isEditing ? 'Update' : 'Publish')
     .setEmoji('🚀')
     .setStyle(ButtonStyle.Success);
@@ -1470,7 +1528,7 @@ export async function handleShopPostStart(interaction) {
   if (!state.isEditing) {
     actionComponents.push(
       new ButtonBuilder()
-        .setCustomId('shop_post_reset')
+        .setCustomId(`shop_post_reset:${sessionId}`)
         .setLabel('Reset')
         .setEmoji('🔄')
         .setStyle(ButtonStyle.Secondary)
@@ -1480,7 +1538,7 @@ export async function handleShopPostStart(interaction) {
 
   actionComponents.push(
     new ButtonBuilder()
-      .setCustomId('shop_post_auto_equip_toggle')
+      .setCustomId(`shop_post_auto_equip_toggle:${sessionId}`)
       .setLabel(`Auto Equip: ${state.autoEquip ? 'ON' : 'OFF'}`)
       .setEmoji(state.autoEquip ? '⚡' : '⚪')
       .setStyle(state.autoEquip ? ButtonStyle.Success : ButtonStyle.Secondary)
@@ -1510,9 +1568,9 @@ export async function handleShopPostStart(interaction) {
 export async function handleShopPostModeSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const userId = interaction.user.id;
+    const sessionId = getPostSessionId(interaction);
     const selectedMode = interaction.values[0];
-    let state = pendingPosts.get(userId) || {};
+    let state = pendingPosts.get(sessionId) || {};
 
     if (state.postMode !== selectedMode) {
       state.postMode = selectedMode;
@@ -1521,7 +1579,7 @@ export async function handleShopPostModeSelect(interaction) {
         state.stockConfigured = false;
       }
     }
-    pendingPosts.set(userId, state);
+    setPendingPostSession(sessionId, state);
     await handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post mode select');
@@ -1531,10 +1589,10 @@ export async function handleShopPostModeSelect(interaction) {
 export async function handleShopPostAutoEquipToggle(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const userId = interaction.user.id;
-    let state = pendingPosts.get(userId) || {};
+    const sessionId = getPostSessionId(interaction);
+    let state = pendingPosts.get(sessionId) || {};
     state.autoEquip = !state.autoEquip;
-    pendingPosts.set(userId, state);
+    setPendingPostSession(sessionId, state);
     await handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post auto equip toggle');
@@ -1544,8 +1602,8 @@ export async function handleShopPostAutoEquipToggle(interaction) {
 export async function handleShopPostBackFolder(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const userId = interaction.user.id;
-    let state = pendingPosts.get(userId);
+    const sessionId = getPostSessionId(interaction);
+    let state = pendingPosts.get(sessionId);
     if (!state) return handleShopPostStart(interaction);
 
     if (state.postStep === 2) {
@@ -1555,7 +1613,7 @@ export async function handleShopPostBackFolder(interaction) {
       state.postStep = 0;
       state.postPage = 1;
     }
-    pendingPosts.set(userId, state);
+    setPendingPostSession(sessionId, state);
     return handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post back folder');
@@ -1565,9 +1623,9 @@ export async function handleShopPostBackFolder(interaction) {
 // Handle Item Selection in Staging Panel
 export async function handleShopPostItemSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const userId = interaction.user.id;
+  const sessionId = getPostSessionId(interaction);
   const itemId = interaction.values[0];
-  let state = pendingPosts.get(userId);
+  let state = pendingPosts.get(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1580,7 +1638,7 @@ export async function handleShopPostItemSelect(interaction) {
   // --- Page Navigation Routing ---
   if (itemId.startsWith('shop_post_page_')) {
     state.postPage = parseInt(itemId.replace('shop_post_page_', ''), 10) || 1;
-    pendingPosts.set(userId, state);
+    setPendingPostSession(sessionId, state);
     return handleShopPostStart(interaction);
   }
 
@@ -1633,7 +1691,7 @@ export async function handleShopPostItemSelect(interaction) {
     }
   }
 
-  pendingPosts.set(userId, state);
+  setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1642,10 +1700,10 @@ export async function handleShopPostItemSelect(interaction) {
 // Handle Channel Selection in Staging Panel
 export async function handleShopPostChannelSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const userId = interaction.user.id;
+  const sessionId = getPostSessionId(interaction);
   const channelId = interaction.values[0];
 
-  let state = pendingPosts.get(userId);
+  let state = pendingPosts.get(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1655,7 +1713,7 @@ export async function handleShopPostChannelSelect(interaction) {
     };
   }
   state.channelId = channelId;
-  pendingPosts.set(userId, state);
+  setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1664,11 +1722,11 @@ export async function handleShopPostChannelSelect(interaction) {
 // Handle Seller Selection in Staging Panel
 export async function handleShopPostSellerSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  const userId = interaction.user.id;
+  const sessionId = getPostSessionId(interaction);
   const selectedUserId = interaction.values[0];
   const guildOwnerId = interaction.guild.ownerId;
 
-  let state = pendingPosts.get(userId);
+  let state = pendingPosts.get(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1699,7 +1757,7 @@ export async function handleShopPostSellerSelect(interaction) {
     }
   }
 
-  pendingPosts.set(userId, state);
+  setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1707,10 +1765,11 @@ export async function handleShopPostSellerSelect(interaction) {
 
 // Handle Description Button - Show Modal
 export async function handleShopPostDescBtn(interaction) {
-  const state = pendingPosts.get(interaction.user.id) || {};
+  const sessionId = getPostSessionId(interaction);
+  const state = pendingPosts.get(sessionId) || {};
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_post_desc_modal_${Date.now()}`)
+    .setCustomId(`shop_post_desc_modal:${sessionId}`)
     .setTitle('Item Description');
 
   // state.description holds: the embed-scraped text (edit flow) or user-entered text (create flow)
@@ -1734,12 +1793,12 @@ export async function handleShopPostDescBtn(interaction) {
 
 // Handle Price Button - Show Modal
 export async function handleShopPostPriceBtn(interaction) {
-  const userId = interaction.user.id;
-  const state = pendingPosts.get(userId);
+  const sessionId = getPostSessionId(interaction);
+  const state = pendingPosts.get(sessionId);
   if (!state) return;
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_post_price_modal_${Date.now()}`)
+    .setCustomId(`shop_post_price_modal:${sessionId}`)
     .setTitle('Item Price');
 
   const priceInput = new TextInputBuilder()
@@ -1755,8 +1814,8 @@ export async function handleShopPostPriceBtn(interaction) {
 }
 
 export async function handleShopPostPayoutBtn(interaction) {
-  const userId = interaction.user.id;
-  const state = pendingPosts.get(userId);
+  const sessionId = getPostSessionId(interaction);
+  const state = pendingPosts.get(sessionId);
   if (!state) return;
   
   // Calculate recommended 50%
@@ -1768,7 +1827,7 @@ export async function handleShopPostPayoutBtn(interaction) {
       }
 
     const modal = new ModalBuilder()
-      .setCustomId(`shop_post_payout_modal_${Date.now()}`)
+      .setCustomId(`shop_post_payout_modal:${sessionId}`)
       .setTitle('Seller Payout');
 
     const payoutInput = new TextInputBuilder()
@@ -1789,11 +1848,11 @@ export async function handleShopPostPayoutBtn(interaction) {
 // Handle Stock / Config Button - Show Context-Aware Modal
 export async function handleShopPostStockBtn(interaction) {
   try {
-    const state = pendingPosts.get(interaction.user.id) || {};
-    const postMode = state.postMode || 'normal';
+    const sessionId = getPostSessionId(interaction);
+    const state = pendingPosts.get(sessionId) || {};
 
     const modal = new ModalBuilder()
-      .setCustomId(`shop_post_stock_modal_${Date.now()}`)
+      .setCustomId(`shop_post_stock_modal:${sessionId}`)
       .setTitle('Post Configuration');
 
     const stockInput = new TextInputBuilder()
@@ -1834,35 +1893,22 @@ export async function handleShopPostStockBtn(interaction) {
 // Handle Reset Button
 export async function handleShopPostReset(interaction) {
   await interaction.deferUpdate();
-  const state = pendingPosts.get(interaction.user.id);
-  if (state) {
-    state.itemId = null;
-    state.channelId = interaction.channelId;
-    state.sellerId = null;
-    state.payout = null;
-    state.stock = null;
-    state.description = null;
-    state.imageUrl = null;
-    state.overridePrice = 0;
-    state.postStep = 0;
-    state.postFilter = null;
-    state.stockConfigured = false;
-    state.postMode = 'normal';
-    state.autoEquip = false;
-    state.claimLimit = null;
-    state.restockIntervalSeconds = null;
-    state.maxStock = null;
-    pendingPosts.set(interaction.user.id, state);
+  const sessionId = getPostSessionId(interaction);
+  const prev = pendingPosts.get(sessionId);
+  pendingPosts.delete(sessionId);
+  if (prev?.fromGateway) {
+    setPendingPostSession(sessionId, { fromGateway: true, channelId: interaction.channelId });
   }
   await handleShopPostStart(interaction);
 }
 
 // Handle Image URL Button - Show Modal
 export async function handleShopPostImageBtn(interaction) {
-  const state = pendingPosts.get(interaction.user.id) || {};
+  const sessionId = getPostSessionId(interaction);
+  const state = pendingPosts.get(sessionId) || {};
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_post_image_modal_${Date.now()}`)
+    .setCustomId(`shop_post_image_modal:${sessionId}`)
     .setTitle('Item Image');
 
   const urlInput = new TextInputBuilder()
@@ -1881,13 +1927,13 @@ export async function handleShopPostImageBtn(interaction) {
 export async function handleShopPostModalSubmit(interaction) {
   try {
     await interaction.deferUpdate();
-    const userId = interaction.user.id;
-    const rawCustomId = interaction.customId;
+    const sessionId = getPostSessionId(interaction);
+    const rawCustomId = (interaction.customId || '').split(':')[0];
     const customId = rawCustomId.includes('_modal')
       ? rawCustomId.substring(0, rawCustomId.indexOf('_modal') + 6)
       : rawCustomId;
 
-    let state = pendingPosts.get(userId);
+    let state = pendingPosts.get(sessionId);
     if (!state) {
       state = {
         itemId: null, channelId: interaction.channelId, sellerId: null,
@@ -1978,7 +2024,7 @@ export async function handleShopPostModalSubmit(interaction) {
       }
     }
 
-    pendingPosts.set(userId, state);
+    setPendingPostSession(sessionId, state);
 
     // Re-render panel
     await handleShopPostStart(interaction);
@@ -1990,8 +2036,8 @@ export async function handleShopPostModalSubmit(interaction) {
 // Handle Publish Button - Actually post the item
 export async function handleShopPostPublish(interaction) {
   try {
-    const userId = interaction.user.id;
-    const state = pendingPosts.get(userId);
+    const sessionId = getPostSessionId(interaction);
+    const state = pendingPosts.get(sessionId);
 
     // Validation
     if (!state || !state.itemId || !state.channelId) {
@@ -2251,8 +2297,10 @@ export async function handleShopPostPublish(interaction) {
       );
     }
 
-    // Reset session state for this user (Keep channelId/sellerId for convenience)
-    pendingPosts.set(userId, { 
+    // Delete current draft session, then re-seed channelId/sellerId/fromGateway for this panel
+    const fromGateway = state.fromGateway ?? true;
+    pendingPosts.delete(sessionId);
+    setPendingPostSession(sessionId, { 
       channelId, 
       sellerId,
       itemId: null,
@@ -2262,7 +2310,8 @@ export async function handleShopPostPublish(interaction) {
       stock: null,
       overridePrice: 0,
       postStep: 0,
-      postFilter: null
+      postFilter: null,
+      fromGateway
     });
 
     // Feedback - Only if posting to a DIFFERENT channel
@@ -2276,7 +2325,7 @@ export async function handleShopPostPublish(interaction) {
     // Re-render panel (stay open for more posts)
     await handleShopPostStart(interaction);
   } catch (error) {
-    const state = pendingPosts.get(interaction.user.id);
+    const state = pendingPosts.get(getPostSessionId(interaction));
     const targetChannel = state?.channelId ? interaction.guild?.channels?.cache?.get(state.channelId) : interaction.channel;
     await handleInteractionError(interaction, error, 'Publish Shop Post', { targetChannel });
   }
@@ -4604,6 +4653,9 @@ export async function handlePackRemoveContentSelect(interaction) {
 // --- GATEWAY INTERSTITIAL PANEL ---
 export async function handleShopPostGate(interaction) {
   try {
+    const sessionId = getPostSessionId(interaction);
+    pendingPosts.delete(sessionId);
+
     if (!interaction.deferred && !interaction.replied) {
       if (interaction.isMessageComponent && interaction.isMessageComponent()) {
         await interaction.deferUpdate();
@@ -4620,17 +4672,17 @@ export async function handleShopPostGate(interaction) {
     const row = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
-          .setCustomId('shop_admin_home')
+          .setCustomId(`shop_admin_home:${sessionId}`)
           .setLabel('Back')
           .setEmoji('⬅️')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-          .setCustomId('shop_post_edit_layout')
+          .setCustomId(`shop_post_edit_layout:${sessionId}`)
           .setLabel('Edit Post')
           .setEmoji('📝')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
-          .setCustomId('shop_post_new_layout')
+          .setCustomId(`shop_post_new_layout:${sessionId}`)
           .setLabel('New Post')
           .setEmoji('➕')
           .setStyle(ButtonStyle.Success)
@@ -4644,10 +4696,10 @@ export async function handleShopPostGate(interaction) {
 
 export async function handleShopPostNewLayout(interaction) {
   try {
-    const userId = interaction.user.id;
+    const sessionId = getPostSessionId(interaction);
     
     // Initialize/Reset session state for New Post
-    pendingPosts.set(userId, {
+    setPendingPostSession(sessionId, {
       itemId: null,
       channelId: null,
       sellerId: null,
@@ -4671,8 +4723,9 @@ export async function handleShopPostNewLayout(interaction) {
 
 export async function handleShopPostEditLayout(interaction) {
   try {
+    const sessionId = getPostSessionId(interaction);
     const modal = new ModalBuilder()
-      .setCustomId('shop_edit_post_url_modal')
+      .setCustomId(`shop_edit_post_url_modal:${sessionId}`)
       .setTitle('Edit Shop Post');
 
     const urlInput = new TextInputBuilder()
@@ -4825,8 +4878,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       : (overridePrice !== null ? overridePrice : (item.price ?? 0));
 
     // Initialize state
-    const userId = interaction.user.id;
-    pendingPosts.set(userId, {
+    const sessionId = getPostSessionId(interaction);
+    setPendingPostSession(sessionId, {
       itemId,
       channelId,
       sellerId,
@@ -4852,6 +4905,9 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     });
 
     const mock = {
+      _postSessionId: sessionId,
+      customId: interaction.customId,
+      message: interaction.message,
       deferred: true,
       replied: true,
       deferUpdate: async () => {},
@@ -4872,8 +4928,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 
 export async function handleShopPostUpdate(interaction) {
   try {
-    const userId = interaction.user.id;
-    const state = pendingPosts.get(userId);
+    const sessionId = getPostSessionId(interaction);
+    const state = pendingPosts.get(sessionId);
 
     if (!state || !state.itemId || !state.channelId || !state.messageId || !state.isEditing) {
       return handleInteractionError(interaction, new Error('Validation Failed: Missing required parameters for updating'), 'shop post update');
@@ -5108,7 +5164,7 @@ export async function handleShopPostUpdate(interaction) {
       );
     }
 
-    pendingPosts.delete(userId);
+    pendingPosts.delete(sessionId);
 
     await interaction.followUp({
       content: `✅ **${item.name}** post updated successfully!`,
