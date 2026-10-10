@@ -15,7 +15,7 @@ import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { updateBalance } from '../economy/service.js';
 import { logServerEvent, sendLog, sysError } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { getUserDisplayName, getUserLogName, sanitizeError, COIN_EMOJI } from '../shared.js';
+import { getUserDisplayName, getUserLogName, sanitizeError, COIN_EMOJI, getCurrencyName } from '../shared.js';
 
 export const rewardsCommand = new SlashCommandBuilder()
   .setName('rewards')
@@ -43,9 +43,10 @@ async function getRewardsPayload(guildId) {
   const baseDaily = config.daily_base_reward !== undefined ? config.daily_base_reward : 25;
   const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
+  const coinName = await getCurrencyName(guildId);
   const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x mult\`` : '`Disabled`';
-  const streakText = streakBonus > 0 ? `\`${streakBonus} coins\`` : '`Disabled`';
-  const baseText = `\`${baseDaily} coins\``;
+  const streakText = streakBonus > 0 ? `\`${streakBonus} ${coinName.toLowerCase()}\`` : '`Disabled`';
+  const baseText = `\`${baseDaily} ${coinName.toLowerCase()}\``;
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
@@ -130,10 +131,11 @@ export async function handleRewardsComponent(interaction) {
     }
     else if (customId === 'rewards_streak_btn') {
       const config = await getGuildConfig(guildId) || {};
+      const coinName = await getCurrencyName(guildId);
       const modal = new ModalBuilder().setCustomId('rewards_streak_modal').setTitle('Daily Streak Bonus');
       const input = new TextInputBuilder()
         .setCustomId('amount')
-        .setLabel('Coins per streak day')
+        .setLabel(`${coinName} per streak day`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('5')
         .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
@@ -143,10 +145,11 @@ export async function handleRewardsComponent(interaction) {
     }
     else if (customId === 'rewards_daily_base_btn') {
       const config = await getGuildConfig(guildId) || {};
+      const coinName = await getCurrencyName(guildId);
       const modal = new ModalBuilder().setCustomId('rewards_daily_base_modal').setTitle('Base Daily Reward');
       const input = new TextInputBuilder()
         .setCustomId('amount')
-        .setLabel('Base Coins (Day 1)')
+        .setLabel(`Base ${coinName} (Day 1)`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('25')
         .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
@@ -169,9 +172,10 @@ export async function handleRewardsComponent(interaction) {
     }
     else if (customId === 'rewards_give_btn') {
       await interaction.deferUpdate();
+      const coinName = await getCurrencyName(guildId);
       const userSelect = new UserSelectMenuBuilder()
         .setCustomId('rewards_give_select')
-        .setPlaceholder('Select user to give coins to')
+        .setPlaceholder(`Select user to give ${coinName.toLowerCase()} to`)
         .setMinValues(1)
         .setMaxValues(1);
 
@@ -180,7 +184,7 @@ export async function handleRewardsComponent(interaction) {
         new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
       );
 
-      await interaction.editReply({ files: [], content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
+      await interaction.editReply({ files: [], content: `Select a user to give ${coinName.toLowerCase()} to:`, embeds: [], components: [row, backRow] });
     }
     else if (customId === 'rewards_give_select') {
       const targetUserId = interaction.users?.first()?.id || (interaction.values ? interaction.values[0] : null);
@@ -189,10 +193,11 @@ export async function handleRewardsComponent(interaction) {
         return interaction.reply({ content: '❌ Could not determine selected user.', flags: MessageFlags.Ephemeral });
       }
 
-      const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle('Give Coins');
+      const coinName = await getCurrencyName(guildId);
+      const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle(`Give ${coinName}`);
       const input = new TextInputBuilder()
         .setCustomId('amount')
-        .setLabel('Amount')
+        .setLabel(`${coinName} Amount`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('1-9999')
         .setRequired(true);
@@ -339,8 +344,9 @@ export async function handleRewardsModal(interaction) {
         const logName = getUserLogName(interaction);
         const recipientUser = await interaction.client.users.fetch(targetUserId).catch(() => null);
         const recipientLogName = recipientUser ? getUserLogName(recipientUser) : targetUserId;
+        const coinName = await getCurrencyName(guildId);
 
-        sendLog(interaction.guild, 'economy', 'green', '💰 Admin Coins Granted',
+        sendLog(interaction.guild, 'economy', 'green', `💰 Admin ${coinName} Granted`,
           `**Target:** \`${recipientLogName}\`\n` +
           `**Amount:** \`${amount.toLocaleString()}\` ${COIN_EMOJI}\n` +
           `**Admin:** \`${logName}\`\n` +
@@ -350,7 +356,7 @@ export async function handleRewardsModal(interaction) {
         // Return to user selector instead of main menu
         const userSelect = new UserSelectMenuBuilder()
           .setCustomId('rewards_give_select')
-          .setPlaceholder('Select user to give coins to')
+          .setPlaceholder(`Select user to give ${coinName.toLowerCase()} to`)
           .setMinValues(1)
           .setMaxValues(1);
 
@@ -359,8 +365,8 @@ export async function handleRewardsModal(interaction) {
           new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
 
-        await interaction.editReply({ files: [], content: 'Select a user to give coins to:', embeds: [], components: [row, backRow] });
-        await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} coins** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
+        await interaction.editReply({ files: [], content: `Select a user to give ${coinName.toLowerCase()} to:`, embeds: [], components: [row, backRow] });
+        await interaction.followUp({ content: `✅ Gave **${amount.toLocaleString()} ${coinName.toLowerCase()}** to <@${targetUserId}>.`, flags: MessageFlags.Ephemeral });
 
         // Real-time role re-evaluation for Richest Role
         import('../mvp/role-assignment.js').then(({ applyRichestRole }) => {
@@ -369,8 +375,9 @@ export async function handleRewardsModal(interaction) {
             });
         }).catch(() => {});
       } catch (error) {
+        const coinName = await getCurrencyName(guildId);
         sysError('Give coins error', error, { user: interaction.user.id, guild: interaction.guildId, target: targetUserId });
-        await interaction.followUp({ content: '❌ Failed to give coins. Please try again.', flags: MessageFlags.Ephemeral });
+        await interaction.followUp({ content: `❌ Failed to give ${coinName.toLowerCase()}. Please try again.`, flags: MessageFlags.Ephemeral });
       }
     }
   } catch (error) {

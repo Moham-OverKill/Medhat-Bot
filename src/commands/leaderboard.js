@@ -6,7 +6,7 @@ import {
     ChannelType
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
 import { sendLog, sysError } from '../utils/logger.js';
 
 // Define the /leaderboard command
@@ -251,14 +251,15 @@ export function buildDailyActivityEmbed(activityData, mvpRecipients = [], isLive
 /**
  * Build the Total Coins leaderboard embed
  */
-export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null) {
+export function buildCoinsEmbed(coinsData, nextRefreshTimestamp = null, guildId = null) {
+    const coinName = guildId ? COIN_NAME.forGuild(guildId) : COIN_NAME.toString();
     const embed = new EmbedBuilder()
         .setTitle('Richest Members')
         .setColor(0x2ECC71); // Emerald Green
 
     let description;
     if (!coinsData || coinsData.length === 0) {
-        description = '*💸 The vault is empty...*\n*Be the first to earn coins and claim the top spot!*';
+        description = `*💸 The vault is empty...*\n*Be the first to earn ${coinName.toLowerCase()} and claim the top spot!*`;
     } else {
         description = buildLeaderboardTable(coinsData, 'balance', '', [], true);
     }
@@ -427,7 +428,7 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildCoinsEmbed(enrichedData);
+        embed = buildCoinsEmbed(enrichedData, null, guildId);
     } else if (type === 'streak') {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -561,7 +562,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildCoinsEmbed(enrichedData, nextRefreshTimestamp);
+                embed = buildCoinsEmbed(enrichedData, nextRefreshTimestamp, guildId);
             } else if (t.type === 'streak') {
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -625,7 +626,7 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildCoinsEmbed(enrichedData);
+        embed = buildCoinsEmbed(enrichedData, null, guildId);
     } else if (type === 'streak') {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
@@ -682,7 +683,7 @@ async function handleSetup(interaction) {
         // Coins
         const coinsData = await getTopCoinUsers(guildId);
         const enrichedCoins = await enrichUserData(interaction.client, guildId, coinsData, 'user_id');
-        const coinsEmbed = buildCoinsEmbed(enrichedCoins);
+        const coinsEmbed = buildCoinsEmbed(enrichedCoins, null, guildId);
         const coinsMsg = await coinsChannel.send({ embeds: [coinsEmbed] });
         config.coins_message_id = coinsMsg.id;
 
@@ -710,9 +711,10 @@ async function handleSetup(interaction) {
             `**Action:** Initial setup of all leaderboard channels.`
         );
 
+        const coinName = await getCurrencyName(guildId);
         const descLines = [
             `**Daily Activity:** ${dailyChannel}`,
-            `**Total Coins:** ${coinsChannel}`,
+            `**Total ${coinName}:** ${coinsChannel}`,
             `**Highest Streak:** ${streakChannel}`
         ];
         if (levelChannel) descLines.push(`**Highest Level:** ${levelChannel}`);
@@ -745,12 +747,13 @@ async function handleStatus(interaction) {
             return;
         }
 
+        const coinName = await getCurrencyName(interaction.guildId);
         const embed = new EmbedBuilder()
             .setTitle('Leaderboard Configuration')
             .setColor(0x0099FF)
             .addFields(
                 { name: 'Daily Activity', value: config.daily_channel_id ? `<#${config.daily_channel_id}>` : '*Not Set*', inline: true },
-                { name: 'Total Coins', value: config.coins_channel_id ? `<#${config.coins_channel_id}>` : '*Not Set*', inline: true },
+                { name: `Total ${coinName}`, value: config.coins_channel_id ? `<#${config.coins_channel_id}>` : '*Not Set*', inline: true },
                 { name: 'Highest Streak', value: config.streak_channel_id ? `<#${config.streak_channel_id}>` : '*Not Set*', inline: true },
                 { name: 'Highest Level', value: config.level_channel_id ? `<#${config.level_channel_id}>` : '*Not Set*', inline: true }
             )

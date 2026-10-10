@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getUserPassProgress } from './settings/pass-engine.js';
 import { getLootBoxCategoryEmoji } from '../economy/lootbox.js';
-import { COIN_EMOJI } from '../shared.js';
+import { COIN_EMOJI, getCurrencyName } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 
 export const levelCommand = new SlashCommandBuilder()
@@ -74,8 +74,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
         }
       }
 
+      const coinName = await getCurrencyName(guildId);
       const summaryLines = [];
-      if (totalCoins > 0) summaryLines.push(`• ${coinEmoji} **${totalCoins.toLocaleString()} Total Coins**`);
+      if (totalCoins > 0) summaryLines.push(`• ${coinEmoji} **${totalCoins.toLocaleString()} Total ${coinName}**`);
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
       if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
 
@@ -86,8 +87,9 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
     if (data.nextReward) {
       const nr = data.nextReward;
+      const coinName = await getCurrencyName(guildId);
       const parts = [];
-      if (nr.reward_coins > 0) parts.push(`• ${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} Coins**`);
+      if (nr.reward_coins > 0) parts.push(`• ${coinEmoji} **${Number(nr.reward_coins).toLocaleString()} ${coinName}**`);
       for (const r of (nr.rewards || [])) {
         const qStr = r.quantity > 1 ? `${r.quantity}x ` : '';
         if (r.reward_type === 'item' && r.item_name) parts.push(`• 🏷️ **${qStr}${r.item_name}**`);

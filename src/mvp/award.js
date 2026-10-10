@@ -10,6 +10,8 @@ import {
   parseIsoTimestamp,
   getUserLogName,
   COIN_EMOJI,
+  COIN_NAME,
+  getCurrencyName,
   executeWithRetry,
   sleep,
   hasAnyDangerousPermission
@@ -734,13 +736,15 @@ function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
-function buildMvpEmbed(winners, rewardAmount = 0) {
+function buildMvpEmbed(winners, rewardAmount = 0, guildId = null) {
   const medals = assignMedals(winners);
   const display = winners.slice(0, 6);
   const lines = ['────────────────────────'];
 
   if (rewardAmount > 0) {
-    lines.push(`💰 **Reward:** ${formatNumber(rewardAmount)} coins deposited to bank!`, '────────────────────────');
+    const coinName = guildId ? COIN_NAME.forGuild(guildId) : COIN_NAME.toString();
+    const coinEmoji = guildId ? COIN_EMOJI.forGuild(guildId) : '🪙';
+    lines.push(`${coinEmoji} **Reward:** ${formatNumber(rewardAmount)} ${coinName.toLowerCase()} deposited to bank!`, '────────────────────────');
   }
 
   for (let index = 0; index < display.length; index += 1) {
@@ -1091,7 +1095,7 @@ async function announceWinners(guild, config, winnerMembers, winnerData, rewardA
     };
   });
 
-  const embed = buildMvpEmbed(formattedWinners, rewardAmount);
+  const embed = buildMvpEmbed(formattedWinners, rewardAmount, guild.id);
 
   try {
     await channel.send({

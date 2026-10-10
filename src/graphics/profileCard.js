@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { performance } from 'node:perf_hooks';
 import { sysError, sysWarn, sysLog } from '../utils/logger.js';
 import crypto from 'node:crypto';
+import { COIN_NAME } from '../shared.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -396,7 +397,9 @@ export async function generateProfileCard(profileData) {
     isBooster = false,
     isMvp = false,
     boostPct = 0,
-    accentColor = '#00E5FF'
+    accentColor = '#00E5FF',
+    guildId = null,
+    coinName = null
   } = profileData;
 
   // 1. Fetch images concurrently (Avatar & Custom Coin)
@@ -541,12 +544,13 @@ export async function generateProfileCard(profileData) {
   // 5. Statistics Row (Above the progress bar)
   // Reordered per user instruction: Level, Rank, Streak, Quests, Coins, Items (Coins then Items are last 2)
   // XP removed from this row to eliminate repetition with the progress bar underneath
+  const coinLabel = coinName || (guildId ? COIN_NAME.forGuild(guildId) : 'Coins');
   const stats = [
     { label: 'Level', value: String(currentLevel), color: '#FFFFFF' },
     { label: 'Rank', value: `#${rank}`, color: rank === 1 ? '#FFD700' : '#00E5FF' },
     { label: 'Streak', value: String(streak), color: '#FF7675' },
     { label: 'Quests', value: String(questsDone), color: '#38EF7D' },
-    { label: 'Coins', value: formatCompactNumber(balance), color: '#FFD700', isCoin: true },
+    { label: coinLabel, value: formatCompactNumber(balance), color: '#FFD700', isCoin: true },
     { label: 'Items', value: String(itemCount), color: '#C4B5FD' }
   ];
 

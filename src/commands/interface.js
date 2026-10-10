@@ -24,7 +24,7 @@ import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
 import { handleInventoryButton, getCoinThumbnailUrl } from './bank.js';
 import { isMemberBooster } from './colors.js';
-import { COIN_EMOJI, getUserDisplayName, getUserLogName } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, safeSetButtonEmoji, getUserDisplayName, getUserLogName } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -75,7 +75,10 @@ export const SHORTCUT_REGISTRY = {
     id: 'daily',
     name: 'Claim Daily',
     label: 'CLAIM DAILY',
-    description: 'Claim daily coins and streak bonuses',
+    get description() {
+      const name = COIN_NAME.toString().toLowerCase();
+      return `Claim daily ${name} and streak bonuses`;
+    },
     emoji: '💰',
     buttonCustomId: 'hub_btn_daily',
     tileFile: 'daily.png'
@@ -920,33 +923,40 @@ export async function publishOrUpdateHub(client, guildId, options = {}) {
   }
 }
 
-export const ADMIN_SHORTCUT_ITEMS = [
-  [
-    { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
-    { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
-    { id: 'coins', label: 'COINS', emoji: '🪙', btnId: 'admin_hub_coins' },
-    { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' }
-  ],
-  [
-    { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
-    { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' },
-    { id: 'organize', label: 'ORGANIZE', emoji: '🧹', btnId: 'admin_hub_organize' },
-    { id: 'customize', label: 'CUSTOMIZE', emoji: '✨', btnId: 'admin_hub_customize' }
-  ],
-  [
-    { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
-    { id: 'embed', label: 'EMBED', emoji: '📰', btnId: 'admin_hub_embed' },
-    { id: 'logs', label: 'LOGS', emoji: '📜', btnId: 'admin_hub_logs' },
-    { id: 'economy', label: 'ECONOMY', emoji: '📈', btnId: 'admin_hub_economy' }
-  ]
-];
+export function getAdminShortcutItems(guildId = null) {
+  const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'COINS';
+  const coinEmoji = guildId ? COIN_EMOJI.forGuild(guildId) : '🪙';
+  return [
+    [
+      { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
+      { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
+      { id: 'coins', label: coinName.toUpperCase(), emoji: coinEmoji, btnId: 'admin_hub_coins' },
+      { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' }
+    ],
+    [
+      { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
+      { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' },
+      { id: 'organize', label: 'ORGANIZE', emoji: '🧹', btnId: 'admin_hub_organize' },
+      { id: 'customize', label: 'CUSTOMIZE', emoji: '✨', btnId: 'admin_hub_customize' }
+    ],
+    [
+      { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
+      { id: 'embed', label: 'EMBED', emoji: '📰', btnId: 'admin_hub_embed' },
+      { id: 'logs', label: 'LOGS', emoji: '📜', btnId: 'admin_hub_logs' },
+      { id: 'economy', label: 'ECONOMY', emoji: '📈', btnId: 'admin_hub_economy' }
+    ]
+  ];
+}
+
+export const ADMIN_SHORTCUT_ITEMS = getAdminShortcutItems();
 
 /**
  * Generate composite Admin Interface banner image buffer
  * 4x3 grid with all 12 Control Panel module shortcuts
+ * @param {string} [guildId]
  * @returns {Promise<Buffer>}
  */
-export async function generateAdminInterfaceBanner() {
+export async function generateAdminInterfaceBanner(guildId = null) {
   const cardW = 312;
   const cardH = 262;
   const marginX = 24;
@@ -962,9 +972,10 @@ export async function generateAdminInterfaceBanner() {
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
+  const items = getAdminShortcutItems(guildId);
 
   for (let r = 0; r < rowCount; r++) {
-    const rowItems = ADMIN_SHORTCUT_ITEMS[r];
+    const rowItems = items[r];
     const y = marginY + r * (cardH + gapY);
     for (let c = 0; c < maxCols; c++) {
       const item = rowItems[c];
@@ -983,17 +994,21 @@ export function buildAdminHubEmbed() {
     .setImage('attachment://admin_interface.png');
 }
 
-export function buildAdminHubButtons() {
+export function buildAdminHubButtons(guildId = null, guild = null) {
   const rows = [];
-  for (const rowItems of ADMIN_SHORTCUT_ITEMS) {
+  const items = getAdminShortcutItems(guildId);
+  for (const rowItems of items) {
     const actionRow = new ActionRowBuilder();
     for (const item of rowItems) {
-      actionRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(item.btnId)
-          .setEmoji(item.emoji)
-          .setStyle(ButtonStyle.Secondary)
-      );
+      const btn = new ButtonBuilder()
+        .setCustomId(item.btnId)
+        .setStyle(ButtonStyle.Secondary);
+      if (item.id === 'coins' && guildId) {
+        safeSetButtonEmoji(btn, item.emoji, guild, '🪙');
+      } else {
+        btn.setEmoji(item.emoji);
+      }
+      actionRow.addComponents(btn);
     }
     rows.push(actionRow);
   }
@@ -1041,10 +1056,10 @@ export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
       return false;
     }
 
-    const bannerBuffer = await generateAdminInterfaceBanner();
+    const bannerBuffer = await generateAdminInterfaceBanner(guildId);
     const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_interface.png' });
     const embed = buildAdminHubEmbed();
-    const buttonRows = buildAdminHubButtons();
+    const buttonRows = buildAdminHubButtons(guildId, guild);
     const payload = {
       embeds: [embed],
       components: buttonRows,
@@ -1503,11 +1518,12 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
     .setDescription(desc)
     .setColor(0x5865F2);
 
+  const coinName = await getCurrencyName(interaction.guildId);
   const featureOptions = [
     ...Object.values(SHORTCUT_REGISTRY).map(item => ({
       label: item.name,
       value: item.id,
-      description: item.description,
+      description: item.id === 'daily' ? `Claim daily ${coinName.toLowerCase()} and streak bonuses` : item.description,
       emoji: item.emoji,
       default: item.id === currentId
     })),

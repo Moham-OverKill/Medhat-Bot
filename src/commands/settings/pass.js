@@ -15,7 +15,7 @@ import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { sysLog, sendLog } from '../../utils/logger.js';
 import { getShopCategories } from '../../economy/shop.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
-import { COIN_EMOJI, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity } from '../../shared.js';
+import { COIN_EMOJI, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity, getCurrencyName } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { validateRoleForAssignment } from './pass-engine.js';
 import { buildPaginatedSelectMenu } from '../../utils/paginator.js';
@@ -201,9 +201,11 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       ? chestRewards.map(r => `${lootBoxEmoji} **${r.quantity > 1 ? `${r.quantity}x ` : ''}${r.chest_name}**`).join(', ')
       : '_None_';
 
+    const coinName = await getCurrencyName(guildId);
+
     embed.setDescription(
       '• **Role Reward:** ' + roleText + '\n' +
-      '• **Coins Reward:** ' + coinsText + '\n' +
+      '• **' + coinName + ' Reward:** ' + coinsText + '\n' +
       '• **Item Rewards:** ' + itemText + '\n' +
       '• **Chest Rewards:** ' + chestText
     );
@@ -223,15 +225,15 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     // Row 3: Coins Selector
     const coinPresets = [
-      { label: 'None (0 Coins)', value: '0', emoji: '❌' },
-      { label: '50 Coins', value: '50' },
-      { label: '100 Coins', value: '100' },
-      { label: '250 Coins', value: '250' },
-      { label: '500 Coins', value: '500' },
-      { label: '1,000 Coins', value: '1000' },
-      { label: '2,500 Coins', value: '2500' },
-      { label: '5,000 Coins', value: '5000' },
-      { label: '10,000 Coins', value: '10000' },
+      { label: `None (0 ${coinName})`, value: '0', emoji: '❌' },
+      { label: `50 ${coinName}`, value: '50' },
+      { label: `100 ${coinName}`, value: '100' },
+      { label: `250 ${coinName}`, value: '250' },
+      { label: `500 ${coinName}`, value: '500' },
+      { label: `1,000 ${coinName}`, value: '1000' },
+      { label: `2,500 ${coinName}`, value: '2500' },
+      { label: `5,000 ${coinName}`, value: '5000' },
+      { label: `10,000 ${coinName}`, value: '10000' },
       { label: 'Custom Amount...', value: 'custom', emoji: '✏️' }
     ];
 
@@ -243,7 +245,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     const coinsSelect = new StringSelectMenuBuilder()
       .setCustomId('pass_coins_select_lvl_' + selectedLevel + '_pg_' + currentPage)
-      .setPlaceholder('Set Coins')
+      .setPlaceholder('Set ' + coinName)
       .addOptions(coinOptions);
 
     const row3 = new ActionRowBuilder().addComponents(coinsSelect);
@@ -920,17 +922,18 @@ export async function handlePassComponent(interaction) {
       const selectedValue = interaction.values[0];
 
       if (selectedValue === 'custom') {
+        const coinName = await getCurrencyName(guildId);
         const modal = new ModalBuilder()
           .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
-          .setTitle('Set Custom Coins — Level ' + level);
+          .setTitle(`Set Custom ${coinName} — Level ` + level);
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(
             new TextInputBuilder()
               .setCustomId('pass_coins_input')
-              .setLabel('Coins reward amount')
+              .setLabel(`${coinName} reward amount`)
               .setStyle(TextInputStyle.Short)
-              .setPlaceholder('Enter coin amount (e.g. 500)')
+              .setPlaceholder(`Enter ${coinName.toLowerCase()} amount (e.g. 500)`)
               .setMinLength(1).setMaxLength(8)
               .setRequired(true)
           )
@@ -1095,6 +1098,7 @@ export async function handlePassComponent(interaction) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const page = parseInt(customId.replace('pass_import_start_pg_', ''), 10) || 0;
 
+      const coinName = await getCurrencyName(guildId);
       const embed = new EmbedBuilder()
         .setTitle('Import Levels')
         .setColor(0xED4245)
@@ -1104,7 +1108,7 @@ export async function handlePassComponent(interaction) {
           '• Disable or remove your previous leveling bot from the server.\n' +
           '• Configure your XP settings before importing.\n' +
           '• Do not add levels manually; they are created automatically on import.\n' +
-          '• Customize coins, items, and chests for each level after importing.\n' +
+          `• Customize ${coinName.toLowerCase()}, items, and chests for each level after importing.\n` +
           '• Do not re-run this migration after members start earning XP naturally.\n' +
           '• Members who left the server will lose their levels.\n' +
           '---\n' +
@@ -1327,6 +1331,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
   const sortedLevels = [...levelCounts.entries()].sort((a, b) => a[0] - b[0]);
   const previewLines = sortedLevels.map(([level, count]) => `• ${count} ${count === 1 ? 'user' : 'users'} will be level ${level}`);
 
+  const coinName = await getCurrencyName(guildId);
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
     .setTitle('Import Preview — Confirm')
@@ -1334,7 +1339,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
       '• XP progress will be set for all mapped members\n' +
-      '• You can configure coins, items, and chests for each level before clicking Start'
+      `• You can configure ${coinName.toLowerCase()}, items, and chests for each level before clicking Start`
     );
 
   const row1 = new ActionRowBuilder().addComponents(
@@ -1645,8 +1650,9 @@ export async function handlePassModal(interaction) {
 
       const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input').trim();
       const coins = parseInt(coinsRaw, 10);
+      const coinName = await getCurrencyName(guildId);
       if (isNaN(coins) || coins < 0) {
-        return interaction.reply({ content: '❌ Coin amount must be 0 or a positive whole number.', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: `❌ ${coinName} amount must be 0 or a positive whole number.`, flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferUpdate().catch(() => {});
@@ -1658,7 +1664,7 @@ export async function handlePassModal(interaction) {
       );
 
       sysLog('Level Coins Configured', { guild: guildId, user: interaction.user.id, detail: `Level ${level} coins set to ${coins}` });
-      sendLog(interaction.guild, 'audit', 'cyan', '⭐ Level Coins Updated', `Admin **<@${interaction.user.id}>** set **Level ${level}** coins to **${coins.toLocaleString()}**.`);
+      sendLog(interaction.guild, 'audit', 'cyan', `⭐ Level ${coinName} Updated`, `Admin **<@${interaction.user.id}>** set **Level ${level}** ${coinName.toLowerCase()} to **${coins.toLocaleString()}**.`);
 
       const payload = await getPassDashboardPayload(guildId, page, level);
       await interaction.editReply({ files: [], content: '', ...payload });

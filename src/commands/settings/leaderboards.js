@@ -12,19 +12,21 @@ import {
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
 import { sendLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
-import { getUserLogName } from '../../shared.js';
-
-
+import { getUserLogName, getCurrencyName, COIN_EMOJI } from '../../shared.js';
 
 /**
- * Smart Leaderboard Categories
+ * Smart Leaderboard Categories Helper
  */
-const CATEGORIES = {
-    activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
-    coins: { id: 'coins', name: 'Total Coins', emoji: '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
-    streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
-    level: { id: 'level', name: 'Highest Level', emoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
-};
+export async function getCategories(guildId) {
+    const coinName = await getCurrencyName(guildId);
+    const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    return {
+        activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
+        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
+        streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
+        level: { id: 'level', name: 'Highest Level', emoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
+    };
+}
 
 /**
  * Main Leaderboard Settings Panel
@@ -34,10 +36,11 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
     try {
         const guildId = interaction.guildId;
         const config = configOverride || await getLeaderboardConfig(guildId) || {};
+        const categories = await getCategories(guildId);
 
         // Mirror Logs UI Style
         let desc = '';
-        for (const cat of Object.values(CATEGORIES)) {
+        for (const cat of Object.values(categories)) {
             const chanId = config[cat.dbId];
             const statusLabel = chanId ? `<#${chanId}>` : '*Not Set*';
             desc += `**${cat.emoji} ${cat.name}**\n↳ ${statusLabel}\n\n`;
@@ -54,7 +57,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('lb_type_select')
             .setPlaceholder('1. Select a Leaderboard to configure...')
-            .addOptions(Object.values(CATEGORIES).map(cat => ({
+            .addOptions(Object.values(categories).map(cat => ({
                 label: cat.name,
                 description: cat.desc,
                 value: cat.id,
@@ -64,8 +67,8 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         components.push(new ActionRowBuilder().addComponents(selectMenu));
 
         // Logic for Category-Specific Controls
-        if (selectedId && CATEGORIES[selectedId]) {
-            const active = CATEGORIES[selectedId];
+        if (selectedId && categories[selectedId]) {
+            const active = categories[selectedId];
             const chan = config[active.dbId];
 
             // Row 2: Channel Selection
@@ -140,8 +143,9 @@ export async function handleLeaderboardChannelSelect(interaction) {
         const channelId = interaction.values[0];
         const categoryId = interaction.customId.replace('lb_set_channel_', '');
         
-        if (!CATEGORIES[categoryId]) return;
-        const cat = CATEGORIES[categoryId];
+        const categories = await getCategories(guildId);
+        if (!categories[categoryId]) return;
+        const cat = categories[categoryId];
 
         // Proactive Permission Check
         const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
@@ -186,8 +190,9 @@ export async function handleLeaderboardDisable(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
         const categoryId = interaction.customId.replace('lb_disable_', '');
-        if (!CATEGORIES[categoryId]) return;
-        const cat = CATEGORIES[categoryId];
+        const categories = await getCategories(guildId);
+        if (!categories[categoryId]) return;
+        const cat = categories[categoryId];
 
         let config = await getLeaderboardConfig(guildId) || {};
         const oldChan = config[cat.dbId];
