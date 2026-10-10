@@ -631,26 +631,25 @@ export async function renderForumsPanel(interaction) {
     const hasManageThreads = botMember?.permissions?.has(PermissionsBitField.Flags.ManageThreads);
 
     const embed = new EmbedBuilder()
-        .setTitle('Organize — Forums & Media');
+        .setTitle('Organize — Forums');
 
-    const statusLine = `• **Auto-Delete Empty Posts:** ${isAutoDeleteEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
+    const statusLine = `• **Status:** ${isAutoDeleteEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
     const channelsDisplay = configuredChannels.length > 0
         ? configuredChannels.map(id => `<#${id}>`).join(', ')
-        : '_All Forum & Media Channels_';
-    const scopeLine = `• **Channel Scope:** ${channelsDisplay}`;
+        : '_All_';
+    const scopeLine = `• **Channels:** ${channelsDisplay}`;
 
     embed.setDescription(
-        'Configure automated lifecycle rules, moderation, and maintenance for Forum and Media channels.\n\n' +
+        'Auto-delete posts when the original message is deleted.\n\n' +
         `${statusLine}\n` +
-        `${scopeLine}\n\n` +
-        '_When Auto-Delete is active, if the author or a moderator deletes the original starter message of a post, the bot automatically removes the empty thread to prevent dead forum posts._'
+        `${scopeLine}`
     );
 
     if (!hasManageThreads) {
         embed.setColor(0xE67E22);
         embed.addFields({
             name: '⚠️ Missing Permissions',
-            value: 'The bot requires the **Manage Threads** permission to automatically delete orphaned forum/media threads.\n_Please grant Manage Threads to the bot role in Server Settings > Roles._',
+            value: 'Requires **Manage Threads** permission.',
             inline: false
         });
     } else {
@@ -659,7 +658,7 @@ export async function renderForumsPanel(interaction) {
 
     const components = [];
 
-    // Row 1: Channel selection menu to optionally restrict target forum/media channels
+    // Row 1: Channel selection menu
     const forumChannelTypes = [ChannelType.GuildForum];
     if (ChannelType.GuildMedia) {
         forumChannelTypes.push(ChannelType.GuildMedia);
@@ -667,7 +666,7 @@ export async function renderForumsPanel(interaction) {
 
     const channelSelect = new ChannelSelectMenuBuilder()
         .setCustomId('organize_forum_channels_select')
-        .setPlaceholder(configuredChannels.length > 0 ? 'Toggle a forum channel in scope...' : 'Select specific forum channels (Default: All)...')
+        .setPlaceholder('Select forum channels (Default: All)...')
         .setChannelTypes(forumChannelTypes);
     components.push(new ActionRowBuilder().addComponents(channelSelect));
 
@@ -675,8 +674,7 @@ export async function renderForumsPanel(interaction) {
     const actionButtons = [
         new ButtonBuilder()
             .setCustomId('organize_forum_auto_delete_toggle')
-            .setLabel(isAutoDeleteEnabled ? 'Disable Auto-Delete' : 'Enable Auto-Delete')
-            .setEmoji('🗑️')
+            .setLabel(isAutoDeleteEnabled ? 'Disable' : 'Enable')
             .setStyle(isAutoDeleteEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
     ];
 
@@ -684,8 +682,7 @@ export async function renderForumsPanel(interaction) {
         actionButtons.push(
             new ButtonBuilder()
                 .setCustomId('organize_forum_scope_reset')
-                .setLabel('Reset Scope (All Channels)')
-                .setEmoji('🔄')
+                .setLabel('Reset')
                 .setStyle(ButtonStyle.Secondary)
         );
     }
