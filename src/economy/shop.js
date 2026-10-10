@@ -954,13 +954,14 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     // Define effectivePrice (Check for admin override first)
 
     // Define checkRoleSafety helper
-    const botMember = member.guild.members.me;
+    const botMember = member.guild?.members?.me || await member.guild?.members?.fetchMe?.().catch(() => null);
+    const botHighest = botMember?.roles?.highest;
     const checkRoleSafety = (rId) => {
       if (!rId) return true;
-      const role = member.guild.roles.cache.get(rId);
+      const role = member.guild?.roles?.cache?.get(rId);
       if (!role) return true; // Role might be deleted, we'll just ignore it later or fail? 
       // If role exists but we can't manage it:
-      if (role.comparePositionTo(botMember.roles.highest) >= 0) {
+      if (botHighest && role.comparePositionTo(botHighest) >= 0) {
         return false;
       }
       return true;
@@ -1479,12 +1480,13 @@ export async function dropItem(userId, guildId, invId, member, dropQty = 1) {
 
     if (shouldRemoveRole && item.role_id) {
       const rIds = item.role_id.split(/[,\s]+/);
-      const botMember = member.guild.members.me;
+      const botMember = member.guild?.members?.me || await member.guild?.members?.fetchMe?.().catch(() => null);
+      const botHighest = botMember?.roles?.highest;
 
       for (const rId of rIds) {
-        const role = member.guild.roles.cache.get(rId);
+        const role = member.guild?.roles?.cache?.get(rId);
         if (role) {
-          if (role.comparePositionTo(botMember.roles.highest) >= 0) {
+          if (botHighest && role.comparePositionTo(botHighest) >= 0) {
             await client.query('ROLLBACK');
             throw new Error(`❌ Failed to drop item: I cannot remove the role "${role.name}" due to hierarchy permissions.`);
           }
@@ -1750,7 +1752,13 @@ export async function getUserInventory(userId, guildId) {
  * Instead, we use the DB to re-apply roles if is_active is true.
  */
 export async function syncInventoryWithDiscord(userId, guildId, member) {
-  if (!member) return [];
+  if (!member) {
+    try {
+      return await getUserInventory(userId, guildId);
+    } catch (_) {
+      return [];
+    }
+  }
   try {
     // ONE-TIME CLEANUP: Purge legacy 'SYNC' items once to fix existing ghosts
     // Admin-granted items are now synthesized live at the view layer.
@@ -1804,7 +1812,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     `, [userId, guildId]).catch(() => {});
 
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
-    await purgeUserInventory(userId, guildId, member);
+    await purgeUserInventory(userId, guildId, member).catch(() => 0);
 
     const inventory = await query(
       `SELECT ui.*, si.name, si.role_id, si.price, si.item_type, si.is_pack, si.category_id, si.required_items, si.default_image_url, si.is_tradable, si.rarity, si.loot_box_id, si.duration_hours, si.duration_seconds
@@ -1814,23 +1822,30 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
       [userId, guildId]
     );
 
-    const botMember = member.guild.members.me;
+    const botMember = member.guild?.members?.me || await member.guild?.members?.fetchMe?.().catch(() => null);
+    const botHighest = botMember?.roles?.highest;
 
     // Rule Verification: Ensure roles match the 'is_active' state in DB
     // Re-fetch member to get latest role cache from Discord (avoids race conditions)
-    const freshMember = await member.guild.members.fetch(userId).catch(() => member);
+    const freshMember = (member.guild && typeof member.guild.members?.fetch === 'function')
+      ? await member.guild.members.fetch(userId).catch(() => member)
+      : member;
 
     for (const invItem of inventory.rows) {
       if (!invItem.role_id || invItem.item_type === 'pack' || invItem.is_pack) continue;
       const firstRoleId = invItem.role_id.split(/[,\s]+/)[0];
-      const role = freshMember.guild.roles.cache.get(firstRoleId);
+      const role = freshMember.guild?.roles?.cache?.get(firstRoleId);
       if (!role) continue;
 
-      const hasRole = freshMember.roles.cache.has(firstRoleId);
+      const hasRole = freshMember.roles?.cache?.has
+        ? freshMember.roles.cache.has(firstRoleId)
+        : (Array.isArray(freshMember._roles)
+            ? freshMember._roles.includes(firstRoleId)
+            : (Array.isArray(freshMember.roles) ? freshMember.roles.includes(firstRoleId) : false));
       const shouldHaveRole = invItem.is_active === true;
 
       // Only perform role movement if bot is high enough
-      if (role.comparePositionTo(botMember.roles.highest) < 0) {
+      if (botHighest && role.comparePositionTo(botHighest) < 0) {
         if (shouldHaveRole && !hasRole) {
           // Admin likely removed the role manually - respect it and unequip in DB
           await query(`UPDATE user_inventory SET is_active = false WHERE id = $1`, [invItem.id]);
@@ -1853,7 +1868,7 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     }
 
     // Final Domino Sweep (Ensures manual role removals/admin changes respect dependencies)
-    await runDependencySweep(userId, guildId, freshMember);
+    await runDependencySweep(userId, guildId, freshMember).catch(() => []);
 
     // Auto-heal / deduplicate any accidental duplicate active running timer rows for temporary items
     const activeRunningMap = new Map();
@@ -1986,7 +2001,11 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
     return consolidatedRows;
   } catch (error) {
     sysError('Inventory Sync Error', error, { user: userId, guild: guildId });
-    return [];
+    try {
+      return await getUserInventory(userId, guildId);
+    } catch (_) {
+      return [];
+    }
   }
 }
 
@@ -1994,33 +2013,60 @@ export async function syncInventoryWithDiscord(userId, guildId, member) {
  * Unified Helper: Fetch DB inventory and synthesize live Admin-Granted items (State C)
  * Ensures consistency between Main Menu counts, Category Lists, and Item Management.
  */
-export async function getSynthesizedInventory(userId, guildId, member) {
-  if (!member) return [];
+export async function getSynthesizedInventory(userId, guildId, member = null) {
+  // 1. Fetch DB Items (Owned/Purchased) with resilient fallback
+  let dbInventory = [];
+  try {
+    if (member) {
+      dbInventory = await syncInventoryWithDiscord(userId, guildId, member);
+    }
+  } catch (syncErr) {
+    sysError('getSynthesizedInventory Sync Failure', syncErr, { user: userId, guild: guildId });
+  }
 
-  // 1. Fetch DB Items (Owned/Purchased)
-  const dbInventory = await syncInventoryWithDiscord(userId, guildId, member);
+  // Resilient fallback: ensure database items are never omitted if sync yielded empty
+  if (!dbInventory || dbInventory.length === 0) {
+    try {
+      dbInventory = await getUserInventory(userId, guildId);
+    } catch (dbErr) {
+      sysError('getSynthesizedInventory DB Fallback Failure', dbErr, { user: userId, guild: guildId });
+      dbInventory = [];
+    }
+  }
+
   const dbShopIds = new Set(dbInventory.map(i => i.shop_item_id));
 
   // 2. Fetch Shop Items to check for live Role-based items (Admin Granted)
-  const allShopItems = await getShopItems(guildId, null, 'name', false);
-  const adminItems = [];
+  let adminItems = [];
+  if (member) {
+    try {
+      const allShopItems = await getShopItems(guildId, null, 'name', false);
+      for (const shopItem of allShopItems) {
+        if (!shopItem.role_id) continue;
+        const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
 
-  for (const shopItem of allShopItems) {
-    if (!shopItem.role_id) continue;
-    const firstRoleId = shopItem.role_id.split(/[,\s]+/)[0];
+        const hasRole = member.roles?.cache?.has
+          ? member.roles.cache.has(firstRoleId)
+          : (Array.isArray(member._roles)
+              ? member._roles.includes(firstRoleId)
+              : (Array.isArray(member.roles) ? member.roles.includes(firstRoleId) : false));
 
-    // State C: User has the role in Discord but doesn't own it in the DB
-    if (member.roles.cache.has(firstRoleId) && !dbShopIds.has(shopItem.id)) {
-      adminItems.push({
-        ...shopItem,
-        id: `admin_${shopItem.id}`, // Virtual ID for State Anchoring
-        shop_item_id: shopItem.id,
-        source: 'SYNC',
-        is_active: true, // Always active for roles
-        price: 0,
-        purchased_at: new Date(),
-        updated_at: new Date()
-      });
+        // State C: User has the role in Discord but doesn't own it in the DB
+        if (hasRole && !dbShopIds.has(shopItem.id)) {
+          adminItems.push({
+            ...shopItem,
+            id: `admin_${shopItem.id}`, // Virtual ID for State Anchoring
+            shop_item_id: shopItem.id,
+            source: 'SYNC',
+            is_active: true, // Always active for roles
+            price: 0,
+            purchased_at: new Date(),
+            updated_at: new Date()
+          });
+        }
+      }
+    } catch (adminErr) {
+      sysError('getSynthesizedInventory Admin Items Failure', adminErr, { user: userId, guild: guildId });
     }
   }
 
@@ -2482,12 +2528,13 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       // 3. Strip Discord Role (Only if member is provided)
       if (member && item.role_id) {
         const roles = item.role_id.split(/[,\s]+/);
-        const botMember = member.guild.members.me;
+        const botMember = member.guild?.members?.me || await member.guild?.members?.fetchMe?.().catch(() => null);
+        const botHighest = botMember?.roles?.highest;
 
         for (const rid of roles) {
           try {
-            const role = member.guild.roles.cache.get(rid);
-            if (role && role.comparePositionTo(botMember.roles.highest) < 0) {
+            const role = member.guild?.roles?.cache?.get(rid);
+            if (role && botHighest && role.comparePositionTo(botHighest) < 0) {
               await member.roles.remove(rid, 'Item Expired (Lazy Purge)');
             }
           } catch (e) {

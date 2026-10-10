@@ -1228,14 +1228,20 @@ export async function handleInventoryButton(interaction) {
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
 
+    // Ensure member is resolved with warmed role cache if available
+    let member = interaction.member;
+    if ((!member || !member.roles?.cache) && interaction.guild) {
+      member = await interaction.guild.members.fetch(userId).catch(() => interaction.member);
+    }
+
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
     // We execute the FULL purge here (DB + Discord Roles)
     const { purgeUserInventory } = await import('../economy/shop.js');
-    await purgeUserInventory(userId, guildId, interaction.member);
+    await purgeUserInventory(userId, guildId, member).catch(() => {});
 
     // Unified Fetch: Includes DB items + Live synthesis of admin roles
     const [inventory, categories, userBal] = await Promise.all([
-      getSynthesizedInventory(userId, guildId, interaction.member),
+      getSynthesizedInventory(userId, guildId, member),
       getShopCategories(guildId),
       getUserBalance(guildId, userId)
     ]);
@@ -1393,9 +1399,15 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
     const isOther = catIdStr === 'null';
     const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr, 10);
 
+    // Ensure member is resolved with warmed role cache if available
+    let member = interaction.member;
+    if ((!member || !member.roles?.cache) && interaction.guild) {
+      member = await interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
+    }
+
     // Unified Fetch: DB items, Live admin roles, Shop categories, and persistent sort preference
     const [inventory, categories, sortPreference] = await Promise.all([
-      getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member),
+      getSynthesizedInventory(interaction.user.id, interaction.guildId, member),
       getShopCategories(interaction.guildId),
       getUserInventorySortPreference(interaction.user.id)
     ]);
@@ -1673,9 +1685,15 @@ export async function handleInventoryItemSelect(interaction) {
     const isLootBoxCategory = categoryId === 'lootboxes';
     const isOther = !isLootBoxCategory && (categoryId === null || categoryId === 'null');
 
+    // Ensure member is resolved with warmed role cache if available
+    let member = interaction.member;
+    if ((!member || !member.roles?.cache) && interaction.guild) {
+      member = await interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
+    }
+
     // 1. Fetch Unified Inventory and persistent sort preference
     const [inventory, sortPreference] = await Promise.all([
-      getSynthesizedInventory(interaction.user.id, interaction.guildId, interaction.member),
+      getSynthesizedInventory(interaction.user.id, interaction.guildId, member),
       getUserInventorySortPreference(interaction.user.id)
     ]);
 
