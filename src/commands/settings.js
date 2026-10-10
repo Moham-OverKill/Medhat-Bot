@@ -156,7 +156,7 @@ export async function showCoinsSubMenu(interaction) {
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 
-    // Row 1: Daily, Quests, Give Coins
+    // Row 1: Daily, Quests, Tag, Vote
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_daily')
@@ -169,13 +169,18 @@ export async function showCoinsSubMenu(interaction) {
             .setEmoji('🎯')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('rewards_give_btn')
-            .setLabel('Give Coins')
-            .setEmoji('💸')
-            .setStyle(ButtonStyle.Success)
+            .setCustomId('settings_tag_reward')
+            .setLabel('Tag')
+            .setEmoji('🏷️')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_vote_reward')
+            .setLabel('Vote')
+            .setEmoji('🗳️')
+            .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Back, Vote, Tag
+    // Row 2: Back, Customize, Give Coins
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
@@ -183,15 +188,15 @@ export async function showCoinsSubMenu(interaction) {
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_vote_reward')
-            .setLabel('Vote')
-            .setEmoji('🗳️')
+            .setCustomId('settings_coins_customize')
+            .setLabel('Customize')
+            .setEmoji('⚙️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('settings_tag_reward')
-            .setLabel('Tag')
-            .setEmoji('🏷️')
-            .setStyle(ButtonStyle.Secondary)
+            .setCustomId('rewards_give_btn')
+            .setLabel('Give Coins')
+            .setEmoji('💸')
+            .setStyle(ButtonStyle.Success)
     );
 
     const responseMethod = (interaction.deferred || interaction.replied)
@@ -268,13 +273,6 @@ export async function showOtherSubMenu(interaction) {
 export async function showCustomizeModal(interaction) {
     const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(interaction.guildId) || {};
-    
-    const currentEmoji = config.coin_emoji;
-    let initialValue = '';
-    if (currentEmoji) {
-        const currentEmojiStr = typeof currentEmoji === 'string' ? currentEmoji : currentEmoji.toString();
-        initialValue = currentEmojiStr;
-    }
 
     const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
     const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
@@ -298,17 +296,51 @@ export async function showCustomizeModal(interaction) {
         .setRequired(false);
     if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
 
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(nameInput),
+        new ActionRowBuilder().addComponents(avatarInput)
+    );
+    await interaction.showModal(modal);
+}
+
+/**
+ * Open the Coins Customization modal directly (modal cannot be deferred)
+ * @param {import('discord.js').Interaction} interaction 
+ */
+export async function showCoinsCustomizeModal(interaction) {
+    const { getGuildConfig } = await import('../storage/config.js');
+    const config = await getGuildConfig(interaction.guildId) || {};
+
+    const currentCoinName = config.coin_name || '';
+    const currentCoinEmoji = config.coin_emoji || '';
+
+    const modal = new ModalBuilder()
+        .setCustomId(`settings_coins_customize_modal_${Date.now()}`)
+        .setTitle('Customize Coins');
+
+    const nameInput = new TextInputBuilder()
+        .setCustomId('coin_name')
+        .setLabel('Coins Name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Coins')
+        .setRequired(false);
+    if (currentCoinName && currentCoinName !== 'Coins') {
+        nameInput.setValue(currentCoinName);
+    }
+
     const emojiInput = new TextInputBuilder()
         .setCustomId('coin_emoji')
         .setLabel('Coin Emoji')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter an emoji or emoji ID')
+        .setPlaceholder('🪙')
         .setRequired(false);
-    if (initialValue) emojiInput.setValue(initialValue);
+    if (currentCoinEmoji && currentCoinEmoji !== '🪙') {
+        const emojiStr = typeof currentCoinEmoji === 'string' ? currentCoinEmoji : currentCoinEmoji.toString();
+        emojiInput.setValue(emojiStr);
+    }
 
     modal.addComponents(
         new ActionRowBuilder().addComponents(nameInput),
-        new ActionRowBuilder().addComponents(avatarInput),
         new ActionRowBuilder().addComponents(emojiInput)
     );
     await interaction.showModal(modal);
@@ -366,6 +398,11 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_customize') {
             await showCustomizeModal(interaction);
+            return;
+        }
+
+        if (customId === 'settings_coins_customize') {
+            await showCoinsCustomizeModal(interaction);
             return;
         }
 
@@ -467,81 +504,8 @@ export async function handleSettingsComponent(interaction) {
             
             const botName = interaction.fields.getTextInputValue('bot_name');
             const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
-            const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
 
-            // --- 1. Emoji Status & Parsing ---
-            let emojiStatus = 'Default ⏪';
-            let emojiReason = null;
-            let formattedEmoji = null;
-
-            if (coinEmoji && coinEmoji.trim()) {
-                const input = coinEmoji.trim();
-
-                // Case A: Formatted Custom Emoji: <:name:id> or <a:name:id>
-                const customMatch = input.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
-                if (customMatch) {
-                    const isAnimated = Boolean(customMatch[1]);
-                    const name = customMatch[2];
-                    const id = customMatch[3];
-                    const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
-                    if (found) {
-                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-                    } else {
-                        const fetched = await interaction.guild?.emojis.fetch(id).catch(() => null) ||
-                                        await interaction.client?.emojis.fetch(id).catch(() => null);
-                        if (fetched) {
-                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
-                        } else {
-                            formattedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
-                        }
-                    }
-                    emojiStatus = 'Updated ✅';
-                }
-                // Case B: Pure Snowflake ID: 17-20 digits
-                else if (/^\d{17,20}$/.test(input)) {
-                    const found = interaction.guild?.emojis.cache.get(input) || interaction.client?.emojis.cache.get(input);
-                    if (found) {
-                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-                        emojiStatus = 'Updated ✅';
-                    } else {
-                        const fetched = await interaction.guild?.emojis.fetch(input).catch(() => null) ||
-                                        await interaction.client?.emojis.fetch(input).catch(() => null);
-                        if (fetched) {
-                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
-                            emojiStatus = 'Updated ✅';
-                        } else {
-                            formattedEmoji = `<:coin:${input}>`;
-                            emojiStatus = 'Updated ✅';
-                        }
-                    }
-                }
-                // Case C: Emoji Name: e.g. :coin: or coin
-                else if (/^:?[a-zA-Z0-9_]+:?$/.test(input) && !/^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u.test(input)) {
-                    const cleanName = input.replace(/:/g, '').toLowerCase();
-                    const found = interaction.guild?.emojis.cache.find(e => e.name.toLowerCase() === cleanName) ||
-                                  interaction.client?.emojis.cache.find(e => e.name.toLowerCase() === cleanName);
-                    if (found) {
-                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-                        emojiStatus = 'Updated ✅';
-                    } else {
-                        emojiStatus = 'Failed ❌';
-                        emojiReason = `Could not find emoji ":${cleanName}:" in this server.`;
-                    }
-                }
-                // Case D: Standard Unicode Emoji (e.g. 🪙, 💰, 💎, 🔥)
-                else {
-                    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
-                    if (emojiRegex.test(input) && input.length <= 16) {
-                        formattedEmoji = input;
-                        emojiStatus = 'Updated ✅';
-                    } else {
-                        emojiStatus = 'Failed ❌';
-                        emojiReason = 'Could not recognize that emoji.';
-                    }
-                }
-            }
-
-            // --- 2. Nickname Status & Update ---
+            // --- 1. Nickname Status & Update ---
             const client = interaction.client;
             const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(client.user.id).catch(() => null);
             const newNickname = botName && botName.trim() ? botName.trim() : null;
@@ -664,12 +628,6 @@ export async function handleSettingsComponent(interaction) {
                 config.bot_avatar = null;
             }
 
-            if (emojiStatus.startsWith('Updated ✅')) {
-                config.coin_emoji = formattedEmoji;
-            } else if (emojiStatus.startsWith('Default ⏪')) {
-                config.coin_emoji = null;
-            }
-
             await setGuildConfig(guildId, config).catch((err) => {
                 sysError('Failed to save customization config', err);
             });
@@ -688,15 +646,162 @@ export async function handleSettingsComponent(interaction) {
             sendLog(interaction.guild, 'audit', 'cyan', 'Bot Customized',
                 `**Admin:** \`${logName}\`\n\n` +
                 formatField('**Nickname**', nicknameStatus, nicknameReason) + '\n\n' +
-                formatField('**Avatar**', avatarStatus, avatarReason) + '\n\n' +
-                formatField('**Emoji**', emojiStatus, emojiReason)
+                formatField('**Avatar**', avatarStatus, avatarReason)
             );
 
             // --- 6. Send Response ---
             const responseContent = [
                 formatField('Nickname', nicknameStatus, nicknameReason),
-                formatField('Avatar', avatarStatus, avatarReason),
-                formatField('Emoji', emojiStatus, emojiReason)
+                formatField('Avatar', avatarStatus, avatarReason)
+            ].join('\n\n');
+
+            await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
+            return;
+        }
+
+        if (customId.startsWith('settings_coins_customize_modal')) {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+            }
+
+            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
+            const guildId = interaction.guildId;
+            const config = await getGuildConfig(guildId) || {};
+
+            const coinName = interaction.fields.getTextInputValue('coin_name');
+            const coinEmoji = interaction.fields.getTextInputValue('coin_emoji');
+
+            // --- 1. Coin Name Status & Parsing ---
+            let nameStatus = 'Default ⏪';
+            let nameReason = null;
+            let newCoinName = null;
+
+            if (coinName && coinName.trim()) {
+                const input = coinName.trim();
+                if (input.length > 32) {
+                    nameStatus = 'Failed ❌';
+                    nameReason = 'Currency name cannot be longer than 32 characters.';
+                } else {
+                    newCoinName = input;
+                    nameStatus = input.toLowerCase() === 'coins' ? 'Default ⏪' : 'Updated ✅';
+                }
+            } else {
+                newCoinName = 'Coins';
+                nameStatus = 'Default ⏪';
+            }
+
+            // --- 2. Coin Emoji Status & Parsing ---
+            let emojiStatus = 'Default ⏪';
+            let emojiReason = null;
+            let formattedEmoji = null;
+
+            if (coinEmoji && coinEmoji.trim()) {
+                const input = coinEmoji.trim();
+
+                // Case A: Formatted Custom Emoji: <:name:id> or <a:name:id>
+                const customMatch = input.match(/^<(a)?:([a-zA-Z0-9_]+):(\d{17,20})>$/);
+                if (customMatch) {
+                    const isAnimated = Boolean(customMatch[1]);
+                    const name = customMatch[2];
+                    const id = customMatch[3];
+                    const found = interaction.guild?.emojis.cache.get(id) || interaction.client?.emojis.cache.get(id);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+                    } else {
+                        const fetched = await interaction.guild?.emojis.fetch(id).catch(() => null) ||
+                                        await interaction.client?.emojis.fetch(id).catch(() => null);
+                        if (fetched) {
+                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+                        } else {
+                            formattedEmoji = `<${isAnimated ? 'a' : ''}:${name}:${id}>`;
+                        }
+                    }
+                    emojiStatus = 'Updated ✅';
+                }
+                // Case B: Pure Snowflake ID: 17-20 digits
+                else if (/^\d{17,20}$/.test(input)) {
+                    const found = interaction.guild?.emojis.cache.get(input) || interaction.client?.emojis.cache.get(input);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        const fetched = await interaction.guild?.emojis.fetch(input).catch(() => null) ||
+                                        await interaction.client?.emojis.fetch(input).catch(() => null);
+                        if (fetched) {
+                            formattedEmoji = `<${fetched.animated ? 'a' : ''}:${fetched.name}:${fetched.id}>`;
+                            emojiStatus = 'Updated ✅';
+                        } else {
+                            formattedEmoji = `<:coin:${input}>`;
+                            emojiStatus = 'Updated ✅';
+                        }
+                    }
+                }
+                // Case C: Emoji Name: e.g. :coin: or coin
+                else if (/^:?[a-zA-Z0-9_]+:?$/.test(input) && !/^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u.test(input)) {
+                    const cleanName = input.replace(/:/g, '').toLowerCase();
+                    const found = interaction.guild?.emojis.cache.find(e => e.name.toLowerCase() === cleanName) ||
+                                  interaction.client?.emojis.cache.find(e => e.name.toLowerCase() === cleanName);
+                    if (found) {
+                        formattedEmoji = `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
+                        emojiStatus = 'Updated ✅';
+                    } else {
+                        emojiStatus = 'Failed ❌';
+                        emojiReason = `Could not find emoji ":${cleanName}:" in this server.`;
+                    }
+                }
+                // Case D: Standard Unicode Emoji (e.g. 🪙, 💰, 💎, 🔥)
+                else {
+                    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u;
+                    if (emojiRegex.test(input) && input.length <= 16) {
+                        formattedEmoji = input;
+                        emojiStatus = input === '🪙' ? 'Default ⏪' : 'Updated ✅';
+                    } else {
+                        emojiStatus = 'Failed ❌';
+                        emojiReason = 'Could not recognize that emoji.';
+                    }
+                }
+            } else {
+                formattedEmoji = null;
+                emojiStatus = 'Default ⏪';
+            }
+
+            // --- 3. Save to Database ---
+            if (nameStatus.startsWith('Updated ✅')) {
+                config.coin_name = newCoinName;
+            } else if (nameStatus.startsWith('Default ⏪')) {
+                config.coin_name = 'Coins';
+            }
+
+            if (emojiStatus.startsWith('Updated ✅')) {
+                config.coin_emoji = formattedEmoji;
+            } else if (emojiStatus.startsWith('Default ⏪')) {
+                config.coin_emoji = null;
+            }
+
+            await setGuildConfig(guildId, config).catch((err) => {
+                sysError('Failed to save coins customization config', err);
+            });
+
+            const formatField = (name, status, reason) => {
+                if (reason) {
+                    return `${name}: ${status}\n↳ *${reason}*`;
+                }
+                return `${name}: ${status}`;
+            };
+
+            // --- 4. Audit Logging ---
+            const { getUserLogName } = await import('../shared.js');
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'cyan', 'Coins Customized',
+                `**Admin:** \`${logName}\`\n\n` +
+                formatField('**Coins Name**', nameStatus, nameReason) + '\n\n' +
+                formatField('**Coin Emoji**', emojiStatus, emojiReason)
+            );
+
+            // --- 5. Send Response ---
+            const responseContent = [
+                formatField('Coins Name', nameStatus, nameReason),
+                formatField('Coin Emoji', emojiStatus, emojiReason)
             ].join('\n\n');
 
             await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
