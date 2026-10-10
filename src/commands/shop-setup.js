@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -2023,8 +2023,10 @@ export async function handleShopPostPublish(interaction) {
       const hasItems = itemsEnabled && (box.totalItemWeight || 0) > 0;
 
       if (!hasCoins && !hasItems) {
+        const coinName = await getCurrencyName(interaction.guildId);
+        const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
         return interaction.followUp({
-          content: '❌ This loot box has neither item drop rates nor coin rewards enabled. Please configure rewards in Chests Management before publishing.',
+          content: `❌ This ${lootBoxCatName.toLowerCase()} has neither item drop rates nor ${coinName.toLowerCase()} rewards enabled. Please configure rewards in ${lootBoxCatName} Management before publishing.`,
           flags: MessageFlags.Ephemeral
         });
       }
@@ -2292,13 +2294,14 @@ export async function handleManageTiers(interaction) {
       return interaction.editReply({ files: [], content: '❌ Item not found.', embeds: [], components: [] });
     }
 
+    const coinName = await getCurrencyName(interaction.guildId);
     const embed = new EmbedBuilder()
       .setTitle(`Tiers for ${item.name}`)
       .setDescription(tiers.length === 0 ? 'No tiers configured.' : 'Current Tiers:')
       .setColor('#F1C40F');
 
     if (tiers.length > 0) {
-      const tierDesc = tiers.map(t => `**Level ${t.tier_level}**: ${t.upgrade_price === 0 ? 'FREE' : t.upgrade_price.toLocaleString() + ' coins'} (Role: <@&${t.role_id}>)`).join('\n');
+      const tierDesc = tiers.map(t => `**Level ${t.tier_level}**: ${t.upgrade_price === 0 ? 'FREE' : `${t.upgrade_price.toLocaleString()} ${coinName.toLowerCase()}`} (Role: <@&${t.role_id}>)`).join('\n');
       embed.addFields({ name: 'Upgrades', value: tierDesc });
     }
 
@@ -5388,6 +5391,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const config = await getGuildConfig(interaction.guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
+    const coinName = await getCurrencyName(interaction.guildId);
 
     const itemsEnabled = box.items_enabled !== false;
     const coinsEnabled = box.coins_enabled !== false;
@@ -5414,7 +5418,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
 
     // 3. Coins (Third)
     if (coinsEnabled) {
-      sections.push(`${serverCoinEmoji} **Coins**: \`${box.min_coins.toLocaleString()}—${box.max_coins.toLocaleString()}\` \`(${box.chance_coins}%)\``);
+      sections.push(`${serverCoinEmoji} **${coinName}**: \`${box.min_coins.toLocaleString()}—${box.max_coins.toLocaleString()}\` \`(${box.chance_coins}%)\``);
     }
 
     const description = sections.length > 0 ? `\u200b\n${sections.join('\n\n')}` : '';
@@ -5458,10 +5462,10 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     }
     if (coinsEnabled) {
       dropdownOptions.push({
-        label: 'Coins',
+        label: coinName,
         value: 'cfg_coins',
         emoji: getSelectEmoji(serverCoinEmoji),
-        description: 'Configure coins drop chance & range'
+        description: `Configure ${coinName.toLowerCase()} drop chance & range`
       });
     }
 
@@ -5488,7 +5492,7 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
       safeSetButtonEmoji(
         new ButtonBuilder()
           .setCustomId(`shop_lb_toggle_coins_${boxId}`)
-          .setLabel('Coins')
+          .setLabel(coinName)
           .setStyle(coinsEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
         serverCoinEmoji,
         interaction.guild,
@@ -5553,7 +5557,8 @@ export async function handleLootBoxToggleFeature(interaction, boxId, featureType
       ? lootBoxCatName.slice(0, -1) 
       : lootBoxCatName;
     const isCoins = featureType === 'coins';
-    const featureLabel = isCoins ? 'Coins Reward' : 'Item Prizes & Rarity';
+    const coinName = await getCurrencyName(interaction.guildId);
+    const featureLabel = isCoins ? `${coinName} Reward` : 'Item Prizes & Rarity';
     const isEnabled = isCoins ? box?.coins_enabled : box?.items_enabled;
 
     sendLog(
@@ -5735,13 +5740,14 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
   const box = await getLootBox(boxId, interaction.guildId);
   if (!box) return;
 
+  const coinName = await getCurrencyName(interaction.guildId);
   const modal = new ModalBuilder()
     .setCustomId(`shop_lb_coins_modal_${boxId}`)
-    .setTitle('Configure Coins Reward');
+    .setTitle(`Configure ${coinName} Reward`);
 
   const chanceInput = new TextInputBuilder()
     .setCustomId('chance_coins')
-    .setLabel('Coins Drop Weight / Chance (%)')
+    .setLabel(`${coinName} Drop Weight / Chance (%)`)
     .setStyle(TextInputStyle.Short)
     .setValue(box.chance_coins.toString())
     .setPlaceholder('e.g. 25')
@@ -5749,7 +5755,7 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 
   const minCoinsInput = new TextInputBuilder()
     .setCustomId('min_coins')
-    .setLabel('Minimum Coins Won')
+    .setLabel(`Minimum ${coinName} Won`)
     .setStyle(TextInputStyle.Short)
     .setValue(box.min_coins.toString())
     .setPlaceholder('e.g. 100')
@@ -5757,7 +5763,7 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 
   const maxCoinsInput = new TextInputBuilder()
     .setCustomId('max_coins')
-    .setLabel('Maximum Coins Won')
+    .setLabel(`Maximum ${coinName} Won`)
     .setStyle(TextInputStyle.Short)
     .setValue(box.max_coins.toString())
     .setPlaceholder('e.g. 500')
@@ -5778,13 +5784,14 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
+    const coinName = await getCurrencyName(interaction.guildId);
     const chanceVal = interaction.fields.getTextInputValue('chance_coins').trim();
     const minCoinsVal = interaction.fields.getTextInputValue('min_coins').trim();
     const maxCoinsVal = interaction.fields.getTextInputValue('max_coins').trim();
 
     if (!/^\d+(\.\d+)?$/.test(chanceVal) || !/^\d+$/.test(minCoinsVal) || !/^\d+$/.test(maxCoinsVal)) {
       return interaction.followUp({
-        content: '❌ **Invalid Input**: Coins chance must be a valid number, and coin amounts must be whole numbers.',
+        content: `❌ **Invalid Input**: ${coinName} chance must be a valid number, and ${coinName.toLowerCase()} amounts must be whole numbers.`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -5795,28 +5802,28 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
 
     if (chanceCoins < 0) {
       return interaction.followUp({
-        content: '❌ **Invalid Coins Chance**: Chance percentage cannot be negative.',
+        content: `❌ **Invalid ${coinName} Chance**: Chance percentage cannot be negative.`,
         flags: MessageFlags.Ephemeral
       });
     }
 
     if (minCoins < 0) {
       return interaction.followUp({
-        content: '❌ **Invalid Coins Amount**: Minimum coins cannot be negative.',
+        content: `❌ **Invalid ${coinName} Amount**: Minimum ${coinName.toLowerCase()} cannot be negative.`,
         flags: MessageFlags.Ephemeral
       });
     }
 
     if (maxCoins < minCoins) {
       return interaction.followUp({
-        content: `❌ **Invalid Coins Range**: Minimum coins (\`${minCoins.toLocaleString()}\`) cannot be greater than Maximum coins (\`${maxCoins.toLocaleString()}\`).`,
+        content: `❌ **Invalid ${coinName} Range**: Minimum ${coinName.toLowerCase()} (\`${minCoins.toLocaleString()}\`) cannot be greater than Maximum ${coinName.toLowerCase()} (\`${maxCoins.toLocaleString()}\`).`,
         flags: MessageFlags.Ephemeral
       });
     }
 
     if (maxCoins > 1000000000) {
       return interaction.followUp({
-        content: '❌ **Maximum Coins Limit**: Maximum coins cannot exceed 1,000,000,000.',
+        content: `❌ **Maximum ${coinName} Limit**: Maximum ${coinName.toLowerCase()} cannot exceed 1,000,000,000.`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -5839,8 +5846,8 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
       interaction.guild,
       'shop',
       'blue',
-      `🪙 ${singularName} Coins Config Updated`,
-      `Admin **<@${interaction.user.id}>** updated coin rewards for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
+      `${coinEmoji} ${singularName} ${coinName} Config Updated`,
+      `Admin **<@${interaction.user.id}>** updated ${coinName.toLowerCase()} rewards for ${singularName.toLowerCase()} **${box?.name || `#${boxId}`}**:\n` +
       `• **Drop Chance:** \`${chanceCoins}%\`\n` +
       `• **Reward Range:** ${coinEmoji} \`${minCoins.toLocaleString()}—${maxCoins.toLocaleString()}\``
     );

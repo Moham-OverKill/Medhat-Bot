@@ -12,7 +12,7 @@ import {
   ChannelType
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
-import { COIN_EMOJI, getUserLogName } from '../shared.js';
+import { COIN_EMOJI, getUserLogName, getCurrencyName } from '../shared.js';
 import {
   getQuests,
   getQuest,
@@ -291,6 +291,7 @@ export async function showQuestDetail(interaction, questId) {
       return;
     }
 
+    const coinName = await getCurrencyName(interaction.guildId);
     const fields = [];
     if (quest.custom_title) {
       fields.push({ name: '📝 Title', value: quest.custom_title, inline: false });
@@ -298,7 +299,7 @@ export async function showQuestDetail(interaction, questId) {
     fields.push(
       { name: '📺 Channel', value: `<#${quest.channel_id}>`, inline: false },
       { name: '🎮 Actions', value: formatQuestTask(quest).text, inline: false },
-      { name: `${COIN_EMOJI} Rewards`, value: `**${Number(quest.reward_coins).toLocaleString()}** Coins`, inline: false }
+      { name: `${COIN_EMOJI.forGuild(interaction.guildId)} Rewards`, value: `**${Number(quest.reward_coins).toLocaleString()}** ${coinName}`, inline: false }
     );
 
     const embed = new EmbedBuilder()
@@ -478,9 +479,10 @@ async function showAddQuestModal(interaction, actionType) {
     .setPlaceholder(String(defaultCount))
     .setRequired(true);
 
+  const coinName = await getCurrencyName(interaction.guildId);
   const rewardInput = new TextInputBuilder()
     .setCustomId('reward_coins')
-    .setLabel('Coin Reward')
+    .setLabel(`${coinName} Reward`)
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('50')
     .setRequired(true);
@@ -616,9 +618,10 @@ export async function handleEditQuest(interaction, questId) {
     .setValue(String(quest.required_count))
     .setRequired(true);
 
+  const coinName = await getCurrencyName(interaction.guildId);
   const rewardInput = new TextInputBuilder()
     .setCustomId('reward_coins')
-    .setLabel('Coin Reward')
+    .setLabel(`${coinName} Reward`)
     .setStyle(TextInputStyle.Short)
     .setValue(String(quest.reward_coins))
     .setRequired(true);

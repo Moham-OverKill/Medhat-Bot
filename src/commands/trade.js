@@ -15,7 +15,7 @@ import {
     AttachmentBuilder
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
-import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity, getCurrencyName } from '../shared.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -290,7 +290,8 @@ export async function initializeTradeJanitor(client) {
                                     customCoinUrl,
                                     chestEmojiUrl,
                                     sender: senderCard,
-                                    target: targetCard
+                                    target: targetCard,
+                                    guildId: channel.guild?.id
                                 });
 
                                 await msg.edit({
@@ -772,18 +773,19 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
 
     const targetMember = await interaction.guild.members.fetch(setup.targetId).catch(() => null);
     const targetName = targetMember ? getUserDisplayName(targetMember) : 'User';
+    const coinName = await getCurrencyName(setup.guildId);
 
     const embed = new EmbedBuilder()
         .setTitle(`Trading with ${targetName}`)
         .addFields(
             {
                 name: '📤 You Give',
-                value: `• **Coins:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.senderItems)}`,
+                value: `• **${coinName}:** ${setup.senderCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.senderItems)}`,
                 inline: true
             },
             {
                 name: '📥 You Request',
-                value: `• **Coins:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.targetItems)}`,
+                value: `• **${coinName}:** ${setup.targetCoins.toLocaleString()} ${COIN_EMOJI}\n${formatTradeSetupItemList(setup.targetItems)}`,
                 inline: true
             }
         )
@@ -802,11 +804,11 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`trade_setup_give_coins`)
-            .setLabel('Give Coins')
+            .setLabel(`Give ${coinName}`)
             .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
             .setCustomId(`trade_setup_request_coins`)
-            .setLabel('Request Coins')
+            .setLabel(`Request ${coinName}`)
             .setStyle(ButtonStyle.Primary)
     );
 
@@ -921,6 +923,7 @@ export async function handleTradeSetupInteraction(interaction) {
         if (customId === 'trade_setup_give_coins') {
             const senderBalance = await getUserBalance(setup.senderId, setup.guildId);
             const balanceNum = Number(senderBalance.balance) || 0;
+            const coinName = await getCurrencyName(setup.guildId);
 
             const modal = new ModalBuilder()
                 .setCustomId('trade_modal_give_coins')
@@ -928,7 +931,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
             const input = new TextInputBuilder()
                 .setCustomId('amount')
-                .setLabel('How many coins are you giving?')
+                .setLabel(`How many ${coinName.toLowerCase()} are you giving?`)
                 .setPlaceholder(balanceNum.toLocaleString())
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true);
@@ -941,6 +944,7 @@ export async function handleTradeSetupInteraction(interaction) {
         if (customId === 'trade_setup_request_coins') {
             const targetBalance = await getUserBalance(setup.targetId, setup.guildId);
             const balanceNum = Number(targetBalance.balance) || 0;
+            const coinName = await getCurrencyName(setup.guildId);
 
             const modal = new ModalBuilder()
                 .setCustomId('trade_modal_request_coins')
@@ -948,7 +952,7 @@ export async function handleTradeSetupInteraction(interaction) {
 
             const input = new TextInputBuilder()
                 .setCustomId('amount')
-                .setLabel('How many coins are you requesting?')
+                .setLabel(`How many ${coinName.toLowerCase()} are you requesting?`)
                 .setPlaceholder(balanceNum.toLocaleString())
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true);
@@ -1293,9 +1297,10 @@ export async function handleTradeModal(interaction) {
     }
 
     const amount = parseInt(amountStr, 10);
+    const coinName = await getCurrencyName(setup.guildId);
     if (amount > SINGLE_TX_CAP) {
         return interaction.followUp({ 
-            content: `❌ **Security Limit:** You cannot trade more than **${SINGLE_TX_CAP.toLocaleString()} coins** in a single transaction.`, 
+            content: `❌ **Security Limit:** You cannot trade more than **${SINGLE_TX_CAP.toLocaleString()} ${coinName.toLowerCase()}** in a single transaction.`, 
             flags: MessageFlags.Ephemeral 
         });
     }
@@ -1303,13 +1308,13 @@ export async function handleTradeModal(interaction) {
     if (interaction.customId === 'trade_modal_give_coins') {
         const balance = await getUserBalance(setup.senderId, setup.guildId);
         if (amount > balance.balance) {
-            return interaction.followUp({ content: `❌ You only have ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: `❌ You only have ${Number(balance.balance).toLocaleString()} ${coinName.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
         }
         setup.senderCoins = amount;
     } else if (interaction.customId === 'trade_modal_request_coins') {
         const balance = await getUserBalance(setup.targetId, setup.guildId);
         if (amount > balance.balance) {
-            return interaction.followUp({ content: `❌ This user only has ${Number(balance.balance).toLocaleString()} coins.`, flags: MessageFlags.Ephemeral });
+            return interaction.followUp({ content: `❌ This user only has ${Number(balance.balance).toLocaleString()} ${coinName.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
         }
         setup.targetCoins = amount;
     }
@@ -1532,7 +1537,8 @@ async function finalizeTradePosting(interaction, setup) {
             customCoinUrl,
             chestEmojiUrl,
             sender: senderCardData,
-            target: targetCardData
+            target: targetCardData,
+            guildId: setup.guildId
         });
 
         const row = new ActionRowBuilder().addComponents(
@@ -1607,7 +1613,8 @@ async function finalizeTradePosting(interaction, setup) {
                         customCoinUrl,
                         chestEmojiUrl,
                         sender: senderCardData,
-                        target: targetCardData
+                        target: targetCardData,
+                        guildId: setup.guildId
                     });
 
                     // Fetch fresh message object to ensure edit succeeds
@@ -1679,7 +1686,8 @@ export async function handleTradeExecution(interaction) {
                 customCoinUrl,
                 chestEmojiUrl,
                 sender: senderCard,
-                target: targetCard
+                target: targetCard,
+                guildId: interaction.guildId
             });
 
             await interaction.update({
@@ -1724,7 +1732,8 @@ export async function handleTradeExecution(interaction) {
             customCoinUrl,
             chestEmojiUrl,
             sender: senderCard,
-            target: targetCard
+            target: targetCard,
+            guildId: interaction.guildId
         });
 
         await interaction.editReply({
@@ -1801,7 +1810,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 customCoinUrl,
                 chestEmojiUrl,
                 sender: senderCard,
-                target: targetCard
+                target: targetCard,
+                guildId: interaction.guildId
             });
 
             await interaction.editReply({
@@ -2298,7 +2308,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
             customCoinUrl,
             chestEmojiUrl,
             sender: senderCard,
-            target: targetCard
+            target: targetCard,
+            guildId: interaction.guildId
         });
 
         await interaction.editReply({

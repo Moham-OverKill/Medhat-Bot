@@ -17,7 +17,7 @@ import { handleInteractionError, diagnoseChannelPermissions } from '../utils/err
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply, getCurrencyName } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
@@ -334,6 +334,7 @@ export async function handleShopCategorySelect(interaction) {
     if (items.length > 10) desc += `...and ${items.length - 10} more`;
     embed.setDescription(desc);
 
+    const coinName = await getCurrencyName(interaction.guildId);
     const select = new StringSelectMenuBuilder()
       .setCustomId('bank_shop_item')
       .setPlaceholder('Select an Item to View')
@@ -341,7 +342,7 @@ export async function handleShopCategorySelect(interaction) {
         label: (i.name && i.name.trim().length > 0) ? i.name.slice(0, 100) : `Unnamed Item #${i.id}`,
         value: i.id.toString(),
         emoji: getItemRarityEmoji(i),
-        description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} coins`
+        description: Number(i.price) === 0 ? 'FREE' : `${Number(i.price).toLocaleString()} ${coinName.toLowerCase()}`
       })));
 
     const backRow = new ActionRowBuilder().addComponents(
@@ -1741,6 +1742,7 @@ export async function handleInventoryItemSelect(interaction) {
 
       const config = await getGuildConfig(interaction.guildId);
       const serverCoinEmoji = config?.coin_emoji || COIN_EMOJI || '🪙';
+      const coinName = config?.coin_name || await getCurrencyName(interaction.guildId);
       const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
       const sections = [];
@@ -1769,7 +1771,7 @@ export async function handleInventoryItemSelect(interaction) {
 
         // 3. Coins (Third)
         if (coinsEnabled) {
-          sections.push(`${serverCoinEmoji} **Coins**: \`${masterBox.min_coins.toLocaleString()}—${masterBox.max_coins.toLocaleString()}\` \`(${masterBox.chance_coins}%)\``);
+          sections.push(`${serverCoinEmoji} **${coinName}**: \`${masterBox.min_coins.toLocaleString()}—${masterBox.max_coins.toLocaleString()}\` \`(${masterBox.chance_coins}%)\``);
         }
       }
 
@@ -2086,9 +2088,10 @@ export async function handleInventoryAction(interaction) {
 
       const config = await getGuildConfig(interaction.guildId);
       const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
+      const coinName = config?.coin_name || await getCurrencyName(interaction.guildId);
 
       if (totalCoins > 0) {
-        prizeLines.push(`• ${serverCoinEmoji} **${totalCoins.toLocaleString()} Coins**`);
+        prizeLines.push(`• ${serverCoinEmoji} **${totalCoins.toLocaleString()} ${coinName}**`);
       }
 
       for (const itemEntry of itemCounts.values()) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { performance } from 'node:perf_hooks';
 import { sysError, sysWarn, sysLog } from '../utils/logger.js';
 import { extractDominantColor } from './profileCard.js';
+import { COIN_NAME } from '../shared.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -642,7 +643,7 @@ function drawItemBox(ctx, x, y, width, height, item, side = 'left', loadedImg = 
   }
 }
 
-function drawCoinBox(ctx, x, y, width, height, coins, side = 'left', customCoinImg = null, coinBorderColor = '#F59E0B') {
+function drawCoinBox(ctx, x, y, width, height, coins, side = 'left', customCoinImg = null, coinBorderColor = '#F59E0B', coinName = 'Coins') {
   roundRect(ctx, x, y, width, height, 10);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fill();
@@ -653,7 +654,8 @@ function drawCoinBox(ctx, x, y, width, height, coins, side = 'left', customCoinI
   const coinIconSize = 28; // Matches item & chest icon size (28px)
   const pad = 7;
   const coinIconY = y + (height - coinIconSize) / 2;
-  const coinText = coins === 1 ? '1 Coin' : `${coins.toLocaleString()} Coins`;
+  const singularCoin = (coinName.endsWith('s') || coinName.endsWith('S')) ? coinName.slice(0, -1) : coinName;
+  const coinText = coins === 1 ? `1 ${singularCoin}` : `${coins.toLocaleString()} ${coinName}`;
 
   ctx.font = `bold 13px ${fontStack}`;
   ctx.fillStyle = '#FDE68A';
@@ -708,8 +710,11 @@ export async function renderTradeCard({
   customCoinUrl = null,
   chestEmojiUrl = null,
   sender = {},
-  target = {}
+  target = {},
+  coinName = null,
+  guildId = null
 }) {
+  const activeCoinName = coinName || (guildId ? COIN_NAME.forGuild(guildId) : COIN_NAME.toString());
   const renderStart = performance.now();
   const RARITY_ORDER = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
   const sortItems = (items) => items.slice().sort((a, b) => {
@@ -869,7 +874,8 @@ export async function renderTradeCard({
     accentColor = '#3B82F6',
     avatarImg = null,
     otherHasOffer = true,
-    coinBorderColor = '#F59E0B'
+    coinBorderColor = '#F59E0B',
+    coinName = 'Coins'
   }) {
     const panelW = 400;
     const panelX = side === 'left' ? 32 : 528;
@@ -984,7 +990,7 @@ export async function renderTradeCard({
 
       const drawEntry = (entry, x, y) => {
         if (entry.type === 'coins') {
-          drawCoinBox(ctx, x, y, colW, itemHeight, entry.amount, side, customCoinImg, coinBorderColor);
+          drawCoinBox(ctx, x, y, colW, itemHeight, entry.amount, side, customCoinImg, coinBorderColor, coinName);
         } else {
           drawItemBox(ctx, x, y, colW, itemHeight, entry.item, side, entry.img);
         }
@@ -1037,7 +1043,8 @@ export async function renderTradeCard({
     itemImgs: senderItemImgs,
     avatarImg: senderAvatarImg,
     otherHasOffer: targetHasOffer,
-    coinBorderColor
+    coinBorderColor,
+    coinName: activeCoinName
   });
 
   drawParticipantPanel({
@@ -1047,7 +1054,8 @@ export async function renderTradeCard({
     itemImgs: targetItemImgs,
     avatarImg: targetAvatarImg,
     otherHasOffer: senderHasOffer,
-    coinBorderColor
+    coinBorderColor,
+    coinName: activeCoinName
   });
 
   const buffer = canvas.toBuffer('image/png');

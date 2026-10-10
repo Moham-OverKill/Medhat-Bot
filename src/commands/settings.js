@@ -33,7 +33,7 @@ import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { COIN_EMOJI, getUserLogName, resolveComponentEmoji } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponentEmoji } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -59,6 +59,8 @@ export async function handleSettingsCommand(interaction) {
  * Show the main settings menu
  */
 export async function showMainMenu(interaction) {
+    const coinName = await getCurrencyName(interaction.guildId);
+
     const embed = new EmbedBuilder()
         .setTitle('Control Panel')
         .setDescription('Select a module to configure.')
@@ -78,7 +80,7 @@ export async function showMainMenu(interaction) {
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_coins')
-            .setLabel('Coins')
+            .setLabel(coinName)
             .setEmoji(resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙'))
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
@@ -151,8 +153,10 @@ export async function showMainMenu(interaction) {
  * Show the Coins Sub-Menu (Daily & Rewards Modules)
  */
 export async function showCoinsSubMenu(interaction) {
+    const coinName = await getCurrencyName(interaction.guildId);
+
     const embed = new EmbedBuilder()
-        .setTitle('Coins Management')
+        .setTitle(`${coinName} Management`)
         .setDescription('Manage your server\'s daily claims and reward modules.')
         .setColor(0x2F3136);
 
@@ -194,7 +198,7 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('rewards_give_btn')
-            .setLabel('Give Coins')
+            .setLabel(`Give ${coinName}`)
             .setEmoji('💸')
             .setStyle(ButtonStyle.Success)
     );
@@ -313,14 +317,15 @@ export async function showCoinsCustomizeModal(interaction) {
 
     const currentCoinName = config.coin_name || '';
     const currentCoinEmoji = config.coin_emoji || '';
+    const activeCoinName = currentCoinName || 'Coins';
 
     const modal = new ModalBuilder()
         .setCustomId(`settings_coins_customize_modal_${Date.now()}`)
-        .setTitle('Customize Coins');
+        .setTitle(`Customize ${activeCoinName}`);
 
     const nameInput = new TextInputBuilder()
         .setCustomId('coin_name')
-        .setLabel('Coins Name')
+        .setLabel(`${activeCoinName} Name`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('Coins')
         .setRequired(false);
@@ -330,7 +335,7 @@ export async function showCoinsCustomizeModal(interaction) {
 
     const emojiInput = new TextInputBuilder()
         .setCustomId('coin_emoji')
-        .setLabel('Coin Emoji')
+        .setLabel(`${activeCoinName} Emoji`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('🪙')
         .setRequired(false);
@@ -414,12 +419,13 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_vote_reward') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
+            const coinName = await getCurrencyName(interaction.guildId);
             const modal = new ModalBuilder().setCustomId(`settings_vote_modal_${Date.now()}`).setTitle('Vote Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('Reward members for voting Medhat on Top.gg')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Coins Per Vote')
+                .setPlaceholder(`${coinName} Per Vote`)
                 .setValue(String(config.vote_reward_amount !== undefined ? config.vote_reward_amount : '100'))
                 .setRequired(false);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -430,12 +436,13 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_tag_reward') {
             const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
+            const coinName = await getCurrencyName(interaction.guildId);
             const modal = new ModalBuilder().setCustomId(`settings_tag_modal_${Date.now()}`).setTitle('Tag Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('Reward members for using your server tag')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Coins per day')
+                .setPlaceholder(`${coinName} per day`)
                 .setValue(String(config.tag_reward_amount !== undefined ? config.tag_reward_amount : ''))
                 .setRequired(false);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -458,10 +465,11 @@ export async function handleSettingsComponent(interaction) {
 
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
+            const coinName = await getCurrencyName(guildId);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Vote Reward Config Changed',
                 `**Admin:** \`${logName}\`\n` +
-                `**Setting:** Coins Per Vote\n` +
-                `**New Value:** \`${amount.toLocaleString()}\` coins`
+                `**Setting:** ${coinName} Per Vote\n` +
+                `**New Value:** \`${amount.toLocaleString()}\` ${coinName.toLowerCase()}`
             );
 
             await showCoinsSubMenu(interaction);
@@ -483,10 +491,11 @@ export async function handleSettingsComponent(interaction) {
 
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
+            const coinName = await getCurrencyName(guildId);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Tag Reward Config Changed',
                 `**Admin:** \`${logName}\`\n` +
-                `**Setting:** Coins per day\n` +
-                `**New Value:** \`${amount.toLocaleString()}\` coins`
+                `**Setting:** ${coinName} per day\n` +
+                `**New Value:** \`${amount.toLocaleString()}\` ${coinName.toLowerCase()}`
             );
 
             await showCoinsSubMenu(interaction);
@@ -792,16 +801,17 @@ export async function handleSettingsComponent(interaction) {
             // --- 4. Audit Logging ---
             const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
-            sendLog(interaction.guild, 'audit', 'cyan', 'Coins Customized',
+            const finalCoinName = config.coin_name || 'Coins';
+            sendLog(interaction.guild, 'audit', 'cyan', `${finalCoinName} Customized`,
                 `**Admin:** \`${logName}\`\n\n` +
-                formatField('**Coins Name**', nameStatus, nameReason) + '\n\n' +
-                formatField('**Coin Emoji**', emojiStatus, emojiReason)
+                formatField(`**${finalCoinName} Name**`, nameStatus, nameReason) + '\n\n' +
+                formatField(`**${finalCoinName} Emoji**`, emojiStatus, emojiReason)
             );
 
             // --- 5. Send Response ---
             const responseContent = [
-                formatField('Coins Name', nameStatus, nameReason),
-                formatField('Coin Emoji', emojiStatus, emojiReason)
+                formatField(`${finalCoinName} Name`, nameStatus, nameReason),
+                formatField(`${finalCoinName} Emoji`, emojiStatus, emojiReason)
             ].join('\n\n');
 
             await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });

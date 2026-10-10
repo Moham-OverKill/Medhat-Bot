@@ -12,7 +12,7 @@ import {
   TextInputBuilder,
   TextInputStyle
 } from 'discord.js';
-import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, hasAnyDangerousPermission } from '../shared.js';
+import { isValidSnowflake, sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, hasAnyDangerousPermission, getCurrencyName } from '../shared.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { cancelMvpTimer, scheduleMvpTimer } from '../mvp/award.js';
 import { getNextCairoHourTimestamp } from '../utils/time.js';
@@ -228,6 +228,7 @@ export async function showSetupPanel(interaction, config) {
   const rewardAmount = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
   const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
+  const coinName = await getCurrencyName(guildId);
   const embed = new EmbedBuilder()
     .setTitle('MVP Configuration')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
@@ -236,7 +237,7 @@ export async function showSetupPanel(interaction, config) {
       { name: '⏳ Next Award', value: nextCheckText, inline: true },
       { name: '\u200B', value: '\u200B', inline: true },
       { name: '👤 Role', value: roleMention, inline: true },
-      { name: `${COIN_EMOJI} Reward`, value: `**${rewardAmount.toLocaleString()}** coins/hr`, inline: true },
+      { name: `${COIN_EMOJI.forGuild(guildId)} Reward`, value: `**${rewardAmount.toLocaleString()}** ${coinName.toLowerCase()}/hr`, inline: true },
       { name: '\u200B', value: '\u200B', inline: true }
     );
 
@@ -366,10 +367,11 @@ export async function handleMvpComponent(interaction) {
         break;
 
       case 'mvp_reward_config_btn':
+        const coinNameModal = await getCurrencyName(guildId);
         const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
         const input = new TextInputBuilder()
           .setCustomId('amount')
-          .setLabel('Coins per hour')
+          .setLabel(`${coinNameModal} per hour`)
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('5')
           .setValue(String(config.mvpRewardAmount || 5))
