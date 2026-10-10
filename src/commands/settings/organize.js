@@ -628,7 +628,43 @@ export async function renderForumsPanel(interaction) {
         : [];
 
     const botMember = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
-    const hasManageThreads = botMember?.permissions?.has(PermissionsBitField.Flags.ManageThreads);
+    const requiredPerms = [
+        { flag: PermissionsBitField.Flags.ViewChannel, name: 'View Channel' },
+        { flag: PermissionsBitField.Flags.ManageThreads, name: 'Manage Posts (Manage Threads)' },
+        { flag: PermissionsBitField.Flags.ReadMessageHistory, name: 'Read Post History (Read Message History)' }
+    ];
+
+    const missingPerms = [];
+    if (botMember) {
+        const allForumChannels = interaction.guild?.channels?.cache?.filter(c =>
+            c.type === ChannelType.GuildForum ||
+            c.type === ChannelType.GuildMedia ||
+            c.type === 15 ||
+            c.type === 16
+        );
+        const targetChannels = (configuredChannels.length > 0 && allForumChannels)
+            ? allForumChannels.filter(c => configuredChannels.includes(c.id))
+            : allForumChannels;
+
+        for (const req of requiredPerms) {
+            const hasGlobal = botMember.permissions.has(req.flag);
+            const missingInChannels = [];
+            if (targetChannels && targetChannels.size > 0) {
+                for (const ch of targetChannels.values()) {
+                    const chPerms = ch.permissionsFor(botMember);
+                    if (!chPerms || !chPerms.has(req.flag)) {
+                        missingInChannels.push(`<#${ch.id}>`);
+                    }
+                }
+            }
+
+            if (!hasGlobal && missingInChannels.length === 0) {
+                missingPerms.push(`• **${req.name}**`);
+            } else if (missingInChannels.length > 0) {
+                missingPerms.push(`• **${req.name}** (${missingInChannels.slice(0, 5).join(', ')})`);
+            }
+        }
+    }
 
     const embed = new EmbedBuilder()
         .setTitle('Organize — Forums');
@@ -645,15 +681,21 @@ export async function renderForumsPanel(interaction) {
         `${scopeLine}`
     );
 
-    if (!hasManageThreads) {
+    if (missingPerms.length > 0) {
         embed.setColor(0xE67E22);
         embed.addFields({
             name: '⚠️ Missing Permissions',
-            value: 'Requires **Manage Threads** permission.',
+            value: missingPerms.join('\n'),
             inline: false
         });
     } else {
         embed.setColor(0x2B2D31);
+    }
+
+    if (isAutoDeleteEnabled && interaction.guild) {
+        import('../../middleware/organize.js')
+            .then(({ sweepOrphanedForumPosts }) => sweepOrphanedForumPosts(interaction.guild))
+            .catch(() => {});
     }
 
     const components = [];

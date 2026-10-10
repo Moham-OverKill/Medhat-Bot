@@ -439,6 +439,8 @@ export async function processAutoReact(message) {
   }
 }
 
+const deletingThreads = new Set();
+
 /**
  * Check if auto-delete is enabled for a given forum/media post thread
  */
@@ -463,7 +465,7 @@ export async function shouldAutoDeleteForumPost(guildId, parentChannelId) {
  * @param {string|string[]} deletedMessageIds - Array or single ID of the deleted message(s)
  */
 export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds) {
-  if (!channel || !channel.isThread?.()) return;
+  if (!channel) return;
 
   const idSet = Array.isArray(deletedMessageIds)
     ? new Set(deletedMessageIds)
@@ -473,6 +475,16 @@ export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds)
     (channel.starterMessageId && idSet.has(channel.starterMessageId));
 
   if (!isStarterDeleted) return;
+
+  const threadId = channel.id;
+  if (deletingThreads.has(threadId)) return;
+
+  if (channel.partial || channel.type === undefined || channel.type === null) {
+    channel = await channel.fetch().catch(() => null);
+    if (!channel) return;
+  }
+
+  if (!channel.isThread?.()) return;
 
   let parentId = channel.parentId;
   if (!parentId) {
@@ -500,11 +512,14 @@ export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds)
 
   if (!isForumOrMedia) return;
 
-  const guildId = channel.guild?.id;
+  const guildId = channel.guild?.id || parentChannel?.guild?.id;
   if (!guildId) return;
 
   const isEnabled = await shouldAutoDeleteForumPost(guildId, parentId);
   if (!isEnabled) return;
+
+  deletingThreads.add(threadId);
+  setTimeout(() => deletingThreads.delete(threadId), 30000);
 
   try {
     const threadName = channel.name || 'Unnamed Post';
@@ -532,10 +547,73 @@ export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds)
       );
     }
   } catch (error) {
+    if (error?.code === 10003) return; // Unknown Channel (already deleted)
     sysError('Forum Post Auto-Delete Failed', error, {
       guild: guildId,
       threadId: channel.id
     });
   }
 }
+
+/**
+ * Sweep existing Forum & Media channels in a guild and delete any post
+ * whose original starter message has already been deleted ("Original message was deleted").
+ */
+export async function sweepOrphanedForumPosts(guild) {
+  if (!guild?.id) return 0;
+
+  let cached = filterCache.get(guild.id);
+  if (!cached || (Date.now() - cached.cachedAt > CACHE_TTL_MS)) {
+    await loadGuildFilters(guild.id);
+    cached = filterCache.get(guild.id);
+  }
+
+  if (!cached || !cached.forum_auto_delete_enabled) return 0;
+
+  const forumChannels = guild.channels.cache.filter(c =>
+    c.type === ChannelType.GuildForum ||
+    c.type === ChannelType.GuildMedia ||
+    c.type === 15 ||
+    c.type === 16
+  );
+
+  let deletedCount = 0;
+
+  for (const forumChannel of forumChannels.values()) {
+    const inScope = await shouldAutoDeleteForumPost(guild.id, forumChannel.id);
+    if (!inScope) continue;
+
+    const threadsMap = new Map();
+
+    try {
+      const activeRes = await forumChannel.threads.fetchActive().catch(() => null);
+      if (activeRes?.threads) {
+        for (const [id, t] of activeRes.threads) threadsMap.set(id, t);
+      }
+    } catch {}
+
+    try {
+      const archivedRes = await forumChannel.threads.fetchArchived({ limit: 50 }).catch(() => null);
+      if (archivedRes?.threads) {
+        for (const [id, t] of archivedRes.threads) threadsMap.set(id, t);
+      }
+    } catch {}
+
+    for (const thread of threadsMap.values()) {
+      try {
+        await thread.messages.fetch(thread.id);
+      } catch (err) {
+        // Error code 10008 = Unknown Message (starter message was deleted)
+        if (err && (err.code === 10008 || err.status === 404)) {
+          await handleOrphanedForumPostCleanup(thread, [thread.id]);
+          deletedCount++;
+        }
+      }
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+
+  return deletedCount;
+}
+
 
