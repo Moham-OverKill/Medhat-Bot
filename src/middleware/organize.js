@@ -459,50 +459,84 @@ export async function shouldAutoDeleteForumPost(guildId, parentChannelId) {
   return true;
 }
 
+// Strict blocklist of all non-thread Guild Channel types that must NEVER be deleted
+const FORBIDDEN_GUILD_CHANNEL_TYPES = new Set([
+  ChannelType.GuildText,          // 0
+  ChannelType.GuildVoice,         // 2
+  ChannelType.GuildCategory,      // 4
+  ChannelType.GuildAnnouncement,  // 5
+  ChannelType.GuildStageVoice,    // 13
+  ChannelType.GuildDirectory,     // 14
+  ChannelType.GuildForum,         // 15 (Forum Channel container itself)
+  ChannelType.GuildMedia,         // 16 (Media Channel container itself)
+  0, 2, 4, 5, 13, 14, 15, 16
+]);
+
 /**
- * Cleanup orphaned forum/media thread if the original starter message was deleted.
- * @param {Channel} channel - The thread channel where the message was deleted
+ * Cleanup orphaned forum/media post (ThreadChannel) if its original starter message was deleted.
+ * Multi-layer safeguards ensure ONLY a child Forum/Media Post Thread (type 11) whose starter
+ * message is confirmed 404-deleted can ever be removed, and NEVER a server channel.
+ *
+ * @param {ThreadChannel} postThread - The forum/media post thread where the starter message was deleted
  * @param {string|string[]} deletedMessageIds - Array or single ID of the deleted message(s)
  */
-export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds) {
-  if (!channel) return;
+export async function handleOrphanedForumPostCleanup(postThread, deletedMessageIds) {
+  if (!postThread || !postThread.id) return;
+
+  // Safeguard Layer 1: Hard blocklist on any Guild Channel type
+  if (postThread.type !== undefined && postThread.type !== null && FORBIDDEN_GUILD_CHANNEL_TYPES.has(postThread.type)) {
+    return;
+  }
 
   const idSet = Array.isArray(deletedMessageIds)
     ? new Set(deletedMessageIds)
     : new Set([deletedMessageIds]);
 
-  const isStarterDeleted = idSet.has(channel.id) ||
-    (channel.starterMessageId && idSet.has(channel.starterMessageId));
+  const isStarterDeleted = idSet.has(postThread.id) ||
+    (postThread.starterMessageId && idSet.has(postThread.starterMessageId));
 
   if (!isStarterDeleted) return;
 
-  const threadId = channel.id;
+  const threadId = postThread.id;
   if (deletingThreads.has(threadId)) return;
 
-  if (channel.partial || channel.type === undefined || channel.type === null) {
-    channel = await channel.fetch().catch(() => null);
-    if (!channel) return;
+  if (postThread.partial || postThread.type === undefined || postThread.type === null) {
+    postThread = await postThread.fetch().catch(() => null);
+    if (!postThread) return;
   }
 
-  if (!channel.isThread?.()) return;
+  // Safeguard Layer 2: Explicit Thread & Type verification (Must be a ThreadChannel, never a Channel)
+  if (
+    FORBIDDEN_GUILD_CHANNEL_TYPES.has(postThread.type) ||
+    postThread.isThread?.() !== true ||
+    (postThread.type !== ChannelType.PublicThread && postThread.type !== ChannelType.PrivateThread && postThread.type !== 11 && postThread.type !== 12)
+  ) {
+    return;
+  }
 
-  let parentId = channel.parentId;
+  // Safeguard Layer 3: Parent-Child Snowflake Isolation
+  let parentId = postThread.parentId;
   if (!parentId) {
     try {
-      const fetched = await channel.fetch().catch(() => null);
+      const fetched = await postThread.fetch().catch(() => null);
       if (fetched?.parentId) parentId = fetched.parentId;
     } catch {}
   }
-  if (!parentId) return;
-
-  let parentChannel = channel.parent;
-  if (!parentChannel && channel.guild) {
-    parentChannel = channel.guild.channels.cache.get(parentId)
-      || await channel.guild.channels.fetch(parentId).catch(() => null);
+  if (!parentId || parentId === postThread.id || postThread.id === postThread.guildId) {
+    return;
   }
 
-  const isForumOrMedia = Boolean(
-    parentChannel && (
+  let parentChannel = postThread.parent;
+  if (!parentChannel && postThread.guild) {
+    parentChannel = postThread.guild.channels.cache.get(parentId)
+      || await postThread.guild.channels.fetch(parentId).catch(() => null);
+  }
+
+  // Safeguard Layer 4: Parent must strictly be a Forum or Media channel, with a distinct ID
+  const isForumOrMediaParent = Boolean(
+    parentChannel &&
+    parentChannel.id === parentId &&
+    parentChannel.id !== postThread.id && (
       parentChannel.type === ChannelType.GuildForum ||
       parentChannel.type === ChannelType.GuildMedia ||
       parentChannel.type === 15 ||
@@ -510,34 +544,48 @@ export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds)
     )
   );
 
-  if (!isForumOrMedia) return;
+  if (!isForumOrMediaParent) return;
 
-  const guildId = channel.guild?.id || parentChannel?.guild?.id;
+  const guildId = postThread.guild?.id || parentChannel?.guild?.id;
   if (!guildId) return;
 
   const isEnabled = await shouldAutoDeleteForumPost(guildId, parentId);
   if (!isEnabled) return;
 
+  // Safeguard Layer 5: Confirm starter message (id === postThread.id) is genuinely 404-deleted on Discord
+  try {
+    const starterMsg = await postThread.messages.fetch(postThread.id);
+    if (starterMsg) {
+      // Starter message still exists — abort immediately!
+      return;
+    }
+  } catch (verifyErr) {
+    if (!verifyErr || (verifyErr.code !== 10008 && verifyErr.status !== 404)) {
+      // Abort if error is anything other than 10008 Unknown Message (404)
+      return;
+    }
+  }
+
   deletingThreads.add(threadId);
   setTimeout(() => deletingThreads.delete(threadId), 30000);
 
   try {
-    const threadName = channel.name || 'Unnamed Post';
+    const threadName = postThread.name || 'Unnamed Post';
     const parentName = parentChannel?.name || parentId;
-    await channel.delete('Auto-deleted post: original starter message was deleted');
+    await postThread.delete('Auto-deleted forum post: original starter message was deleted');
 
     sysLog('Forum Post Auto-Deleted', {
       guild: guildId,
-      threadId: channel.id,
+      threadId: postThread.id,
       threadName,
       parentId,
       parentName
     });
 
     const { sendLog } = await import('../utils/logger.js');
-    if (channel.guild) {
+    if (postThread.guild) {
       sendLog(
-        channel.guild,
+        postThread.guild,
         'audit',
         'orange',
         '🗑️ Post Auto-Deleted',
@@ -547,10 +595,10 @@ export async function handleOrphanedForumPostCleanup(channel, deletedMessageIds)
       );
     }
   } catch (error) {
-    if (error?.code === 10003) return; // Unknown Channel (already deleted)
+    if (error?.code === 10003) return; // Unknown Channel/Thread (already deleted)
     sysError('Forum Post Auto-Delete Failed', error, {
       guild: guildId,
-      threadId: channel.id
+      threadId: postThread.id
     });
   }
 }
