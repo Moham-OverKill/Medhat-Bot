@@ -1,6 +1,6 @@
 {
   "name": "discord-mvp-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Production-ready Discord bot that tracks member activity and awards MVP roles",
   "main": "src/index.js",
   "type": "module",
