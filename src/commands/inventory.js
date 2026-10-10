@@ -13,8 +13,13 @@ export async function handleInventoryCommand(interaction) {
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
 
+  let member = interaction.member;
+  if ((!member || !member.roles?.cache) && interaction.guild) {
+    member = await interaction.guild.members.fetch(userId).catch(() => interaction.member);
+  }
+
   // Pre-check: If user has an empty inventory, inform them ephemerally
-  const inventory = await getSynthesizedInventory(userId, guildId, interaction.member);
+  const inventory = await getSynthesizedInventory(userId, guildId, member);
   const items = inventory.filter(i => i.item_type !== 'pack' && !i.is_pack);
   const totalCount = items.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 1), 0);
 
