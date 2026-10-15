@@ -1,6 +1,7 @@
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
 import { sysLog, sysError } from '../utils/logger.js';
+import { recordWeeklyMessages } from '../cron/weeklySummary.js';
 
 // ============================================
 // TEXT CHAT: ANTI-SPAM & LENGTH SCALING CONFIGURATION
@@ -67,7 +68,6 @@ export async function flushMessageBatch() {
   try {
     // 1. Buffer discrete message counts into weekly activity (in-memory batch)
     try {
-      const { recordWeeklyMessages } = await import('../cron/weeklySummary.js');
       for (const entry of entriesToFlush) {
         recordWeeklyMessages(entry.guildId, entry.userId, entry.username, entry.messageCount || 1);
       }
@@ -87,10 +87,10 @@ export async function flushMessageBatch() {
        SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::int[], $5::bigint[], $6::timestamptz[])
        ON CONFLICT (user_id, guild_id)
        DO UPDATE SET 
-         message_count = user_activity.message_count + EXCLUDED.message_count,
-         last_message_time = GREATEST(user_activity.last_message_time, EXCLUDED.last_message_time),
+         message_count = COALESCE(user_activity.message_count, 0) + EXCLUDED.message_count,
+         last_message_time = GREATEST(COALESCE(user_activity.last_message_time, 0), EXCLUDED.last_message_time),
          last_active = GREATEST(user_activity.last_active, EXCLUDED.last_active),
-         username = EXCLUDED.username`,
+         username = COALESCE(EXCLUDED.username, user_activity.username)`,
       [userIds, guildIds, usernames, counts, lastTimes, lastActives]
     );
   } catch (err) {
