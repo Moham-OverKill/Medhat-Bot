@@ -4901,7 +4901,12 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       restockIntervalSeconds,
       maxStock,
       lastRestockedAt: postRow?.last_restocked_at || null,
-      createdAt: postRow?.created_at || null
+      createdAt: postRow?.created_at || null,
+      originalRestockIntervalSeconds: restockIntervalSeconds,
+      originalClaimLimit: claimLimit,
+      originalLastRestockedAt: postRow?.last_restocked_at || null,
+      originalCreatedAt: postRow?.created_at || null,
+      originalPostMode: postMode
     });
 
     const mock = {
@@ -5030,13 +5035,50 @@ export async function handleShopPostUpdate(interaction) {
     const claimLimit = hasLimit ? state.claimLimit : null;
     const restockIntervalSeconds = hasTimer ? state.restockIntervalSeconds : null;
     const maxStock = state.stock !== null ? state.stock : null;
-    const lastRestockedAt = hasTimer ? (state.lastRestockedAt || new Date()) : null;
+
+    // Fetch live post row from database to avoid overwriting background restocks occurred during editing
+    const pool = (await import('../storage/postgres.js')).getPool();
+    let livePostRow = null;
+    if (messageId) {
+      try {
+        const liveRes = await pool.query(
+          `SELECT restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at, current_stock, max_stock, post_mode
+           FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [messageId]
+        );
+        if (liveRes.rows.length > 0) {
+          livePostRow = liveRes.rows[0];
+        }
+      } catch (_) {}
+    }
+
+    const previousInterval = (state.originalRestockIntervalSeconds !== undefined)
+      ? state.originalRestockIntervalSeconds
+      : (livePostRow?.restock_interval_seconds || null);
+    const currentInterval = hasTimer ? state.restockIntervalSeconds : null;
+    const timerChanged = currentInterval !== previousInterval;
+
+    const previousClaimLimit = (state.originalClaimLimit !== undefined)
+      ? state.originalClaimLimit
+      : (livePostRow?.claim_limit_per_user || null);
+    const claimLimitChanged = (claimLimit ?? null) !== (previousClaimLimit ?? null);
+
+    let lastRestockedAt = null;
+    if (hasTimer) {
+      if (!timerChanged) {
+        // Timer was not changed: preserve existing cycle timestamp without resetting
+        lastRestockedAt = livePostRow?.last_restocked_at || state.lastRestockedAt || livePostRow?.created_at || state.createdAt || new Date();
+      } else {
+        // Timer was explicitly modified: start new cycle from update moment
+        lastRestockedAt = new Date();
+      }
+    }
 
     const isSoldOut = postStock !== null && postStock !== undefined && postStock <= 0;
     let stockHeader = '♾️ Unlimited';
     let stockValue = 'Available';
     if (hasTimer) {
-      const baseTime = state.lastRestockedAt ? new Date(state.lastRestockedAt).getTime() : new Date(state.createdAt || Date.now()).getTime();
+      const baseTime = new Date(lastRestockedAt).getTime();
       let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
       if (nextRestockMs <= Date.now()) {
         const elapsed = Date.now() - baseTime;
@@ -5098,7 +5140,6 @@ export async function handleShopPostUpdate(interaction) {
     verifyAndHealMessageImages(message, { expectedImageUrl: finalImage || null });
 
     try {
-      const pool = (await import('../storage/postgres.js')).getPool();
       await pool.query(
         `INSERT INTO shop_posts (
           message_id, guild_id, channel_id, item_id, custom_image_url,
@@ -5125,11 +5166,13 @@ export async function handleShopPostUpdate(interaction) {
         ]
       );
 
-      // Reset claims on post update so users can claim again under the updated settings
-      await pool.query(
-        `DELETE FROM shop_drop_claims WHERE message_id = $1`,
-        [message.id]
-      );
+      // Only reset claims if the timer interval changed or claim limit was modified
+      if (timerChanged || (claimLimitChanged && claimLimit !== null)) {
+        await pool.query(
+          `DELETE FROM shop_drop_claims WHERE message_id = $1`,
+          [message.id]
+        );
+      }
     } catch (_) {}
 
     // Log & Cleanup
