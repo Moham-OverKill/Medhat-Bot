@@ -118,7 +118,7 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
 
     // Safety check: slice to 50 just in case query returned more
     const slicedData = data.slice(0, 50);
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return slicedData.map(d => ({ ...d, displayName: d.username || 'Unknown' }));
 
     // Warm up member cache targeted for displayed leaderboard entries
@@ -414,10 +414,10 @@ export async function getTopLevelUsers(guildId, limit = 50) {
  * This bypasses the DB configuration entirely, just sends a preview to a target channel.
  */
 export async function sendLeaderboardPreview(client, channelId, guildId, type) {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return null;
 
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) return null;
 
     let embed;
@@ -465,7 +465,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     const config = await getLeaderboardConfig(guildId);
     if (!config) return;
 
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
 
     // Define the strict order of leaderboard types
@@ -488,7 +488,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     for (const t of configuredTypes) {
         try {
             const chanId = config[t.configChannel];
-            const channel = await guild.channels.fetch(chanId).catch(() => null);
+            const channel = guild.channels.cache.get(chanId) || await guild.channels.fetch(chanId).catch(() => null);
             channelMap.set(t.type, channel);
             
             if (!channel) {
@@ -547,7 +547,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     let configUpdated = false;
     for (const t of channelKeys) {
         if (!config[t.configChannel]) continue;
-        const channel = channelMap.get(t.type) || await guild.channels.fetch(config[t.configChannel]).catch(() => null);
+        const channel = channelMap.get(t.type) || guild.channels.cache.get(config[t.configChannel]) || await guild.channels.fetch(config[t.configChannel]).catch(() => null);
         if (!channel) continue;
 
         const { getNextCairoHourTimestamp } = await import('../utils/time.js');
@@ -613,10 +613,10 @@ export async function refreshLeaderboard(client, guildId, type) {
  * Send a single leaderboard type immediately (for admin channel selection)
  */
 export async function sendSingleLeaderboard(client, guildId, type, channelId) {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return null;
 
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) return null;
 
     let embed;
