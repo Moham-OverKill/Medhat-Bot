@@ -121,8 +121,14 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return slicedData.map(d => ({ ...d, displayName: d.username || 'Unknown' }));
 
-    // Warm up member cache in bulk
-    await guild.members.fetch().catch(() => null);
+    // Warm up member cache targeted for displayed leaderboard entries
+    const targetUids = slicedData
+        .map(item => item[userIdKey] || item.userId)
+        .filter(uid => uid && !guild.members.cache.has(uid));
+
+    if (targetUids.length > 0) {
+        await guild.members.fetch({ user: targetUids }).catch(() => null);
+    }
 
     const enriched = await Promise.all(slicedData.map(async (item) => {
         const uid = item[userIdKey] || item.userId;

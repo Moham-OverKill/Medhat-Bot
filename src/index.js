@@ -82,6 +82,18 @@ export const client = new Client({
     users: {
       interval: 3600,
       filter: () => user => !user.bot && user.id !== client.user?.id
+    },
+    guildMembers: {
+      interval: 1800,
+      filter: () => member => {
+        if (member.id === client.user?.id) return false;
+        if (member.voice?.channelId) return false;
+        return true;
+      }
+    },
+    threadMembers: {
+      interval: 1800,
+      filter: () => member => member.id !== client.user?.id
     }
   }
 });
@@ -137,6 +149,13 @@ const shutdown = async (signal, { exitCode = 0 } = {}) => {
   } catch (error) {
     resolvedExitCode = resolvedExitCode || 1;
     sysError('Shutdown Database Close Failed', error, { detail: 'Colors DB' });
+  }
+
+  try {
+    const { flushWeeklyActivityBatch } = await import('./cron/weeklySummary.js');
+    await flushWeeklyActivityBatch();
+  } catch (error) {
+    sysError('Shutdown Cleanup Failed', error, { detail: 'Weekly Summary Batch' });
   }
 
   try {

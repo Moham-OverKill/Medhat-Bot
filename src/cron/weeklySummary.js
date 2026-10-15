@@ -39,26 +39,126 @@ export async function ensureWeeklyActivityTable() {
   }
 }
 
+// In-memory buffer for weekly activity metrics to prevent excessive database I/O
+// Key: `${guildId}:${userId}`, Value: { guildId, userId, username, messages: 0, voiceMinutes: 0, voiceCalls: 0, media: 0, reactions: 0, reactionsReceived: 0, xp: 0 }
+const pendingWeeklyBatch = new Map();
+let isFlushingWeeklyBatch = false;
+const WEEKLY_BATCH_FLUSH_INTERVAL = 30 * 1000; // 30 seconds
+let weeklyFlushInterval = null;
+
+function getOrCreateWeeklyEntry(guildId, userId, username = null) {
+  const key = `${guildId}:${userId}`;
+  let entry = pendingWeeklyBatch.get(key);
+  if (!entry) {
+    entry = {
+      guildId,
+      userId,
+      username: username || null,
+      messages: 0,
+      voiceMinutes: 0,
+      voiceCalls: 0,
+      media: 0,
+      reactions: 0,
+      reactionsReceived: 0,
+      xp: 0
+    };
+    pendingWeeklyBatch.set(key, entry);
+  } else if (username && !entry.username) {
+    entry.username = username;
+  }
+  return entry;
+}
+
+/**
+ * Flush all accumulated weekly metrics to PostgreSQL in a single transaction
+ */
+export async function flushWeeklyActivityBatch() {
+  if (pendingWeeklyBatch.size === 0 || isFlushingWeeklyBatch) return;
+  isFlushingWeeklyBatch = true;
+
+  const entriesToFlush = Array.from(pendingWeeklyBatch.values());
+  pendingWeeklyBatch.clear();
+
+  try {
+    await ensureWeeklyActivityTable();
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      for (const entry of entriesToFlush) {
+        await client.query(
+          `INSERT INTO user_weekly_activity (
+             guild_id, user_id, username,
+             messages_count, voice_minutes, voice_calls_count,
+             media_count, reactions_count, reactions_received_count,
+             total_xp_gained, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, GREATEST(0, $8), GREATEST(0, $9), $10, NOW())
+           ON CONFLICT (guild_id, user_id)
+           DO UPDATE SET
+             messages_count = user_weekly_activity.messages_count + $4,
+             voice_minutes = user_weekly_activity.voice_minutes + $5,
+             voice_calls_count = user_weekly_activity.voice_calls_count + $6,
+             media_count = user_weekly_activity.media_count + $7,
+             reactions_count = GREATEST(0, user_weekly_activity.reactions_count + $8),
+             reactions_received_count = GREATEST(0, user_weekly_activity.reactions_received_count + $9),
+             total_xp_gained = user_weekly_activity.total_xp_gained + $10,
+             username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+             updated_at = NOW()`,
+          [
+            entry.guildId,
+            entry.userId,
+            entry.username,
+            entry.messages,
+            entry.voiceMinutes,
+            entry.voiceCalls,
+            entry.media,
+            entry.reactions,
+            entry.reactionsReceived,
+            entry.xp
+          ]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      // Re-queue entries on failure
+      for (const entry of entriesToFlush) {
+        const key = `${entry.guildId}:${entry.userId}`;
+        const existing = pendingWeeklyBatch.get(key);
+        if (existing) {
+          existing.messages += entry.messages;
+          existing.voiceMinutes += entry.voiceMinutes;
+          existing.voiceCalls += entry.voiceCalls;
+          existing.media += entry.media;
+          existing.reactions += entry.reactions;
+          existing.reactionsReceived += entry.reactionsReceived;
+          existing.xp += entry.xp;
+        } else {
+          pendingWeeklyBatch.set(key, entry);
+        }
+      }
+      sysError('Weekly Activity Batch Flush Failed', err);
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    sysError('Weekly Activity Pool Error', err);
+  } finally {
+    isFlushingWeeklyBatch = false;
+  }
+}
+
 /**
  * Record message count toward weekly activity
  */
 export async function recordWeeklyMessages(guildId, userId, username, count = 1) {
   if (!guildId || !userId || count <= 0) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_weekly_activity (guild_id, user_id, username, messages_count, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         messages_count = user_weekly_activity.messages_count + $4,
-         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-         updated_at = NOW()`,
-      [guildId, userId, username, count]
-    );
-  } catch (err) {
-    sysError('Record Weekly Messages Failed', err, { guild: guildId, user: userId });
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.messages += count;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -67,21 +167,10 @@ export async function recordWeeklyMessages(guildId, userId, username, count = 1)
  */
 export async function recordWeeklyVoice(guildId, userId, username, minutes = 1) {
   if (!guildId || !userId || minutes <= 0) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_weekly_activity (guild_id, user_id, username, voice_minutes, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         voice_minutes = user_weekly_activity.voice_minutes + $4,
-         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-         updated_at = NOW()`,
-      [guildId, userId, username, minutes]
-    );
-  } catch (err) {
-    sysError('Record Weekly Voice Failed', err, { guild: guildId, user: userId });
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.voiceMinutes += minutes;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -90,21 +179,10 @@ export async function recordWeeklyVoice(guildId, userId, username, minutes = 1) 
  */
 export async function recordWeeklyVoiceCallJoined(guildId, userId, username) {
   if (!guildId || !userId) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_weekly_activity (guild_id, user_id, username, voice_calls_count, updated_at)
-       VALUES ($1, $2, $3, 1, NOW())
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         voice_calls_count = user_weekly_activity.voice_calls_count + 1,
-         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-         updated_at = NOW()`,
-      [guildId, userId, username]
-    );
-  } catch (err) {
-    sysError('Record Weekly Voice Call Joined Failed', err, { guild: guildId, user: userId });
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.voiceCalls += 1;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -113,21 +191,10 @@ export async function recordWeeklyVoiceCallJoined(guildId, userId, username) {
  */
 export async function recordWeeklyMedia(guildId, userId, username, count = 1) {
   if (!guildId || !userId || count <= 0) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_weekly_activity (guild_id, user_id, username, media_count, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         media_count = user_weekly_activity.media_count + $4,
-         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-         updated_at = NOW()`,
-      [guildId, userId, username, count]
-    );
-  } catch (err) {
-    sysError('Record Weekly Media Failed', err, { guild: guildId, user: userId });
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.media += count;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -135,32 +202,11 @@ export async function recordWeeklyMedia(guildId, userId, username, count = 1) {
  * Record a reaction given by the user toward weekly activity
  */
 export async function recordWeeklyReaction(guildId, userId, username = null, delta = 1) {
-  if (!guildId || !userId) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    if (delta > 0) {
-      await pool.query(
-        `INSERT INTO user_weekly_activity (guild_id, user_id, username, reactions_count, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (guild_id, user_id)
-         DO UPDATE SET
-           reactions_count = user_weekly_activity.reactions_count + $4,
-           username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-           updated_at = NOW()`,
-        [guildId, userId, username, delta]
-      );
-    } else if (delta < 0) {
-      await pool.query(
-        `UPDATE user_weekly_activity
-         SET reactions_count = GREATEST(0, reactions_count + $3),
-             updated_at = NOW()
-         WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, userId, delta]
-      );
-    }
-  } catch (err) {
-    sysError('Record Weekly Reaction Failed', err, { guild: guildId, user: userId });
+  if (!guildId || !userId || delta === 0) return;
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.reactions += delta;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -168,32 +214,11 @@ export async function recordWeeklyReaction(guildId, userId, username = null, del
  * Record a reaction received by the user from others toward weekly activity
  */
 export async function recordWeeklyReactionReceived(guildId, userId, username = null, delta = 1) {
-  if (!guildId || !userId) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    if (delta > 0) {
-      await pool.query(
-        `INSERT INTO user_weekly_activity (guild_id, user_id, username, reactions_received_count, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (guild_id, user_id)
-         DO UPDATE SET
-           reactions_received_count = user_weekly_activity.reactions_received_count + $4,
-           username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-           updated_at = NOW()`,
-        [guildId, userId, username, delta]
-      );
-    } else if (delta < 0) {
-      await pool.query(
-        `UPDATE user_weekly_activity
-         SET reactions_received_count = GREATEST(0, reactions_received_count + $3),
-             updated_at = NOW()
-         WHERE guild_id = $1 AND user_id = $2`,
-        [guildId, userId, delta]
-      );
-    }
-  } catch (err) {
-    sysError('Record Weekly Reaction Received Failed', err, { guild: guildId, user: userId });
+  if (!guildId || !userId || delta === 0) return;
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.reactionsReceived += delta;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -202,21 +227,10 @@ export async function recordWeeklyReactionReceived(guildId, userId, username = n
  */
 export async function recordWeeklyXp(guildId, userId, username = null, xp = 0) {
   if (!guildId || !userId || xp <= 0) return;
-  try {
-    await ensureWeeklyActivityTable();
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO user_weekly_activity (guild_id, user_id, username, total_xp_gained, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (guild_id, user_id)
-       DO UPDATE SET
-         total_xp_gained = user_weekly_activity.total_xp_gained + $4,
-         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-         updated_at = NOW()`,
-      [guildId, userId, username, xp]
-    );
-  } catch (err) {
-    sysError('Record Weekly XP Failed', err, { guild: guildId, user: userId });
+  const entry = getOrCreateWeeklyEntry(guildId, userId, username);
+  entry.xp += xp;
+  if (pendingWeeklyBatch.size >= 100) {
+    flushWeeklyActivityBatch().catch(() => {});
   }
 }
 
@@ -228,6 +242,8 @@ export async function dispatchWeeklyActivitySummaries(client) {
   sysLog('Weekly Activity Summary Dispatch Started', { detail: 'Beginning weekly activity DM notifications' });
 
   try {
+    // Flush any pending in-memory activity to database before generating reports
+    await flushWeeklyActivityBatch().catch(() => {});
     await ensureWeeklyActivityTable();
     const pool = getPool();
 
@@ -313,9 +329,16 @@ export async function dispatchWeeklyActivitySummaries(client) {
 }
 
 /**
- * Starts the weekly activity summary cron scheduler
+ * Starts the weekly activity summary cron scheduler and periodic batch flush
  */
 export function startWeeklySummaryScheduler(client) {
+  // Periodic in-memory batch flush to PostgreSQL every 30s
+  if (!weeklyFlushInterval) {
+    weeklyFlushInterval = setInterval(() => {
+      flushWeeklyActivityBatch().catch(() => {});
+    }, WEEKLY_BATCH_FLUSH_INTERVAL);
+  }
+
   // Runs every Friday at 00:00 Cairo time (Africa/Cairo: 0 0 * * 5)
   cron.schedule('0 0 * * 5', () => {
     dispatchWeeklyActivitySummaries(client);
@@ -324,5 +347,5 @@ export function startWeeklySummaryScheduler(client) {
     timezone: 'Africa/Cairo'
   });
 
-  sysLog('Infrastructure Audit', { detail: 'Weekly Activity Summary Scheduler initialized (Every Friday 00:00 Africa/Cairo)' });
+  sysLog('Infrastructure Audit', { detail: 'Weekly Activity Summary Scheduler initialized (Every Friday 00:00 Africa/Cairo | 30s Batch Flush Active)' });
 }
