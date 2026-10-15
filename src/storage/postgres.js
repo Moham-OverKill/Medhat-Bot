@@ -183,7 +183,7 @@ function startHealthCheck() {
       }
       // Pool will auto-reconnect on next query
     }
-  }, 30000); // Every 30 seconds
+  }, 60000); // Every 60 seconds
 }
 
 /**
@@ -378,6 +378,10 @@ async function createTables() {
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_user_activity_voice_tracking ON user_activity(guild_id, is_voice_tracking) WHERE is_voice_tracking = TRUE;
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_activity_voice_valid ON user_activity(guild_id, voice_valid_start) WHERE voice_valid_start IS NOT NULL;
     `);
 
     // Ensure composite unique index exists to safely support both (user_id, guild_id) and (guild_id, user_id) conflict targets
