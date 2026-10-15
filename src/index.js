@@ -705,7 +705,7 @@ client.on(Events.GuildMemberUpdate, async (_oldMember, newMember) => {
   });
 });
 
-const EMOJI_TEST_REGEX = /(\p{Extended_Pictographic}|<a?:[a-zA-Z0-9_]+:\d{17,20}>)/u;
+const EMOJI_TEST_REGEX = /(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Regional_Indicator}|\u20E3|<a?:[a-zA-Z0-9_]+:\d{17,20}>)/u;
 
 // Global User Profile Updates (Username / Display Name changed across Discord)
 client.on(Events.UserUpdate, async (oldUser, newUser) => {
