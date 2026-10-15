@@ -65,56 +65,48 @@ export async function flushMessageBatch() {
   pendingMessageBatch.clear();
 
   try {
-    const pool = getPool();
-    const client = await pool.connect();
+    // 1. Buffer discrete message counts into weekly activity (in-memory batch)
     try {
-      await client.query('BEGIN');
+      const { recordWeeklyMessages } = await import('../cron/weeklySummary.js');
       for (const entry of entriesToFlush) {
-        await client.query(
-          `INSERT INTO user_activity (user_id, guild_id, username, message_count, last_message_time, last_active)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (user_id, guild_id)
-           DO UPDATE SET 
-             message_count = user_activity.message_count + $4,
-             last_message_time = GREATEST(user_activity.last_message_time, $5),
-             last_active = GREATEST(user_activity.last_active, $6),
-             username = $3`,
-          [entry.userId, entry.guildId, entry.username, entry.count, entry.lastTime, new Date(entry.lastTime)]
-        );
+        recordWeeklyMessages(entry.guildId, entry.userId, entry.username, entry.messageCount || 1);
+      }
+    } catch (_) {}
 
-        // Record toward weekly activity summary (discrete message count, not weighted points)
-        await client.query(
-          `INSERT INTO user_weekly_activity (guild_id, user_id, username, messages_count, updated_at)
-           VALUES ($1, $2, $3, $4, NOW())
-           ON CONFLICT (guild_id, user_id)
-           DO UPDATE SET
-             messages_count = user_weekly_activity.messages_count + $4,
-             username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-             updated_at = NOW()`,
-          [entry.guildId, entry.userId, entry.username, entry.messageCount || 1]
-        ).catch(() => {});
+    // 2. Bulk upsert all entries into user_activity in a single query via UNNEST
+    const pool = getPool();
+    const userIds = entriesToFlush.map(e => e.userId);
+    const guildIds = entriesToFlush.map(e => e.guildId);
+    const usernames = entriesToFlush.map(e => e.username);
+    const counts = entriesToFlush.map(e => e.count);
+    const lastTimes = entriesToFlush.map(e => e.lastTime);
+    const lastActives = entriesToFlush.map(e => new Date(e.lastTime));
+
+    await pool.query(
+      `INSERT INTO user_activity (user_id, guild_id, username, message_count, last_message_time, last_active)
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::int[], $5::bigint[], $6::timestamptz[])
+       ON CONFLICT (user_id, guild_id)
+       DO UPDATE SET 
+         message_count = user_activity.message_count + EXCLUDED.message_count,
+         last_message_time = GREATEST(user_activity.last_message_time, EXCLUDED.last_message_time),
+         last_active = GREATEST(user_activity.last_active, EXCLUDED.last_active),
+         username = EXCLUDED.username`,
+      [userIds, guildIds, usernames, counts, lastTimes, lastActives]
+    );
+  } catch (err) {
+    // Re-queue entries on failure so no data is lost
+    for (const entry of entriesToFlush) {
+      const key = `${entry.guildId}:${entry.userId}`;
+      const existing = pendingMessageBatch.get(key);
+      if (existing) {
+        existing.count += entry.count;
+        existing.messageCount = (existing.messageCount || 0) + (entry.messageCount || 1);
+        existing.lastTime = Math.max(existing.lastTime, entry.lastTime);
+      } else {
+        pendingMessageBatch.set(key, entry);
       }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      // Re-queue entries on failure so no data is lost
-      for (const entry of entriesToFlush) {
-        const key = `${entry.guildId}:${entry.userId}`;
-        const existing = pendingMessageBatch.get(key);
-        if (existing) {
-          existing.count += entry.count;
-          existing.messageCount = (existing.messageCount || 0) + (entry.messageCount || 1);
-          existing.lastTime = Math.max(existing.lastTime, entry.lastTime);
-        } else {
-          pendingMessageBatch.set(key, entry);
-        }
-      }
-      sysError('Batch Message Activity Flush Failed', err);
-    } finally {
-      client.release();
     }
-  } catch (error) {
-    sysError('Batch Connection Pool Error', error);
+    sysError('Batch Message Activity Flush Failed', err);
   } finally {
     isFlushingBatch = false;
   }
