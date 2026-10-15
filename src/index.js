@@ -7,7 +7,7 @@ import os from 'os';
 import { performance } from 'node:perf_hooks';
 import { registerSlashCommands } from './commands/register.js';
 import { handleSlashCommand } from './commands/handler.js';
-import { initializeGuildConfigs, loadGuildConfigs } from './storage/config.js';
+import { initializeGuildConfigs, loadGuildConfigs, configCache } from './storage/config.js';
 import { initializeColorsDB, closeColorsDB } from './storage/colors.js';
 import { initializeDatabase, closeDatabase } from './storage/postgres.js';
 import { initializeActivityTracking, cleanup as cleanupActivityTracking, clearStaleVoiceTracking } from './activity/index.js';
@@ -428,13 +428,23 @@ client.once(Events.ClientReady, async () => {
           await reconcileMissingLevelRewards(guild.id).catch(err =>
             sysError('Level Rewards Reconciliation Error', err, { guild: guild.id })
           );
-          await sweepServerEmojiViolations(guild).catch(err =>
-            sysError('Emoji Blacklist Startup Sweep Error', err, { guild: guild.id })
-          );
-          await sweepOrphanedForumPosts(guild).catch(err =>
-            sysError('Forum Auto-Delete Startup Sweep Error', err, { guild: guild.id })
-          );
-          await new Promise(r => setTimeout(r, 2000)); // 2s between guilds
+
+          // Only perform sweeps if the corresponding feature is enabled in guild config
+          const guildConfig = configCache.get(guild.id);
+          const channelFilters = guildConfig?.channel_filters;
+
+          if (channelFilters?.reaction_blacklist_enabled === true) {
+            await sweepServerEmojiViolations(guild).catch(err =>
+              sysError('Emoji Blacklist Startup Sweep Error', err, { guild: guild.id })
+            );
+          }
+          if (channelFilters?.forum_auto_delete_enabled === true) {
+            await sweepOrphanedForumPosts(guild).catch(err =>
+              sysError('Forum Auto-Delete Startup Sweep Error', err, { guild: guild.id })
+            );
+          }
+
+          await new Promise(r => setTimeout(r, 1000)); // 1s between guilds
         }
       } catch (err) {
         sysError('Reconciliation Startup Error', err);
@@ -695,14 +705,28 @@ client.on(Events.GuildMemberUpdate, async (_oldMember, newMember) => {
   });
 });
 
+const EMOJI_TEST_REGEX = /(\p{Extended_Pictographic}|<a?:[a-zA-Z0-9_]+:\d{17,20}>)/u;
+
 // Global User Profile Updates (Username / Display Name changed across Discord)
-client.on(Events.UserUpdate, async (_oldUser, newUser) => {
+client.on(Events.UserUpdate, async (oldUser, newUser) => {
   if (newUser.bot) return;
+
+  // Ignore if display/user names did not change (e.g. avatar, banner, or status update)
+  const nameChanged = !oldUser ||
+                      oldUser.username !== newUser.username ||
+                      oldUser.displayName !== newUser.displayName ||
+                      oldUser.globalName !== newUser.globalName;
+  if (!nameChanged) return;
+
+  // Fast regex guard: if new names contain no emojis, skip iterating across all guilds
+  const candidateText = `${newUser.displayName || ''} ${newUser.username || ''} ${newUser.globalName || ''}`;
+  if (!EMOJI_TEST_REGEX.test(candidateText)) return;
+
   try {
+    const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
     for (const guild of client.guilds.cache.values()) {
       const member = guild.members.cache.get(newUser.id);
       if (member) {
-        const { processMemberNicknameEmojiFilter } = await import('./middleware/emoji-filter.js');
         await processMemberNicknameEmojiFilter(member).catch(() => {});
       }
     }
