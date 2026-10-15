@@ -48,6 +48,9 @@ setInterval(() => {
   }
 }, CACHE_CLEANUP_INTERVAL);
 
+// In-memory set of actively tracking voice keys (`${guildId}:${userId}`) to bypass redundant DB checks
+const activeVoiceTrackingUsers = new Set();
+
 // In-memory queue for batching message points to PostgreSQL
 // Key: `${guildId}:${userId}`, Value: { guildId, userId, username, count, messageCount, lastTime }
 const pendingMessageBatch = new Map();
@@ -176,6 +179,7 @@ export async function clearStaleVoiceTracking() {
           is_voice_tracking = FALSE
       WHERE voice_valid_start IS NOT NULL OR is_voice_tracking = TRUE
     `);
+    activeVoiceTrackingUsers.clear();
     if (result.rowCount > 0) {
       sysLog('Presence Audit', { detail: `Cleared stale voice tracking for ${result.rowCount} users` });
     }
@@ -353,11 +357,6 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
   const users = [];
 
   try {
-    if (guildObj) {
-      // Warm up member cache in ONE bulk fetch to prevent sequential API rate limits
-      await guildObj.members.fetch().catch(() => null);
-    }
-
     const fetchLimit = guildObj ? Math.max(limit * 3, 20) : limit;
     const result = await pool.query(
       `SELECT 
@@ -374,6 +373,16 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
        LIMIT $2`,
       [guildId, fetchLimit]
     );
+
+    if (guildObj && result.rows.length > 0) {
+      // Warm up member cache targeted only for candidate top active users
+      const missingUids = result.rows
+        .map(r => r.user_id)
+        .filter(uid => uid && !guildObj.members.cache.has(uid));
+      if (missingUids.length > 0) {
+        await guildObj.members.fetch({ user: missingUids }).catch(() => null);
+      }
+    }
 
     for (const row of result.rows) {
       if (users.length >= limit) break;
@@ -533,6 +542,8 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId, conf
 async function startVoiceTracking(guild, userId, username) {
   if (!guild || !userId) return;
   const guildId = guild.id;
+  const userKey = `${guildId}:${userId}`;
+  if (activeVoiceTrackingUsers.has(userKey)) return;
   const now = Date.now();
 
   try {
@@ -546,7 +557,10 @@ async function startVoiceTracking(guild, userId, username) {
       check.rows[0].voice_valid_start !== null &&
       parseInt(check.rows[0].voice_valid_start) > 0;
 
-    if (alreadyTracking) return;
+    if (alreadyTracking) {
+      activeVoiceTrackingUsers.add(userKey);
+      return;
+    }
 
     await pool.query(
       `INSERT INTO user_activity (user_id, guild_id, username, voice_valid_start, last_active)
@@ -558,6 +572,7 @@ async function startVoiceTracking(guild, userId, username) {
          username = $3`,
       [userId, guildId, username, now, new Date(now)]
     );
+    activeVoiceTrackingUsers.add(userKey);
   } catch (error) {
     sysError('Activity Update Failed', error, { user: userId, guild: guildId, detail: 'Start voice tracking' });
   }
@@ -566,6 +581,7 @@ async function startVoiceTracking(guild, userId, username) {
 async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
   if (!guild || !userId) return;
   const guildId = guild.id;
+  activeVoiceTrackingUsers.delete(`${guildId}:${userId}`);
   const now = Date.now();
 
   try {
@@ -680,6 +696,11 @@ export async function voicePointsTick(client) {
        WHERE voice_valid_start IS NOT NULL`
     );
 
+    activeVoiceTrackingUsers.clear();
+    for (const r of result.rows) {
+      activeVoiceTrackingUsers.add(`${r.guild_id}:${r.user_id}`);
+    }
+
     for (const row of result.rows) {
       await runInGuildContext(row.guild_id, async () => {
         const validStart = parseInt(row.voice_valid_start);
@@ -693,7 +714,7 @@ export async function voicePointsTick(client) {
 
         let member;
         try {
-          member = await guild.members.fetch(row.user_id);
+          member = guild.members.cache.get(row.user_id) || await guild.members.fetch(row.user_id);
         } catch (e) {
           await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
           return;
@@ -817,6 +838,7 @@ export async function voicePointsTick(client) {
 }
 
 async function stopTrackingUser(pool, guildId, userId, guild, reason) {
+  activeVoiceTrackingUsers.delete(`${guildId}:${userId}`);
   try {
     await pool.query(
       `UPDATE user_activity 
