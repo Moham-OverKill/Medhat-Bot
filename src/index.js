@@ -1,5 +1,12 @@
 import './utils/suppress-warnings.js';
 import 'dotenv/config';
+import dns from 'node:dns';
+
+// Ensure IPv4 is prioritized in containerized environments where outbound IPv6 is disabled
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options } from 'discord.js';
 import { createServer } from 'http';
 import crypto from 'crypto';
@@ -288,13 +295,11 @@ keepAliveServer.on('error', (error) => {
   shutdown('KEEPALIVE_SERVER_ERROR', { exitCode: 1 });
 });
 
-keepAliveServer.listen(keepalivePort, () => {
-  depsState.keepalive = `:${keepalivePort}`;
+keepAliveServer.listen(keepalivePort, '0.0.0.0', () => {
+  depsState.keepalive = `0.0.0.0:${keepalivePort}`;
   depsState.platform = os.platform();
   tryEmitDeps();
 });
-
-sysLog('Client Authenticating', { detail: 'Attempting Discord login' });
 
 client.once(Events.ClientReady, async () => {
   sysLog('Client Ready', {
@@ -1002,7 +1007,10 @@ client.on('guildCreate', async (guild) => {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-client.login(process.env.DISCORD_TOKEN).catch((error) => {
+sysLog('Client Authenticating', { detail: 'Initiating Discord gateway login' });
+client.login(process.env.DISCORD_TOKEN).then(() => {
+  sysLog('Discord Gateway Login Succeeded');
+}).catch((error) => {
   sysError('Discord Login Critical Failure', error);
   process.exit(1);
 });
