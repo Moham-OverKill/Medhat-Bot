@@ -988,7 +988,7 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       if (lockedTotal >= 1) {
         await client.query('ROLLBACK');
         sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: Locked item already owned (qty: ${lockedTotal})` });
-        return { success: false, error: 'You already have that item.' };
+        return { success: false, error: 'You already own that item.' };
       }
     }
 

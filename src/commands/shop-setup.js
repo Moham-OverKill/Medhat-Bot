@@ -54,11 +54,29 @@ import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
-import { cleanImageUrl } from '../utils/embed-sanitizer.js';
+import { cleanImageUrl, isSameImageUrl } from '../utils/embed-sanitizer.js';
 
 // Temporary storage for post item flow (Session ID / Message ID -> draft state)
 const pendingPosts = new Map();
 const PENDING_POST_SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Resolve the default image asset configured for an item or loot box in shop settings
+ * @param {object|null} item
+ * @param {string} guildId
+ * @returns {Promise<string|null>}
+ */
+export async function resolveItemDefaultImage(item, guildId) {
+  if (!item) return null;
+  let img = getItemImage(item);
+  if (!img && (item.item_type === 'loot_box' || item.loot_box_id)) {
+    try {
+      const box = await getLootBox(item.loot_box_id || item.id, guildId);
+      if (box) img = box.image_url || box.opened_image_url;
+    } catch (_) {}
+  }
+  return cleanImageUrl(img);
+}
 
 /**
  * Resolve the isolated post-staging session key for an interaction.
@@ -1331,13 +1349,8 @@ export async function handleShopPostStart(interaction) {
 
   // Show item image as small thumbnail preview in the staging embed
   if (selectedItem) {
-    let previewImg = state.imageUrl || getItemImage(selectedItem);
-    if (!previewImg && (selectedItem.item_type === 'loot_box' || selectedItem.loot_box_id)) {
-      try {
-        const box = await getLootBox(selectedItem.loot_box_id || selectedItem.id, guildId);
-        if (box) previewImg = box.image_url || box.opened_image_url;
-      } catch (_) {}
-    }
+    const defaultImg = await resolveItemDefaultImage(selectedItem, guildId);
+    let previewImg = state.imageUrl || defaultImg;
     if (previewImg) embed.setThumbnail(previewImg);
   }
 
@@ -1545,10 +1558,14 @@ export async function handleShopPostStart(interaction) {
 
   const isItemSelected = !!state.itemId;
   const isCustomConfigured = state.stock !== null || state.restockIntervalSeconds !== null || state.claimLimit !== null;
+
+  const defaultImg = await resolveItemDefaultImage(selectedItem, guildId);
+  const isCustomImage = Boolean(state.imageUrl && !isSameImageUrl(state.imageUrl, defaultImg));
+
   const isModified = state.itemId !== null || 
                      state.sellerId !== null || 
                      state.description !== null || 
-                     state.imageUrl !== null || 
+                     isCustomImage || 
                      state.payout !== null || 
                      state.stock !== null || 
                      (state.overridePrice !== null && state.overridePrice !== 0) ||
@@ -1568,7 +1585,7 @@ export async function handleShopPostStart(interaction) {
       .setCustomId(`shop_post_image_btn:${sessionId}`)
       .setLabel('Image')
       .setEmoji('🖼️')
-      .setStyle(state.imageUrl ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle(isCustomImage ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected),
     new ButtonBuilder()
       .setCustomId(`shop_post_payout_btn:${sessionId}`)
@@ -2025,6 +2042,21 @@ export async function handleShopPostImageBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
   const state = (await getPendingPostSession(sessionId)) || {};
 
+  let currentCustomImage = '';
+  if (state.imageUrl) {
+    let defaultImg = null;
+    if (state.itemId) {
+      try {
+        const item = await getShopItem(state.itemId, interaction.guildId);
+        defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+      } catch (_) {}
+    }
+    // Only pre-fill if it is genuinely a custom image overwriting the default item image
+    if (!defaultImg || !isSameImageUrl(state.imageUrl, defaultImg)) {
+      currentCustomImage = state.imageUrl;
+    }
+  }
+
   const modal = new ModalBuilder()
     .setCustomId(`shop_post_image_modal:${sessionId}`)
     .setTitle('Item Image');
@@ -2034,7 +2066,7 @@ export async function handleShopPostImageBtn(interaction) {
     .setLabel('Image URL')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('Empty = Default')
-    .setValue(state.imageUrl || '')
+    .setValue(currentCustomImage)
     .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
@@ -2060,8 +2092,25 @@ export async function handleShopPostModalSubmit(interaction) {
     }
 
     if (customId === 'shop_post_image_modal') {
-      const val = (interaction.fields.getTextInputValue('image_url') || '').trim().toLowerCase();
-      state.imageUrl = (val === '' || val === 'none' || val === 'default') ? null : cleanImageUrl(interaction.fields.getTextInputValue('image_url'));
+      const rawVal = (interaction.fields.getTextInputValue('image_url') || '').trim();
+      const valLower = rawVal.toLowerCase();
+      if (valLower === '' || valLower === 'none' || valLower === 'default') {
+        state.imageUrl = null;
+      } else {
+        const cleaned = cleanImageUrl(rawVal);
+        let defaultImg = null;
+        if (state.itemId) {
+          try {
+            const item = await getShopItem(state.itemId, interaction.guildId);
+            defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+          } catch (_) {}
+        }
+        if (defaultImg && isSameImageUrl(cleaned, defaultImg)) {
+          state.imageUrl = null;
+        } else {
+          state.imageUrl = cleaned;
+        }
+      }
     } else if (customId === 'shop_post_desc_modal') {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
       state.description = val === '' ? null : val;
@@ -2229,7 +2278,9 @@ export async function handleShopPostPublish(interaction) {
     const postStock = (state.stock !== null && state.stock !== undefined && state.stock > 0) ? state.stock : null;
 
     // Image: instance-specific override takes priority, then item's default image
-    const finalImage = imageUrl || getItemImage(item);
+    const defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+    const isCustom = Boolean(imageUrl && !isSameImageUrl(imageUrl, defaultImg));
+    const finalImage = isCustom ? imageUrl : defaultImg;
     if (finalImage) {
       embed.setImage(finalImage); // LARGE banner image for publicly posted shop embeds
     }
@@ -2372,7 +2423,7 @@ export async function handleShopPostPublish(interaction) {
           last_restocked_at = EXCLUDED.last_restocked_at,
           updated_at = NOW()`,
         [
-          postMsg.id, interaction.guildId, channelId, itemId, finalImage || null,
+          postMsg.id, interaction.guildId, channelId, itemId, isCustom ? imageUrl : null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
           maxStock, postStock, effectivePrice, lastRestockedAt
         ]
@@ -4948,8 +4999,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 
     // The message embed is the source of truth for description — always use what's visible on the post
     // No database comparison needed; the user wants to edit what they see
-    const defaultImage = getItemImage(item);
-    const imageUrl = embedImageUrl === defaultImage ? null : embedImageUrl;
+    const defaultImage = await resolveItemDefaultImage(item, guildId);
+    const imageUrl = (embedImageUrl && !isSameImageUrl(embedImageUrl, defaultImage)) ? embedImageUrl : null;
 
     // Clean the embed description: strip carriage returns and trim
     const description = embedDescription
@@ -5133,7 +5184,10 @@ export async function handleShopPostUpdate(interaction) {
       .setTitle(item.name)
       .setColor('#3498DB');
 
-    const finalImage = imageUrl || getItemImage(item);
+    // Image: instance-specific override takes priority, then item's default image
+    const defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+    const isCustom = Boolean(imageUrl && !isSameImageUrl(imageUrl, defaultImg));
+    const finalImage = isCustom ? imageUrl : defaultImg;
     if (finalImage) {
       embed.setImage(finalImage);
     }
@@ -5304,7 +5358,7 @@ export async function handleShopPostUpdate(interaction) {
           last_restocked_at = EXCLUDED.last_restocked_at,
           updated_at = NOW()`,
         [
-          message.id, interaction.guildId, message.channelId || channel.id, itemId, finalImage || null,
+          message.id, interaction.guildId, message.channelId || channel.id, itemId, isCustom ? imageUrl : null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
           maxStock, postStock, effectivePrice, lastRestockedAt
         ]

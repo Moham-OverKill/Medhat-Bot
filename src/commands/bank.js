@@ -2667,8 +2667,8 @@ export async function handleItemClaim(interaction) {
     }
   } catch (error) {
     const errorMsgStr = error.message || '';
-    const isAlreadyOwned = errorMsgStr.includes('already own');
-    const errorMessage = isAlreadyOwned ? `\u2755 You already have that item.` : `\u274C ${error.message}`;
+    const isAlreadyOwned = errorMsgStr.includes('already own') || errorMsgStr.includes('already have');
+    const errorMessage = isAlreadyOwned ? `\u2755 You already own that item.` : `\u274C ${error.message}`;
 
     // DISTINGUISH: Validation Errors (User fault) vs System Errors (Bot fault)
     const isValidationError = errorMsgStr.includes('server for at least') ||
