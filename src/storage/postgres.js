@@ -1291,7 +1291,17 @@ async function createTables() {
       );
       CREATE INDEX IF NOT EXISTS idx_shop_drop_claims_msg ON shop_drop_claims(message_id);
       CREATE INDEX IF NOT EXISTS idx_shop_drop_claims_user ON shop_drop_claims(guild_id, user_id);
+
+      CREATE TABLE IF NOT EXISTS shop_post_sessions (
+        session_id VARCHAR(128) PRIMARY KEY,
+        state JSONB NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_shop_post_sessions_updated ON shop_post_sessions(updated_at);
     `);
+
+    // Clean up abandoned post drafting sessions older than 24 hours
+    await pool.query(`DELETE FROM shop_post_sessions WHERE updated_at < NOW() - INTERVAL '24 hours'`).catch(() => {});
 
     // Shop posts migrations for existing tables
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS post_mode VARCHAR(16) NOT NULL DEFAULT 'normal'`).catch(() => {});
