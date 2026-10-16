@@ -17,7 +17,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji } from '../shared.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -1193,6 +1193,20 @@ export function formatSecondsToIntervalString(seconds) {
   return `${Math.floor(seconds / 60)}m`;
 }
 
+export function formatIntervalHuman(seconds) {
+  if (!seconds || typeof seconds !== 'number' || seconds <= 0) return null;
+  if (seconds % 86400 === 0) {
+    const d = seconds / 86400;
+    return `${d} ${d === 1 ? 'Day' : 'Days'}`;
+  }
+  if (seconds % 3600 === 0) {
+    const h = seconds / 3600;
+    return `${h} ${h === 1 ? 'Hour' : 'Hours'}`;
+  }
+  const m = Math.floor(seconds / 60);
+  return `${m} ${m === 1 ? 'Minute' : 'Minutes'}`;
+}
+
 // Updated Post Item Handlers - Staging Panel
 export async function handleShopPostStart(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
@@ -1236,7 +1250,12 @@ export async function handleShopPostStart(interaction) {
   setPendingPostSession(sessionId, state);
 
   // Build embed with current selections
-  const selectedItem = state.itemId ? items.find(i => i.id === parseInt(state.itemId)) : null;
+  let selectedItem = state.itemId ? items.find(i => String(i.id) === String(state.itemId)) : null;
+  if (!selectedItem && state.itemId) {
+    try {
+      selectedItem = await getShopItem(state.itemId, guildId);
+    } catch (_) {}
+  }
   const isPack = selectedItem && (selectedItem.item_type === 'pack' || selectedItem.is_pack);
 
   // Validation for button states
@@ -1284,12 +1303,43 @@ export async function handleShopPostStart(interaction) {
 
   // Prioritized status description
   let statusDesc = '';
-  if (!state.isEditing) {
-    if (!state.itemId) {
-      statusDesc = '⚠️ Set Item';
-    } else if (!state.channelId) {
-      statusDesc = '⚠️ Set Channel';
+  if (selectedItem) {
+    const coinName = await getCurrencyName(guildId);
+    const coinEmoji = await getCurrencyEmoji(guildId);
+    const targetMention = selectedItem.role_id ? `<@&${selectedItem.role_id}>` : `**${selectedItem.name}**`;
+
+    const priceVal = (state.overridePrice !== null && state.overridePrice !== undefined)
+      ? Number(state.overridePrice)
+      : (selectedItem.price ?? 0);
+    const priceDisplay = priceVal > 0
+      ? `\`${priceVal.toLocaleString()}\` ${coinName} ${coinEmoji}`
+      : '`Free`';
+
+    const stockStr = (state.stock !== null && state.stock !== undefined && state.stock > 0)
+      ? `\`${state.stock.toLocaleString()}\` ${state.stock === 1 ? 'Stock' : 'Stocks'}`
+      : '`Unlimited` Stocks';
+
+    const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
+      ? `\`${state.claimLimit.toLocaleString()}\` Per User`
+      : '`Unlimited` Per User';
+
+    const intervalLabel = formatIntervalHuman(state.restockIntervalSeconds);
+    const timerStr = intervalLabel ? `Every \`${intervalLabel}\`` : 'No Restock Timer';
+
+    const bullet1 = `• Post ${targetMention} for ${priceDisplay}`;
+    const bullet2 = `• ${stockStr} • ${claimStr} • ${timerStr}`;
+
+    statusDesc = `${bullet1}\n${bullet2}`;
+
+    if (state.description) {
+      statusDesc += `\n\n> ${state.description.replace(/\n/g, '\n> ')}`;
     }
+
+    if (!state.isEditing && !state.channelId) {
+      statusDesc += '\n\n⚠️ *Set a channel to publish*';
+    }
+  } else {
+    statusDesc = '⚠️ Set Item';
   }
 
   embed.setDescription(statusDesc || null);
@@ -1801,12 +1851,24 @@ export async function handleShopPostPriceBtn(interaction) {
     .setCustomId(`shop_post_price_modal:${sessionId}`)
     .setTitle('Item Price');
 
+  let currentPriceStr = '';
+  if (state.overridePrice !== null && state.overridePrice !== undefined) {
+    currentPriceStr = state.overridePrice.toString();
+  } else if (state.itemId) {
+    try {
+      const item = await getShopItem(state.itemId, interaction.guildId);
+      if (item && item.price !== null && item.price !== undefined) {
+        currentPriceStr = item.price.toString();
+      }
+    } catch (_) {}
+  }
+
   const priceInput = new TextInputBuilder()
     .setCustomId('price_input')
     .setLabel('Price')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('Free')
-    .setValue((state.overridePrice !== null && state.overridePrice !== undefined && state.overridePrice !== 0) ? state.overridePrice.toString() : '')
+    .setValue(currentPriceStr)
     .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(priceInput));
@@ -1873,7 +1935,7 @@ export async function handleShopPostStockBtn(interaction) {
 
     const intervalInput = new TextInputBuilder()
       .setCustomId('restock_interval')
-      .setLabel('Timer')
+      .setLabel('Restock Timer')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('Disabled')
       .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
