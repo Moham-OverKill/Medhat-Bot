@@ -1330,7 +1330,7 @@ export async function handleShopPostStart(interaction) {
 
     const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
       ? `• \`${state.claimLimit.toLocaleString()}\` Per User`
-      : '• No limit per user';
+      : '• `No limit` per user';
 
     const bullet1 = `• Post ${targetMention} for ${priceDisplay}`;
     const bullet2 = `• ${stockStr} • ${timerStr}`;
