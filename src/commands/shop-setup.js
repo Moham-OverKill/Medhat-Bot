@@ -1378,7 +1378,7 @@ export async function handleShopPostStart(interaction) {
       : '`Unlimited` Stocks';
 
     const intervalLabel = formatIntervalHuman(state.restockIntervalSeconds);
-    const timerStr = intervalLabel ? `Every \`${intervalLabel}\`` : 'No Restock Timer';
+    const timerStr = intervalLabel ? `Every \`${intervalLabel}\`` : '`No Restock` Timer';
 
     const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
       ? `• \`${state.claimLimit.toLocaleString()}\` Per User`
