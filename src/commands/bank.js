@@ -20,7 +20,7 @@ import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/t
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply, getCurrencyName } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
-import { sanitizeEmbed } from '../utils/embed-sanitizer.js';
+import { sanitizeEmbed, cleanImageUrl } from '../utils/embed-sanitizer.js';
 import {
   getShopCategories,
   getShopItems,
@@ -823,7 +823,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
 
       // Resolve image with strict priority:
       // 1. The image already on the message embed (preserves custom overwrite images set during post setup or editing)
-      let itemImage = origEmbed.image?.url || null;
+      let itemImage = cleanImageUrl(origEmbed.image?.url) || null;
 
       // 2. If the embed currently has no image, check the shop_posts tracking table for any custom overwrite image
       if (!itemImage && msg.id) {

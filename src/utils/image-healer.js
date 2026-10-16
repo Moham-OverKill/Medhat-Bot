@@ -1,6 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import { sysLog, sysWarn, sysError } from './logger.js';
-import { sanitizeEmbed } from './embed-sanitizer.js';
+import { sanitizeEmbed, cleanImageUrl } from './embed-sanitizer.js';
 
 /**
  * Checks whether all expected images/thumbnails inside an embed have been resolved
@@ -34,7 +34,8 @@ function isEmbedMediaLoaded(embed, expected) {
  * @returns {Promise<{ok: boolean, status: number|null, reason: string}>}
  */
 async function checkUrlReachable(url) {
-  if (!url || typeof url !== 'string') return { ok: false, status: null, reason: 'empty_url' };
+  const targetUrl = cleanImageUrl(url);
+  if (!targetUrl || typeof targetUrl !== 'string') return { ok: false, status: null, reason: 'empty_url' };
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -42,7 +43,7 @@ async function checkUrlReachable(url) {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     };
 
-    let res = await fetch(url, {
+    let res = await fetch(targetUrl, {
       method: 'HEAD',
       headers,
       signal: controller.signal,
@@ -51,7 +52,7 @@ async function checkUrlReachable(url) {
 
     // If HEAD method is rejected (e.g. 405 Method Not Allowed), retry with GET
     if (!res || res.status === 405) {
-      res = await fetch(url, {
+      res = await fetch(targetUrl, {
         method: 'GET',
         headers: { ...headers, 'Range': 'bytes=0-0' },
         signal: controller.signal,
@@ -113,8 +114,8 @@ export function verifyAndHealMessageImages(message, options = {}) {
   // Extract expected media URLs from the original message embeds,
   // with caller-provided overrides taking priority
   const expectedMedia = message.embeds.map((e, idx) => ({
-    imageUrl: (idx === 0 && options.expectedImageUrl) || e.image?.url || null,
-    thumbUrl: (idx === 0 && options.expectedThumbnailUrl) || e.thumbnail?.url || null
+    imageUrl: cleanImageUrl((idx === 0 && options.expectedImageUrl) || e.image?.url || null),
+    thumbUrl: cleanImageUrl((idx === 0 && options.expectedThumbnailUrl) || e.thumbnail?.url || null)
   }));
 
   const hasExpectedMedia = expectedMedia.some(m => Boolean(m.imageUrl || m.thumbUrl));
@@ -168,14 +169,21 @@ export function verifyAndHealMessageImages(message, options = {}) {
           return;
         }
 
-        // Re-edit with sanitized embed to nudge Discord's proxy
-        if (attempt >= 2) {
+        // Check if embed currently holds a malformed or outdated image URL
+        const hasCorruptedUrl = freshMsg.embeds.some((e, idx) => {
+          const media = expectedMedia[idx] || {};
+          return (media.imageUrl && e.image?.url && e.image.url !== media.imageUrl) ||
+                 (media.thumbUrl && e.thumbnail?.url && e.thumbnail.url !== media.thumbUrl);
+        });
+
+        // Re-edit with sanitized embed to nudge Discord's proxy or repair corrupted URL
+        if (attempt >= 2 || hasCorruptedUrl) {
           const rebuiltEmbeds = freshMsg.embeds.map((e, idx) => {
             const media = expectedMedia[idx] || {};
             const b = sanitizeEmbed(e);
-            // Re-apply expected URLs if Discord has stripped them
-            if (media.imageUrl && !b.data.image?.url) b.setImage(media.imageUrl);
-            if (media.thumbUrl && !b.data.thumbnail?.url) b.setThumbnail(media.thumbUrl);
+            // Re-apply expected clean URLs
+            if (media.imageUrl) b.setImage(media.imageUrl);
+            if (media.thumbUrl) b.setThumbnail(media.thumbUrl);
             return b;
           });
 
