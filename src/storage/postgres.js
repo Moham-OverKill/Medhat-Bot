@@ -1322,6 +1322,18 @@ async function createTables() {
     await pool.query(`UPDATE shop_posts SET current_stock = NULL WHERE (max_stock IS NULL OR max_stock <= 0) AND restock_interval_seconds IS NULL`).catch(() => {});
     // Posts configured with finite max_stock initialize current_stock if null
     await pool.query(`UPDATE shop_posts SET current_stock = max_stock WHERE max_stock IS NOT NULL AND max_stock > 0 AND current_stock IS NULL`).catch(() => {});
+    // Self-healing: clear custom_image_url in shop_posts if it matches the item's default image
+    await pool.query(`
+      UPDATE shop_posts sp
+      SET custom_image_url = NULL
+      FROM shop_items si
+      WHERE sp.item_id = si.id
+        AND sp.custom_image_url IS NOT NULL
+        AND (
+          sp.custom_image_url = si.default_image_url
+          OR SPLIT_PART(sp.custom_image_url, '?', 1) = SPLIT_PART(si.default_image_url, '?', 1)
+        )
+    `).catch(() => {});
 
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
