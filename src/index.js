@@ -466,6 +466,18 @@ client.on(Events.Error, (error) => {
   sysError('Discord Client Error', error);
 });
 
+client.on(Events.ShardError, (error, shardId) => {
+  sysError('Discord Gateway Shard Error', error, { detail: `Shard ${shardId}` });
+});
+
+client.on(Events.ShardDisconnect, (event, shardId) => {
+  sysWarn('Discord Gateway Shard Disconnected', { detail: `Shard ${shardId} disconnected (code: ${event.code}, reason: ${event.reason || 'None'})` });
+});
+
+client.on(Events.ShardReconnecting, (shardId) => {
+  sysLog('Discord Gateway Shard Reconnecting', { detail: `Shard ${shardId}` });
+});
+
 // Discord REST rate limits are handled automatically by discord.js (queued + retried).
 // No listener needed — logging them at warn level causes Railway to flag them as errors.
 
@@ -990,4 +1002,7 @@ client.on('guildCreate', async (guild) => {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch((error) => {
+  sysError('Discord Login Critical Failure', error);
+  process.exit(1);
+});
