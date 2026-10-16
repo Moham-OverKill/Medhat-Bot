@@ -114,3 +114,46 @@ export function sanitizeEmbedFromMessage(embed, expectedImageUrl, expectedThumbU
 
   return b;
 }
+
+/**
+ * Compares two image URLs to determine if they reference the exact same asset,
+ * taking into account Discord CDN domain differences (cdn.discordapp.com vs media.discordapp.net)
+ * and gateway query parameters (dimensions, format, quality, expiring tokens).
+ *
+ * @param {string|null|undefined} urlA
+ * @param {string|null|undefined} urlB
+ * @returns {boolean}
+ */
+export function isSameImageUrl(urlA, urlB) {
+  if (!urlA && !urlB) return true;
+  if (!urlA || !urlB) return false;
+  if (typeof urlA !== 'string' || typeof urlB !== 'string') return false;
+
+  const cleanA = cleanImageUrl(urlA);
+  const cleanB = cleanImageUrl(urlB);
+  if (!cleanA || !cleanB) return cleanA === cleanB;
+  if (cleanA === cleanB) return true;
+
+  try {
+    const parsedA = new URL(cleanA);
+    const parsedB = new URL(cleanB);
+
+    const isDiscord = (h) => h.includes('discordapp.') || h.includes('discord.com') || h.includes('discordapp.net');
+    const isDiscordA = isDiscord(parsedA.hostname);
+    const isDiscordB = isDiscord(parsedB.hostname);
+
+    if (isDiscordA && isDiscordB) {
+      const pathA = decodeURIComponent(parsedA.pathname).toLowerCase().replace(/\/+$/, '');
+      const pathB = decodeURIComponent(parsedB.pathname).toLowerCase().replace(/\/+$/, '');
+      return pathA === pathB;
+    }
+
+    const fullPathA = (parsedA.host + decodeURIComponent(parsedA.pathname)).toLowerCase().replace(/\/+$/, '');
+    const fullPathB = (parsedB.host + decodeURIComponent(parsedB.pathname)).toLowerCase().replace(/\/+$/, '');
+    return fullPathA === fullPathB;
+  } catch (_) {
+    const stripA = cleanA.split('?')[0].toLowerCase().trim();
+    const stripB = cleanB.split('?')[0].toLowerCase().trim();
+    return stripA === stripB;
+  }
+}
