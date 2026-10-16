@@ -91,11 +91,50 @@ function getPostSessionId(interaction) {
   return generated;
 }
 
-function setPendingPostSession(sessionId, state) {
+export async function getPendingPostSession(sessionId) {
+  if (!sessionId) return null;
+  if (pendingPosts.has(sessionId)) {
+    const memState = pendingPosts.get(sessionId);
+    if (memState) return memState;
+  }
+  try {
+    const res = await query(
+      `SELECT state FROM shop_post_sessions WHERE session_id = $1 LIMIT 1`,
+      [sessionId]
+    );
+    if (res.rows.length > 0 && res.rows[0].state) {
+      const dbState = res.rows[0].state;
+      pendingPosts.set(sessionId, dbState);
+      return dbState;
+    }
+  } catch (_) {}
+  return null;
+}
+
+export async function setPendingPostSession(sessionId, state) {
   if (!sessionId || !state) return;
   state.sessionId = sessionId;
   state.updatedAt = Date.now();
   pendingPosts.set(sessionId, state);
+
+  try {
+    await query(
+      `INSERT INTO shop_post_sessions (session_id, state, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (session_id) DO UPDATE SET
+         state = EXCLUDED.state,
+         updated_at = NOW()`,
+      [sessionId, JSON.stringify(state)]
+    );
+  } catch (_) {}
+}
+
+export async function deletePendingPostSession(sessionId) {
+  if (!sessionId) return;
+  pendingPosts.delete(sessionId);
+  try {
+    await query(`DELETE FROM shop_post_sessions WHERE session_id = $1`, [sessionId]);
+  } catch (_) {}
 }
 
 // 15-minute abandoned session sweeper evaluating updatedAt on a per-session basis
@@ -151,7 +190,7 @@ export async function handleShopSetup(interaction) {
 
     if (interaction.isMessageComponent && interaction.isMessageComponent()) {
       const sessionId = getPostSessionId(interaction);
-      pendingPosts.delete(sessionId);
+      await deletePendingPostSession(sessionId);
     }
 
     // Defer if not already deferred
@@ -1227,7 +1266,7 @@ export async function handleShopPostStart(interaction) {
   }
 
   // Get current pending state or initialize
-  let state = pendingPosts.get(sessionId) || {};
+  let state = (await getPendingPostSession(sessionId)) || {};
   
   // Enforce defaults for missing keys (critical for Post-Publish re-render)
   state.itemId = state.itemId ?? null;
@@ -1248,7 +1287,7 @@ export async function handleShopPostStart(interaction) {
   state.restockIntervalSeconds = (state.restockIntervalSeconds && state.restockIntervalSeconds > 0) ? state.restockIntervalSeconds : null;
   state.maxStock = state.maxStock ?? null;
 
-  setPendingPostSession(sessionId, state);
+  await setPendingPostSession(sessionId, state);
 
   // Build embed with current selections
   let selectedItem = state.itemId ? items.find(i => String(i.id) === String(state.itemId)) : null;
@@ -1627,7 +1666,7 @@ export async function handleShopPostModeSelect(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const sessionId = getPostSessionId(interaction);
     const selectedMode = interaction.values[0];
-    let state = pendingPosts.get(sessionId) || {};
+    let state = (await getPendingPostSession(sessionId)) || {};
 
     if (state.postMode !== selectedMode) {
       state.postMode = selectedMode;
@@ -1636,7 +1675,7 @@ export async function handleShopPostModeSelect(interaction) {
         state.stockConfigured = false;
       }
     }
-    setPendingPostSession(sessionId, state);
+    await setPendingPostSession(sessionId, state);
     await handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post mode select');
@@ -1647,9 +1686,9 @@ export async function handleShopPostAutoEquipToggle(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const sessionId = getPostSessionId(interaction);
-    let state = pendingPosts.get(sessionId) || {};
+    let state = (await getPendingPostSession(sessionId)) || {};
     state.autoEquip = !state.autoEquip;
-    setPendingPostSession(sessionId, state);
+    await setPendingPostSession(sessionId, state);
     await handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post auto equip toggle');
@@ -1660,7 +1699,7 @@ export async function handleShopPostBackFolder(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const sessionId = getPostSessionId(interaction);
-    let state = pendingPosts.get(sessionId);
+    let state = await getPendingPostSession(sessionId);
     if (!state) return handleShopPostStart(interaction);
 
     if (state.postStep === 2) {
@@ -1670,7 +1709,7 @@ export async function handleShopPostBackFolder(interaction) {
       state.postStep = 0;
       state.postPage = 1;
     }
-    setPendingPostSession(sessionId, state);
+    await setPendingPostSession(sessionId, state);
     return handleShopPostStart(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post back folder');
@@ -1682,7 +1721,7 @@ export async function handleShopPostItemSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const sessionId = getPostSessionId(interaction);
   const itemId = interaction.values[0];
-  let state = pendingPosts.get(sessionId);
+  let state = await getPendingPostSession(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1695,7 +1734,7 @@ export async function handleShopPostItemSelect(interaction) {
   // --- Page Navigation Routing ---
   if (itemId.startsWith('shop_post_page_')) {
     state.postPage = parseInt(itemId.replace('shop_post_page_', ''), 10) || 1;
-    setPendingPostSession(sessionId, state);
+    await setPendingPostSession(sessionId, state);
     return handleShopPostStart(interaction);
   }
 
@@ -1748,7 +1787,7 @@ export async function handleShopPostItemSelect(interaction) {
     }
   }
 
-  setPendingPostSession(sessionId, state);
+  await setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1760,7 +1799,7 @@ export async function handleShopPostChannelSelect(interaction) {
   const sessionId = getPostSessionId(interaction);
   const channelId = interaction.values[0];
 
-  let state = pendingPosts.get(sessionId);
+  let state = await getPendingPostSession(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1770,7 +1809,7 @@ export async function handleShopPostChannelSelect(interaction) {
     };
   }
   state.channelId = channelId;
-  setPendingPostSession(sessionId, state);
+  await setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1783,7 +1822,7 @@ export async function handleShopPostSellerSelect(interaction) {
   const selectedUserId = interaction.values[0];
   const guildOwnerId = interaction.guild.ownerId;
 
-  let state = pendingPosts.get(sessionId);
+  let state = await getPendingPostSession(sessionId);
   if (!state) {
     state = {
       itemId: null, channelId: null, sellerId: null,
@@ -1814,7 +1853,7 @@ export async function handleShopPostSellerSelect(interaction) {
     }
   }
 
-  setPendingPostSession(sessionId, state);
+  await setPendingPostSession(sessionId, state);
 
   // Re-render panel
   await handleShopPostStart(interaction);
@@ -1823,7 +1862,7 @@ export async function handleShopPostSellerSelect(interaction) {
 // Handle Description Button - Show Modal
 export async function handleShopPostDescBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
-  const state = pendingPosts.get(sessionId) || {};
+  const state = (await getPendingPostSession(sessionId)) || {};
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_post_desc_modal:${sessionId}`)
@@ -1851,8 +1890,13 @@ export async function handleShopPostDescBtn(interaction) {
 // Handle Price Button - Show Modal
 export async function handleShopPostPriceBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
-  const state = pendingPosts.get(sessionId);
-  if (!state) return;
+  const state = await getPendingPostSession(sessionId);
+  if (!state) {
+    return interaction.reply({
+      content: '⚠️ This post session has expired. Please reopen `/settings` > Shop > Edit Post.',
+      flags: MessageFlags.Ephemeral
+    }).catch(() => {});
+  }
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_post_price_modal:${sessionId}`)
@@ -1884,8 +1928,13 @@ export async function handleShopPostPriceBtn(interaction) {
 
 export async function handleShopPostPayoutBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
-  const state = pendingPosts.get(sessionId);
-  if (!state) return;
+  const state = await getPendingPostSession(sessionId);
+  if (!state) {
+    return interaction.reply({
+      content: '⚠️ This post session has expired. Please reopen `/settings` > Shop > Edit Post.',
+      flags: MessageFlags.Ephemeral
+    }).catch(() => {});
+  }
   
   // Calculate recommended 50%
   try {
@@ -1918,7 +1967,7 @@ export async function handleShopPostPayoutBtn(interaction) {
 export async function handleShopPostStockBtn(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    const state = pendingPosts.get(sessionId) || {};
+    const state = (await getPendingPostSession(sessionId)) || {};
 
     const modal = new ModalBuilder()
       .setCustomId(`shop_post_stock_modal:${sessionId}`)
@@ -1963,10 +2012,10 @@ export async function handleShopPostStockBtn(interaction) {
 export async function handleShopPostReset(interaction) {
   await interaction.deferUpdate();
   const sessionId = getPostSessionId(interaction);
-  const prev = pendingPosts.get(sessionId);
-  pendingPosts.delete(sessionId);
+  const prev = await getPendingPostSession(sessionId);
+  await deletePendingPostSession(sessionId);
   if (prev?.fromGateway) {
-    setPendingPostSession(sessionId, { fromGateway: true, channelId: interaction.channelId });
+    await setPendingPostSession(sessionId, { fromGateway: true, channelId: interaction.channelId });
   }
   await handleShopPostStart(interaction);
 }
@@ -1974,7 +2023,7 @@ export async function handleShopPostReset(interaction) {
 // Handle Image URL Button - Show Modal
 export async function handleShopPostImageBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
-  const state = pendingPosts.get(sessionId) || {};
+  const state = (await getPendingPostSession(sessionId)) || {};
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_post_image_modal:${sessionId}`)
@@ -2002,16 +2051,12 @@ export async function handleShopPostModalSubmit(interaction) {
       ? rawCustomId.substring(0, rawCustomId.indexOf('_modal') + 6)
       : rawCustomId;
 
-    let state = pendingPosts.get(sessionId);
+    let state = await getPendingPostSession(sessionId);
     if (!state) {
-      state = {
-        itemId: null, channelId: interaction.channelId, sellerId: null,
-        imageUrl: null, description: null, payout: null, stock: null,
-        overridePrice: 0, postStep: 0, postFilter: null,
-        isEditing: false, stockConfigured: false, fromGateway: false,
-        postMode: 'normal', autoEquip: false, claimLimit: null,
-        restockIntervalSeconds: null, maxStock: null
-      };
+      return interaction.followUp({
+        content: '⚠️ Your staging session has expired or the bot was restarted. Please open `/settings` > Shop > Edit Post (or New Post) to reopen your post.',
+        flags: MessageFlags.Ephemeral
+      });
     }
 
     if (customId === 'shop_post_image_modal') {
@@ -2093,7 +2138,7 @@ export async function handleShopPostModalSubmit(interaction) {
       }
     }
 
-    setPendingPostSession(sessionId, state);
+    await setPendingPostSession(sessionId, state);
 
     // Re-render panel
     await handleShopPostStart(interaction);
@@ -2106,7 +2151,7 @@ export async function handleShopPostModalSubmit(interaction) {
 export async function handleShopPostPublish(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    const state = pendingPosts.get(sessionId);
+    const state = await getPendingPostSession(sessionId);
 
     // Validation
     if (!state || !state.itemId || !state.channelId) {
@@ -2368,8 +2413,8 @@ export async function handleShopPostPublish(interaction) {
 
     // Delete current draft session, then re-seed channelId/sellerId/fromGateway for this panel
     const fromGateway = state.fromGateway ?? true;
-    pendingPosts.delete(sessionId);
-    setPendingPostSession(sessionId, { 
+    await deletePendingPostSession(sessionId);
+    await setPendingPostSession(sessionId, { 
       channelId, 
       sellerId,
       itemId: null,
@@ -2394,7 +2439,7 @@ export async function handleShopPostPublish(interaction) {
     // Re-render panel (stay open for more posts)
     await handleShopPostStart(interaction);
   } catch (error) {
-    const state = pendingPosts.get(getPostSessionId(interaction));
+    const state = await getPendingPostSession(getPostSessionId(interaction));
     const targetChannel = state?.channelId ? interaction.guild?.channels?.cache?.get(state.channelId) : interaction.channel;
     await handleInteractionError(interaction, error, 'Publish Shop Post', { targetChannel });
   }
@@ -4723,7 +4768,7 @@ export async function handlePackRemoveContentSelect(interaction) {
 export async function handleShopPostGate(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    pendingPosts.delete(sessionId);
+    await deletePendingPostSession(sessionId);
 
     if (!interaction.deferred && !interaction.replied) {
       if (interaction.isMessageComponent && interaction.isMessageComponent()) {
@@ -4768,7 +4813,7 @@ export async function handleShopPostNewLayout(interaction) {
     const sessionId = getPostSessionId(interaction);
     
     // Initialize/Reset session state for New Post
-    setPendingPostSession(sessionId, {
+    await setPendingPostSession(sessionId, {
       itemId: null,
       channelId: null,
       sellerId: null,
@@ -4793,7 +4838,7 @@ export async function handleShopPostNewLayout(interaction) {
 export async function handleShopPostEditLayout(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    pendingPosts.delete(sessionId);
+    await deletePendingPostSession(sessionId);
     const modal = new ModalBuilder()
       .setCustomId(`shop_edit_post_url_modal:${sessionId}`)
       .setTitle('Edit Shop Post');
@@ -4869,24 +4914,17 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     const itemId = parseInt(parts[3], 10);
     const sellerId = parts[4] === '0' ? null : parts[4];
     const payout = parts[5] === '0' ? null : parseInt(parts[5], 10);
-    const overridePrice = (parts[6] !== undefined && parts[6] !== '') ? parseInt(parts[6], 10) : null;
-
-    // Verify item exists in DB
-    const item = await getShopItem(itemId, guildId);
-    if (!item) {
-      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
-    }
+    const overridePrice = (parts[6] !== undefined && parts[6] !== '' && !isNaN(parseInt(parts[6], 10))) ? parseInt(parts[6], 10) : null;
 
     const firstEmbed = message.embeds[0];
     let embedDescription = firstEmbed?.description || null;
     let embedImageUrl = firstEmbed?.image?.url || null;
 
-    // If message embed image is missing, check shop_posts tracking
+    // Check shop_posts tracking
     let postRow = null;
     if (messageId) {
       try {
-        const pool = (await import('../storage/postgres.js')).getPool();
-        const spRes = await pool.query(
+        const spRes = await query(
           `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at, item_id
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [messageId]
@@ -4901,6 +4939,12 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     }
 
     const resolvedItemId = (postRow && postRow.item_id) ? postRow.item_id : itemId;
+
+    // Verify item exists in DB using resolvedItemId
+    const item = await getShopItem(resolvedItemId, guildId);
+    if (!item) {
+      return interaction.followUp({ content: '❌ Invalid Message URL: Target item no longer exists in shop catalog.', flags: MessageFlags.Ephemeral });
+    }
 
     // The message embed is the source of truth for description — always use what's visible on the post
     // No database comparison needed; the user wants to edit what they see
@@ -4945,14 +4989,41 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     const maxStock = postRow?.max_stock || null;
     const postMode = (postRow?.post_mode === 'drop') ? 'drop' : 'normal';
 
-    const effectiveEditPrice = (postRow && postRow.override_price !== null && postRow.override_price !== undefined)
-      ? postRow.override_price
-      : (overridePrice !== null ? overridePrice : (item.price ?? 0));
+    // Price Resolution Priority:
+    // 1. Direct visible truth from the Buy/Claim Button label
+    // 2. Tracked database override_price
+    // 3. Button customId encoded overridePrice (parts[6])
+    // 4. Catalog item.price fallback
+    let effectiveEditPrice = null;
+
+    if (buyButton.label) {
+      const lbl = buyButton.label.trim();
+      if (lbl === 'CLAIM' || /free/i.test(lbl)) {
+        effectiveEditPrice = 0;
+      } else {
+        const buyMatch = lbl.match(/BUY\s*\(([\d,]+)\)/i);
+        if (buyMatch) {
+          effectiveEditPrice = parseInt(buyMatch[1].replace(/,/g, ''), 10);
+        }
+      }
+    }
+
+    if (effectiveEditPrice === null && postRow && postRow.override_price !== null && postRow.override_price !== undefined) {
+      effectiveEditPrice = Number(postRow.override_price);
+    }
+
+    if (effectiveEditPrice === null && overridePrice !== null && !isNaN(overridePrice)) {
+      effectiveEditPrice = overridePrice;
+    }
+
+    if (effectiveEditPrice === null) {
+      effectiveEditPrice = (item.price !== null && item.price !== undefined) ? Number(item.price) : 0;
+    }
 
     // Initialize state
     const sessionId = getPostSessionId(interaction);
-    pendingPosts.delete(sessionId);
-    setPendingPostSession(sessionId, {
+    await deletePendingPostSession(sessionId);
+    await setPendingPostSession(sessionId, {
       itemId: resolvedItemId,
       channelId,
       sellerId,
@@ -5007,7 +5078,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 export async function handleShopPostUpdate(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    const state = pendingPosts.get(sessionId);
+    const state = await getPendingPostSession(sessionId);
 
     if (!state || !state.itemId || !state.channelId || !state.messageId || !state.isEditing) {
       return handleInteractionError(interaction, new Error('Validation Failed: Missing required parameters for updating'), 'shop post update');
@@ -5280,7 +5351,7 @@ export async function handleShopPostUpdate(interaction) {
       );
     }
 
-    pendingPosts.delete(sessionId);
+    await deletePendingPostSession(sessionId);
 
     await interaction.followUp({
       content: `✅ **${item.name}** post updated successfully!`,
