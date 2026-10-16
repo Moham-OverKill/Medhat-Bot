@@ -54,6 +54,7 @@ import { setGuildConfig, getGuildConfig } from '../storage/config.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { RARITY_DISPLAY, RARITY_EMOJIS, DEFAULT_COIN_EMOJI, getItemRarityEmoji, sortItemsByRarity } from '../shared.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
+import { cleanImageUrl } from '../utils/embed-sanitizer.js';
 
 // Temporary storage for post item flow (Session ID / Message ID -> draft state)
 const pendingPosts = new Map();
@@ -2015,7 +2016,7 @@ export async function handleShopPostModalSubmit(interaction) {
 
     if (customId === 'shop_post_image_modal') {
       const val = (interaction.fields.getTextInputValue('image_url') || '').trim().toLowerCase();
-      state.imageUrl = (val === '' || val === 'none' || val === 'default') ? null : interaction.fields.getTextInputValue('image_url');
+      state.imageUrl = (val === '' || val === 'none' || val === 'default') ? null : cleanImageUrl(interaction.fields.getTextInputValue('image_url'));
     } else if (customId === 'shop_post_desc_modal') {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
       state.description = val === '' ? null : val;
@@ -6196,23 +6197,25 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     let openedImageUrl = null;
 
     if (rawClosed && rawClosed.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawClosed)) {
+      const cleanedClosed = cleanImageUrl(rawClosed);
+      if (!cleanedClosed || !/^https?:\/\/.+\..+/i.test(cleanedClosed)) {
         return interaction.followUp({
           content: '❌ **Invalid Closed Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
           flags: MessageFlags.Ephemeral
         });
       }
-      imageUrl = rawClosed;
+      imageUrl = cleanedClosed;
     }
 
     if (rawOpened && rawOpened.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawOpened)) {
+      const cleanedOpened = cleanImageUrl(rawOpened);
+      if (!cleanedOpened || !/^https?:\/\/.+\..+/i.test(cleanedOpened)) {
         return interaction.followUp({
           content: '❌ **Invalid Opened Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
           flags: MessageFlags.Ephemeral
         });
       }
-      openedImageUrl = rawOpened;
+      openedImageUrl = cleanedOpened;
     }
 
     // Mutual fallback: If only one is entered, use for both

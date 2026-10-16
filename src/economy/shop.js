@@ -5,6 +5,7 @@ import { updateBalance } from './service.js';
 // D-04 FIX: Removed unused imports (logAudit, createRefund, getBoosterLossPolicy)
 import { isMemberBooster } from '../commands/colors.js';
 import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { cleanImageUrl } from '../utils/embed-sanitizer.js';
 
 /**
  * Get the display image for a shop item.
@@ -14,7 +15,8 @@ import { logServerEvent, logSystemError, sendLog, sendBulkLog, sysLog, sysWarn, 
  * @returns {string|null}
  */
 export function getItemImage(item) {
-  return item?.resolved_image_url || item?.default_image_url || item?.lootbox_image_url || item?.image_url || null;
+  const raw = item?.resolved_image_url || item?.default_image_url || item?.lootbox_image_url || item?.image_url || null;
+  return cleanImageUrl(raw);
 }
 
 /**

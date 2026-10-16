@@ -12,6 +12,28 @@
 import { EmbedBuilder } from 'discord.js';
 
 /**
+ * Cleans corrupted image URLs, such as those where a secondary URL
+ * was accidentally appended or pasted (e.g. from Discord media proxy links).
+ *
+ * @param {string|null|undefined} url
+ * @returns {string|null}
+ */
+export function cleanImageUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  let cleaned = url.trim();
+  const schemeEnd = cleaned.indexOf('://');
+  if (schemeEnd !== -1) {
+    const afterScheme = cleaned.slice(schemeEnd + 3);
+    const secondaryIdx = afterScheme.search(/https?%3A%2F%2F|https?:\/\//i);
+    if (secondaryIdx !== -1) {
+      cleaned = cleaned.slice(0, schemeEnd + 3 + secondaryIdx);
+    }
+  }
+  cleaned = cleaned.replace(/[&?]+$/, '').trim();
+  return cleaned || null;
+}
+
+/**
  * Strip all Discord read-only gateway metadata from an embed.
  * Safe to call on EmbedBuilder instances, raw embed data objects,
  * or Discord.js Embed objects (from message.embeds[]).
@@ -28,7 +50,7 @@ export function sanitizeEmbed(embed) {
 
   // Image: keep only the URL, discard proxy_url / width / height
   if (b.data.image) {
-    const url = b.data.image.url;
+    const url = cleanImageUrl(b.data.image.url);
     if (url) {
       b.data.image = { url };
     } else {
@@ -38,7 +60,7 @@ export function sanitizeEmbed(embed) {
 
   // Thumbnail: same treatment
   if (b.data.thumbnail) {
-    const url = b.data.thumbnail.url;
+    const url = cleanImageUrl(b.data.thumbnail.url);
     if (url) {
       b.data.thumbnail = { url };
     } else {
@@ -77,14 +99,17 @@ export function sanitizeEmbed(embed) {
 export function sanitizeEmbedFromMessage(embed, expectedImageUrl, expectedThumbUrl) {
   const b = sanitizeEmbed(embed);
 
+  const cleanExpectedImage = cleanImageUrl(expectedImageUrl);
+  const cleanExpectedThumb = cleanImageUrl(expectedThumbUrl);
+
   // Restore image if Discord stripped it but we know the correct URL
-  if (expectedImageUrl && !b.data.image?.url) {
-    b.setImage(expectedImageUrl);
+  if (cleanExpectedImage && !b.data.image?.url) {
+    b.setImage(cleanExpectedImage);
   }
 
   // Restore thumbnail if Discord stripped it
-  if (expectedThumbUrl && !b.data.thumbnail?.url) {
-    b.setThumbnail(expectedThumbUrl);
+  if (cleanExpectedThumb && !b.data.thumbnail?.url) {
+    b.setThumbnail(cleanExpectedThumb);
   }
 
   return b;
