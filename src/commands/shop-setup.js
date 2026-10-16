@@ -1306,7 +1306,12 @@ export async function handleShopPostStart(interaction) {
   if (selectedItem) {
     const coinName = await getCurrencyName(guildId);
     const coinEmoji = await getCurrencyEmoji(guildId);
-    const targetMention = selectedItem.role_id ? `<@&${selectedItem.role_id}>` : `**${selectedItem.name}**`;
+
+    // Only use role mention for single items with a valid Discord snowflake role ID (not packs, not chests)
+    const isPackItem = selectedItem && (selectedItem.item_type === 'pack' || selectedItem.is_pack);
+    const isChestItem = selectedItem && (selectedItem.item_type === 'loot_box' || Boolean(selectedItem.loot_box_id));
+    const hasNumericRole = selectedItem.role_id && /^\d{17,20}$/.test(String(selectedItem.role_id));
+    const targetMention = (!isPackItem && !isChestItem && hasNumericRole) ? `<@&${selectedItem.role_id}>` : `**${selectedItem.name}**`;
 
     const priceVal = (state.overridePrice !== null && state.overridePrice !== undefined)
       ? Number(state.overridePrice)
@@ -1319,17 +1324,18 @@ export async function handleShopPostStart(interaction) {
       ? `\`${state.stock.toLocaleString()}\` ${state.stock === 1 ? 'Stock' : 'Stocks'}`
       : '`Unlimited` Stocks';
 
-    const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
-      ? `\`${state.claimLimit.toLocaleString()}\` Per User`
-      : '`Unlimited` Per User';
-
     const intervalLabel = formatIntervalHuman(state.restockIntervalSeconds);
     const timerStr = intervalLabel ? `Every \`${intervalLabel}\`` : 'No Restock Timer';
 
-    const bullet1 = `• Post ${targetMention} for ${priceDisplay}`;
-    const bullet2 = `• ${stockStr} • ${claimStr} • ${timerStr}`;
+    const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
+      ? `• \`${state.claimLimit.toLocaleString()}\` Per User`
+      : '• No limit per user';
 
-    statusDesc = `${bullet1}\n${bullet2}`;
+    const bullet1 = `• Post ${targetMention} for ${priceDisplay}`;
+    const bullet2 = `• ${stockStr} • ${timerStr}`;
+    const bullet3 = claimStr;
+
+    statusDesc = `${bullet1}\n${bullet2}\n${bullet3}`;
 
     if (state.description) {
       statusDesc += `\n\n> ${state.description.replace(/\n/g, '\n> ')}`;
@@ -4786,6 +4792,7 @@ export async function handleShopPostNewLayout(interaction) {
 export async function handleShopPostEditLayout(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
+    pendingPosts.delete(sessionId);
     const modal = new ModalBuilder()
       .setCustomId(`shop_edit_post_url_modal:${sessionId}`)
       .setTitle('Edit Shop Post');
@@ -4879,7 +4886,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       try {
         const pool = (await import('../storage/postgres.js')).getPool();
         const spRes = await pool.query(
-          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at
+          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at, item_id
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [messageId]
         );
@@ -4891,6 +4898,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
         }
       } catch (_) {}
     }
+
+    const resolvedItemId = (postRow && postRow.item_id) ? postRow.item_id : itemId;
 
     // The message embed is the source of truth for description — always use what's visible on the post
     // No database comparison needed; the user wants to edit what they see
@@ -4941,8 +4950,9 @@ export async function handleShopEditPostUrlSubmit(interaction) {
 
     // Initialize state
     const sessionId = getPostSessionId(interaction);
+    pendingPosts.delete(sessionId);
     setPendingPostSession(sessionId, {
-      itemId,
+      itemId: resolvedItemId,
       channelId,
       sellerId,
       payout,
