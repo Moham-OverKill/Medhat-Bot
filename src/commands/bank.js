@@ -821,92 +821,33 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
       const origEmbed = msg.embeds[0];
       const embed = sanitizeEmbed(origEmbed);
 
-      // Resolve image with strict priority:
-      // 1. The image already on the message embed (preserves custom overwrite images set during post setup or editing)
-      let itemImage = cleanImageUrl(origEmbed.image?.url) || null;
-
-      // 2. If the embed currently has no image, check the shop_posts tracking table for any custom overwrite image
-      if (!itemImage && msg.id) {
-        try {
-          const pool = (await import('../storage/postgres.js')).getPool();
-          const spRes = await pool.query(
-            `SELECT custom_image_url FROM shop_posts WHERE message_id = $1 LIMIT 1`,
-            [msg.id]
-          );
-          if (spRes.rows.length > 0 && spRes.rows[0].custom_image_url) {
-            itemImage = spRes.rows[0].custom_image_url;
-          }
-        } catch (_) {}
-      }
-
-      // 3. Fallback to default item image from database
-      if (!itemImage) {
-        itemImage = getItemImage(updatedItem);
-      }
-
-      // 4. Direct fallback to loot_boxes if image still not found
-      if (!itemImage && (updatedItem.item_type === 'loot_box' || updatedItem.loot_box_id)) {
-        try {
-          const pool = (await import('../storage/postgres.js')).getPool();
-          const lbRes = await pool.query(
-            `SELECT image_url, opened_image_url FROM loot_boxes WHERE (guild_id = $1 OR guild_id IS NULL) AND (id = $2 OR LOWER(name) = LOWER($3)) LIMIT 1`,
-            [gId, updatedItem.loot_box_id || 0, updatedItem.name]
-          );
-          if (lbRes.rows.length > 0) {
-            itemImage = lbRes.rows[0].image_url || lbRes.rows[0].opened_image_url || null;
-          }
-        } catch (_) {}
-      }
-
-      // If we have an active image for this post, record it in shop_posts for future persistence
-      if (itemImage && msg.id) {
-        (async () => {
-          try {
-            const pool = (await import('../storage/postgres.js')).getPool();
-            await pool.query(
-              `INSERT INTO shop_posts (message_id, guild_id, channel_id, item_id, custom_image_url)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (message_id) DO UPDATE SET custom_image_url = $5, updated_at = NOW()`,
-              [msg.id, gId, msg.channelId, itemId, itemImage]
-            );
-          } catch (_) {}
-        })().catch(() => {});
-      }
-
-      if (itemImage) {
-        embed.setImage(itemImage);
-      } else {
-        delete embed.data.image;
-      }
-
-      const itemThumb = origEmbed.thumbnail?.url;
-      if (itemThumb) {
-        embed.setThumbnail(itemThumb);
-      } else {
-        delete embed.data.thumbnail;
-      }
-
       let maxStock = null;
       let restockIntervalSeconds = null;
       let claimLimit = null;
       let intvStr = null;
       let postCurrentStock = undefined;
       let postOverridePrice = null;
+      let customImageUrl = null;
+      let hasTrackedPost = false;
+
       if (msg.id) {
         try {
           const pool = (await import('../storage/postgres.js')).getPool();
           const spRes = await pool.query(
-            `SELECT post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+            `SELECT custom_image_url, post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
             [msg.id]
           );
           if (spRes.rows.length > 0) {
-            const rawInterval = spRes.rows[0].restock_interval_seconds;
-            const lastRestockedAt = spRes.rows[0].last_restocked_at;
-            const createdAt = spRes.rows[0].created_at;
-            claimLimit = spRes.rows[0].claim_limit_per_user || null;
-            maxStock = spRes.rows[0].max_stock;
-            postCurrentStock = spRes.rows[0].current_stock;
-            postOverridePrice = spRes.rows[0].override_price;
+            hasTrackedPost = true;
+            const postRow = spRes.rows[0];
+            customImageUrl = postRow.custom_image_url || null;
+            const rawInterval = postRow.restock_interval_seconds;
+            const lastRestockedAt = postRow.last_restocked_at;
+            const createdAt = postRow.created_at;
+            claimLimit = postRow.claim_limit_per_user || null;
+            maxStock = postRow.max_stock;
+            postCurrentStock = postRow.current_stock;
+            postOverridePrice = postRow.override_price;
 
             if (rawInterval && rawInterval > 0) {
               restockIntervalSeconds = rawInterval;
@@ -921,6 +862,44 @@ export async function refreshShopMessageUI(interaction, itemId, guildId) {
             }
           }
         } catch (_) {}
+      }
+
+      // Resolve image:
+      // 1. Explicit custom override recorded on shop_posts
+      // 2. If tracked post without custom override, dynamically use item's current default image (inheriting catalog updates)
+      // 3. Fallback for untracked legacy posts: existing embed image or item default image
+      let itemImage = null;
+      if (customImageUrl) {
+        itemImage = customImageUrl;
+      } else if (hasTrackedPost) {
+        itemImage = getItemImage(updatedItem);
+        if (!itemImage && (updatedItem.item_type === 'loot_box' || updatedItem.loot_box_id)) {
+          try {
+            const pool = (await import('../storage/postgres.js')).getPool();
+            const lbRes = await pool.query(
+              `SELECT image_url, opened_image_url FROM loot_boxes WHERE (guild_id = $1 OR guild_id IS NULL) AND (id = $2 OR LOWER(name) = LOWER($3)) LIMIT 1`,
+              [gId, updatedItem.loot_box_id || 0, updatedItem.name]
+            );
+            if (lbRes.rows.length > 0) {
+              itemImage = lbRes.rows[0].image_url || lbRes.rows[0].opened_image_url || null;
+            }
+          } catch (_) {}
+        }
+      } else {
+        itemImage = cleanImageUrl(origEmbed.image?.url) || getItemImage(updatedItem);
+      }
+
+      if (itemImage) {
+        embed.setImage(itemImage);
+      } else {
+        delete embed.data.image;
+      }
+
+      const itemThumb = origEmbed.thumbnail?.url;
+      if (itemThumb) {
+        embed.setThumbnail(itemThumb);
+      } else {
+        delete embed.data.thumbnail;
       }
 
       const effectiveStock = (postCurrentStock !== undefined) ? postCurrentStock : updatedItem.stock;

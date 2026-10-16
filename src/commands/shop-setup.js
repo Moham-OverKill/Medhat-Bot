@@ -2173,6 +2173,7 @@ export async function handleShopPostModalSubmit(interaction) {
       }
 
       state.stockConfigured = true;
+      state.stockModified = true;
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
       
@@ -4877,6 +4878,7 @@ export async function handleShopPostNewLayout(interaction) {
       postFilter: null,
       isEditing: false,
       stockConfigured: false,
+      stockModified: false,
       fromGateway: true
     });
 
@@ -5084,6 +5086,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       overridePrice: effectiveEditPrice,
       stock: scrapedStock,
       stockConfigured: true,
+      stockModified: false,
       isEditing: true,
       fromGateway: true,
       messageId,
@@ -5176,8 +5179,29 @@ export async function handleShopPostUpdate(interaction) {
       return interaction.followUp({ content: '❌ Message not found.', flags: MessageFlags.Ephemeral });
     }
 
+    // Fetch live post row from database to avoid overwriting background restocks occurred during editing
+    const pool = (await import('../storage/postgres.js')).getPool();
+    let livePostRow = null;
+    if (messageId) {
+      try {
+        const liveRes = await pool.query(
+          `SELECT restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at, current_stock, max_stock, post_mode
+           FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [messageId]
+        );
+        if (liveRes.rows.length > 0) {
+          livePostRow = liveRes.rows[0];
+        }
+      } catch (_) {}
+    }
+
     // Post-level stock and price: isolated per post to prevent cross-channel contamination of catalog items
-    const postStock = (state.stock !== null && state.stock !== undefined && state.stock > 0) ? state.stock : null;
+    // If the administrator did NOT explicitly modify stock during this editing session,
+    // preserve live database stock to avoid rolling back concurrent purchases or background restocks.
+    const stagedStock = (state.stock !== null && state.stock !== undefined && state.stock > 0) ? state.stock : null;
+    const postStock = (!state.stockModified && livePostRow && livePostRow.current_stock !== undefined)
+      ? livePostRow.current_stock
+      : stagedStock;
 
     // Build the updated embed
     const embed = new EmbedBuilder()
@@ -5232,23 +5256,9 @@ export async function handleShopPostUpdate(interaction) {
     const effectivePostMode = hasTimer ? 'auto' : (hasLimit ? 'drop' : 'normal');
     const claimLimit = hasLimit ? state.claimLimit : null;
     const restockIntervalSeconds = hasTimer ? state.restockIntervalSeconds : null;
-    const maxStock = state.stock !== null ? state.stock : null;
-
-    // Fetch live post row from database to avoid overwriting background restocks occurred during editing
-    const pool = (await import('../storage/postgres.js')).getPool();
-    let livePostRow = null;
-    if (messageId) {
-      try {
-        const liveRes = await pool.query(
-          `SELECT restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at, current_stock, max_stock, post_mode
-           FROM shop_posts WHERE message_id = $1 LIMIT 1`,
-          [messageId]
-        );
-        if (liveRes.rows.length > 0) {
-          livePostRow = liveRes.rows[0];
-        }
-      } catch (_) {}
-    }
+    const maxStock = (!state.stockModified && livePostRow && livePostRow.max_stock !== undefined)
+      ? livePostRow.max_stock
+      : (state.stock !== null ? state.stock : null);
 
     const previousInterval = (state.originalRestockIntervalSeconds !== undefined)
       ? state.originalRestockIntervalSeconds
