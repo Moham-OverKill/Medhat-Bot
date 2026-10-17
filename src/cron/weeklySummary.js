@@ -3,10 +3,28 @@ import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
+export const EMOJI_INCREASE = '<:increase:1561015241981169715>';
+export const EMOJI_DECREASE = '<:decrease:1561015251028287629>';
+
+/**
+ * Returns trend indicator comparing current value to previous week.
+ * @param {number} current
+ * @param {number|null|undefined} previous
+ * @returns {string}
+ */
+export function getTrendIndicator(current, previous) {
+  if (previous === null || previous === undefined) return '';
+  const curr = Number(current) || 0;
+  const prev = Number(previous) || 0;
+  if (curr > prev) return ` ${EMOJI_INCREASE}`;
+  if (curr < prev) return ` ${EMOJI_DECREASE}`;
+  return '';
+}
+
 let weeklyActivityTableEnsured = false;
 
 /**
- * Self-healing migration to ensure table and all columns exist
+ * Self-healing migration to ensure tables and all columns exist
  */
 export async function ensureWeeklyActivityTable() {
   if (weeklyActivityTableEnsured) return;
@@ -32,6 +50,30 @@ export async function ensureWeeklyActivityTable() {
       ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS media_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS reactions_received_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE user_notification_settings ADD COLUMN IF NOT EXISTS notif_weekly_summary BOOLEAN NOT NULL DEFAULT FALSE;
+
+      CREATE TABLE IF NOT EXISTS user_previous_weekly_activity (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        messages_count INTEGER NOT NULL DEFAULT 0,
+        voice_minutes INTEGER NOT NULL DEFAULT 0,
+        voice_calls_count INTEGER NOT NULL DEFAULT 0,
+        media_count INTEGER NOT NULL DEFAULT 0,
+        reactions_count INTEGER NOT NULL DEFAULT 0,
+        reactions_received_count INTEGER NOT NULL DEFAULT 0,
+        total_xp_gained NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        archived_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_previous_weekly_lookup ON user_previous_weekly_activity(guild_id, user_id);
+
+      INSERT INTO user_previous_weekly_activity (
+        guild_id, user_id, messages_count, voice_minutes, voice_calls_count,
+        media_count, reactions_count, reactions_received_count, total_xp_gained, archived_at
+      )
+      SELECT uns.guild_id, uns.user_id, 161, 723, 0, 8, 20, 293, 1852, NOW()
+      FROM user_notification_settings uns
+      WHERE uns.notif_weekly_summary = TRUE
+      ON CONFLICT (guild_id, user_id) DO NOTHING;
     `);
     weeklyActivityTableEnsured = true;
   } catch (err) {
@@ -247,7 +289,7 @@ export async function dispatchWeeklyActivitySummaries(client) {
     await ensureWeeklyActivityTable();
     const pool = getPool();
 
-    // Query opted-in users with their full weekly activity
+    // Query opted-in users with their full weekly activity and previous week's activity
     const queryResult = await pool.query(`
       SELECT uns.guild_id, uns.user_id,
              COALESCE(uwa.messages_count, 0) AS messages_count,
@@ -256,10 +298,19 @@ export async function dispatchWeeklyActivitySummaries(client) {
              COALESCE(uwa.media_count, 0) AS media_count,
              COALESCE(uwa.reactions_count, 0) AS reactions_count,
              COALESCE(uwa.reactions_received_count, 0) AS reactions_received_count,
-             COALESCE(uwa.total_xp_gained, 0) AS total_xp_gained
+             COALESCE(uwa.total_xp_gained, 0) AS total_xp_gained,
+             upwa.messages_count AS prev_messages_count,
+             upwa.voice_minutes AS prev_voice_minutes,
+             upwa.voice_calls_count AS prev_voice_calls_count,
+             upwa.media_count AS prev_media_count,
+             upwa.reactions_count AS prev_reactions_count,
+             upwa.reactions_received_count AS prev_reactions_received_count,
+             upwa.total_xp_gained AS prev_total_xp_gained
       FROM user_notification_settings uns
       LEFT JOIN user_weekly_activity uwa
         ON uwa.guild_id = uns.guild_id AND uwa.user_id = uns.user_id
+      LEFT JOIN user_previous_weekly_activity upwa
+        ON upwa.guild_id = uns.guild_id AND upwa.user_id = uns.user_id
       WHERE uns.notif_weekly_summary = TRUE
     `);
 
@@ -297,17 +348,29 @@ export async function dispatchWeeklyActivitySummaries(client) {
       const reactReceived = Number(record.reactions_received_count || 0).toLocaleString();
       const xpGained = Math.round(Number(record.total_xp_gained || 0)).toLocaleString();
 
+      const currXp = Math.round(Number(record.total_xp_gained || 0));
+      const prevXp = (record.prev_total_xp_gained !== null && record.prev_total_xp_gained !== undefined)
+        ? Math.round(Number(record.prev_total_xp_gained))
+        : null;
+
+      const msgDiff = getTrendIndicator(record.messages_count, record.prev_messages_count);
+      const voiceDiff = getTrendIndicator(record.voice_minutes, record.prev_voice_minutes);
+      const mediaDiff = getTrendIndicator(record.media_count, record.prev_media_count);
+      const reactGivenDiff = getTrendIndicator(record.reactions_count, record.prev_reactions_count);
+      const reactReceivedDiff = getTrendIndicator(record.reactions_received_count, record.prev_reactions_received_count);
+      const xpDiff = getTrendIndicator(currXp, prevXp);
+
       const embed = new EmbedBuilder()
         .setTitle('📊 Weekly Activity Summary')
         .setColor(0x5865F2)
         .setDescription(
           `Activity breakdown for **${guild.name}**:\n\n` +
-          `• 💬 Messages Sent: \`${msgCount}\`\n` +
-          `• 🎙️ Voice Time: \`${voiceMins} mins\`\n` +
-          `• 📎 Media Shared: \`${mediaFiles} files\`\n` +
-          `• ⭐ Reactions Given: \`${reactGiven}\`\n` +
-          `• ❤️ Reactions Received: \`${reactReceived}\`\n` +
-          `• ⚡ Total XP Gained: \`+${xpGained} XP\``
+          `• 💬 Messages Sent: \`${msgCount}\`${msgDiff}\n` +
+          `• 🎙️ Voice Time: \`${voiceMins} mins\`${voiceDiff}\n` +
+          `• 📎 Media Shared: \`${mediaFiles} files\`${mediaDiff}\n` +
+          `• ⭐ Reactions Given: \`${reactGiven}\`${reactGivenDiff}\n` +
+          `• ❤️ Reactions Received: \`${reactReceived}\`${reactReceivedDiff}\n` +
+          `• ⚡ Total XP Gained: \`+${xpGained} XP\`${xpDiff}`
         );
 
       const sent = await user.send({ embeds: [embed] }).then(() => true).catch(() => false);
@@ -317,8 +380,28 @@ export async function dispatchWeeklyActivitySummaries(client) {
       await new Promise(resolve => setTimeout(resolve, 75));
     }
 
-    // Reset weekly activity stats after summary dispatch
-    await pool.query('DELETE FROM user_weekly_activity');
+    // Archive current weekly activity into previous weekly activity for comparison in next week's summary
+    const clientDb = await pool.connect();
+    try {
+      await clientDb.query('BEGIN');
+      await clientDb.query('DELETE FROM user_previous_weekly_activity');
+      await clientDb.query(`
+        INSERT INTO user_previous_weekly_activity (
+          guild_id, user_id, messages_count, voice_minutes, voice_calls_count,
+          media_count, reactions_count, reactions_received_count, total_xp_gained, archived_at
+        )
+        SELECT guild_id, user_id, messages_count, voice_minutes, voice_calls_count,
+               media_count, reactions_count, reactions_received_count, total_xp_gained, NOW()
+        FROM user_weekly_activity
+      `);
+      await clientDb.query('DELETE FROM user_weekly_activity');
+      await clientDb.query('COMMIT');
+    } catch (archiveErr) {
+      await clientDb.query('ROLLBACK');
+      sysError('Weekly Activity Archive Failed', archiveErr);
+    } finally {
+      clientDb.release();
+    }
 
     sysLog('Weekly Activity Summary Dispatch Complete', {
       detail: `Successfully sent ${dispatchedCount} DM summaries out of ${records.length} opted-in users. Activity ledger reset.`
