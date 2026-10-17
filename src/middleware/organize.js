@@ -38,11 +38,11 @@ async function loadGuildFilters(guildId) {
         media_only: new Set(),
         cmd_only: new Set(),
         auto_react: new Set(),
-        forum_no_original: true,
+        forum_no_original: false,
         forum_no_attachment: false,
-        forum_auto_delete_enabled: true,
+        forum_auto_delete_enabled: false,
         forum_auto_delete_channels: new Set(),
-        hasAnyRule: true,
+        hasAnyRule: false,
         cachedAt: Date.now()
       });
       return;
@@ -52,7 +52,7 @@ async function loadGuildFilters(guildId) {
       ? Boolean(filters.forum_no_original)
       : (filters.no_original !== undefined
           ? Boolean(filters.no_original)
-          : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
+          : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : false));
 
     const noAttachment = filters.forum_no_attachment !== undefined
       ? Boolean(filters.forum_no_attachment)
@@ -728,13 +728,6 @@ export async function handleForumThreadCreateModeration(thread, parentChannel = 
 
   const author = starterMessage.author;
   const threadName = thread.name || 'Unnamed Post';
-
-  // Safe direct message to the author explaining the rule
-  if (author && !author.bot && thread.guild) {
-    author.send({
-      content: `Your post **${threadName}** in **${thread.guild.name}** (<#${parentId}>) was removed because posts in this forum require an attachment (media, image, or file).`
-    }).catch(() => {});
-  }
 
   try {
     await thread.delete('Auto-deleted forum post: No Attachment rule violation');

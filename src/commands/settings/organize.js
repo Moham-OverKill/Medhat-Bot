@@ -626,7 +626,7 @@ export async function renderForumsPanel(interaction) {
         ? Boolean(filters.forum_no_original)
         : (filters.no_original !== undefined
             ? Boolean(filters.no_original)
-            : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
+            : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : false));
 
     const isNoAttachmentEnabled = filters.forum_no_attachment !== undefined
         ? Boolean(filters.forum_no_attachment)
@@ -1006,7 +1006,7 @@ export async function handleOrganizeComponent(interaction) {
             ? Boolean(filters.forum_no_original)
             : (filters.no_original !== undefined
                 ? Boolean(filters.no_original)
-                : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
+                : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : false));
         const newStatus = !currentlyEnabled;
 
         const updatedFilters = {
