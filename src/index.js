@@ -443,7 +443,12 @@ client.once(Events.ClientReady, async () => {
               sysError('Emoji Blacklist Startup Sweep Error', err, { guild: guild.id })
             );
           }
-          if (channelFilters?.forum_auto_delete_enabled === true) {
+          const isNoOriginalActive = channelFilters?.forum_no_original !== undefined
+            ? channelFilters.forum_no_original === true
+            : (channelFilters?.no_original !== undefined
+                ? channelFilters.no_original === true
+                : (channelFilters?.forum_auto_delete_enabled !== undefined ? channelFilters.forum_auto_delete_enabled === true : true));
+          if (isNoOriginalActive) {
             await sweepOrphanedForumPosts(guild).catch(err =>
               sysError('Forum Auto-Delete Startup Sweep Error', err, { guild: guild.id })
             );

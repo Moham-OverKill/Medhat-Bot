@@ -186,6 +186,17 @@ async function handleMessage(message) {
       sysError('Emoji Blacklist Message Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
     }
 
+    // === FORUM STARTER POST MODERATION (No Attachment guard) ===
+    if (message.channel?.isThread?.() && (message.id === message.channel.id || message.channel.starterMessageId === message.id)) {
+      try {
+        const { handleForumThreadCreateModeration } = await import('../middleware/organize.js');
+        const wasDeleted = await handleForumThreadCreateModeration(message.channel);
+        if (wasDeleted) {
+          return; // Do NOT track activity for deleted threads
+        }
+      } catch (_) {}
+    }
+
     // === CONTENT FILTER CHECK (early guard) ===
     try {
       const { checkContentFilter, processAutoReact } = await import('../middleware/organize.js');
@@ -396,6 +407,11 @@ async function handleThreadCreate(thread) {
 
   return runInGuildContext(thread.guild.id, async () => {
     try {
+      // Moderate thread for forum moderation rules (e.g. No Attachment)
+      const { handleForumThreadCreateModeration, processAutoReact } = await import('../middleware/organize.js');
+      const wasDeleted = await handleForumThreadCreateModeration(thread);
+      if (wasDeleted) return;
+
       let starterMessage = thread.starterMessage || await thread.fetchStarterMessage().catch(() => null);
       if (!starterMessage) {
         // Brief pause if Discord is still indexing the starter message
@@ -403,7 +419,6 @@ async function handleThreadCreate(thread) {
         starterMessage = await thread.fetchStarterMessage().catch(() => null);
       }
       if (starterMessage && !starterMessage.author?.bot) {
-        const { processAutoReact } = await import('../middleware/organize.js');
         await processAutoReact(starterMessage);
       }
     } catch (error) {
