@@ -33,18 +33,34 @@ async function loadGuildFilters(guildId) {
     const filters = result.rows[0]?.filters;
     if (!filters || typeof filters !== 'object') {
       filterCache.set(guildId, {
-      links_only: new Set(),
+        links_only: new Set(),
         images_only: new Set(),
         media_only: new Set(),
         cmd_only: new Set(),
         auto_react: new Set(),
-        forum_auto_delete_enabled: false,
+        forum_no_original: true,
+        forum_no_attachment: false,
+        forum_auto_delete_enabled: true,
         forum_auto_delete_channels: new Set(),
-        hasAnyRule: false,
+        hasAnyRule: true,
         cachedAt: Date.now()
       });
       return;
     }
+
+    const noOriginal = filters.forum_no_original !== undefined
+      ? Boolean(filters.forum_no_original)
+      : (filters.no_original !== undefined
+          ? Boolean(filters.no_original)
+          : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
+
+    const noAttachment = filters.forum_no_attachment !== undefined
+      ? Boolean(filters.forum_no_attachment)
+      : (filters.no_attachment !== undefined ? Boolean(filters.no_attachment) : false);
+
+    const forumChannelIds = Array.isArray(filters.forum_channel_ids)
+      ? filters.forum_channel_ids
+      : (Array.isArray(filters.forum_auto_delete_channels) ? filters.forum_auto_delete_channels : []);
 
     const entry = {
       links_only: new Set(Array.isArray(filters.links_only) ? filters.links_only : []),
@@ -55,14 +71,16 @@ async function loadGuildFilters(guildId) {
       auto_react_emojis: Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0
         ? filters.auto_react_emojis
         : ['👍', '❤️', '😂', '😭'],
-      forum_auto_delete_enabled: filters.forum_auto_delete_enabled === true,
-      forum_auto_delete_channels: new Set(Array.isArray(filters.forum_auto_delete_channels) ? filters.forum_auto_delete_channels : []),
+      forum_no_original: noOriginal,
+      forum_no_attachment: noAttachment,
+      forum_auto_delete_enabled: noOriginal,
+      forum_auto_delete_channels: new Set(forumChannelIds),
       fix_embeds: !!filters.fix_embeds,
       cachedAt: Date.now()
     };
     entry.hasAnyRule = entry.links_only.size > 0 || entry.images_only.size > 0 ||
                        entry.media_only.size > 0 || entry.cmd_only.size > 0 ||
-                       entry.auto_react.size > 0 || entry.forum_auto_delete_enabled;
+                       entry.auto_react.size > 0 || entry.forum_no_original || entry.forum_no_attachment;
     filterCache.set(guildId, entry);
   } catch (error) {
     sysError('Filter Cache Load Failed', error, { guild: guildId });
@@ -442,7 +460,7 @@ export async function processAutoReact(message) {
 const deletingThreads = new Set();
 
 /**
- * Check if auto-delete is enabled for a given forum/media post thread
+ * Check if auto-delete (No Original) is enabled for a given forum/media post thread
  */
 export async function shouldAutoDeleteForumPost(guildId, parentChannelId) {
   if (!guildId) return false;
@@ -451,8 +469,25 @@ export async function shouldAutoDeleteForumPost(guildId, parentChannelId) {
     await loadGuildFilters(guildId);
     cached = filterCache.get(guildId);
   }
-  if (!cached || !cached.forum_auto_delete_enabled) return false;
+  if (!cached || !cached.forum_no_original) return false;
   // If specific channels are configured, only apply to those; otherwise apply to all forum/media channels
+  if (cached.forum_auto_delete_channels && cached.forum_auto_delete_channels.size > 0) {
+    return cached.forum_auto_delete_channels.has(parentChannelId);
+  }
+  return true;
+}
+
+/**
+ * Check if "No Attachment" rule is enabled for a given forum/media post thread
+ */
+export async function shouldEnforceNoAttachment(guildId, parentChannelId) {
+  if (!guildId) return false;
+  let cached = filterCache.get(guildId);
+  if (!cached || (Date.now() - cached.cachedAt > CACHE_TTL_MS)) {
+    await loadGuildFilters(guildId);
+    cached = filterCache.get(guildId);
+  }
+  if (!cached || !cached.forum_no_attachment) return false;
   if (cached.forum_auto_delete_channels && cached.forum_auto_delete_channels.size > 0) {
     return cached.forum_auto_delete_channels.has(parentChannelId);
   }
@@ -604,6 +639,139 @@ export async function handleOrphanedForumPostCleanup(postThread, deletedMessageI
 }
 
 /**
+ * Moderates a newly created forum post thread against the "No Attachment" rule.
+ * Strict multi-layer safeguards ensure parent forum channels are NEVER deleted.
+ *
+ * @param {ThreadChannel} thread - The newly created forum post thread
+ * @param {Channel|null} parentChannel - Optional cached reference to parent channel
+ * @returns {Promise<boolean>} true if thread was deleted as a violation, false otherwise
+ */
+export async function handleForumThreadCreateModeration(thread, parentChannel = null) {
+  if (!thread || !thread.id) return false;
+
+  // Safeguard Layer 1: Hard blocklist on any Guild Channel type
+  if (thread.type !== undefined && thread.type !== null && FORBIDDEN_GUILD_CHANNEL_TYPES.has(thread.type)) {
+    return false;
+  }
+
+  // Safeguard Layer 2: Explicit Thread & Type verification (Must strictly be a ThreadChannel)
+  if (
+    thread.isThread?.() !== true ||
+    (thread.type !== ChannelType.PublicThread && thread.type !== ChannelType.PrivateThread && thread.type !== 11 && thread.type !== 12)
+  ) {
+    return false;
+  }
+
+  // Safeguard Layer 3: Parent-Child Snowflake Isolation
+  let parentId = thread.parentId;
+  if (!parentId) {
+    try {
+      const fetched = await thread.fetch().catch(() => null);
+      if (fetched?.parentId) parentId = fetched.parentId;
+    } catch {}
+  }
+  if (!parentId || parentId === thread.id || thread.id === thread.guildId) {
+    return false;
+  }
+
+  if (!parentChannel && thread.guild) {
+    parentChannel = thread.guild.channels.cache.get(parentId)
+      || await thread.guild.channels.fetch(parentId).catch(() => null);
+  }
+
+  // Safeguard Layer 4: Parent must strictly be a Forum or Media channel, with a distinct ID
+  const isForumOrMediaParent = Boolean(
+    parentChannel &&
+    parentChannel.id === parentId &&
+    parentChannel.id !== thread.id && (
+      parentChannel.type === ChannelType.GuildForum ||
+      parentChannel.type === ChannelType.GuildMedia ||
+      parentChannel.type === 15 ||
+      parentChannel.type === 16
+    )
+  );
+
+  if (!isForumOrMediaParent) return false;
+
+  const guildId = thread.guild?.id || parentChannel?.guild?.id;
+  if (!guildId) return false;
+
+  const isNoAttachmentActive = await shouldEnforceNoAttachment(guildId, parentId);
+  if (!isNoAttachmentActive) return false;
+
+  const threadId = thread.id;
+  if (deletingThreads.has(threadId)) return false;
+
+  // Fetch starter message
+  let starterMessage = thread.starterMessage || await thread.fetchStarterMessage().catch(() => null);
+  if (!starterMessage) {
+    await new Promise(r => setTimeout(r, 400));
+    starterMessage = await thread.fetchStarterMessage().catch(() => null);
+  }
+  if (!starterMessage) {
+    const fetched = await thread.messages.fetch({ limit: 1 }).catch(() => null);
+    starterMessage = fetched?.first();
+  }
+
+  // If we can't find a starter message or if the author is a bot, skip
+  if (!starterMessage || starterMessage.author?.bot) return false;
+
+  // Check if starter message has attachments
+  const hasAttachments = Boolean(starterMessage.attachments && starterMessage.attachments.size > 0);
+  if (hasAttachments) {
+    return false; // Valid post with attachments
+  }
+
+  // Post has text only with zero attachments — violation!
+  deletingThreads.add(threadId);
+  setTimeout(() => deletingThreads.delete(threadId), 30000);
+
+  const author = starterMessage.author;
+  const threadName = thread.name || 'Unnamed Post';
+
+  // Safe direct message to the author explaining the rule
+  if (author && !author.bot && thread.guild) {
+    author.send({
+      content: `Your post **${threadName}** in **${thread.guild.name}** (<#${parentId}>) was removed because posts in this forum require an attachment (media, image, or file).`
+    }).catch(() => {});
+  }
+
+  try {
+    await thread.delete('Auto-deleted forum post: No Attachment rule violation');
+
+    sysLog('Forum Post Auto-Deleted (No Attachment)', {
+      guild: guildId,
+      threadId,
+      threadName,
+      parentId,
+      authorId: author?.id
+    });
+
+    const { sendLog } = await import('../utils/logger.js');
+    if (thread.guild) {
+      sendLog(
+        thread.guild,
+        'audit',
+        'orange',
+        '🗑️ Post Auto-Deleted',
+        `**Channel:** <#${parentId}>\n` +
+        `**Post Title:** \`${threadName}\`\n` +
+        `**Author:** ${author ? `<@${author.id}>` : 'Unknown'}\n` +
+        `**Reason:** Post created without required media/attachments`
+      );
+    }
+    return true;
+  } catch (error) {
+    if (error?.code === 10003) return true; // Already deleted
+    sysError('Forum Post Auto-Delete Failed (No Attachment)', error, {
+      guild: guildId,
+      threadId
+    });
+    return false;
+  }
+}
+
+/**
  * Sweep existing Forum & Media channels in a guild and delete any post
  * whose original starter message has already been deleted ("Original message was deleted").
  */
@@ -616,7 +784,7 @@ export async function sweepOrphanedForumPosts(guild) {
     cached = filterCache.get(guild.id);
   }
 
-  if (!cached || !cached.forum_auto_delete_enabled) return 0;
+  if (!cached || !cached.forum_no_original) return 0;
 
   const forumChannels = guild.channels.cache.filter(c =>
     c.type === ChannelType.GuildForum ||
