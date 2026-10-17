@@ -622,10 +622,19 @@ export async function renderForumsPanel(interaction) {
     const guildId = interaction.guildId;
     const filters = await getFilters(guildId);
 
-    const isAutoDeleteEnabled = filters.forum_auto_delete_enabled === true;
-    const configuredChannels = Array.isArray(filters.forum_auto_delete_channels)
-        ? filters.forum_auto_delete_channels
-        : [];
+    const isNoOriginalEnabled = filters.forum_no_original !== undefined
+        ? Boolean(filters.forum_no_original)
+        : (filters.no_original !== undefined
+            ? Boolean(filters.no_original)
+            : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
+
+    const isNoAttachmentEnabled = filters.forum_no_attachment !== undefined
+        ? Boolean(filters.forum_no_attachment)
+        : (filters.no_attachment !== undefined ? Boolean(filters.no_attachment) : false);
+
+    const configuredChannels = Array.isArray(filters.forum_channel_ids)
+        ? filters.forum_channel_ids
+        : (Array.isArray(filters.forum_auto_delete_channels) ? filters.forum_auto_delete_channels : []);
 
     const botMember = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
     const requiredPerms = [
@@ -669,15 +678,17 @@ export async function renderForumsPanel(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Organize — Forums');
 
-    const statusLine = `• **Status:** ${isAutoDeleteEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}`;
+    const noOriginalStatus = isNoOriginalEnabled ? '🟢 Enabled' : '🔴 Disabled';
+    const noAttachmentStatus = isNoAttachmentEnabled ? '🟢 Enabled' : '🔴 Disabled';
     const channelsDisplay = configuredChannels.length > 0
         ? configuredChannels.map(id => `<#${id}>`).join(', ')
         : '_All_';
     const scopeLine = `• **Channels:** ${channelsDisplay}`;
 
     embed.setDescription(
-        'Auto-delete posts when the original message is deleted.\n\n' +
-        `${statusLine}\n` +
+        'Auto-delete forum posts based on configured moderation rules.\n\n' +
+        `• **Rule 1 (No Original):** Auto-delete forum post when the original message is deleted (${noOriginalStatus})\n` +
+        `• **Rule 2 (No Attachment):** Auto-delete forum post if created without media/attachments (${noAttachmentStatus})\n` +
         `${scopeLine}`
     );
 
@@ -692,7 +703,7 @@ export async function renderForumsPanel(interaction) {
         embed.setColor(0x2B2D31);
     }
 
-    if (isAutoDeleteEnabled && interaction.guild) {
+    if (isNoOriginalEnabled && interaction.guild) {
         import('../../middleware/organize.js')
             .then(({ sweepOrphanedForumPosts }) => sweepOrphanedForumPosts(interaction.guild))
             .catch(() => {});
@@ -712,7 +723,7 @@ export async function renderForumsPanel(interaction) {
         .setChannelTypes(forumChannelTypes);
     components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-    // Button Row: [Back] [Reset] [Enable/Disable]
+    // Button Row: [ ⬅️ Back ] [ No Original: ON/OFF ] [ No Attachment: ON/OFF ]
     const buttonRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_organize')
@@ -720,14 +731,13 @@ export async function renderForumsPanel(interaction) {
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('organize_forum_scope_reset')
-            .setLabel('Reset')
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(configuredChannels.length === 0),
+            .setCustomId('organize_forum_no_original_toggle')
+            .setLabel(isNoOriginalEnabled ? 'No Original: ON' : 'No Original: OFF')
+            .setStyle(isNoOriginalEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
         new ButtonBuilder()
-            .setCustomId('organize_forum_auto_delete_toggle')
-            .setLabel(isAutoDeleteEnabled ? 'Disable' : 'Enable')
-            .setStyle(isAutoDeleteEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+            .setCustomId('organize_forum_no_attachment_toggle')
+            .setLabel(isNoAttachmentEnabled ? 'No Attachment: ON' : 'No Attachment: OFF')
+            .setStyle(isNoAttachmentEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
     );
     components.push(buttonRow);
 
@@ -988,35 +998,76 @@ export async function handleOrganizeComponent(interaction) {
         return renderForumsPanel(interaction);
     }
 
-    // Toggle Forum Auto-Delete
-    if (customId === 'organize_forum_auto_delete_toggle') {
+    // Toggle Forum Rule 1: No Original
+    if (customId === 'organize_forum_no_original_toggle') {
         const guildId = interaction.guildId;
         const filters = await getFilters(guildId);
-        const currentlyEnabled = filters.forum_auto_delete_enabled === true;
+        const currentlyEnabled = filters.forum_no_original !== undefined
+            ? Boolean(filters.forum_no_original)
+            : (filters.no_original !== undefined
+                ? Boolean(filters.no_original)
+                : (filters.forum_auto_delete_enabled !== undefined ? Boolean(filters.forum_auto_delete_enabled) : true));
         const newStatus = !currentlyEnabled;
 
-        const updatedFilters = { ...filters, forum_auto_delete_enabled: newStatus };
+        const updatedFilters = {
+            ...filters,
+            forum_no_original: newStatus,
+            no_original: newStatus,
+            forum_auto_delete_enabled: newStatus
+        };
         const { setGuildConfig } = await import('../../storage/config.js');
         await setGuildConfig(guildId, { channel_filters: updatedFilters });
         invalidateFilterCache(guildId);
 
         const logName = getUserLogName(interaction);
-        sendLog(interaction.guild, 'audit', 'cyan', `Forum Auto-Delete ${newStatus ? 'Enabled' : 'Disabled'}`,
+        sendLog(interaction.guild, 'audit', 'cyan', `Forum Rule (No Original) ${newStatus ? 'Enabled' : 'Disabled'}`,
+            `**Admin:** \`${logName}\`\n**Status:** ${newStatus ? 'Enabled' : 'Disabled'}`
+        );
+
+        if (newStatus && interaction.guild) {
+            import('../../middleware/organize.js')
+                .then(({ sweepOrphanedForumPosts }) => sweepOrphanedForumPosts(interaction.guild))
+                .catch(() => {});
+        }
+
+        return renderForumsPanel(interaction);
+    }
+
+    // Toggle Forum Rule 2: No Attachment
+    if (customId === 'organize_forum_no_attachment_toggle') {
+        const guildId = interaction.guildId;
+        const filters = await getFilters(guildId);
+        const currentlyEnabled = filters.forum_no_attachment !== undefined
+            ? Boolean(filters.forum_no_attachment)
+            : (filters.no_attachment !== undefined ? Boolean(filters.no_attachment) : false);
+        const newStatus = !currentlyEnabled;
+
+        const updatedFilters = {
+            ...filters,
+            forum_no_attachment: newStatus,
+            no_attachment: newStatus
+        };
+        const { setGuildConfig } = await import('../../storage/config.js');
+        await setGuildConfig(guildId, { channel_filters: updatedFilters });
+        invalidateFilterCache(guildId);
+
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'cyan', `Forum Rule (No Attachment) ${newStatus ? 'Enabled' : 'Disabled'}`,
             `**Admin:** \`${logName}\`\n**Status:** ${newStatus ? 'Enabled' : 'Disabled'}`
         );
 
         return renderForumsPanel(interaction);
     }
 
-    // Toggle channel scope for Forum Auto-Delete
+    // Toggle channel scope for Forum Moderation Rules
     if (customId === 'organize_forum_channels_select') {
         const guildId = interaction.guildId;
         const channelId = interaction.values[0];
         const filters = await getFilters(guildId);
 
-        const currentChannels = Array.isArray(filters.forum_auto_delete_channels)
-            ? [...filters.forum_auto_delete_channels]
-            : [];
+        const currentChannels = Array.isArray(filters.forum_channel_ids)
+            ? [...filters.forum_channel_ids]
+            : (Array.isArray(filters.forum_auto_delete_channels) ? [...filters.forum_auto_delete_channels] : []);
 
         const existingIndex = currentChannels.indexOf(channelId);
         let action;
@@ -1028,7 +1079,11 @@ export async function handleOrganizeComponent(interaction) {
             action = 'added to scope';
         }
 
-        const updatedFilters = { ...filters, forum_auto_delete_channels: currentChannels };
+        const updatedFilters = {
+            ...filters,
+            forum_auto_delete_channels: currentChannels,
+            forum_channel_ids: currentChannels
+        };
         const { setGuildConfig } = await import('../../storage/config.js');
         await setGuildConfig(guildId, { channel_filters: updatedFilters });
         invalidateFilterCache(guildId);
@@ -1041,21 +1096,8 @@ export async function handleOrganizeComponent(interaction) {
         return renderForumsPanel(interaction);
     }
 
-    // Reset Forum channel scope to All
-    if (customId === 'organize_forum_scope_reset') {
-        const guildId = interaction.guildId;
-        const filters = await getFilters(guildId);
-
-        const updatedFilters = { ...filters, forum_auto_delete_channels: [] };
-        const { setGuildConfig } = await import('../../storage/config.js');
-        await setGuildConfig(guildId, { channel_filters: updatedFilters });
-        invalidateFilterCache(guildId);
-
-        const logName = getUserLogName(interaction);
-        sendLog(interaction.guild, 'audit', 'cyan', 'Forum Channel Scope Reset',
-            `**Admin:** \`${logName}\`\n**Scope:** All Forum & Media Channels`
-        );
-
+    // Legacy fallback for old interaction buttons
+    if (customId === 'organize_forum_auto_delete_toggle' || customId === 'organize_forum_scope_reset') {
         return renderForumsPanel(interaction);
     }
 
