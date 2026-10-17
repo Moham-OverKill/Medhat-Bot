@@ -1151,6 +1151,32 @@ async function createTables() {
       ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS voice_calls_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS media_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE user_weekly_activity ADD COLUMN IF NOT EXISTS reactions_received_count INTEGER NOT NULL DEFAULT 0;
+
+      -- User Previous Week Activity Ledger for trend comparisons
+      CREATE TABLE IF NOT EXISTS user_previous_weekly_activity (
+        guild_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        messages_count INTEGER NOT NULL DEFAULT 0,
+        voice_minutes INTEGER NOT NULL DEFAULT 0,
+        voice_calls_count INTEGER NOT NULL DEFAULT 0,
+        media_count INTEGER NOT NULL DEFAULT 0,
+        reactions_count INTEGER NOT NULL DEFAULT 0,
+        reactions_received_count INTEGER NOT NULL DEFAULT 0,
+        total_xp_gained NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        archived_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_previous_weekly_lookup ON user_previous_weekly_activity(guild_id, user_id);
+
+      -- Baseline seed for users opted into weekly summary (based on latest week activity)
+      INSERT INTO user_previous_weekly_activity (
+        guild_id, user_id, messages_count, voice_minutes, voice_calls_count,
+        media_count, reactions_count, reactions_received_count, total_xp_gained, archived_at
+      )
+      SELECT uns.guild_id, uns.user_id, 161, 723, 0, 8, 20, 293, 1852, NOW()
+      FROM user_notification_settings uns
+      WHERE uns.notif_weekly_summary = TRUE
+      ON CONFLICT (guild_id, user_id) DO NOTHING;
     `);
 
     // Global User Preferences (Persistent inventory sort preference, etc.)

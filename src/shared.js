@@ -513,6 +513,8 @@ class DynamicCoinEmoji {
 }
 
 export const COIN_EMOJI = new DynamicCoinEmoji();
+export const EMOJI_INCREASE = '<:increase:1561015241981169715>';
+export const EMOJI_DECREASE = '<:decrease:1561015251028287629>';
 
 /**
  * Centralized helper to get currency name for a guild.
