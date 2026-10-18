@@ -732,11 +732,11 @@ export async function renderForumsPanel(interaction) {
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('organize_forum_no_original_toggle')
-            .setLabel(isNoOriginalEnabled ? 'No Original: ON' : 'No Original: OFF')
+            .setLabel('No Original')
             .setStyle(isNoOriginalEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
         new ButtonBuilder()
             .setCustomId('organize_forum_no_attachment_toggle')
-            .setLabel(isNoAttachmentEnabled ? 'No Attachment: ON' : 'No Attachment: OFF')
+            .setLabel('No Attachment')
             .setStyle(isNoAttachmentEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
     );
     components.push(buttonRow);
