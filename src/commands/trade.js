@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI, getUserDisplayName, isValidEconomyAmount, getUserLogName, safeTruncate, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity, getCurrencyName } from '../shared.js';
-import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { getUserBalance } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
@@ -1427,6 +1427,7 @@ export async function handleTradeSelect(interaction) {
  * Save to DB and post the public trade message
  */
 async function finalizeTradePosting(interaction, setup) {
+    let tradeId = null;
     try {
         const expiryDate = new Date();
         expiryDate.setMinutes(expiryDate.getMinutes() + 5);
@@ -1482,7 +1483,6 @@ async function finalizeTradePosting(interaction, setup) {
         }
 
         // 1. Save to Database
-        let tradeId = null;
         const res = await query(
             `INSERT INTO trades (guild_id, sender_id, target_id, sender_coins, target_coins, sender_items, target_items, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
