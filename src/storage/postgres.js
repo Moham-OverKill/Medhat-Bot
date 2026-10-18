@@ -1474,6 +1474,17 @@ async function createTables() {
         PRIMARY KEY (guild_id, category)
       );
       CREATE INDEX IF NOT EXISTS idx_image_host_threads_guild ON image_host_threads(guild_id);
+
+      CREATE TABLE IF NOT EXISTS migrated_assets (
+        source_url_clean TEXT PRIMARY KEY,
+        source_url_raw TEXT,
+        target_url TEXT,
+        category VARCHAR(32) NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        error_reason TEXT,
+        migrated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_migrated_assets_status ON migrated_assets(status);
     `);
 
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
