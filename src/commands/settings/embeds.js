@@ -9,6 +9,8 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  FileUploadBuilder,
+  LabelBuilder,
   MessageFlags,
   PermissionFlagsBits
 } from 'discord.js';
@@ -18,6 +20,7 @@ import { getUserLogName } from '../../shared.js';
 import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
 import { verifyAndHealMessageImages } from '../../utils/image-healer.js';
 import { sanitizeEmbed } from '../../utils/embed-sanitizer.js';
+import { uploadHostAsset } from '../../utils/image-host.js';
 
 const DEFAULT_EMBED_COLOR = 0x2F3136;
 
@@ -974,56 +977,51 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId(`embed_modal_images_${embedId}_${Date.now()}`)
       .setTitle('Edit Images');
 
-    // 1. Author Icon
-    const authorIconInput = new TextInputBuilder()
-      .setCustomId('embed_author_icon_url')
-      .setLabel('Author Icon')
-      .setPlaceholder('Icon on the top-left...')
-      .setStyle(TextInputStyle.Short)
+    // 1. Banner
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId('embed_image_file')
       .setRequired(false);
-    if (emb.author_icon_url != null && String(emb.author_icon_url).trim().length > 0) {
-      authorIconInput.setValue(String(emb.author_icon_url).trim());
-    }
+    const imageRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Banner' + (emb.image_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Big image under the text')
+        .setFileUploadComponent(imageUpload)
+    );
 
     // 2. Thumbnail
-    const thumbInput = new TextInputBuilder()
-      .setCustomId('embed_thumbnail_url')
-      .setLabel('Thumbnail')
-      .setPlaceholder('Image on the top-right...')
-      .setStyle(TextInputStyle.Short)
+    const thumbUpload = new FileUploadBuilder()
+      .setCustomId('embed_thumbnail_file')
       .setRequired(false);
-    if (emb.thumbnail_url != null && String(emb.thumbnail_url).trim().length > 0) {
-      thumbInput.setValue(String(emb.thumbnail_url).trim());
-    }
+    const thumbRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Thumbnail' + (emb.thumbnail_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Image on the top-right')
+        .setFileUploadComponent(thumbUpload)
+    );
 
-    // 3. Banner
-    const imageInput = new TextInputBuilder()
-      .setCustomId('embed_image_url')
-      .setLabel('Banner')
-      .setPlaceholder('Big image under the text...')
-      .setStyle(TextInputStyle.Short)
+    // 3. Author Icon
+    const authorIconUpload = new FileUploadBuilder()
+      .setCustomId('embed_author_icon_file')
       .setRequired(false);
-    if (emb.image_url != null && String(emb.image_url).trim().length > 0) {
-      imageInput.setValue(String(emb.image_url).trim());
-    }
+    const authorIconRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Author Icon' + (emb.author_icon_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Icon on the top-left')
+        .setFileUploadComponent(authorIconUpload)
+    );
 
     // 4. Footer Icon
-    const footerIconInput = new TextInputBuilder()
-      .setCustomId('embed_footer_icon_url')
-      .setLabel('Footer Icon')
-      .setPlaceholder('Icon on the bottom-left...')
-      .setStyle(TextInputStyle.Short)
+    const footerIconUpload = new FileUploadBuilder()
+      .setCustomId('embed_footer_icon_file')
       .setRequired(false);
-    if (emb.footer_icon_url != null && String(emb.footer_icon_url).trim().length > 0) {
-      footerIconInput.setValue(String(emb.footer_icon_url).trim());
-    }
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(authorIconInput),
-      new ActionRowBuilder().addComponents(thumbInput),
-      new ActionRowBuilder().addComponents(imageInput),
-      new ActionRowBuilder().addComponents(footerIconInput)
+    const footerIconRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Footer Icon' + (emb.footer_icon_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Icon on the bottom-left')
+        .setFileUploadComponent(footerIconUpload)
     );
+
+    modal.addComponents(imageRow, thumbRow, authorIconRow, footerIconRow);
 
     return interaction.showModal(modal);
   }
@@ -1211,56 +1209,51 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId(`embed_modal_group_images_${groupId}_${Date.now()}`)
       .setTitle('Edit Group Images');
 
-    // 1. Author Icon
-    const authorIconInput = new TextInputBuilder()
-      .setCustomId('embed_author_icon_url')
-      .setLabel('Author Icon')
-      .setPlaceholder('Icon on the top-left...')
-      .setStyle(TextInputStyle.Short)
+    // 1. Banner
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId('embed_image_file')
       .setRequired(false);
-    if (grp.author_icon_url != null && String(grp.author_icon_url).trim().length > 0) {
-      authorIconInput.setValue(String(grp.author_icon_url).trim());
-    }
+    const imageRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Banner' + (grp.image_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Big image under the text')
+        .setFileUploadComponent(imageUpload)
+    );
 
     // 2. Thumbnail
-    const thumbInput = new TextInputBuilder()
-      .setCustomId('embed_thumbnail_url')
-      .setLabel('Thumbnail')
-      .setPlaceholder('Image on the top-right...')
-      .setStyle(TextInputStyle.Short)
+    const thumbUpload = new FileUploadBuilder()
+      .setCustomId('embed_thumbnail_file')
       .setRequired(false);
-    if (grp.thumbnail_url != null && String(grp.thumbnail_url).trim().length > 0) {
-      thumbInput.setValue(String(grp.thumbnail_url).trim());
-    }
+    const thumbRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Thumbnail' + (grp.thumbnail_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Image on the top-right')
+        .setFileUploadComponent(thumbUpload)
+    );
 
-    // 3. Banner
-    const imageInput = new TextInputBuilder()
-      .setCustomId('embed_image_url')
-      .setLabel('Banner')
-      .setPlaceholder('Big image under the text...')
-      .setStyle(TextInputStyle.Short)
+    // 3. Author Icon
+    const authorIconUpload = new FileUploadBuilder()
+      .setCustomId('embed_author_icon_file')
       .setRequired(false);
-    if (grp.image_url != null && String(grp.image_url).trim().length > 0) {
-      imageInput.setValue(String(grp.image_url).trim());
-    }
+    const authorIconRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Author Icon' + (grp.author_icon_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Icon on the top-left')
+        .setFileUploadComponent(authorIconUpload)
+    );
 
     // 4. Footer Icon
-    const footerIconInput = new TextInputBuilder()
-      .setCustomId('embed_footer_icon_url')
-      .setLabel('Footer Icon')
-      .setPlaceholder('Icon on the bottom-left...')
-      .setStyle(TextInputStyle.Short)
+    const footerIconUpload = new FileUploadBuilder()
+      .setCustomId('embed_footer_icon_file')
       .setRequired(false);
-    if (grp.footer_icon_url != null && String(grp.footer_icon_url).trim().length > 0) {
-      footerIconInput.setValue(String(grp.footer_icon_url).trim());
-    }
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(authorIconInput),
-      new ActionRowBuilder().addComponents(thumbInput),
-      new ActionRowBuilder().addComponents(imageInput),
-      new ActionRowBuilder().addComponents(footerIconInput)
+    const footerIconRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Footer Icon' + (grp.footer_icon_url ? ' (Leave empty to keep)' : ''))
+        .setDescription('Icon on the bottom-left')
+        .setFileUploadComponent(footerIconUpload)
     );
+
+    modal.addComponents(imageRow, thumbRow, authorIconRow, footerIconRow);
 
     return interaction.showModal(modal);
   }
@@ -1617,63 +1610,73 @@ export async function handleEmbedModal(interaction) {
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
 
-    const rawAuthorIcon = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim();
-    const rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim();
-    const rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim();
-    const rawFooterIcon = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim();
+    let authorIconUrl = current.author_icon_url;
+    let thumbnailUrl = current.thumbnail_url;
+    let imageUrl = current.image_url;
+    let footerIconUrl = current.footer_icon_url;
 
-    const skippedFields = [];
-
-    // 1. Author Icon
-    let authorIconUrl = null;
-    if (rawAuthorIcon && rawAuthorIcon.length > 0) {
-      if (isValidImageUrl(rawAuthorIcon)) {
-        authorIconUrl = rawAuthorIcon;
-      } else {
-        authorIconUrl = current.author_icon_url;
-        skippedFields.push('Author Icon (not a valid image URL)');
-      }
+    // 1. Banner
+    const bannerFiles = interaction.fields.getUploadedFiles?.('embed_image_file');
+    const bannerFile = bannerFiles?.first?.() || (Array.isArray(bannerFiles) ? bannerFiles[0] : null);
+    if (bannerFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, bannerFile, {
+        filename: bannerFile.name,
+        label: `🖼️ Embed Banner: **${current.title || `Embed #${embedId}`}**`
+      });
+      imageUrl = uploadRes.url;
     } else {
-      authorIconUrl = null;
+      let rawBanner = '';
+      try { rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim(); } catch (_) {}
+      if (rawBanner === 'clear' || rawBanner === 'none') imageUrl = null;
+      else if (rawBanner && isValidImageUrl(rawBanner)) imageUrl = rawBanner;
     }
 
     // 2. Thumbnail
-    let thumbnailUrl = null;
-    if (rawThumb && rawThumb.length > 0) {
-      if (isValidImageUrl(rawThumb)) {
-        thumbnailUrl = rawThumb;
-      } else {
-        thumbnailUrl = current.thumbnail_url;
-        skippedFields.push('Thumbnail (not a valid image URL)');
-      }
+    const thumbFiles = interaction.fields.getUploadedFiles?.('embed_thumbnail_file');
+    const thumbFile = thumbFiles?.first?.() || (Array.isArray(thumbFiles) ? thumbFiles[0] : null);
+    if (thumbFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, thumbFile, {
+        filename: thumbFile.name,
+        label: `🖼️ Embed Thumbnail: **${current.title || `Embed #${embedId}`}**`
+      });
+      thumbnailUrl = uploadRes.url;
     } else {
-      thumbnailUrl = null;
+      let rawThumb = '';
+      try { rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim(); } catch (_) {}
+      if (rawThumb === 'clear' || rawThumb === 'none') thumbnailUrl = null;
+      else if (rawThumb && isValidImageUrl(rawThumb)) thumbnailUrl = rawThumb;
     }
 
-    // 3. Banner
-    let imageUrl = null;
-    if (rawBanner && rawBanner.length > 0) {
-      if (isValidImageUrl(rawBanner)) {
-        imageUrl = rawBanner;
-      } else {
-        imageUrl = current.image_url;
-        skippedFields.push('Banner (not a valid image URL)');
-      }
+    // 3. Author Icon
+    const authorFiles = interaction.fields.getUploadedFiles?.('embed_author_icon_file');
+    const authorFile = authorFiles?.first?.() || (Array.isArray(authorFiles) ? authorFiles[0] : null);
+    if (authorFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, authorFile, {
+        filename: authorFile.name,
+        label: `🖼️ Embed Author Icon: **${current.title || `Embed #${embedId}`}**`
+      });
+      authorIconUrl = uploadRes.url;
     } else {
-      imageUrl = null;
+      let rawAuthor = '';
+      try { rawAuthor = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim(); } catch (_) {}
+      if (rawAuthor === 'clear' || rawAuthor === 'none') authorIconUrl = null;
+      else if (rawAuthor && isValidImageUrl(rawAuthor)) authorIconUrl = rawAuthor;
     }
 
     // 4. Footer Icon
-    let footerIconUrl = null;
-    if (rawFooterIcon && rawFooterIcon.length > 0) {
-      if (isValidImageUrl(rawFooterIcon)) {
-        footerIconUrl = rawFooterIcon;
-      } else {
-        footerIconUrl = current.footer_icon_url;
-        skippedFields.push('Footer Icon (not a valid image URL)');
-      }
+    const footerFiles = interaction.fields.getUploadedFiles?.('embed_footer_icon_file');
+    const footerFile = footerFiles?.first?.() || (Array.isArray(footerFiles) ? footerFiles[0] : null);
+    if (footerFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, footerFile, {
+        filename: footerFile.name,
+        label: `🖼️ Embed Footer Icon: **${current.title || `Embed #${embedId}`}**`
+      });
+      footerIconUrl = uploadRes.url;
     } else {
-      footerIconUrl = null;
+      let rawFooter = '';
+      try { rawFooter = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim(); } catch (_) {}
+      if (rawFooter === 'clear' || rawFooter === 'none') footerIconUrl = null;
+      else if (rawFooter && isValidImageUrl(rawFooter)) footerIconUrl = rawFooter;
     }
 
     try {
@@ -2052,63 +2055,73 @@ export async function handleEmbedModal(interaction) {
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
 
-    const rawAuthorIcon = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim();
-    const rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim();
-    const rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim();
-    const rawFooterIcon = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim();
+    let authorIconUrl = current.author_icon_url;
+    let thumbnailUrl = current.thumbnail_url;
+    let imageUrl = current.image_url;
+    let footerIconUrl = current.footer_icon_url;
 
-    const skippedFields = [];
-
-    // 1. Author Icon
-    let authorIconUrl = null;
-    if (rawAuthorIcon && rawAuthorIcon.length > 0) {
-      if (isValidImageUrl(rawAuthorIcon)) {
-        authorIconUrl = rawAuthorIcon;
-      } else {
-        authorIconUrl = current.author_icon_url;
-        skippedFields.push('Author Icon (not a valid image URL)');
-      }
+    // 1. Banner
+    const bannerFiles = interaction.fields.getUploadedFiles?.('embed_image_file');
+    const bannerFile = bannerFiles?.first?.() || (Array.isArray(bannerFiles) ? bannerFiles[0] : null);
+    if (bannerFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, bannerFile, {
+        filename: bannerFile.name,
+        label: `🖼️ Group Banner: **${current.title || `Group #${groupId}`}**`
+      });
+      imageUrl = uploadRes.url;
     } else {
-      authorIconUrl = null;
+      let rawBanner = '';
+      try { rawBanner = interaction.fields.getTextInputValue('embed_image_url')?.trim(); } catch (_) {}
+      if (rawBanner === 'clear' || rawBanner === 'none') imageUrl = null;
+      else if (rawBanner && isValidImageUrl(rawBanner)) imageUrl = rawBanner;
     }
 
     // 2. Thumbnail
-    let thumbnailUrl = null;
-    if (rawThumb && rawThumb.length > 0) {
-      if (isValidImageUrl(rawThumb)) {
-        thumbnailUrl = rawThumb;
-      } else {
-        thumbnailUrl = current.thumbnail_url;
-        skippedFields.push('Thumbnail (not a valid image URL)');
-      }
+    const thumbFiles = interaction.fields.getUploadedFiles?.('embed_thumbnail_file');
+    const thumbFile = thumbFiles?.first?.() || (Array.isArray(thumbFiles) ? thumbFiles[0] : null);
+    if (thumbFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, thumbFile, {
+        filename: thumbFile.name,
+        label: `🖼️ Group Thumbnail: **${current.title || `Group #${groupId}`}**`
+      });
+      thumbnailUrl = uploadRes.url;
     } else {
-      thumbnailUrl = null;
+      let rawThumb = '';
+      try { rawThumb = interaction.fields.getTextInputValue('embed_thumbnail_url')?.trim(); } catch (_) {}
+      if (rawThumb === 'clear' || rawThumb === 'none') thumbnailUrl = null;
+      else if (rawThumb && isValidImageUrl(rawThumb)) thumbnailUrl = rawThumb;
     }
 
-    // 3. Banner
-    let imageUrl = null;
-    if (rawBanner && rawBanner.length > 0) {
-      if (isValidImageUrl(rawBanner)) {
-        imageUrl = rawBanner;
-      } else {
-        imageUrl = current.image_url;
-        skippedFields.push('Banner (not a valid image URL)');
-      }
+    // 3. Author Icon
+    const authorFiles = interaction.fields.getUploadedFiles?.('embed_author_icon_file');
+    const authorFile = authorFiles?.first?.() || (Array.isArray(authorFiles) ? authorFiles[0] : null);
+    if (authorFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, authorFile, {
+        filename: authorFile.name,
+        label: `🖼️ Group Author Icon: **${current.title || `Group #${groupId}`}**`
+      });
+      authorIconUrl = uploadRes.url;
     } else {
-      imageUrl = null;
+      let rawAuthor = '';
+      try { rawAuthor = interaction.fields.getTextInputValue('embed_author_icon_url')?.trim(); } catch (_) {}
+      if (rawAuthor === 'clear' || rawAuthor === 'none') authorIconUrl = null;
+      else if (rawAuthor && isValidImageUrl(rawAuthor)) authorIconUrl = rawAuthor;
     }
 
     // 4. Footer Icon
-    let footerIconUrl = null;
-    if (rawFooterIcon && rawFooterIcon.length > 0) {
-      if (isValidImageUrl(rawFooterIcon)) {
-        footerIconUrl = rawFooterIcon;
-      } else {
-        footerIconUrl = current.footer_icon_url;
-        skippedFields.push('Footer Icon (not a valid image URL)');
-      }
+    const footerFiles = interaction.fields.getUploadedFiles?.('embed_footer_icon_file');
+    const footerFile = footerFiles?.first?.() || (Array.isArray(footerFiles) ? footerFiles[0] : null);
+    if (footerFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'embeds', interaction.guild, footerFile, {
+        filename: footerFile.name,
+        label: `🖼️ Group Footer Icon: **${current.title || `Group #${groupId}`}**`
+      });
+      footerIconUrl = uploadRes.url;
     } else {
-      footerIconUrl = null;
+      let rawFooter = '';
+      try { rawFooter = interaction.fields.getTextInputValue('embed_footer_icon_url')?.trim(); } catch (_) {}
+      if (rawFooter === 'clear' || rawFooter === 'none') footerIconUrl = null;
+      else if (rawFooter && isValidImageUrl(rawFooter)) footerIconUrl = rawFooter;
     }
 
     try {
