@@ -541,8 +541,7 @@ export async function handleAddTypeSelect(interaction) {
       .setRequired(false);
 
     const imageLabel = new LabelBuilder()
-      .setLabel('Upload Item Image')
-      .setDescription('Upload image file for this item')
+      .setLabel('Image')
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder()
@@ -2099,8 +2098,7 @@ export async function handleShopPostImageBtn(interaction) {
     .setRequired(false);
 
   const imageLabel = new LabelBuilder()
-    .setLabel('Upload Post Image')
-    .setDescription('Select an image file from your device')
+    .setLabel('Image')
     .setFileUploadComponent(upload);
 
   modal.addLabelComponents(imageLabel);
@@ -4327,8 +4325,7 @@ export async function handleEditItemDetails(interaction) {
       .setRequired(false);
 
     const imageLabel = new LabelBuilder()
-      .setLabel('Upload Item Image' + (item.default_image_url ? ' (Leave empty to keep current)' : ''))
-      .setDescription('Upload a replacement image file')
+      .setLabel('Image')
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
