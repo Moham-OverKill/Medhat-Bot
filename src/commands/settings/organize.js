@@ -686,7 +686,9 @@ export async function renderForumsPanel(interaction) {
 
     embed.setDescription(
         `• **No Original:** ${noOriginalStatus}\n` +
+        `_Delete post if original message is deleted._\n\n` +
         `• **No Attachment:** ${noAttachmentStatus}\n` +
+        `_Delete post if created without attachments._\n\n` +
         `• **Channels:** ${channelsDisplay}`
     );
 
