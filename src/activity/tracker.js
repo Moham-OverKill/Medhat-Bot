@@ -259,10 +259,10 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
 
   // Load guild config for anti-cheat toggles
   const config = await getCachedGuildConfig(guildId);
-  const minLengthEnforced = config?.anti_cheat_text_min_length ?? true;
-  const cooldownEnforced = config?.anti_cheat_text_cooldown ?? true;
-  const duplicatesEnforced = config?.anti_cheat_text_no_duplicates ?? true;
-  const prefixesEnforced = config?.anti_cheat_text_no_prefixes ?? true;
+  const minLengthEnforced = config?.anti_cheat_text_min_length ?? false;
+  const cooldownEnforced = config?.anti_cheat_text_cooldown ?? false;
+  const duplicatesEnforced = config?.anti_cheat_text_no_duplicates ?? false;
+  const prefixesEnforced = config?.anti_cheat_text_no_prefixes ?? false;
 
   // 2. Minimum length OR valid attachment & calculate length-based points
   const pointsEarned = calculateMessagePoints(content, hasAttachments, minLengthEnforced);
@@ -435,16 +435,16 @@ export async function stopAllVoiceTracking(guildId) {
 export function isVoiceStateValid(voiceState, config = null) {
   if (!voiceState || !voiceState.channel) return false;
 
-  const noMute = config ? (config.anti_cheat_voice_no_mute ?? true) : true;
+  const noMute = config ? (config.anti_cheat_voice_no_mute ?? false) : false;
   if (noMute && (voiceState.selfMute || voiceState.serverMute)) return false;
 
-  const noDeafen = config ? (config.anti_cheat_voice_no_deafen ?? true) : true;
+  const noDeafen = config ? (config.anti_cheat_voice_no_deafen ?? false) : false;
   if (noDeafen && (voiceState.selfDeaf || voiceState.serverDeaf)) return false;
 
-  const noAfk = config ? (config.anti_cheat_voice_no_afk_channel ?? true) : true;
+  const noAfk = config ? (config.anti_cheat_voice_no_afk_channel ?? false) : false;
   if (noAfk && voiceState.guild?.afkChannelId && voiceState.channel.id === voiceState.guild.afkChannelId) return false;
 
-  const minHumans = config ? (config.anti_cheat_voice_min_humans ?? true) : true;
+  const minHumans = config ? (config.anti_cheat_voice_min_humans ?? false) : false;
   if (minHumans) {
     const members = voiceState.channel.members;
     if (!members) return false;
@@ -494,10 +494,10 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId, conf
   if (!channel) return;
   if (!config) config = await getCachedGuildConfig(guild.id);
 
-  const minHumans = config?.anti_cheat_voice_min_humans ?? true;
-  const noMute = config?.anti_cheat_voice_no_mute ?? true;
-  const noDeafen = config?.anti_cheat_voice_no_deafen ?? true;
-  const noAfk = config?.anti_cheat_voice_no_afk_channel ?? true;
+  const minHumans = config?.anti_cheat_voice_min_humans ?? false;
+  const noMute = config?.anti_cheat_voice_no_mute ?? false;
+  const noDeafen = config?.anti_cheat_voice_no_deafen ?? false;
+  const noAfk = config?.anti_cheat_voice_no_afk_channel ?? false;
 
   const humanMembers = channel.members.filter(m => !m.user.bot && m.id !== excludeUserId);
   const totalHumans = channel.members.filter(m => !m.user.bot).size;
@@ -666,7 +666,7 @@ export async function voicePointsTick(client) {
     // 1. SELF-HEALING SWEEP: Scan voice channels to resume valid users who were paused
     for (const [guildId, guild] of client.guilds.cache) {
       const config = await getCachedGuildConfig(guildId);
-      const minHumans = config?.anti_cheat_voice_min_humans ?? true;
+      const minHumans = config?.anti_cheat_voice_min_humans ?? false;
       const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased?.() || c.type === 2 || c.type === 13);
       for (const [channelId, channel] of voiceChannels) {
         if (await isActivityIgnored(guildId, channelId)) continue;
@@ -724,10 +724,10 @@ export async function voicePointsTick(client) {
         }
 
         const config = await getCachedGuildConfig(row.guild_id);
-        const noMute = config?.anti_cheat_voice_no_mute ?? true;
-        const noDeafen = config?.anti_cheat_voice_no_deafen ?? true;
-        const noAfk = config?.anti_cheat_voice_no_afk_channel ?? true;
-        const minHumans = config?.anti_cheat_voice_min_humans ?? true;
+        const noMute = config?.anti_cheat_voice_no_mute ?? false;
+        const noDeafen = config?.anti_cheat_voice_no_deafen ?? false;
+        const noAfk = config?.anti_cheat_voice_no_afk_channel ?? false;
+        const minHumans = config?.anti_cheat_voice_min_humans ?? false;
 
         if (noMute && (voiceState.selfMute || voiceState.serverMute)) {
           const reason = (voiceState.serverDeaf || voiceState.selfDeaf) ? 'Deafened' : 'Muted';
@@ -845,7 +845,7 @@ export async function syncVoicePresence(guild) {
   if (!guild) return;
   try {
     const config = await getCachedGuildConfig(guild.id);
-    const minHumans = config?.anti_cheat_voice_min_humans ?? true;
+    const minHumans = config?.anti_cheat_voice_min_humans ?? false;
     const channels = guild.channels.cache.filter(c => c.isVoiceBased());
     for (const [id, channel] of channels) {
       const humanMembers = channel.members.filter(m => !m.user.bot);
