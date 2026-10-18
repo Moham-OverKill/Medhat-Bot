@@ -10,10 +10,13 @@ import {
     ChannelType,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    FileUploadBuilder,
+    LabelBuilder
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { uploadHostAsset } from '../utils/image-host.js';
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
 import { handleRewardsSetup as showRewardsPanel, handleRewardsComponent } from './rewards.js';
@@ -292,17 +295,20 @@ export async function showCustomizeModal(interaction) {
         .setRequired(false);
     if (currentNickname) nameInput.setValue(currentNickname);
 
-    const avatarInput = new TextInputBuilder()
-        .setCustomId('bot_avatar')
-        .setLabel('Bot Server Avatar URL')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter profile image URL')
+    const avatarUpload = new FileUploadBuilder()
+        .setCustomId('bot_avatar_file')
         .setRequired(false);
-    if (currentServerAvatar) avatarInput.setValue(currentServerAvatar);
+
+    const avatarRow = new ActionRowBuilder().addComponents(
+        new LabelBuilder()
+            .setLabel('Bot Server Avatar' + (currentServerAvatar ? ' (Leave empty to keep)' : ''))
+            .setDescription('Upload avatar image file')
+            .setFileUploadComponent(avatarUpload)
+    );
 
     modal.addComponents(
         new ActionRowBuilder().addComponents(nameInput),
-        new ActionRowBuilder().addComponents(avatarInput)
+        avatarRow
     );
     await interaction.showModal(modal);
 }
@@ -512,7 +518,27 @@ export async function handleSettingsComponent(interaction) {
             const config = await getGuildConfig(guildId) || {};
             
             const botName = interaction.fields.getTextInputValue('bot_name');
-            const botAvatar = interaction.fields.getTextInputValue('bot_avatar');
+
+            let newAvatar = null;
+            const avatarFiles = interaction.fields.getUploadedFiles?.('bot_avatar_file');
+            const avatarFile = avatarFiles?.first?.() || (Array.isArray(avatarFiles) ? avatarFiles[0] : null);
+            if (avatarFile) {
+                const uploadRes = await uploadHostAsset(interaction.client, 'avatars', interaction.guild, avatarFile, {
+                    filename: avatarFile.name,
+                    label: `🖼️ Server Bot Avatar: **${interaction.guild.name}**`
+                });
+                newAvatar = uploadRes.url;
+            } else {
+                let rawAvatar = null;
+                try { rawAvatar = interaction.fields.getTextInputValue('bot_avatar')?.trim(); } catch (_) {}
+                if (rawAvatar && rawAvatar.toLowerCase() !== 'none') {
+                    newAvatar = rawAvatar;
+                } else if (rawAvatar === '' || rawAvatar?.toLowerCase() === 'clear') {
+                    newAvatar = null;
+                } else {
+                    newAvatar = config.bot_avatar || null;
+                }
+            }
 
             // --- 1. Nickname Status & Update ---
             const client = interaction.client;
@@ -555,7 +581,6 @@ export async function handleSettingsComponent(interaction) {
             }
 
             // --- 3. Avatar Status & Update ---
-            const newAvatar = botAvatar && botAvatar.trim() ? botAvatar.trim() : null;
             let avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
             let avatarReason = null;
 
