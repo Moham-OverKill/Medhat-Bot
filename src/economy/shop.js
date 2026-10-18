@@ -1009,25 +1009,6 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       }
     }
 
-    // ========== UNLOCKED ITEMS: 999 CAP CHECK ==========
-    // Prevents integer overflow or runaway stacking.
-    if (!isLocked && item.item_type !== 'pack') {
-      const capCheck = await client.query(
-        `SELECT id, COALESCE(quantity, 1) as quantity
-         FROM user_inventory
-         WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
-         FOR UPDATE`,
-        [userId, guildId, itemId]
-      );
-      const currentTotal = capCheck.rows.reduce((sum, r) => sum + (parseInt(r.quantity) || 1), 0);
-      if (currentTotal + qty > 999) {
-        await client.query('ROLLBACK');
-        const remaining = 999 - currentTotal;
-        sysLog('Purchase Attempt Failed', { user: userId, guild: guildId, detail: `Item: ${item.name} | Reason: 999 cap exceeded (have ${currentTotal}, want ${qty})` });
-        return { success: false, error: remaining > 0 ? `You can only hold up to 999 copies. You can buy ${remaining} more.` : 'You have reached the maximum of 999 copies of this item.' };
-      }
-    }
-
     // Track pack info for later use
     let packInfo = null;
 

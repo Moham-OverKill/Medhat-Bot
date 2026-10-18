@@ -1050,10 +1050,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
            if (i.is_tradable === false) return false; // Filter out Locked items
            const rawQty = parseInt(i.quantity) || 1;
            const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
-           if (availToTrade <= 0) return false;
-
-           const recipientTotalQty = targetQtyMap[i.shop_item_id] || 0;
-           return recipientTotalQty < 999;
+           return availToTrade > 0;
         });
 
         if (tradableItems.length === 0) {
@@ -1080,10 +1077,7 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
             if (i.is_tradable === false) return false;
             const rawQty = parseInt(i.quantity) || 1;
             const availToTrade = i.expires_at ? (rawQty - 1) : rawQty;
-            if (availToTrade <= 0) return false;
-
-            const requesterTotalQty = senderQtyMap[i.shop_item_id] || 0;
-            return requesterTotalQty < 999;
+            return availToTrade > 0;
         });
 
         if (tradableItems.length === 0) {
@@ -1260,14 +1254,7 @@ export async function handleTradeModal(interaction) {
         const tradeInvId = unactRows.rows[0].id;
         const itemOwnedQty = totalUnactivated;
 
-        const recipientId = isGive ? setup.targetId : setup.senderId;
-        const recipientRes = await query(
-            'SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
-            [recipientId, item.shop_item_id, setup.guildId]
-        );
-        const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
-        const maxAllowedByCap = 999 - recipientTotal;
-        const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
+        const availableQty = itemOwnedQty;
 
         if (qty > availableQty) {
             return interaction.followUp({ content: `❌ You can only trade up to ${availableQty} cop${availableQty === 1 ? 'y' : 'ies'} of this item.`, flags: MessageFlags.Ephemeral });
@@ -1403,19 +1390,7 @@ export async function handleTradeSelect(interaction) {
     const tradeInvId = unactRows.rows[0].id;
     const itemOwnedQty = totalUnactivated;
 
-    const recipientId = isGive ? setup.targetId : setup.senderId;
-    const recipientRes = await query(
-        'SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) as total FROM user_inventory WHERE user_id = $1 AND shop_item_id = $2 AND guild_id = $3',
-        [recipientId, item.shop_item_id, setup.guildId]
-    );
-    const recipientTotal = parseInt(recipientRes.rows[0]?.total || 0);
-    const maxAllowedByCap = 999 - recipientTotal;
-    const availableQty = Math.min(itemOwnedQty, maxAllowedByCap);
-
-    if (availableQty <= 0) {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
-        return interaction.followUp({ content: '❌ The recipient already has the maximum of 999 copies of this item.', flags: MessageFlags.Ephemeral });
-    }
+    const availableQty = itemOwnedQty;
 
     if (availableQty >= 1) {
         const modalTitle = safeTruncate(`${isGive ? 'Giving' : 'Requesting'} ${item.name}`, 45);
@@ -1428,7 +1403,7 @@ export async function handleTradeSelect(interaction) {
             .setLabel(isGive ? 'How many are you giving?' : 'How many are you requesting?')
             .setPlaceholder(String(itemOwnedQty))
             .setMinLength(1)
-            .setMaxLength(3)
+            .setMaxLength(10)
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
@@ -1952,17 +1927,6 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     const firstRole = firstRow.role_id?.split(/[,\s]+/)[0];
                     if (firstRole && roleContextMember && roleContextMember.roles.cache.has(firstRole)) {
                         throw new Error(`Recipient already has the role for **${firstRow.name}** (Locked item).`);
-                    }
-                } else {
-                    const receiverQtyRes = await client.query(
-                        `SELECT COALESCE(SUM(COALESCE(quantity, 1)), 0) AS total
-                         FROM user_inventory WHERE user_id = $1 AND guild_id = $2 
-                         AND (($3::int IS NOT NULL AND shop_item_id = $3::int) OR ($3::int IS NULL AND role_id = $4))`,
-                        [receiverId, trade.guild_id, shopItemId, roleId]
-                    );
-                    const receiverCurrentQty = parseInt(receiverQtyRes.rows[0]?.total || 0);
-                    if (receiverCurrentQty + offerQty > 999) {
-                        throw new Error(`Trading **${firstRow.name}** would push recipient over the 999-copy limit.`);
                     }
                 }
             }

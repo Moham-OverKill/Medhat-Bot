@@ -636,9 +636,9 @@ export async function handleAdminSetQuantity(interaction) {
     const rawQty = interaction.fields.getTextInputValue('new_quantity');
     const newQty = parseInt(rawQty, 10);
 
-    if (isNaN(newQty) || newQty < 0 || newQty > 999) {
+    if (isNaN(newQty) || newQty < 0 || newQty > 1000000) {
         return interaction.reply({
-            content: '❌ Please enter a valid quantity between 0 and 999.',
+            content: '❌ Please enter a valid quantity (0 to remove, max 1,000,000).',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -2013,7 +2013,7 @@ export async function handleAdminUserComponent(interaction) {
                     .setPlaceholder(String(currentQty))
                     .setValue(String(currentQty))
                     .setMinLength(1)
-                    .setMaxLength(3)
+                    .setMaxLength(7)
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
