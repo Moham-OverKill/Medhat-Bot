@@ -981,47 +981,39 @@ export async function handleEmbedComponent(interaction) {
     const imageUpload = new FileUploadBuilder()
       .setCustomId('embed_image_file')
       .setRequired(false);
-    const imageRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Banner' + (emb.image_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Big image under the text')
-        .setFileUploadComponent(imageUpload)
-    );
+    const imageLabel = new LabelBuilder()
+      .setLabel('Banner' + (emb.image_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Big image under the text')
+      .setFileUploadComponent(imageUpload);
 
     // 2. Thumbnail
     const thumbUpload = new FileUploadBuilder()
       .setCustomId('embed_thumbnail_file')
       .setRequired(false);
-    const thumbRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Thumbnail' + (emb.thumbnail_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Image on the top-right')
-        .setFileUploadComponent(thumbUpload)
-    );
+    const thumbLabel = new LabelBuilder()
+      .setLabel('Thumbnail' + (emb.thumbnail_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Image on the top-right')
+      .setFileUploadComponent(thumbUpload);
 
     // 3. Author Icon
     const authorIconUpload = new FileUploadBuilder()
       .setCustomId('embed_author_icon_file')
       .setRequired(false);
-    const authorIconRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Author Icon' + (emb.author_icon_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Icon on the top-left')
-        .setFileUploadComponent(authorIconUpload)
-    );
+    const authorIconLabel = new LabelBuilder()
+      .setLabel('Author Icon' + (emb.author_icon_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Icon on the top-left')
+      .setFileUploadComponent(authorIconUpload);
 
     // 4. Footer Icon
     const footerIconUpload = new FileUploadBuilder()
       .setCustomId('embed_footer_icon_file')
       .setRequired(false);
-    const footerIconRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Footer Icon' + (emb.footer_icon_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Icon on the bottom-left')
-        .setFileUploadComponent(footerIconUpload)
-    );
+    const footerIconLabel = new LabelBuilder()
+      .setLabel('Footer Icon' + (emb.footer_icon_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Icon on the bottom-left')
+      .setFileUploadComponent(footerIconUpload);
 
-    modal.addComponents(imageRow, thumbRow, authorIconRow, footerIconRow);
+    modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
 
     return interaction.showModal(modal);
   }
@@ -1213,47 +1205,39 @@ export async function handleEmbedComponent(interaction) {
     const imageUpload = new FileUploadBuilder()
       .setCustomId('embed_image_file')
       .setRequired(false);
-    const imageRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Banner' + (grp.image_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Big image under the text')
-        .setFileUploadComponent(imageUpload)
-    );
+    const imageLabel = new LabelBuilder()
+      .setLabel('Banner' + (grp.image_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Big image under the text')
+      .setFileUploadComponent(imageUpload);
 
     // 2. Thumbnail
     const thumbUpload = new FileUploadBuilder()
       .setCustomId('embed_thumbnail_file')
       .setRequired(false);
-    const thumbRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Thumbnail' + (grp.thumbnail_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Image on the top-right')
-        .setFileUploadComponent(thumbUpload)
-    );
+    const thumbLabel = new LabelBuilder()
+      .setLabel('Thumbnail' + (grp.thumbnail_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Image on the top-right')
+      .setFileUploadComponent(thumbUpload);
 
     // 3. Author Icon
     const authorIconUpload = new FileUploadBuilder()
       .setCustomId('embed_author_icon_file')
       .setRequired(false);
-    const authorIconRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Author Icon' + (grp.author_icon_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Icon on the top-left')
-        .setFileUploadComponent(authorIconUpload)
-    );
+    const authorIconLabel = new LabelBuilder()
+      .setLabel('Author Icon' + (grp.author_icon_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Icon on the top-left')
+      .setFileUploadComponent(authorIconUpload);
 
     // 4. Footer Icon
     const footerIconUpload = new FileUploadBuilder()
       .setCustomId('embed_footer_icon_file')
       .setRequired(false);
-    const footerIconRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Footer Icon' + (grp.footer_icon_url ? ' (Leave empty to keep)' : ''))
-        .setDescription('Icon on the bottom-left')
-        .setFileUploadComponent(footerIconUpload)
-    );
+    const footerIconLabel = new LabelBuilder()
+      .setLabel('Footer Icon' + (grp.footer_icon_url ? ' (Leave empty to keep)' : ''))
+      .setDescription('Icon on the bottom-left')
+      .setFileUploadComponent(footerIconUpload);
 
-    modal.addComponents(imageRow, thumbRow, authorIconRow, footerIconRow);
+    modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
 
     return interaction.showModal(modal);
   }

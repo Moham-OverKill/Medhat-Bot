@@ -518,53 +518,59 @@ export async function handleAddTypeSelect(interaction) {
 
   const nameInput = new TextInputBuilder()
     .setCustomId('item_name')
-    .setLabel('Name')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+  const nameLabel = new LabelBuilder()
+    .setLabel('Name')
+    .setTextInputComponent(nameInput);
 
   if (type === 'item') {
     const roleInput = new TextInputBuilder()
       .setCustomId('item_role')
-      .setLabel('Role ID')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('123456789012345678')
       .setRequired(true);
+
+    const roleLabel = new LabelBuilder()
+      .setLabel('Role ID')
+      .setTextInputComponent(roleInput);
 
     const imageUpload = new FileUploadBuilder()
       .setCustomId('item_image_file')
       .setRequired(false);
 
-    const imageRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Upload Item Image')
-        .setDescription('Upload image file for this item')
-        .setFileUploadComponent(imageUpload)
-    );
+    const imageLabel = new LabelBuilder()
+      .setLabel('Upload Item Image')
+      .setDescription('Upload image file for this item')
+      .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder()
       .setCustomId('item_duration')
-      .setLabel('Duration (Days)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('Leave empty for permanent')
       .setRequired(false);
 
+    const durLabel = new LabelBuilder()
+      .setLabel('Duration (Days)')
+      .setDescription('Leave empty for permanent')
+      .setTextInputComponent(durInput);
+
     const reqInput = new TextInputBuilder()
       .setCustomId('item_required')
-      .setLabel('Required Roles (Role IDs)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('separate IDs by "-" or "," or space')
       .setRequired(false);
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(roleInput),
-      imageRow,
-      new ActionRowBuilder().addComponents(durInput),
-      new ActionRowBuilder().addComponents(reqInput)
-    );
+    const reqLabel = new LabelBuilder()
+      .setLabel('Required Roles (Role IDs)')
+      .setDescription('separate IDs by "-" or "," or space')
+      .setTextInputComponent(reqInput);
+
+    modal.addLabelComponents(nameLabel, roleLabel, imageLabel, durLabel, reqLabel);
+  } else {
+    modal.addLabelComponents(nameLabel);
   }
-  // Pack no longer has price field here - set at post time
 
   await interaction.showModal(modal);
 }
@@ -2092,14 +2098,12 @@ export async function handleShopPostImageBtn(interaction) {
     .setCustomId('post_image_file')
     .setRequired(false);
 
-  const imageRow = new ActionRowBuilder().addComponents(
-    new LabelBuilder()
-      .setLabel('Upload Post Image')
-      .setDescription('Select an image file from your device')
-      .setFileUploadComponent(upload)
-  );
+  const imageLabel = new LabelBuilder()
+    .setLabel('Upload Post Image')
+    .setDescription('Select an image file from your device')
+    .setFileUploadComponent(upload);
 
-  modal.addComponents(imageRow);
+  modal.addLabelComponents(imageLabel);
   await interaction.showModal(modal);
 }
 
@@ -4312,21 +4316,23 @@ export async function handleEditItemDetails(interaction) {
       .setCustomId(`shop_item_modal_edit_${itemId}_item_${Date.now()}`)
       .setTitle('Edit Shop Item');
 
-    const nameInput = new TextInputBuilder().setCustomId('item_name').setLabel('Name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
-    const roleInput = new TextInputBuilder().setCustomId('item_role').setLabel('Role ID').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
+    const nameInput = new TextInputBuilder().setCustomId('item_name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
+    const nameLabel = new LabelBuilder().setLabel('Name').setTextInputComponent(nameInput);
+
+    const roleInput = new TextInputBuilder().setCustomId('item_role').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
+    const roleLabel = new LabelBuilder().setLabel('Role ID').setTextInputComponent(roleInput);
 
     const imageUpload = new FileUploadBuilder()
       .setCustomId('item_image_file')
       .setRequired(false);
 
-    const imageRow = new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Upload Item Image' + (item.default_image_url ? ' (Leave empty to keep current)' : ''))
-        .setDescription('Upload a replacement image file')
-        .setFileUploadComponent(imageUpload)
-    );
+    const imageLabel = new LabelBuilder()
+      .setLabel('Upload Item Image' + (item.default_image_url ? ' (Leave empty to keep current)' : ''))
+      .setDescription('Upload a replacement image file')
+      .setFileUploadComponent(imageUpload);
 
-    const durInput = new TextInputBuilder().setCustomId('item_duration').setLabel('Duration (Days)').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
+    const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
+    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setDescription('Leave empty for permanent').setTextInputComponent(durInput);
 
     // Source of Truth: Pre-fill with Database IDs for consistency
     let reqPreFill = '';
@@ -4347,19 +4353,16 @@ export async function handleEditItemDetails(interaction) {
 
     const reqInput = new TextInputBuilder()
       .setCustomId('item_required')
-      .setLabel('Requirements (Role IDs)')
       .setStyle(TextInputStyle.Short)
       .setValue(reqPreFill)
       .setRequired(false)
       .setPlaceholder('Separate IDs by "-", "," or space');
+    const reqLabel = new LabelBuilder()
+      .setLabel('Requirements (Role IDs)')
+      .setDescription('Separate IDs by "-", "," or space')
+      .setTextInputComponent(reqInput);
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(nameInput),
-      new ActionRowBuilder().addComponents(roleInput),
-      imageRow,
-      new ActionRowBuilder().addComponents(durInput),
-      new ActionRowBuilder().addComponents(reqInput)
-    );
+    modal.addLabelComponents(nameLabel, roleLabel, imageLabel, durLabel, reqLabel);
 
     await interaction.showModal(modal);
   } catch (error) {
@@ -5489,35 +5492,34 @@ export async function handleLootBoxCreateModalStart(interaction) {
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
-    .setLabel('Name')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('Golden Chest')
     .setRequired(true)
     .setMaxLength(100);
 
+  const nameLabel = new LabelBuilder()
+    .setLabel('Name')
+    .setTextInputComponent(nameInput);
+
   const closedUpload = new FileUploadBuilder()
     .setCustomId('image_closed_file')
     .setRequired(false);
+
+  const closedLabel = new LabelBuilder()
+    .setLabel('Closed Box Image')
+    .setDescription('Upload closed chest image')
+    .setFileUploadComponent(closedUpload);
 
   const openedUpload = new FileUploadBuilder()
     .setCustomId('image_opened_file')
     .setRequired(false);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Closed Box Image')
-        .setDescription('Upload closed chest image')
-        .setFileUploadComponent(closedUpload)
-    ),
-    new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Opened Box Image')
-        .setDescription('Upload opened chest image')
-        .setFileUploadComponent(openedUpload)
-    )
-  );
+  const openedLabel = new LabelBuilder()
+    .setLabel('Opened Box Image')
+    .setDescription('Upload opened chest image')
+    .setFileUploadComponent(openedUpload);
+
+  modal.addLabelComponents(nameLabel, closedLabel, openedLabel);
 
   await interaction.showModal(modal);
 }
@@ -6341,36 +6343,35 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
-    .setLabel('Name')
     .setStyle(TextInputStyle.Short)
     .setValue(box.name)
     .setPlaceholder('Golden Chest')
     .setRequired(true)
     .setMaxLength(100);
 
+  const nameLabel = new LabelBuilder()
+    .setLabel('Name')
+    .setTextInputComponent(nameInput);
+
   const closedUpload = new FileUploadBuilder()
     .setCustomId('image_closed_file')
     .setRequired(false);
+
+  const closedLabel = new LabelBuilder()
+    .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep current)' : ''))
+    .setDescription('Upload closed chest image')
+    .setFileUploadComponent(closedUpload);
 
   const openedUpload = new FileUploadBuilder()
     .setCustomId('image_opened_file')
     .setRequired(false);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep current)' : ''))
-        .setDescription('Upload closed chest image')
-        .setFileUploadComponent(closedUpload)
-    ),
-    new ActionRowBuilder().addComponents(
-      new LabelBuilder()
-        .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep current)' : ''))
-        .setDescription('Upload opened chest image')
-        .setFileUploadComponent(openedUpload)
-    )
-  );
+  const openedLabel = new LabelBuilder()
+    .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep current)' : ''))
+    .setDescription('Upload opened chest image')
+    .setFileUploadComponent(openedUpload);
+
+  modal.addLabelComponents(nameLabel, closedLabel, openedLabel);
 
   await interaction.showModal(modal);
 }
