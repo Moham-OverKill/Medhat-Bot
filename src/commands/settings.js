@@ -289,27 +289,25 @@ export async function showCustomizeModal(interaction) {
     
     const nameInput = new TextInputBuilder()
         .setCustomId('bot_name')
-        .setLabel('Bot Server Nickname')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('Enter bot nickname')
         .setRequired(false);
     if (currentNickname) nameInput.setValue(currentNickname);
 
+    const nameLabel = new LabelBuilder()
+        .setLabel('Bot Server Nickname')
+        .setTextInputComponent(nameInput);
+
     const avatarUpload = new FileUploadBuilder()
         .setCustomId('bot_avatar_file')
         .setRequired(false);
 
-    const avatarRow = new ActionRowBuilder().addComponents(
-        new LabelBuilder()
-            .setLabel('Bot Server Avatar' + (currentServerAvatar ? ' (Leave empty to keep)' : ''))
-            .setDescription('Upload avatar image file')
-            .setFileUploadComponent(avatarUpload)
-    );
+    const avatarLabel = new LabelBuilder()
+        .setLabel('Bot Server Avatar' + (currentServerAvatar ? ' (Leave empty to keep)' : ''))
+        .setDescription('Upload avatar image file')
+        .setFileUploadComponent(avatarUpload);
 
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(nameInput),
-        avatarRow
-    );
+    modal.addLabelComponents(nameLabel, avatarLabel);
     await interaction.showModal(modal);
 }
 
