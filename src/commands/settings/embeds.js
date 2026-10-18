@@ -1593,6 +1593,7 @@ export async function handleEmbedModal(interaction) {
 
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
+    const skippedFields = [];
 
     let authorIconUrl = current.author_icon_url;
     let thumbnailUrl = current.thumbnail_url;
@@ -2038,6 +2039,7 @@ export async function handleEmbedModal(interaction) {
 
     if (curRes.rows.length === 0) return renderRootEmbedMenu(interaction);
     const current = curRes.rows[0];
+    const skippedFields = [];
 
     let authorIconUrl = current.author_icon_url;
     let thumbnailUrl = current.thumbnail_url;

@@ -19,6 +19,7 @@ export default [
         crypto: "readonly",
         fetch: "readonly",
         AbortController: "readonly",
+        AbortSignal: "readonly",
         URL: "readonly",
         URLSearchParams: "readonly",
         Map: "readonly",
@@ -56,7 +57,14 @@ export default [
       "no-self-assign": "error",
       "no-constant-binary-expression": "error",
       "use-isnan": "error",
-      "valid-typeof": "error"
+      "valid-typeof": "error",
+      "no-redeclare": "error",
+      "no-const-assign": "error",
+      "no-unsafe-finally": "error",
+      "no-setter-return": "error",
+      "no-sparse-arrays": "error",
+      "no-unexpected-multiline": "error",
+      "no-unsafe-negation": "error"
     }
   }
 ];
