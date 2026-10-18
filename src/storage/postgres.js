@@ -1398,6 +1398,35 @@ async function createTables() {
       WHERE (config ? 'battlepass_xp_increment' AND ((config->>'battlepass_xp_increment')::numeric <= 0 OR config->>'battlepass_xp_increment' IS NULL));
     `).catch(() => {});
 
+    // One-time migration: preserve active anti-cheat gates for all existing servers before default changes to false
+    const existingAntiCheatMigration = await pool.query(
+      `SELECT 1 FROM bot_migrations WHERE migration_name = 'preserve_existing_anticheat_defaults'`
+    ).catch(() => ({ rowCount: 0 }));
+
+    if (existingAntiCheatMigration.rowCount === 0) {
+      await pool.query(`
+        UPDATE guild_configs
+        SET config = (
+          jsonb_build_object(
+            'anti_cheat_voice_min_humans', true,
+            'anti_cheat_voice_no_mute', true,
+            'anti_cheat_voice_no_deafen', true,
+            'anti_cheat_voice_no_afk_channel', true,
+            'anti_cheat_text_cooldown', true,
+            'anti_cheat_text_min_length', true,
+            'anti_cheat_text_no_duplicates', true,
+            'anti_cheat_text_no_prefixes', true
+          ) || config
+        )
+      `).catch(() => {});
+
+      await pool.query(
+        `INSERT INTO bot_migrations (migration_name, details)
+         VALUES ('preserve_existing_anticheat_defaults', '{"action": "preserved existing server anti-cheat settings"}'::jsonb)
+         ON CONFLICT (migration_name) DO NOTHING`
+      ).catch(() => {});
+    }
+
     // Server Community Interface Configuration
     await pool.query(`
       CREATE TABLE IF NOT EXISTS server_interface_config (
