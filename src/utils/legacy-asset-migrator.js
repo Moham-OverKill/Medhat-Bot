@@ -81,55 +81,144 @@ export function isAlreadyHostedUrl(url, knownHostIds) {
 }
 
 /**
- * Download an image buffer safely with custom headers and timeout.
+ * Detect image file extension from binary magic bytes.
+ * Ensures WebP, JPEG, GIF, and PNG files are not mislabeled as PNG,
+ * which causes Discord to fall back to generic file card icons.
+ *
+ * @param {Buffer} buffer
+ * @returns {'png'|'jpg'|'gif'|'webp'|'avif'|null}
+ */
+export function detectImageExtension(buffer) {
+  if (!buffer || buffer.length < 8) return null;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4E &&
+    buffer[3] === 0x47
+  ) {
+    return 'png';
+  }
+
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return 'jpg';
+  }
+
+  // GIF: 47 49 46 (GIF87a or GIF89a)
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    return 'gif';
+  }
+
+  // WEBP: RIFF at 0..3 and WEBP at 8..11
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+    buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+  ) {
+    return 'webp';
+  }
+
+  // AVIF: ftyp box at 4..7
+  if (buffer.length >= 16) {
+    const boxType = buffer.subarray(4, 8).toString('latin1');
+    if (boxType === 'ftyp') {
+      const brand = buffer.subarray(8, 12).toString('latin1');
+      if (brand === 'avif' || brand === 'avis') {
+        return 'avif';
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Download an image buffer safely with custom headers, timeout, and automatic 429 backoff retry.
  *
  * @param {string} url
+ * @param {number} [maxRetries=3]
  * @returns {Promise<{buffer: Buffer, extension: string}>}
  */
-async function fetchImageBuffer(url) {
+async function fetchImageBuffer(url, maxRetries = 3) {
   const cleanUrl = url.trim();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
 
-  try {
-    const res = await fetch(cleanUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 DiscordBot/1.0',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const res = await fetch(cleanUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 DiscordBot/1.0',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        }
+      });
+
+      if (res.status === 429) {
+        // Rate limited by Discord CDN or origin server
+        const retryAfterHeader = res.headers.get('retry-after');
+        const waitSec = retryAfterHeader ? parseFloat(retryAfterHeader) : (attempt * 4);
+        const waitMs = Math.min(Math.max(waitSec * 1000, 3000), 15000);
+        sysWarn(`Rate limited (429) downloading asset, waiting ${waitMs}ms (attempt ${attempt}/${maxRetries})...`, { url: cleanUrl });
+        await sleep(waitMs);
+        continue;
       }
-    });
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (buffer.length === 0) {
+        throw new Error('Downloaded image buffer is 0 bytes');
+      }
+
+      // Determine extension: prioritize binary magic bytes first so Discord renders inline preview
+      let ext = detectImageExtension(buffer);
+
+      if (!ext) {
+        if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+          ext = 'jpg';
+        } else if (contentType.includes('gif')) {
+          ext = 'gif';
+        } else if (contentType.includes('webp')) {
+          ext = 'webp';
+        } else if (contentType.includes('png')) {
+          ext = 'png';
+        }
+      }
+
+      if (!ext) {
+        const rawPath = cleanUrl.split('?')[0];
+        const dotExt = rawPath.split('.').pop()?.toLowerCase();
+        if (dotExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(dotExt)) {
+          ext = dotExt;
+        }
+      }
+
+      if (!ext) {
+        ext = 'png';
+      }
+
+      return { buffer, extension: ext };
+    } catch (err) {
+      if (attempt < maxRetries && (err.name === 'AbortError' || err.message?.includes('429'))) {
+        await sleep(attempt * 2500);
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const contentType = res.headers.get('content-type') || '';
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    if (buffer.length === 0) {
-      throw new Error('Downloaded image buffer is 0 bytes');
-    }
-
-    // Determine extension
-    let ext = 'png';
-    const rawPath = cleanUrl.split('?')[0];
-    const dotExt = rawPath.split('.').pop()?.toLowerCase();
-    if (dotExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(dotExt)) {
-      ext = dotExt;
-    } else if (contentType.includes('jpeg') || contentType.includes('jpg')) {
-      ext = 'jpg';
-    } else if (contentType.includes('gif')) {
-      ext = 'gif';
-    } else if (contentType.includes('webp')) {
-      ext = 'webp';
-    }
-
-    return { buffer, extension: ext };
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw new Error('Maximum download retries exceeded');
 }
 
 /**
@@ -179,8 +268,12 @@ async function processAssetMigration(client, category, guildId, sourceUrl, label
           inMemoryCache.set(cleanKey, row.target_url);
           return { status: 'reused', newUrl: row.target_url };
         } else if (row.status === 'failed') {
-          // Previously failed; return skipped to avoid repeatedly failing on dead URLs
-          return { status: 'failed', error: 'Previously recorded as unrecoverable' };
+          // Check if failure was permanent (e.g. 404). If temporary (429/timeout), allow retry
+          const reason = row.error_reason || '';
+          const isPerm = reason.includes('404') || reason.includes('410') || reason.includes('400');
+          if (isPerm) {
+            return { status: 'failed', error: 'Previously recorded as unrecoverable (404/410)' };
+          }
         }
       }
     } catch (checkErr) {
@@ -188,18 +281,22 @@ async function processAssetMigration(client, category, guildId, sourceUrl, label
     }
   }
 
-  // 4. Download source image buffer
+  // 4. Download source image buffer with automatic retry
   let downloadResult;
   try {
     downloadResult = await fetchImageBuffer(rawUrl);
   } catch (downloadErr) {
     const errMessage = downloadErr.message || 'Download failed';
+    const isPermanent = errMessage.includes('404') || errMessage.includes('410') || errMessage.includes('400');
+
     sysWarn(`Legacy asset download failed for ${label}`, {
       sourceUrl: rawUrl.slice(0, 100),
-      error: errMessage
+      error: errMessage,
+      permanent: isPermanent
     });
 
-    if (pool) {
+    // Only record permanent errors in DB to prevent locking out transient rate limits
+    if (pool && isPermanent) {
       await pool.query(`
         INSERT INTO migrated_assets (source_url_clean, source_url_raw, category, status, error_reason, migrated_at)
         VALUES ($1, $2, $3, 'failed', $4, NOW())
@@ -211,27 +308,44 @@ async function processAssetMigration(client, category, guildId, sourceUrl, label
     return { status: 'failed', error: errMessage };
   }
 
-  // 5. Upload buffer to the server's dedicated forum thread
+  // 5. Upload buffer to the server's dedicated forum thread with retry
   let uploadResult;
-  try {
-    const targetGuild = client.guilds.cache.get(guildId) || { id: guildId, name: `Server ${guildId}` };
-    const filename = `${category}_migrated_${Date.now()}.${downloadResult.extension}`;
+  let uploadAttempts = 0;
+  while (uploadAttempts < 3) {
+    uploadAttempts++;
+    try {
+      const targetGuild = client.guilds.cache.get(guildId) || { id: guildId, name: `Server ${guildId}` };
+      const filename = `${category}_migrated_${Date.now()}.${downloadResult.extension}`;
 
-    uploadResult = await uploadHostAsset(client, category, targetGuild, downloadResult.buffer, {
-      filename,
-      label: `🔄 **Migrated Asset:** ${label}`
-    });
+      uploadResult = await uploadHostAsset(client, category, targetGuild, downloadResult.buffer, {
+        filename,
+        label: `🔄 **Migrated Asset:** ${label}`
+      });
 
-    // Pacing delay (500ms) to respect Discord REST rate limits
-    await sleep(500);
-  } catch (uploadErr) {
-    const errMessage = uploadErr.message || 'Upload failed';
-    sysError(`Failed to upload migrated asset to host server for ${label}`, uploadErr, {
-      guild: guildId,
-      category
-    });
+      // Pacing delay (1500ms) to respect Discord REST rate limits safely
+      await sleep(1500);
+      break;
+    } catch (uploadErr) {
+      const isRateLimit = uploadErr.message?.includes('429') || uploadErr.code === 429 || uploadErr.status === 429;
+      if (isRateLimit && uploadAttempts < 3) {
+        const waitMs = uploadAttempts * 4000;
+        sysWarn(`Discord rate limit encountered during upload for ${label}, waiting ${waitMs}ms before retry...`);
+        await sleep(waitMs);
+        continue;
+      }
 
-    return { status: 'failed', error: errMessage };
+      const errMessage = uploadErr.message || 'Upload failed';
+      sysError(`Failed to upload migrated asset to host server for ${label}`, uploadErr, {
+        guild: guildId,
+        category
+      });
+
+      return { status: 'failed', error: errMessage };
+    }
+  }
+
+  if (!uploadResult) {
+    return { status: 'failed', error: 'Upload failed after retries' };
   }
 
   const newUrl = uploadResult.url;
@@ -292,6 +406,13 @@ export async function runLegacyAssetSelfHealingSweep(client, options = {}) {
 
   try {
     await ensureMigratedAssetsTable();
+
+    // Unblock any previously failed transient records (rate limits / network aborts) so they are retried
+    await pool.query(`
+      DELETE FROM migrated_assets
+      WHERE status = 'failed'
+        AND (error_reason LIKE '%429%' OR error_reason LIKE '%rate%' OR error_reason LIKE '%timeout%' OR error_reason LIKE '%abort%' OR error_reason LIKE '%0 bytes%' OR error_reason IS NULL)
+    `).catch(() => {});
 
     // Collect all known host channel IDs and active/recorded forum thread IDs
     const knownHostIds = new Set(Object.values(IMAGE_HOST_CHANNELS));
@@ -629,6 +750,14 @@ export async function runLegacyAssetSelfHealingSweep(client, options = {}) {
       sysError('Error migrating guild_configs bot_avatar', configsErr);
     }
 
+    // 7. Format Self-Healing: Check for any previously migrated assets whose binary magic bytes
+    // did not match .png (e.g., WebP or JPEG), and re-upload with the correct extension so Discord displays inline image cards.
+    try {
+      await healMismatchedExtensionAssets(client);
+    } catch (healErr) {
+      sysWarn('Mismatched extension healing pass encountered error', healErr);
+    }
+
     // Record migration pass in bot_migrations
     await pool.query(`
       INSERT INTO bot_migrations (migration_name, executed_at, details)
@@ -655,6 +784,99 @@ export async function runLegacyAssetSelfHealingSweep(client, options = {}) {
   }
 
   return lastSweepStats;
+}
+
+/**
+ * Heal any previously migrated assets whose binary magic bytes do not match .png (e.g. WebP or JPEG).
+ * When Discord receives a WebP image with a .png filename, its thumbnail decoder fails and displays
+ * a generic file download card. This healing function inspects existing records, and for any with
+ * mismatched extensions, uploads them with their true extension so Discord renders an inline preview.
+ *
+ * @param {import('discord.js').Client} client
+ */
+export async function healMismatchedExtensionAssets(client) {
+  const pool = getPool();
+  if (!pool) return;
+
+  try {
+    const res = await pool.query(`
+      SELECT source_url_clean, target_url, category
+      FROM migrated_assets
+      WHERE status = 'completed' AND target_url LIKE '%.png%'
+    `);
+
+    for (const row of res.rows) {
+      if (!row.target_url) continue;
+
+      try {
+        const headRes = await fetch(row.target_url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 DiscordBot/1.0'
+          }
+        });
+        if (!headRes.ok) continue;
+
+        const buf = Buffer.from(await headRes.arrayBuffer());
+        const trueExt = detectImageExtension(buf);
+
+        // If the binary format is NOT a real PNG (e.g., WebP or JPEG)
+        if (trueExt && trueExt !== 'png') {
+          sysLog(`Repairing mismatched asset format (${trueExt} previously stored as .png)`, {
+            category: row.category,
+            source: row.source_url_clean.slice(0, 80)
+          });
+
+          // Determine guild context from thread ID in the URL
+          const match = row.target_url.match(/cdn\.discordapp\.com\/attachments\/(\d+)\//i);
+          const threadId = match?.[1];
+          let targetGuild = null;
+
+          if (threadId) {
+            const threadCheck = await pool.query('SELECT guild_id FROM image_host_threads WHERE thread_id = $1 LIMIT 1', [threadId]).catch(() => ({ rows: [] }));
+            if (threadCheck.rows.length > 0) {
+              targetGuild = threadCheck.rows[0].guild_id;
+            }
+          }
+
+          if (!targetGuild) {
+            targetGuild = client.guilds.cache.first()?.id || IMAGE_HOST_GUILD_ID;
+          }
+
+          const filename = `${row.category}_migrated_${Date.now()}.${trueExt}`;
+          const newUpload = await uploadHostAsset(client, row.category, targetGuild, buf, {
+            filename,
+            label: `🔄 **Format Repaired (${trueExt.toUpperCase()}):** Inline Preview Restored`
+          });
+
+          await sleep(500);
+
+          const newUrl = newUpload.url;
+          const oldUrl = row.target_url;
+
+          // Update migrated_assets
+          await pool.query('UPDATE migrated_assets SET target_url = $1, migrated_at = NOW() WHERE source_url_clean = $2', [newUrl, row.source_url_clean]);
+
+          // Update references in all relevant tables
+          await pool.query('UPDATE shop_items SET default_image_url = $1 WHERE default_image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE shop_posts SET custom_image_url = $1 WHERE custom_image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE loot_boxes SET image_url = $1 WHERE image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE loot_boxes SET opened_image_url = $1 WHERE opened_image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embeds SET image_url = $1 WHERE image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embeds SET thumbnail_url = $1 WHERE thumbnail_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embeds SET author_icon_url = $1 WHERE author_icon_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embeds SET footer_icon_url = $1 WHERE footer_icon_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embed_groups SET image_url = $1 WHERE image_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embed_groups SET thumbnail_url = $1 WHERE thumbnail_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embed_groups SET author_icon_url = $1 WHERE author_icon_url = $2', [newUrl, oldUrl]);
+          await pool.query('UPDATE server_embed_groups SET footer_icon_url = $1 WHERE footer_icon_url = $2', [newUrl, oldUrl]);
+        }
+      } catch (itemRepairErr) {
+        sysWarn('Single asset format repair warning', itemRepairErr);
+      }
+    }
+  } catch (healErr) {
+    sysWarn('healMismatchedExtensionAssets sweep error', healErr);
+  }
 }
 
 /**
