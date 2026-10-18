@@ -678,18 +678,16 @@ export async function renderForumsPanel(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Organize — Forums');
 
-    const noOriginalStatus = isNoOriginalEnabled ? '🟢 Enabled' : '🔴 Disabled';
-    const noAttachmentStatus = isNoAttachmentEnabled ? '🟢 Enabled' : '🔴 Disabled';
+    const noOriginalStatus = isNoOriginalEnabled ? 'Enabled 🟢' : 'Disabled 🔴';
+    const noAttachmentStatus = isNoAttachmentEnabled ? 'Enabled 🟢' : 'Disabled 🔴';
     const channelsDisplay = configuredChannels.length > 0
         ? configuredChannels.map(id => `<#${id}>`).join(', ')
         : '_All_';
-    const scopeLine = `• **Channels:** ${channelsDisplay}`;
 
     embed.setDescription(
-        'Auto-delete forum posts based on configured moderation rules.\n\n' +
-        `• **Rule 1 (No Original):** Auto-delete forum post when the original message is deleted (${noOriginalStatus})\n` +
-        `• **Rule 2 (No Attachment):** Auto-delete forum post if created without media/attachments (${noAttachmentStatus})\n` +
-        `${scopeLine}`
+        `• **No Original:** ${noOriginalStatus}\n` +
+        `• **No Attachment:** ${noAttachmentStatus}\n` +
+        `• **Channels:** ${channelsDisplay}`
     );
 
     if (missingPerms.length > 0) {
