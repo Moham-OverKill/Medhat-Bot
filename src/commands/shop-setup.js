@@ -8,6 +8,8 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  FileUploadBuilder,
+  LabelBuilder,
   StringSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   UserSelectMenuBuilder,
@@ -18,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji } from '../shared.js';
+import { uploadHostAsset } from '../utils/image-host.js';
 
 import { query } from '../storage/postgres.js';
 import {
@@ -529,12 +532,16 @@ export async function handleAddTypeSelect(interaction) {
       .setPlaceholder('123456789012345678')
       .setRequired(true);
 
-    const imageInput = new TextInputBuilder()
-      .setCustomId('item_image_url')
-      .setLabel('Image URL')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('https://example.com/image.png')
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId('item_image_file')
       .setRequired(false);
+
+    const imageRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Upload Item Image')
+        .setDescription('Upload image file for this item')
+        .setFileUploadComponent(imageUpload)
+    );
 
     const durInput = new TextInputBuilder()
       .setCustomId('item_duration')
@@ -552,7 +559,7 @@ export async function handleAddTypeSelect(interaction) {
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(roleInput),
-      new ActionRowBuilder().addComponents(imageInput),
+      imageRow,
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
     );
@@ -696,19 +703,28 @@ export async function handleItemModalSubmit(interaction) {
       if (type === 'item') {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
         const durationRaw = interaction.fields.getTextInputValue('item_duration');
-        // Read image URL (new field replacing Price)
+        // Read image from upload field or URL fallback
         let itemImageUrl = null;
         try {
-          const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
-          if (rawImg && rawImg.toLowerCase() !== 'none') {
-            // Basic URL validation to prevent Discord API errors (one or more errors)
-            if (/^https?:\/\/.+\..+/i.test(rawImg)) {
-              itemImageUrl = rawImg;
-            } else {
-              return interaction.followUp({ content: '❌ Invalid Image URL. Please provide a valid http/https link or leave it empty.', flags: MessageFlags.Ephemeral });
+          const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
+          const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+          if (uploadedFile) {
+            const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+              filename: uploadedFile.name,
+              label: `🖼️ Item Asset: **${name}**`
+            });
+            itemImageUrl = uploadRes.url;
+          } else {
+            const rawImg = interaction.fields.getTextInputValue?.('item_image_url')?.trim?.();
+            if (rawImg && rawImg.toLowerCase() !== 'none') {
+              if (/^https?:\/\/.+\..+/i.test(rawImg)) {
+                itemImageUrl = rawImg;
+              } else {
+                return interaction.followUp({ content: '❌ Invalid Image URL. Please provide a valid http/https link or leave it empty.', flags: MessageFlags.Ephemeral });
+              }
             }
           }
-        } catch (e) { /* field may be absent on old interactions */ }
+        } catch (e) { /* field may be absent */ }
 
         if (!/^\d{17,20}$/.test(roleId)) {
           return interaction.editReply({ files: [], content: '❌ Invalid Role ID.', 
@@ -899,14 +915,25 @@ export async function handleItemModalSubmit(interaction) {
       if (type === 'item') {
         const roleId = interaction.fields.getTextInputValue('item_role').trim();
         const durationRaw = interaction.fields.getTextInputValue('item_duration').trim();
-        // Read image URL (new field replacing Price)
+        // Read image from upload field or URL fallback
         try {
-          const rawImg = interaction.fields.getTextInputValue('item_image_url').trim();
-          // Empty string or 'none' = clear image
-          if (rawImg === '' || rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
-            updates.default_image_url = null;
+          const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
+          const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+          if (uploadedFile) {
+            const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+              filename: uploadedFile.name,
+              label: `🖼️ Item Asset: **${name}**`
+            });
+            updates.default_image_url = uploadRes.url;
           } else {
-            updates.default_image_url = rawImg;
+            const rawImg = interaction.fields.getTextInputValue?.('item_image_url')?.trim?.();
+            if (rawImg !== undefined) {
+              if (rawImg === '' || rawImg.toLowerCase() === 'none' || rawImg.toLowerCase() === 'clear') {
+                updates.default_image_url = null;
+              } else if (rawImg) {
+                updates.default_image_url = rawImg;
+              }
+            }
           }
         } catch (e) { /* field may be absent */ }
 
@@ -2061,15 +2088,18 @@ export async function handleShopPostImageBtn(interaction) {
     .setCustomId(`shop_post_image_modal:${sessionId}`)
     .setTitle('Item Image');
 
-  const urlInput = new TextInputBuilder()
-    .setCustomId('image_url')
-    .setLabel('Image URL')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Empty = Default')
-    .setValue(currentCustomImage)
+  const upload = new FileUploadBuilder()
+    .setCustomId('post_image_file')
     .setRequired(false);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
+  const imageRow = new ActionRowBuilder().addComponents(
+    new LabelBuilder()
+      .setLabel('Upload Post Image')
+      .setDescription('Select an image file from your device')
+      .setFileUploadComponent(upload)
+  );
+
+  modal.addComponents(imageRow);
   await interaction.showModal(modal);
 }
 
@@ -2092,23 +2122,34 @@ export async function handleShopPostModalSubmit(interaction) {
     }
 
     if (customId === 'shop_post_image_modal') {
-      const rawVal = (interaction.fields.getTextInputValue('image_url') || '').trim();
-      const valLower = rawVal.toLowerCase();
-      if (valLower === '' || valLower === 'none' || valLower === 'default') {
-        state.imageUrl = null;
+      const uploadedFiles = interaction.fields.getUploadedFiles?.('post_image_file');
+      const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+      if (uploadedFile) {
+        const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+          filename: uploadedFile.name,
+          label: `🖼️ Shop Post Image: **${state.itemName || 'Item'}**`
+        });
+        state.imageUrl = uploadRes.url;
       } else {
-        const cleaned = cleanImageUrl(rawVal);
-        let defaultImg = null;
-        if (state.itemId) {
-          try {
-            const item = await getShopItem(state.itemId, interaction.guildId);
-            defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
-          } catch (_) {}
-        }
-        if (defaultImg && isSameImageUrl(cleaned, defaultImg)) {
+        let rawVal = '';
+        try { rawVal = (interaction.fields.getTextInputValue('image_url') || '').trim(); } catch (_) {}
+        const valLower = rawVal.toLowerCase();
+        if (valLower === '' || valLower === 'none' || valLower === 'default') {
           state.imageUrl = null;
         } else {
-          state.imageUrl = cleaned;
+          const cleaned = cleanImageUrl(rawVal);
+          let defaultImg = null;
+          if (state.itemId) {
+            try {
+              const item = await getShopItem(state.itemId, interaction.guildId);
+              defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+            } catch (_) {}
+          }
+          if (defaultImg && isSameImageUrl(cleaned, defaultImg)) {
+            state.imageUrl = null;
+          } else {
+            state.imageUrl = cleaned;
+          }
         }
       }
     } else if (customId === 'shop_post_desc_modal') {
@@ -4272,14 +4313,19 @@ export async function handleEditItemDetails(interaction) {
       .setTitle('Edit Shop Item');
 
     const nameInput = new TextInputBuilder().setCustomId('item_name').setLabel('Name').setStyle(TextInputStyle.Short).setValue(item.name).setRequired(true);
-    const imageInput = new TextInputBuilder()
-      .setCustomId('item_image_url')
-      .setLabel('Image URL')
-      .setStyle(TextInputStyle.Short)
-      .setValue(item.default_image_url || '')
-      .setPlaceholder('https://example.com/image.png')
-      .setRequired(false);
     const roleInput = new TextInputBuilder().setCustomId('item_role').setLabel('Role ID').setStyle(TextInputStyle.Short).setValue(item.role_id || '').setRequired(true);
+
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId('item_image_file')
+      .setRequired(false);
+
+    const imageRow = new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Upload Item Image' + (item.default_image_url ? ' (Leave empty to keep current)' : ''))
+        .setDescription('Upload a replacement image file')
+        .setFileUploadComponent(imageUpload)
+    );
+
     const durInput = new TextInputBuilder().setCustomId('item_duration').setLabel('Duration (Days)').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
 
     // Source of Truth: Pre-fill with Database IDs for consistency
@@ -4310,7 +4356,7 @@ export async function handleEditItemDetails(interaction) {
     modal.addComponents(
       new ActionRowBuilder().addComponents(nameInput),
       new ActionRowBuilder().addComponents(roleInput),
-      new ActionRowBuilder().addComponents(imageInput),
+      imageRow,
       new ActionRowBuilder().addComponents(durInput),
       new ActionRowBuilder().addComponents(reqInput)
     );
@@ -5449,24 +5495,28 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setRequired(true)
     .setMaxLength(100);
 
-  const imgClosedInput = new TextInputBuilder()
-    .setCustomId('image_closed')
-    .setLabel('Image (Closed)')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('https://example.com/chest_closed.png')
+  const closedUpload = new FileUploadBuilder()
+    .setCustomId('image_closed_file')
     .setRequired(false);
 
-  const imgOpenedInput = new TextInputBuilder()
-    .setCustomId('image_opened')
-    .setLabel('Image (Opened)')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('https://example.com/chest_opened.png')
+  const openedUpload = new FileUploadBuilder()
+    .setCustomId('image_opened_file')
     .setRequired(false);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(imgClosedInput),
-    new ActionRowBuilder().addComponents(imgOpenedInput)
+    new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Closed Box Image')
+        .setDescription('Upload closed chest image')
+        .setFileUploadComponent(closedUpload)
+    ),
+    new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Opened Box Image')
+        .setDescription('Upload opened chest image')
+        .setFileUploadComponent(openedUpload)
+    )
   );
 
   await interaction.showModal(modal);
@@ -5479,8 +5529,6 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = (interaction.fields.getTextInputValue('name') || '').trim();
-    const rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim();
-    const rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim();
 
     if (!name || name.length === 0) {
       return interaction.followUp({
@@ -5492,24 +5540,38 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     let imageUrl = null;
     let openedImageUrl = null;
 
-    if (rawClosed && rawClosed.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawClosed)) {
-        return interaction.followUp({
-          content: '❌ **Invalid Closed Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
-          flags: MessageFlags.Ephemeral
-        });
+    // 1. Process Closed Image (Upload or text fallback)
+    const closedFiles = interaction.fields.getUploadedFiles?.('image_closed_file');
+    const closedFile = closedFiles?.first?.() || (Array.isArray(closedFiles) ? closedFiles[0] : null);
+    if (closedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
+        filename: closedFile.name,
+        label: `📦 Loot Box (Closed): **${name}**`
+      });
+      imageUrl = uploadRes.url;
+    } else {
+      let rawClosed = '';
+      try { rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim(); } catch (_) {}
+      if (rawClosed && rawClosed.toLowerCase() !== 'none' && /^https?:\/\/.+\..+/i.test(rawClosed)) {
+        imageUrl = rawClosed;
       }
-      imageUrl = rawClosed;
     }
 
-    if (rawOpened && rawOpened.toLowerCase() !== 'none') {
-      if (!/^https?:\/\/.+\..+/i.test(rawOpened)) {
-        return interaction.followUp({
-          content: '❌ **Invalid Opened Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
-          flags: MessageFlags.Ephemeral
-        });
+    // 2. Process Opened Image (Upload or text fallback)
+    const openedFiles = interaction.fields.getUploadedFiles?.('image_opened_file');
+    const openedFile = openedFiles?.first?.() || (Array.isArray(openedFiles) ? openedFiles[0] : null);
+    if (openedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
+        filename: openedFile.name,
+        label: `📦 Loot Box (Opened): **${name}**`
+      });
+      openedImageUrl = uploadRes.url;
+    } else {
+      let rawOpened = '';
+      try { rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim(); } catch (_) {}
+      if (rawOpened && rawOpened.toLowerCase() !== 'none' && /^https?:\/\/.+\..+/i.test(rawOpened)) {
+        openedImageUrl = rawOpened;
       }
-      openedImageUrl = rawOpened;
     }
 
     // Mutual fallback: If only one is entered, use for both
@@ -6286,26 +6348,28 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(true)
     .setMaxLength(100);
 
-  const imgClosedInput = new TextInputBuilder()
-    .setCustomId('image_closed')
-    .setLabel('Image (Closed)')
-    .setStyle(TextInputStyle.Short)
-    .setValue(box.image_url || '')
-    .setPlaceholder('https://example.com/chest_closed.png')
+  const closedUpload = new FileUploadBuilder()
+    .setCustomId('image_closed_file')
     .setRequired(false);
 
-  const imgOpenedInput = new TextInputBuilder()
-    .setCustomId('image_opened')
-    .setLabel('Image (Opened)')
-    .setStyle(TextInputStyle.Short)
-    .setValue(box.opened_image_url || '')
-    .setPlaceholder('https://example.com/chest_opened.png')
+  const openedUpload = new FileUploadBuilder()
+    .setCustomId('image_opened_file')
     .setRequired(false);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(imgClosedInput),
-    new ActionRowBuilder().addComponents(imgOpenedInput)
+    new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep current)' : ''))
+        .setDescription('Upload closed chest image')
+        .setFileUploadComponent(closedUpload)
+    ),
+    new ActionRowBuilder().addComponents(
+      new LabelBuilder()
+        .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep current)' : ''))
+        .setDescription('Upload opened chest image')
+        .setFileUploadComponent(openedUpload)
+    )
   );
 
   await interaction.showModal(modal);
@@ -6318,8 +6382,6 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const name = (interaction.fields.getTextInputValue('name') || '').trim();
-    const rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim();
-    const rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim();
 
     if (!name || name.length === 0) {
       return interaction.followUp({
@@ -6328,36 +6390,48 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
       });
     }
 
-    let imageUrl = null;
-    let openedImageUrl = null;
+    const oldBox = await getLootBox(boxId, interaction.guildId);
+    let imageUrl = oldBox?.image_url || null;
+    let openedImageUrl = oldBox?.opened_image_url || null;
 
-    if (rawClosed && rawClosed.toLowerCase() !== 'none') {
-      const cleanedClosed = cleanImageUrl(rawClosed);
-      if (!cleanedClosed || !/^https?:\/\/.+\..+/i.test(cleanedClosed)) {
-        return interaction.followUp({
-          content: '❌ **Invalid Closed Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
-          flags: MessageFlags.Ephemeral
-        });
+    // 1. Process Closed Image (Upload or text fallback)
+    const closedFiles = interaction.fields.getUploadedFiles?.('image_closed_file');
+    const closedFile = closedFiles?.first?.() || (Array.isArray(closedFiles) ? closedFiles[0] : null);
+    if (closedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
+        filename: closedFile.name,
+        label: `📦 Loot Box (Closed): **${name}**`
+      });
+      imageUrl = uploadRes.url;
+    } else {
+      let rawClosed = '';
+      try { rawClosed = (interaction.fields.getTextInputValue('image_closed') || '').trim(); } catch (_) {}
+      if (rawClosed && rawClosed.toLowerCase() !== 'none') {
+        imageUrl = cleanImageUrl(rawClosed);
       }
-      imageUrl = cleanedClosed;
     }
 
-    if (rawOpened && rawOpened.toLowerCase() !== 'none') {
-      const cleanedOpened = cleanImageUrl(rawOpened);
-      if (!cleanedOpened || !/^https?:\/\/.+\..+/i.test(cleanedOpened)) {
-        return interaction.followUp({
-          content: '❌ **Invalid Opened Image URL**: Please provide a valid HTTP/HTTPS link or leave it empty.',
-          flags: MessageFlags.Ephemeral
-        });
+    // 2. Process Opened Image (Upload or text fallback)
+    const openedFiles = interaction.fields.getUploadedFiles?.('image_opened_file');
+    const openedFile = openedFiles?.first?.() || (Array.isArray(openedFiles) ? openedFiles[0] : null);
+    if (openedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
+        filename: openedFile.name,
+        label: `📦 Loot Box (Opened): **${name}**`
+      });
+      openedImageUrl = uploadRes.url;
+    } else {
+      let rawOpened = '';
+      try { rawOpened = (interaction.fields.getTextInputValue('image_opened') || '').trim(); } catch (_) {}
+      if (rawOpened && rawOpened.toLowerCase() !== 'none') {
+        openedImageUrl = cleanImageUrl(rawOpened);
       }
-      openedImageUrl = cleanedOpened;
     }
 
     // Mutual fallback: If only one is entered, use for both
     if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
     if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
 
-    const oldBox = await getLootBox(boxId, interaction.guildId);
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl, openedImageUrl });
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
