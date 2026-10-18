@@ -574,13 +574,25 @@ export async function handleShopBuyButton(interaction) {
           const currentBal = parseInt(userBalData?.balance || 0, 10);
 
           if (currentBal < unitPrice) {
+            const coinName = await getCurrencyName(guildId);
+            const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
+
             if (shopPost?.auto_equip === true) {
-              await tryAutoEquipExisting(userId, guildId, itemId, member);
+              const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
+              if (equippedName) {
+                const equipEmbed = new EmbedBuilder()
+                  .setColor('#E74C3C')
+                  .setDescription(`❌ You don't have enough ${coinName.toLowerCase()} to purchase another, but your existing copy of **${equippedName}** was equipped!`);
+                return interaction.reply({
+                  embeds: [equipEmbed],
+                  flags: MessageFlags.Ephemeral
+                });
+              }
             }
             const missing = Math.max(0, unitPrice - currentBal);
             const errEmbed = new EmbedBuilder()
               .setColor('#E74C3C')
-              .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
+              .setDescription(`❌ You need **${missing.toLocaleString()}** ${serverCoinEmoji} more to buy this.`);
             return interaction.reply({
               embeds: [errEmbed],
               flags: MessageFlags.Ephemeral
@@ -590,7 +602,66 @@ export async function handleShopBuyButton(interaction) {
           affordableQty = Math.floor(currentBal / unitPrice);
         }
 
-        // Interstitial Prerequisite Check (after stock, cap, and balance are verified)
+        // Step 2: Lock / Ownership Check (BEFORE Requirements)
+        if (isLocked) {
+          const pool = getPool();
+          const userInvRes = await pool.query(
+            `SELECT id, is_active, expires_at, COALESCE(quantity, 1) as quantity
+             FROM user_inventory
+             WHERE user_id = $1 AND guild_id = $2 AND shop_item_id = $3
+             ORDER BY is_active DESC, id ASC`,
+            [userId, guildId, itemId]
+          );
+
+          const totalOwned = userInvRes.rows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 1), 0);
+          if (totalOwned >= 1) {
+            const hasActive = userInvRes.rows.some(r => r.is_active);
+            if (hasActive) {
+              const infoEmbed = new EmbedBuilder()
+                .setColor('#3498DB')
+                .setDescription(`ℹ️ You already own and have **${item.name}** equipped.`);
+              return interaction.reply({
+                embeds: [infoEmbed],
+                flags: MessageFlags.Ephemeral
+              });
+            }
+
+            if (shopPost?.auto_equip === true) {
+              const prereqs = await checkPrerequisites(member, guildId, item.required_items);
+              if (prereqs.met) {
+                const unequippedRow = userInvRes.rows.find(r => !r.is_active) || userInvRes.rows[0];
+                const { toggleEquipItem } = await import('../economy/shop.js');
+                await toggleEquipItem(userId, guildId, unequippedRow.id, member, { equipOnly: true });
+
+                const equipEmbed = new EmbedBuilder()
+                  .setColor('#2ECC71')
+                  .setDescription(`✅ Equipped **${item.name}**!`);
+                return interaction.reply({
+                  embeds: [equipEmbed],
+                  flags: MessageFlags.Ephemeral
+                });
+              } else {
+                const warnEmbed = new EmbedBuilder()
+                  .setColor('#F1C40F')
+                  .setDescription(`⚠️ You already own **${item.name}**, but cannot equip it (requirements not met).`);
+                return interaction.reply({
+                  embeds: [warnEmbed],
+                  flags: MessageFlags.Ephemeral
+                });
+              }
+            } else {
+              const warnEmbed = new EmbedBuilder()
+                .setColor('#F1C40F')
+                .setDescription(`⚠️ You already own that item.`);
+              return interaction.reply({
+                embeds: [warnEmbed],
+                flags: MessageFlags.Ephemeral
+              });
+            }
+          }
+        }
+
+        // Step 3: Interstitial Prerequisite Check (Unowned / Stackable items only)
         if (item.required_items) {
           const prereqs = await checkPrerequisites(member, guildId, item.required_items);
           if (!prereqs.met) {
@@ -691,17 +762,29 @@ export async function handleShopBuyButton(interaction) {
     });
 
     if (!result.success) {
-      if (shopPost?.auto_equip === true) {
-        await tryAutoEquipExisting(userId, guildId, itemId, member);
-      }
-
       if (result.error === 'Insufficient balance') {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0, 10);
         const missing = Math.max(0, itemPrice - currentBal);
+        const coinName = await getCurrencyName(guildId);
+        const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
+
+        if (shopPost?.auto_equip === true) {
+          const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
+          if (equippedName) {
+            const equipEmbed = new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription(`❌ You don't have enough ${coinName.toLowerCase()} to purchase another, but your existing copy of **${equippedName}** was equipped!`);
+            return interaction.editReply({
+              embeds: [equipEmbed],
+              components: []
+            });
+          }
+        }
+
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
+          .setDescription(`❌ You need **${missing.toLocaleString()}** ${serverCoinEmoji} more to buy this.`);
         return interaction.editReply({
           embeds: [errEmbed],
           components: []
@@ -709,7 +792,7 @@ export async function handleShopBuyButton(interaction) {
       } else if (result.error.includes('higher than my highest role')) {
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription(`\u274C Error: I cannot assign this role. Please contact an admin.`);
+          .setDescription(`❌ Error: I cannot assign this role. Please contact an admin.`);
         return interaction.editReply({
           files: [],
           embeds: [errEmbed],
@@ -718,7 +801,7 @@ export async function handleShopBuyButton(interaction) {
       } else if (result.error.includes('already') || result.error.includes('expire') || result.error.includes('cap') || result.error.includes('maximum')) {
         const warnEmbed = new EmbedBuilder()
           .setColor('#F1C40F')
-          .setDescription(`\u2755 ${result.error}`);
+          .setDescription(`⚠️ ${result.error}`);
         return interaction.editReply({
           embeds: [warnEmbed],
           components: []
@@ -726,7 +809,7 @@ export async function handleShopBuyButton(interaction) {
       } else {
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription(`\u274C ${result.error}`);
+          .setDescription(`❌ ${result.error}`);
         return interaction.editReply({
           embeds: [errEmbed],
           components: []
@@ -748,10 +831,11 @@ export async function handleShopBuyButton(interaction) {
     }
 
     // STEP 2.6: Auto-Equip Execution
+    let equipResult = null;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
         const { toggleEquipItem } = await import('../economy/shop.js');
-        await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
+        equipResult = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         // Silent fallback: Do not display second warning, item remains safely in inventory
         sysWarn('Auto-Equip Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
@@ -765,22 +849,33 @@ export async function handleShopBuyButton(interaction) {
       sysError('Shop UI Refresh Error', uiErr, { user: userId, guild: guildId });
     }
 
-    // STEP 4: Success message
+    // STEP 4: Success message (Post-Purchase Feedback Matrix)
     let msg;
-    const boughtQty = result.quantity || 1;
-    const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
-    const isFree = Number(result.pricePaid ?? 0) === 0;
-    const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
-    const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
+    let embedColor = '#2ECC71';
+    const isLockedItem = result.item?.is_tradable === false;
 
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `\u2705 Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
+      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!`;
+    } else if (shopPost?.auto_equip === true) {
+      if (equipResult?.success) {
+        msg = isLockedItem
+          ? `✅ Equipped **${result.item.name}**!`
+          : `✅ Purchased and equipped **${result.item.name}**!`;
+      } else if (equipResult?.categoryCollision || equipResult?.error?.includes('running') || equipResult?.error?.includes('active copy')) {
+        embedColor = '#3498DB';
+        msg = `📦 Purchased **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`;
+      } else if (isForce || equipResult?.unmetRequirements) {
+        embedColor = '#3498DB';
+        msg = `📦 Added **${result.item.name}** to your inventory (inactive). Could not auto-equip because you don't meet the requirements.`;
+      } else {
+        msg = `✅ Purchased **${result.item.name}**!`;
+      }
     } else {
-      msg = `\u2705 ${actionVerb} ${boughtLabel}!${balanceSuffix}`;
+      msg = `✅ Purchased **${result.item.name}**!`;
     }
 
     const successEmbed = new EmbedBuilder()
-      .setColor('#2ECC71')
+      .setColor(embedColor)
       .setDescription(msg);
 
     return interaction.editReply({
@@ -1113,10 +1208,6 @@ export async function handleShopBuyModalSubmit(interaction) {
     });
 
     if (!result.success) {
-      if (shopPost?.auto_equip === true) {
-        await tryAutoEquipExisting(userId, guildId, itemId, member);
-      }
-
       if (result.error === 'Insufficient balance') {
         const { getShopItem } = await import('../economy/shop.js');
         const itemForPrice = await getShopItem(itemId, guildId);
@@ -1125,9 +1216,25 @@ export async function handleShopBuyModalSubmit(interaction) {
         const userBalData = await getUserBalance(guildId, userId);
         const currentBal = parseInt(userBalData?.balance || 0, 10);
         const missing = Math.max(0, totalCost - currentBal);
+        const coinName = await getCurrencyName(guildId);
+        const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
+
+        if (shopPost?.auto_equip === true) {
+          const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
+          if (equippedName) {
+            const equipEmbed = new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription(`❌ You don't have enough ${coinName.toLowerCase()} to purchase another, but your existing copy of **${equippedName}** was equipped!`);
+            return interaction.editReply({
+              embeds: [equipEmbed],
+              components: []
+            });
+          }
+        }
+
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription(`❌ You need **${missing.toLocaleString()}** ${COIN_EMOJI} more to buy this.`);
+          .setDescription(`❌ You need **${missing.toLocaleString()}** ${serverCoinEmoji} more to buy this.`);
         return interaction.editReply({
           embeds: [errEmbed],
           components: []
@@ -1137,7 +1244,7 @@ export async function handleShopBuyModalSubmit(interaction) {
       const isCapOrOwned = result.error.includes('already') || result.error.includes('maximum') || result.error.includes('999') || result.error.includes('expire') || result.error.includes('stock');
       const errEmbed = new EmbedBuilder()
         .setColor(isCapOrOwned ? '#F1C40F' : '#E74C3C')
-        .setDescription(isCapOrOwned ? `❔ ${result.error}` : `❌ ${result.error}`);
+        .setDescription(isCapOrOwned ? `⚠️ ${result.error}` : `❌ ${result.error}`);
       return interaction.editReply({
         embeds: [errEmbed],
         components: []
@@ -1165,28 +1272,39 @@ export async function handleShopBuyModalSubmit(interaction) {
     }
 
     // Auto-Equip Execution if post has auto_equip = true
+    let equipResult = null;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
         const { toggleEquipItem } = await import('../economy/shop.js');
-        await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
+        equipResult = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         sysWarn('Auto-Equip Modal Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
       }
     }
 
-    const isFree = Number(result.pricePaid ?? 0) === 0;
-    const actionVerb = (isDrop || isFree) ? 'Claimed' : 'Bought';
-    const boughtQty = result.quantity || qty;
-    const boughtLabel = boughtQty > 1 ? `${boughtQty}x **${result.item.name}**` : `**${result.item.name}**`;
-    const balanceSuffix = isFree ? '' : ` New balance: **${result.newBalance}** ${COIN_EMOJI}`;
     let msg;
+    let embedColor = '#2ECC71';
+
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!${balanceSuffix}`;
+      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!`;
+    } else if (shopPost?.auto_equip === true) {
+      if (equipResult?.success) {
+        msg = `✅ Purchased and equipped **${result.item.name}**!`;
+      } else if (equipResult?.categoryCollision || equipResult?.error?.includes('running') || equipResult?.error?.includes('active copy')) {
+        embedColor = '#3498DB';
+        msg = `📦 Purchased **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`;
+      } else if (equipResult?.unmetRequirements) {
+        embedColor = '#3498DB';
+        msg = `📦 Added **${result.item.name}** to your inventory (inactive). Could not auto-equip because you don't meet the requirements.`;
+      } else {
+        msg = `✅ Purchased **${result.item.name}**!`;
+      }
     } else {
-      msg = `✅ ${actionVerb} ${boughtLabel}!${balanceSuffix}`;
+      msg = `✅ Purchased **${result.item.name}**!`;
     }
+
     const successEmbed = new EmbedBuilder()
-      .setColor('#2ECC71')
+      .setColor(embedColor)
       .setDescription(msg);
     return interaction.editReply({ files: [], embeds: [successEmbed], components: [] });
 
