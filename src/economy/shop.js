@@ -2296,7 +2296,7 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member, opti
       if (!prereqs.met) {
         await client.query('ROLLBACK');
         const errorMsg = await formatPrerequisiteError(prereqs, guildId);
-        return { success: false, error: errorMsg };
+        return { success: false, error: errorMsg, unmetRequirements: true };
       }
     }
 
