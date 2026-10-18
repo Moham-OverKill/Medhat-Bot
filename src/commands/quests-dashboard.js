@@ -499,6 +499,7 @@ async function showAddQuestModal(interaction, actionType) {
 export async function handleAddQuestModal(interaction) {
   try {
     await interaction.deferUpdate();
+    const guildId = interaction.guildId;
 
     const pending = pendingQuestAdd.get(interaction.user.id);
     if (!pending) {

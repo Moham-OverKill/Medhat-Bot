@@ -12,7 +12,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { getPool, getUserInventorySortPreference, setUserInventorySortPreference } from '../storage/postgres.js';
-import { logServerEvent, sendLog, sysLog, sysError } from '../utils/logger.js';
+import { logServerEvent, sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
@@ -761,6 +761,7 @@ export async function handleShopBuyButton(interaction) {
             .setRequired(true);
 
           modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+          return await interaction.showModal(modal);
         }
       }
     }

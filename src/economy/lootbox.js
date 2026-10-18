@@ -1,6 +1,6 @@
 import { randomInt } from 'crypto';
 import { getPool, query } from '../storage/postgres.js';
-import { getGuildConfig } from '../storage/config.js';
+import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sysLog, sysError } from '../utils/logger.js';
 import { RARITY_COLORS, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 
