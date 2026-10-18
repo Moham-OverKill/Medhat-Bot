@@ -14,8 +14,14 @@ const fontsDir = path.resolve(__dirname, '../assets/fonts');
 try {
   const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
   const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
+  const cairoPath = path.join(fontsDir, 'Cairo.ttf');
+  const arabicPath = path.join(fontsDir, 'NotoSansArabic.ttf');
+  const emojiPath = path.join(fontsDir, 'seguiemj.ttf');
   if (fs.existsSync(boldPath)) GlobalFonts.registerFromPath(boldPath, 'Roboto-Bold');
   if (fs.existsSync(regularPath)) GlobalFonts.registerFromPath(regularPath, 'Roboto');
+  if (fs.existsSync(cairoPath)) GlobalFonts.registerFromPath(cairoPath, 'Cairo');
+  if (fs.existsSync(arabicPath)) GlobalFonts.registerFromPath(arabicPath, 'NotoSansArabic');
+  if (fs.existsSync(emojiPath)) GlobalFonts.registerFromPath(emojiPath, 'Segoe UI Emoji');
 } catch {
   // Ignore font re-registration
 }
@@ -157,7 +163,7 @@ export async function getOrCreateGuildThread(client, category, guild) {
   }
 
   // 6. Create a brand-new post/thread for this server in the forum channel
-  const cleanName = guildName.replace(/[^\w\s\u0600-\u06FF\-\.\,\(\)\[\]]/g, '').trim() || 'Server';
+  const cleanName = guildName.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim() || 'Server';
   const threadTitle = `${cleanName.slice(0, 60)} (${guildId})`.trim();
 
   // If forum requires tags, pass the first available tag to satisfy requirements
@@ -301,19 +307,22 @@ export function generateTestCard(category, guild) {
   ctx.fillStyle = theme.color;
   ctx.fillRect(20, 20, 760, 10);
 
+  const boldFont = '"Roboto-Bold", "Cairo", "NotoSansArabic", "Segoe UI Emoji", Arial, sans-serif';
+  const regularFont = '"Roboto", "Cairo", "NotoSansArabic", "Segoe UI Emoji", Arial, sans-serif';
+
   // Header Title
   ctx.fillStyle = '#ffffff';
-  ctx.font = '28px "Roboto-Bold", sans-serif';
+  ctx.font = `28px ${boldFont}`;
   ctx.fillText('MEDHAT ASSET HOSTING PIPELINE', 50, 80);
 
   // Category Tagline
   ctx.fillStyle = theme.color;
-  ctx.font = '22px "Roboto-Bold", sans-serif';
+  ctx.font = `22px ${boldFont}`;
   ctx.fillText(`CATEGORY: ${theme.name.toUpperCase()} CHANNEL TEST`, 50, 130);
 
   // Metadata Details
   ctx.fillStyle = '#b5bac1';
-  ctx.font = '18px "Roboto", sans-serif';
+  ctx.font = `18px ${regularFont}`;
   ctx.fillText(`Target Server: ${guildName.slice(0, 40)} (${guildId})`, 50, 185);
   ctx.fillText(`Host Forum Channel: ${IMAGE_HOST_CHANNELS[category]}`, 50, 225);
   ctx.fillText(`Generated: ${new Date().toISOString()}`, 50, 265);
@@ -322,7 +331,7 @@ export function generateTestCard(category, guild) {
   ctx.fillStyle = '#232428';
   ctx.fillRect(50, 305, 360, 42);
   ctx.fillStyle = '#57F287';
-  ctx.font = '18px "Roboto-Bold", sans-serif';
+  ctx.font = `18px ${boldFont}`;
   ctx.fillText('✓ PIPELINE VERIFIED & OPERATIONAL', 70, 332);
 
   return canvas.toBuffer('image/png');
