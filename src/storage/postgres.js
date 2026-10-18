@@ -1463,6 +1463,19 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_admins_guild ON server_admins(guild_id);
     `);
 
+    // Image Host Threads Table — Centralized Asset Storage Mapping
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS image_host_threads (
+        guild_id VARCHAR(32) NOT NULL,
+        category VARCHAR(32) NOT NULL,
+        thread_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, category)
+      );
+      CREATE INDEX IF NOT EXISTS idx_image_host_threads_guild ON image_host_threads(guild_id);
+    `);
+
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
     const ifaceMigrated = await pool.query(
       `SELECT 1 FROM bot_migrations WHERE migration_name = 'populate_server_interface_config_v1'`
