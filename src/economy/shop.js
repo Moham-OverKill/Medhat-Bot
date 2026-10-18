@@ -618,55 +618,28 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
  * Helper: Format comprehensive prerequisite error messages
  */
 export async function formatPrerequisiteError(prereqs, guildId) {
-  const { missingItemIds, missingBooster, missingMvp } = prereqs;
-  
-  if (missingMvp) {
-    if (missingBooster && missingItemIds.length === 0) return 'This item requires you to be the Active Server MVP and a Server Booster. 🏆🚀';
-    if (missingItemIds.length === 0) return 'This item requires you to be the Active Server MVP. 🏆';
-  }
+  const { missingItemIds = [], missingBooster = false, missingMvp = false } = prereqs || {};
+  const reqs = [];
 
-  // Scenario A: Booster Only
-  if (missingItemIds.length === 0 && missingBooster) {
-    return 'This item is for Server Boosters only. 🚀';
-  }
+  if (missingMvp) reqs.push('Server MVP');
+  if (missingBooster) reqs.push('Server Booster');
 
-  // Scenario B: Items Only OR Scenario C: Hybrid
-  let itemMessage = '';
   if (missingItemIds.length > 0) {
     const itemNamesRes = await query(
       'SELECT name FROM shop_items WHERE id = ANY($1)',
       [missingItemIds]
     );
-    // Ignore any IDs that couldn't be found (Ghost items)
     const names = itemNamesRes.rows
       .filter(r => r && r.name)
       .map(r => `**${r.name}**`);
-    
-    if (names.length === 0) {
-      // All missing items were ghost items
-      itemMessage = '';
-    } else {
-      let formattedNames = '';
-      if (names.length === 1) {
-        formattedNames = names[0];
-      } else if (names.length === 2) {
-        formattedNames = `${names[0]} and ${names[1]}`;
-      } else {
-        const last = names.pop();
-        formattedNames = `${names.join(', ')}, and ${last}`;
-      }
-      
-      itemMessage = `You must own ${formattedNames} first`;
+
+    if (names.length > 0) {
+      reqs.push(names.join(' & '));
     }
   }
 
-    if (missingBooster) {
-      // Scenario C: Hybrid
-      return `${itemMessage}${itemMessage ? ' AND ' : ''}be an active **Server Booster** 🚀.`;
-    } else {
-      // Scenario B: Items Only
-      return itemMessage ? `${itemMessage}.` : 'Requirement not met.';
-    }
+  if (reqs.length === 0) return 'None';
+  return reqs.join(' & ');
 }
 
 /**
