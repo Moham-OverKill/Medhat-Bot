@@ -888,6 +888,7 @@ export async function handleShopBuyButton(interaction) {
     const coinName = await getCurrencyName(guildId);
     const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
     const isFree = Number(result.pricePaid ?? 0) === 0 || isDrop;
+    const isLockedItem = result.item?.is_tradable === false;
     const qty = result.quantity || 1;
     const qtySuffix = (!isLockedItem && qty > 1) ? ` (x${qty})` : '';
 
