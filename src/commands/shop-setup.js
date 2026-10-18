@@ -2098,7 +2098,7 @@ export async function handleShopPostImageBtn(interaction) {
     .setRequired(false);
 
   const imageLabel = new LabelBuilder()
-    .setLabel('Image')
+    .setLabel('Overwrite Default Image')
     .setFileUploadComponent(upload);
 
   modal.addLabelComponents(imageLabel);
