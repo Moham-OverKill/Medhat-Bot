@@ -379,12 +379,8 @@ client.once(Events.ClientReady, async () => {
     }).catch(() => {});
 
     // Verify and seed image host forum threads for connected guilds on startup
-    import('./utils/image-host.js').then(async ({ initializeImageHostStartupTest }) => {
-      await initializeImageHostStartupTest(client).catch(err => sysError('Image Host Startup Test Failed', err));
-
-      // Autonomous self-healing migration: convert legacy expiring URLs to permanent host thread assets
-      const { runLegacyAssetSelfHealingSweep } = await import('./utils/legacy-asset-migrator.js');
-      runLegacyAssetSelfHealingSweep(client).catch(err => sysError('Legacy Asset Migration Sweep Failed', err));
+    import('./utils/image-host.js').then(({ initializeImageHostStartupTest }) => {
+      initializeImageHostStartupTest(client).catch(err => sysError('Image Host Startup Test Failed', err));
     }).catch(() => {});
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
