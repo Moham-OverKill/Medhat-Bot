@@ -2190,10 +2190,10 @@ export async function showVoiceAfkDashboard(interaction) {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
 
-    const minHumans = config.anti_cheat_voice_min_humans ?? true;
-    const noMute = config.anti_cheat_voice_no_mute ?? true;
-    const noDeafen = config.anti_cheat_voice_no_deafen ?? true;
-    const noAfk = config.anti_cheat_voice_no_afk_channel ?? true;
+    const minHumans = config.anti_cheat_voice_min_humans ?? false;
+    const noMute = config.anti_cheat_voice_no_mute ?? false;
+    const noDeafen = config.anti_cheat_voice_no_deafen ?? false;
+    const noAfk = config.anti_cheat_voice_no_afk_channel ?? false;
 
     const desc = [
         '👥 **Minimum 2 Humans**',
@@ -2276,16 +2276,16 @@ export async function handleToggleVoiceAfkGate(interaction, gateType) {
     let config = await getGuildConfig(guildId) || {};
 
     if (gateType === 'min_humans') {
-        const current = config.anti_cheat_voice_min_humans ?? true;
+        const current = config.anti_cheat_voice_min_humans ?? false;
         config.anti_cheat_voice_min_humans = !current;
     } else if (gateType === 'no_mute') {
-        const current = config.anti_cheat_voice_no_mute ?? true;
+        const current = config.anti_cheat_voice_no_mute ?? false;
         config.anti_cheat_voice_no_mute = !current;
     } else if (gateType === 'no_deafen') {
-        const current = config.anti_cheat_voice_no_deafen ?? true;
+        const current = config.anti_cheat_voice_no_deafen ?? false;
         config.anti_cheat_voice_no_deafen = !current;
     } else if (gateType === 'no_afk') {
-        const current = config.anti_cheat_voice_no_afk_channel ?? true;
+        const current = config.anti_cheat_voice_no_afk_channel ?? false;
         config.anti_cheat_voice_no_afk_channel = !current;
     }
 
@@ -2303,10 +2303,10 @@ export async function showTextSpamDashboard(interaction) {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId) || {};
 
-    const cooldown = config.anti_cheat_text_cooldown ?? true;
-    const minLength = config.anti_cheat_text_min_length ?? true;
-    const noDuplicates = config.anti_cheat_text_no_duplicates ?? true;
-    const noPrefixes = config.anti_cheat_text_no_prefixes ?? true;
+    const cooldown = config.anti_cheat_text_cooldown ?? false;
+    const minLength = config.anti_cheat_text_min_length ?? false;
+    const noDuplicates = config.anti_cheat_text_no_duplicates ?? false;
+    const noPrefixes = config.anti_cheat_text_no_prefixes ?? false;
 
     const desc = [
         '⏱️ **5-Second Cooldown**',
@@ -2389,16 +2389,16 @@ export async function handleToggleTextSpamGate(interaction, gateType) {
     let config = await getGuildConfig(guildId) || {};
 
     if (gateType === 'cooldown') {
-        const current = config.anti_cheat_text_cooldown ?? true;
+        const current = config.anti_cheat_text_cooldown ?? false;
         config.anti_cheat_text_cooldown = !current;
     } else if (gateType === 'min_length') {
-        const current = config.anti_cheat_text_min_length ?? true;
+        const current = config.anti_cheat_text_min_length ?? false;
         config.anti_cheat_text_min_length = !current;
     } else if (gateType === 'no_duplicates') {
-        const current = config.anti_cheat_text_no_duplicates ?? true;
+        const current = config.anti_cheat_text_no_duplicates ?? false;
         config.anti_cheat_text_no_duplicates = !current;
     } else if (gateType === 'no_prefixes') {
-        const current = config.anti_cheat_text_no_prefixes ?? true;
+        const current = config.anti_cheat_text_no_prefixes ?? false;
         config.anti_cheat_text_no_prefixes = !current;
     }
 
