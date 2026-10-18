@@ -685,7 +685,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
         if (existingInv.rows.length > 0) {
           const row = existingInv.rows[0];
-          const newQty = Math.min(999, (parseInt(row.quantity) || 1) + count);
+          const newQty = (parseInt(row.quantity) || 1) + count;
           await client.query(
             `UPDATE user_inventory SET quantity = $1 WHERE id = $2`,
             [newQty, row.id]
@@ -694,7 +694,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
           await client.query(
             `INSERT INTO user_inventory (user_id, guild_id, shop_item_id, role_id, quantity, is_active, source)
              VALUES ($1, $2, $3, $4, $5, false, 'LOOT_BOX')`,
-            [userId, guildId, wonItem.id, wonItem.role_id || 'NONE', Math.min(999, count)]
+            [userId, guildId, wonItem.id, wonItem.role_id || 'NONE', count]
           );
         }
       }
