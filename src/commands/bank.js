@@ -62,6 +62,17 @@ export const bankCommand = new SlashCommandBuilder()
 
 // --- Helper Functions ---
 
+/**
+ * Helper to build short, structured shop feedback embeds.
+ * Ensures consistent line-by-line formatting across all interaction paths.
+ */
+function buildStructuredFeedbackEmbed({ actionLine, statusLine, requirementLine, balanceLine, color = '#2ECC71' }) {
+  const lines = [actionLine, statusLine, requirementLine, balanceLine].filter(Boolean);
+  return new EmbedBuilder()
+    .setColor(color)
+    .setDescription(lines.join('\n'));
+}
+
 async function getUserBalance(guildId, userId) {
   const pool = getPool();
   const result = await pool.query(
@@ -580,9 +591,12 @@ export async function handleShopBuyButton(interaction) {
             if (shopPost?.auto_equip === true) {
               const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
               if (equippedName) {
-                const equipEmbed = new EmbedBuilder()
-                  .setColor('#E74C3C')
-                  .setDescription(`❌ You don't have enough ${coinName.toLowerCase()} to purchase another, but your existing copy of **${equippedName}** was equipped!`);
+                const equipEmbed = buildStructuredFeedbackEmbed({
+                  actionLine: `❌ Insufficient ${coinName} to buy another`,
+                  statusLine: `📦 Status: Equipped existing copy from inventory`,
+                  balanceLine: `💳 Balance: ${currentBal.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+                  color: '#3498DB'
+                });
                 return interaction.reply({
                   embeds: [equipEmbed],
                   flags: MessageFlags.Ephemeral
@@ -590,9 +604,12 @@ export async function handleShopBuyButton(interaction) {
               }
             }
             const missing = Math.max(0, unitPrice - currentBal);
-            const errEmbed = new EmbedBuilder()
-              .setColor('#E74C3C')
-              .setDescription(`❌ You need **${missing.toLocaleString()}** ${serverCoinEmoji} more to buy this.`);
+            const errEmbed = buildStructuredFeedbackEmbed({
+              actionLine: `❌ Insufficient ${coinName}`,
+              statusLine: `📦 Required: ${unitPrice.toLocaleString()} ${serverCoinEmoji} ${coinName} | Missing: ${missing.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+              balanceLine: `💳 Balance: ${currentBal.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+              color: '#E74C3C'
+            });
             return interaction.reply({
               embeds: [errEmbed],
               flags: MessageFlags.Ephemeral
@@ -617,9 +634,11 @@ export async function handleShopBuyButton(interaction) {
           if (totalOwned >= 1) {
             const hasActive = userInvRes.rows.some(r => r.is_active);
             if (hasActive) {
-              const infoEmbed = new EmbedBuilder()
-                .setColor('#3498DB')
-                .setDescription(`ℹ️ You already own and have **${item.name}** equipped.`);
+              const infoEmbed = buildStructuredFeedbackEmbed({
+                actionLine: `ℹ️ You already own **${item.name}**`,
+                statusLine: `📦 Status: Currently equipped`,
+                color: '#3498DB'
+              });
               return interaction.reply({
                 embeds: [infoEmbed],
                 flags: MessageFlags.Ephemeral
@@ -633,26 +652,34 @@ export async function handleShopBuyButton(interaction) {
                 const { toggleEquipItem } = await import('../economy/shop.js');
                 await toggleEquipItem(userId, guildId, unequippedRow.id, member, { equipOnly: true });
 
-                const equipEmbed = new EmbedBuilder()
-                  .setColor('#2ECC71')
-                  .setDescription(`✅ Equipped **${item.name}**!`);
+                const equipEmbed = buildStructuredFeedbackEmbed({
+                  actionLine: `ℹ️ You already own **${item.name}**`,
+                  statusLine: `📦 Status: Equipped from inventory`,
+                  color: '#2ECC71'
+                });
                 return interaction.reply({
                   embeds: [equipEmbed],
                   flags: MessageFlags.Ephemeral
                 });
               } else {
-                const warnEmbed = new EmbedBuilder()
-                  .setColor('#F1C40F')
-                  .setDescription(`⚠️ You already own **${item.name}**, but cannot equip it (requirements not met).`);
+                const reqStr = await formatPrerequisiteError(prereqs, guildId);
+                const warnEmbed = buildStructuredFeedbackEmbed({
+                  actionLine: `⚠️ You already own **${item.name}**`,
+                  statusLine: `📦 Status: In inventory (inactive)`,
+                  requirementLine: (reqStr && reqStr !== 'None') ? `🔒 Requirement: ${reqStr}` : null,
+                  color: '#F1C40F'
+                });
                 return interaction.reply({
                   embeds: [warnEmbed],
                   flags: MessageFlags.Ephemeral
                 });
               }
             } else {
-              const warnEmbed = new EmbedBuilder()
-                .setColor('#F1C40F')
-                .setDescription(`⚠️ You already own that item.`);
+              const warnEmbed = buildStructuredFeedbackEmbed({
+                actionLine: `⚠️ You already own **${item.name}**`,
+                statusLine: `📦 Status: In inventory`,
+                color: '#F1C40F'
+              });
               return interaction.reply({
                 embeds: [warnEmbed],
                 flags: MessageFlags.Ephemeral
@@ -683,9 +710,13 @@ export async function handleShopBuyButton(interaction) {
               detail: `Action: ShopBuy | ItemID: ${itemId}`
             });
 
-            const prereqEmbed = new EmbedBuilder()
-              .setColor('#E74C3C')
-              .setDescription(`❌ You don't meet the requirements to equip this!`);
+            const reqStr = await formatPrerequisiteError(prereqs, guildId);
+            const prereqEmbed = buildStructuredFeedbackEmbed({
+              actionLine: `⚠️ Requirements not met for **${item.name}**`,
+              requirementLine: (reqStr && reqStr !== 'None') ? `🔒 Requirement: ${reqStr}` : null,
+              statusLine: `📦 You can still ${isFree ? 'claim' : 'buy'} it to store in your inventory.`,
+              color: '#E74C3C'
+            });
 
             return await interaction.reply({
               embeds: [prereqEmbed],
@@ -854,36 +885,51 @@ export async function handleShopBuyButton(interaction) {
     }
 
     // STEP 4: Success message (Post-Purchase Feedback Matrix)
-    let msg;
-    let embedColor = '#2ECC71';
-    const isLockedItem = result.item?.is_tradable === false;
+    const coinName = await getCurrencyName(guildId);
+    const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
     const isFree = Number(result.pricePaid ?? 0) === 0 || isDrop;
+    const qty = result.quantity || 1;
+    const qtySuffix = (!isLockedItem && qty > 1) ? ` (x${qty})` : '';
+
+    let actionLine = `${isFree ? '✅ Claimed' : '✅ Purchased'} **${result.item.name}**${qtySuffix}`;
+    let statusLine = '📦 Status: In inventory';
+    let requirementLine = null;
+    let balanceLine = isFree ? null : `💳 Balance: ${result.newBalance.toLocaleString()} ${serverCoinEmoji} ${coinName}`;
+    let embedColor = '#2ECC71';
 
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!`;
+      statusLine = `📦 Status: Added ${result.packInfo.newCount} items to inventory`;
     } else if (shopPost?.auto_equip === true) {
       if (equipResult?.success) {
-        msg = isLockedItem
-          ? `✅ Equipped **${result.item.name}**!`
-          : (isFree ? `✅ Claimed and equipped **${result.item.name}**!` : `✅ Purchased and equipped **${result.item.name}**!`);
+        statusLine = '📦 Status: Equipped';
       } else if (equipResult?.categoryCollision || equipResult?.error?.includes('running') || equipResult?.error?.includes('active copy')) {
         embedColor = '#3498DB';
-        msg = isFree
-          ? `📦 Claimed **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`
-          : `📦 Purchased **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`;
+        statusLine = '📦 Status: In inventory (inactive)';
       } else if (isForce || equipResult?.unmetRequirements) {
         embedColor = '#3498DB';
-        msg = `📦 Added **${result.item.name}** to your inventory (inactive). Could not auto-equip because you don't meet the requirements.`;
+        statusLine = '📦 Status: In inventory (inactive)';
+        let reqText = equipResult?.error;
+        if (!reqText && result.item.required_items) {
+          const prereqs = await checkPrerequisites(member, guildId, result.item.required_items);
+          reqText = await formatPrerequisiteError(prereqs, guildId);
+        }
+        if (reqText && reqText !== 'None') {
+          requirementLine = `🔒 Requirement: ${reqText}`;
+        }
       } else {
-        msg = isFree ? `✅ Claimed **${result.item.name}**!` : `✅ Purchased **${result.item.name}**!`;
+        statusLine = '📦 Status: In inventory';
       }
     } else {
-      msg = isFree ? `✅ Claimed **${result.item.name}**!` : `✅ Purchased **${result.item.name}**!`;
+      statusLine = '📦 Status: In inventory';
     }
 
-    const successEmbed = new EmbedBuilder()
-      .setColor(embedColor)
-      .setDescription(msg);
+    const successEmbed = buildStructuredFeedbackEmbed({
+      actionLine,
+      statusLine,
+      requirementLine,
+      balanceLine,
+      color: embedColor
+    });
 
     return interaction.editReply({
       files: [],
@@ -1253,9 +1299,12 @@ export async function handleShopBuyModalSubmit(interaction) {
         if (shopPost?.auto_equip === true) {
           const equippedName = await tryAutoEquipExisting(userId, guildId, itemId, member);
           if (equippedName) {
-            const equipEmbed = new EmbedBuilder()
-              .setColor('#E74C3C')
-              .setDescription(`❌ You don't have enough ${coinName.toLowerCase()} to purchase another, but your existing copy of **${equippedName}** was equipped!`);
+            const equipEmbed = buildStructuredFeedbackEmbed({
+              actionLine: `❌ Insufficient ${coinName} to buy another`,
+              statusLine: `📦 Status: Equipped existing copy from inventory`,
+              balanceLine: `💳 Balance: ${currentBal.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+              color: '#3498DB'
+            });
             return interaction.editReply({
               embeds: [equipEmbed],
               components: []
@@ -1263,9 +1312,12 @@ export async function handleShopBuyModalSubmit(interaction) {
           }
         }
 
-        const errEmbed = new EmbedBuilder()
-          .setColor('#E74C3C')
-          .setDescription(`❌ You need **${missing.toLocaleString()}** ${serverCoinEmoji} more to buy this.`);
+        const errEmbed = buildStructuredFeedbackEmbed({
+          actionLine: `❌ Insufficient ${coinName}`,
+          statusLine: `📦 Required: ${totalCost.toLocaleString()} ${serverCoinEmoji} ${coinName} | Missing: ${missing.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+          balanceLine: `💳 Balance: ${currentBal.toLocaleString()} ${serverCoinEmoji} ${coinName}`,
+          color: '#E74C3C'
+        });
         return interaction.editReply({
           embeds: [errEmbed],
           components: []
@@ -1313,33 +1365,50 @@ export async function handleShopBuyModalSubmit(interaction) {
       }
     }
 
+    const coinName = await getCurrencyName(guildId);
+    const serverCoinEmoji = COIN_EMOJI.forGuild ? COIN_EMOJI.forGuild(guildId) : COIN_EMOJI;
     const isFree = Number(result.pricePaid ?? 0) === 0 || isDrop;
-    let msg;
+    const qtySuffix = qty > 1 ? ` (x${qty})` : '';
+
+    let actionLine = `${isFree ? '✅ Claimed' : '✅ Purchased'} **${result.item.name}**${qtySuffix}`;
+    let statusLine = '📦 Status: In inventory';
+    let requirementLine = null;
+    let balanceLine = isFree ? null : `💳 Balance: ${result.newBalance.toLocaleString()} ${serverCoinEmoji} ${coinName}`;
     let embedColor = '#2ECC71';
 
     if (result.packInfo && result.packInfo.ownedCount > 0) {
-      msg = `✅ Bought ${result.packInfo.newCount} missing items from **${result.item.name}**!`;
+      statusLine = `📦 Status: Added ${result.packInfo.newCount} items to inventory`;
     } else if (shopPost?.auto_equip === true) {
       if (equipResult?.success) {
-        msg = isFree ? `✅ Claimed and equipped **${result.item.name}**!` : `✅ Purchased and equipped **${result.item.name}**!`;
+        statusLine = '📦 Status: Equipped';
       } else if (equipResult?.categoryCollision || equipResult?.error?.includes('running') || equipResult?.error?.includes('active copy')) {
         embedColor = '#3498DB';
-        msg = isFree
-          ? `📦 Claimed **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`
-          : `📦 Purchased **${result.item.name}**! Kept in inventory (inactive) so your running timer is not interrupted.`;
+        statusLine = '📦 Status: In inventory (inactive)';
       } else if (equipResult?.unmetRequirements) {
         embedColor = '#3498DB';
-        msg = `📦 Added **${result.item.name}** to your inventory (inactive). Could not auto-equip because you don't meet the requirements.`;
+        statusLine = '📦 Status: In inventory (inactive)';
+        let reqText = equipResult?.error;
+        if (!reqText && result.item.required_items) {
+          const prereqs = await checkPrerequisites(member, guildId, result.item.required_items);
+          reqText = await formatPrerequisiteError(prereqs, guildId);
+        }
+        if (reqText && reqText !== 'None') {
+          requirementLine = `🔒 Requirement: ${reqText}`;
+        }
       } else {
-        msg = isFree ? `✅ Claimed **${result.item.name}**!` : `✅ Purchased **${result.item.name}**!`;
+        statusLine = '📦 Status: In inventory';
       }
     } else {
-      msg = isFree ? `✅ Claimed **${result.item.name}**!` : `✅ Purchased **${result.item.name}**!`;
+      statusLine = '📦 Status: In inventory';
     }
 
-    const successEmbed = new EmbedBuilder()
-      .setColor(embedColor)
-      .setDescription(msg);
+    const successEmbed = buildStructuredFeedbackEmbed({
+      actionLine,
+      statusLine,
+      requirementLine,
+      balanceLine,
+      color: embedColor
+    });
     return interaction.editReply({ files: [], embeds: [successEmbed], components: [] });
 
   } catch (error) {
@@ -2621,7 +2690,8 @@ export async function handleInventoryAction(interaction) {
       const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
 
       if (!result.success) {
-        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+        const msg = result.unmetRequirements ? `🔒 Requirement: ${result.error}` : `❌ ${result.error}`;
+        return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
       }
 
       // Refresh the inventory view to show updated status
@@ -2633,7 +2703,8 @@ export async function handleInventoryAction(interaction) {
       const result = await toggleEquipItem(interaction.user.id, interaction.guildId, invId, interaction.member);
 
       if (!result.success) {
-        return interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+        const msg = result.unmetRequirements ? `🔒 Requirement: ${result.error}` : `❌ ${result.error}`;
+        return interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
       }
 
       // Refresh the inventory view to show updated status
@@ -2676,7 +2747,7 @@ export async function handleItemClaim(interaction) {
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
 
       if (dropRes.rows.length > 0) {
-        const itemRes = await query('SELECT required_items FROM shop_items WHERE id = $1', [dropRes.rows[0].shop_item_id]);
+        const itemRes = await query('SELECT name, required_items FROM shop_items WHERE id = $1', [dropRes.rows[0].shop_item_id]);
         if (itemRes.rows.length > 0 && itemRes.rows[0].required_items) {
           const prereqs = await checkPrerequisites(interaction.member, interaction.guildId, itemRes.rows[0].required_items);
           if (!prereqs.met) {
@@ -2684,7 +2755,7 @@ export async function handleItemClaim(interaction) {
               new ButtonBuilder()
                 .setCustomId(`force_claim_${dropId}`)
                 .setLabel('Claim Anyway')
-                .setEmoji('\u26A0\uFE0F')
+                .setEmoji('⚠️')
                 .setStyle(ButtonStyle.Danger)
             );
 
@@ -2694,9 +2765,13 @@ export async function handleItemClaim(interaction) {
               detail: `Action: ItemClaim | DropID: ${dropId}`
             });
 
-            const prereqEmbed = new EmbedBuilder()
-              .setColor('#E74C3C')
-              .setDescription(`\u274C You don't meet the requirements to equip this!`);
+            const reqStr = await formatPrerequisiteError(prereqs, interaction.guildId);
+            const prereqEmbed = buildStructuredFeedbackEmbed({
+              actionLine: `⚠️ Requirements not met for **${itemRes.rows[0].name}**`,
+              requirementLine: (reqStr && reqStr !== 'None') ? `🔒 Requirement: ${reqStr}` : null,
+              statusLine: `📦 You can still claim it to store in your inventory.`,
+              color: '#E74C3C'
+            });
 
             return await interaction.reply({
               embeds: [prereqEmbed],
