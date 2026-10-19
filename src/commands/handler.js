@@ -11,7 +11,6 @@ import { handleNotificationsCommand } from './notifications.js';
 import { handleInviteCommand } from './invite.js';
 import { handleItemsCommand } from './items.js';
 import { handleProfileCommand } from './profile.js';
-import { handleTestImageHostCommand } from './test-image-host.js';
 import { getGuildConfig } from '../storage/config.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
@@ -29,7 +28,7 @@ export async function handleSlashCommand(interaction) {
   });
 
   // Top-Level Admin Slash Command Security Gate (Zero Trust Multi-Tenant Pre-Check)
-  const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors', 'test-image-host'];
+  const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors'];
   if (adminCommands.includes(commandName)) {
     const { verifyAdminAccess } = await import('../storage/admins.js');
     const hasAccess = await verifyAdminAccess(interaction);
@@ -37,9 +36,6 @@ export async function handleSlashCommand(interaction) {
   }
 
   switch (commandName) {
-    case 'test-image-host':
-      await handleTestImageHostCommand(interaction);
-      break;
     case 'settings':
       await handleSettingsCommand(interaction);
       break;
