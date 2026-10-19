@@ -181,7 +181,7 @@ export function setupComponentHandlers(client) {
         const adminPrefixes = [
           'settings_', 'mvp_', 'rewards_', 'leaderboard_', 'colors_', 'logs_', 'organize_',
           'shop_', 'mass_', 'quests_', 'admin_user_', 'admin_manage_', 'lb_', 'role_rewards_', 'pass_',
-          'interface_', 'admin_interface_', 'admin_hub_'
+          'interface_', 'admin_interface_', 'admin_hub_', 'embed_', 'eco_', 'economy_'
         ];
 
         // Public shop buy modal is the only shop_ prefix intended for regular players

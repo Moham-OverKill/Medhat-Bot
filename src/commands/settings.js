@@ -42,7 +42,8 @@ import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponen
 export const settingsCommand = new SlashCommandBuilder()
     .setName('settings')
     .setDescription('Open the server control panel')
-    .setDMPermission(false);
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
 
 /**
  * Handle /settings command

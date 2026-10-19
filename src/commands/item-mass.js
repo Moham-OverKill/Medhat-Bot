@@ -32,6 +32,7 @@ export const itemMassCommand = new SlashCommandBuilder()
   .setName('mass')
   .setDescription('Bulk operations')
   .setDMPermission(false)
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand(sub => 
     sub.setName('item')
        .setDescription('Bulk populate Shop Packs or Categories with Items')
