@@ -467,52 +467,6 @@ export async function deleteShopItem(itemId, guildId = null) {
 }
 
 /**
- * Get tiers for a shop item
- */
-export async function getItemTiers(itemId) {
-  try {
-    const result = await query(
-      'SELECT * FROM item_tiers WHERE parent_item_id = $1 ORDER BY tier_level ASC',
-      [itemId]
-    );
-    return result.rows;
-  } catch (error) {
-    logSystemError(`Failed to get item tiers for item ${itemId}: ${sanitizeError(error)}`);
-    return [];
-  }
-}
-
-/**
- * Add a new tier to a shop item
- */
-export async function addItemTier(parentItemId, tierLevel, roleId, upgradePrice) {
-  try {
-    const result = await query(
-      `INSERT INTO item_tiers (parent_item_id, tier_level, role_id, upgrade_price)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [parentItemId, tierLevel, roleId, upgradePrice]
-    );
-    return result.rows[0];
-  } catch (error) {
-    logSystemError(`Failed to add item tier: ${sanitizeError(error)}`);
-    throw error;
-  }
-}
-
-/**
- * Delete an item tier
- */
-export async function deleteItemTier(tierId) {
-  try {
-    await query('DELETE FROM item_tiers WHERE id = $1', [tierId]);
-    return true;
-  } catch (error) {
-    logSystemError(`Failed to delete item tier: ${sanitizeError(error)}`);
-    return false;
-  }
-}
-
 /**
  * Helper: Check if a member meets all Required Items prerequisites.
  * Integers = Must own the item in shop_inventory.
