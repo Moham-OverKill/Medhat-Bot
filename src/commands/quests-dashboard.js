@@ -888,6 +888,9 @@ export async function handleQuestsComponent(interaction) {
     } else if (customId.startsWith('quests_delete_')) {
       const questId = parseInt(customId.split('_').pop(), 10);
       await handleDeleteQuest(interaction, questId);
+    } else if (customId.startsWith('quests_empty_')) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      return;
     }
   } catch (error) {
     await handleInteractionError(interaction, error, 'Quest component router');

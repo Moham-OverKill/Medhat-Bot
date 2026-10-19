@@ -173,7 +173,7 @@ export async function getShopItem(itemId, guildId = null) {
  * Calculate dynamic pack price based on partial ownership
  */
 export async function calculatePackPrice(userId, guildId, itemId) {
-  const item = await getShopItem(itemId);
+  const item = await getShopItem(itemId, guildId);
   if (!item) return null;
 
   // Default return for non-packs or empty packs

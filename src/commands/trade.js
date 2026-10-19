@@ -1772,7 +1772,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
 
         // JIT EXPIRATION CHECK: If we missed the timeout due to restart
         if (trade.expires_at && new Date(trade.expires_at) < new Date()) {
-            await client.query('UPDATE trades SET status = $1 WHERE id = $2', ['expired', tradeId]);
+            await client.query('UPDATE trades SET status = $1 WHERE id = $2 AND guild_id = $3', ['expired', tradeId, trade.guild_id]);
             await client.query('COMMIT');
             clearTradeTimers(tradeId);
             
@@ -1861,8 +1861,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 let roleId = offerObj.role_id || null;
                 if (!shopItemId && offerObj.id) {
                     const idRes = await client.query(
-                        `SELECT shop_item_id, role_id FROM user_inventory WHERE id = $1`,
-                        [offerObj.id]
+                        `SELECT shop_item_id, role_id FROM user_inventory WHERE id = $1 AND guild_id = $2`,
+                        [offerObj.id, trade.guild_id]
                     );
                     if (idRes.rows.length === 0) {
                         throw new Error('One or more items you offered are no longer in your inventory.');
@@ -2064,8 +2064,8 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
 
                 if (!shopItemId && offer.id) {
                     const rowRes = await client.query(
-                        `SELECT shop_item_id, role_id FROM user_inventory WHERE id = $1`,
-                        [offer.id]
+                        `SELECT shop_item_id, role_id FROM user_inventory WHERE id = $1 AND guild_id = $2`,
+                        [offer.id, trade.guild_id]
                     );
                     if (rowRes.rows.length > 0) {
                         shopItemId = rowRes.rows[0].shop_item_id || null;
@@ -2073,7 +2073,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     }
                 }
                 if (shopItemId && !roleId) {
-                    const sRes = await client.query(`SELECT role_id FROM shop_items WHERE id = $1`, [shopItemId]);
+                    const sRes = await client.query(`SELECT role_id FROM shop_items WHERE id = $1 AND guild_id = $2`, [shopItemId, trade.guild_id]);
                     roleId = sRes.rows[0]?.role_id || null;
                 }
 
@@ -2181,7 +2181,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                     const freshT = await interaction.guild.members.fetch(trade.target_id).catch(() => null);
                     
                     if (sItems.length > 0 && freshS) {
-                        const sRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [sItems]);
+                        const sRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1) AND guild_id = $2) AND guild_id = $2', [sItems, trade.guild_id]);
                         for (const row of sRoleRes.rows) {
                              if (row.role_id && freshS.roles.cache.has(row.role_id)) {
                                  sysLog('Admin Role Overlap Detected', { user: trade.sender_id, detail: `Role: ${row.role_id} (Not removed)` });
@@ -2189,7 +2189,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                         }
                     }
                     if (tItems.length > 0 && freshT) {
-                         const tRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1))', [tItems]);
+                         const tRoleRes = await query('SELECT role_id FROM shop_items WHERE id IN (SELECT shop_item_id FROM user_inventory WHERE id = ANY($1) AND guild_id = $2) AND guild_id = $2', [tItems, trade.guild_id]);
                          for (const row of tRoleRes.rows) {
                               if (row.role_id && freshT.roles.cache.has(row.role_id)) {
                                   sysLog('Admin Role Overlap Detected', { user: trade.target_id, detail: `Role: ${row.role_id} (Not removed)` });

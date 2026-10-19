@@ -2633,7 +2633,7 @@ export async function handleManageTiers(interaction) {
 
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`shop_item_edit_${itemId}`) // Go back to item manage 
+        .setCustomId(`shop_item_edit_select_${itemId}`) // Go back to item manage 
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
@@ -3993,6 +3993,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       'shop_item_page_prev_',
       'shop_item_page_next_',
       'shop_item_edit_select_',
+      'shop_item_edit_',
     ];
     const matched = prefixes.find(p => cid.startsWith(p));
     if (matched) {

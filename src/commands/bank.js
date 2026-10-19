@@ -2545,7 +2545,7 @@ export async function handleInventoryAction(interaction) {
 
       if (res.success) {
         const expiresUnix = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
-        const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
+        const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id, interaction.guildId);
         const dropImg = getItemImage(droppedShopItem);
         const droppedQty = res.quantity || 1;
         const droppedLabel = droppedQty > 1 ? `${droppedQty}x ${res.item.name}` : res.item.name;
@@ -3136,7 +3136,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     const droppedLabel = droppedQty > 1 ? `${droppedQty}x ${res.item.name}` : res.item.name;
 
     // Fetch shop item for image
-    const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id);
+    const droppedShopItem = await getShopItem(res.item.shop_item_id || res.item.id, interaction.guildId);
     const dropImg = getItemImage(droppedShopItem);
 
     const roleMention = (res.item.role_id && /^\d{17,20}$/.test(res.item.role_id)) ? ` <@&${res.item.role_id}>` : '';
