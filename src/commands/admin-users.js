@@ -19,9 +19,13 @@ import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-// State map for hierarchical admin give & remove items select menus: keyed by `${adminUserId}_${targetUserId}`
+// State map for hierarchical admin give & remove items select menus: keyed by `${guildId}_${adminUserId}_${targetUserId}`
 const pendingAdminGive = new Map();
 const pendingAdminRemove = new Map();
+
+function getAdminPendingKey(guildId, adminUserId, targetUserId) {
+    return `${guildId}_${adminUserId}_${targetUserId}`;
+}
 
 /**
  * Show user selector dropdown
@@ -530,7 +534,7 @@ export async function showUserItems(interaction, targetUserId, _ignoredCatId = n
     // Sync and fetch inventory for target user (including synthesized admin items)
     const inventory = await getSynthesizedInventory(targetUserId, guildId, targetMember);
 
-    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    const stateKey = getAdminPendingKey(guildId, interaction.user.id, targetUserId);
     const giveState = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
     const remState = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
 
@@ -909,7 +913,7 @@ export async function handleAdminRemoveSelect(interaction) {
     const customId = interaction.customId;
     const parts = customId.split('_');
     const targetUserId = parts[3];
-    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    const stateKey = getAdminPendingKey(interaction.guildId, interaction.user.id, targetUserId);
     let state = pendingAdminRemove.get(stateKey) || { folder: 'root', page: 1 };
 
     // 1. Pagination navigation
@@ -1384,7 +1388,7 @@ export async function handleAdminGiveSelect(interaction) {
     const customId = interaction.customId;
     const parts = customId.split('_');
     const targetUserId = parts[3];
-    const stateKey = `${interaction.user.id}_${targetUserId}`;
+    const stateKey = getAdminPendingKey(interaction.guildId, interaction.user.id, targetUserId);
     let state = pendingAdminGive.get(stateKey) || { folder: 'root', page: 1 };
 
     // 1. Pagination navigation
@@ -1922,10 +1926,12 @@ export async function handleAdminUserComponent(interaction) {
         const action = parts[2];
         const targetUserId = parts[3];
 
+        const pendingKey = getAdminPendingKey(interaction.guildId, interaction.user.id, targetUserId);
+
         switch (action) {
             case 'dash':
-                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
-                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
+                pendingAdminGive.delete(pendingKey);
+                pendingAdminRemove.delete(pendingKey);
                 await showUserDashboard(interaction, targetUserId);
                 break;
             case 'balance':
@@ -1938,8 +1944,8 @@ export async function handleAdminUserComponent(interaction) {
                 await handleLevelAction(interaction, targetUserId);
                 break;
             case 'items':
-                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
-                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
+                pendingAdminGive.delete(pendingKey);
+                pendingAdminRemove.delete(pendingKey);
                 await showUserItems(interaction, targetUserId);
                 break;
             case 'give':
@@ -1959,8 +1965,8 @@ export async function handleAdminUserComponent(interaction) {
                 break;
             case 'icat': {
                 const catId = parts[4];
-                pendingAdminGive.delete(`${interaction.user.id}_${targetUserId}`);
-                pendingAdminRemove.delete(`${interaction.user.id}_${targetUserId}`);
+                pendingAdminGive.delete(pendingKey);
+                pendingAdminRemove.delete(pendingKey);
                 await showUserItems(interaction, targetUserId);
                 break;
             }

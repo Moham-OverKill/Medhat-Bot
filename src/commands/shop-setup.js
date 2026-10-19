@@ -170,12 +170,24 @@ setInterval(() => {
 }, 60 * 1000).unref();
 
 // Temporary storage for edit/delete flows to isolate state from Post flow.
-// (User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
+// (Guild ID : User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
-// Temporary in-memory draft storage for new item creation (User ID -> draft item object)
+// Temporary in-memory draft storage for new item creation (Guild ID : User ID -> draft item object)
 // No DB records are created until Save is clicked.
 const pendingNewItems = new Map();
+
+function getAdminBrowserKey(interaction) {
+  const gId = interaction?.guildId || interaction?.guild?.id || 'global';
+  const uId = interaction?.user?.id || 'unknown';
+  return `${gId}:${uId}`;
+}
+
+function getNewItemKey(interaction) {
+  const gId = interaction?.guildId || interaction?.guild?.id || 'global';
+  const uId = interaction?.user?.id || 'unknown';
+  return `${gId}:${uId}`;
+}
 
 // Define the /shop setup command
 export const shopSetupCommand = new SlashCommandBuilder()
@@ -813,7 +825,7 @@ export async function handleItemModalSubmit(interaction) {
         }
 
         // Store in-memory draft (No DB write until Save is clicked)
-        pendingNewItems.set(interaction.user.id, {
+        pendingNewItems.set(getNewItemKey(interaction), {
           name,
           roleId,
           itemImageUrl,
@@ -1105,7 +1117,7 @@ export async function handleNewItemAttrSelect(interaction) {
   const cid = interaction.customId;
   const value = interaction.values[0];
 
-  const draft = pendingNewItems.get(interaction.user.id);
+  const draft = pendingNewItems.get(getNewItemKey(interaction));
   if (!draft) {
     return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
   }
@@ -1117,7 +1129,7 @@ export async function handleNewItemAttrSelect(interaction) {
   } else if (cid === 'shop_new_tradable_select') {
     draft.is_tradable = value === 'tradable';
   }
-  pendingNewItems.set(interaction.user.id, draft);
+  pendingNewItems.set(getNewItemKey(interaction), draft);
 
   // Re-render the panel with updated default selections
   const categories = await getShopCategories(interaction.guildId);
@@ -1199,7 +1211,7 @@ export async function handleNewItemAttrSelect(interaction) {
  */
 export async function handleNewItemCancel(interaction) {
   await interaction.deferUpdate();
-  pendingNewItems.delete(interaction.user.id);
+  pendingNewItems.delete(getNewItemKey(interaction));
   await handleShopAdminAdd(interaction);
 }
 
@@ -1209,11 +1221,11 @@ export async function handleNewItemCancel(interaction) {
  */
 export async function handleNewItemSave(interaction) {
   await interaction.deferUpdate();
-  const draft = pendingNewItems.get(interaction.user.id);
+  const draft = pendingNewItems.get(getNewItemKey(interaction));
   if (!draft) {
     return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
   }
-  pendingNewItems.delete(interaction.user.id);
+  pendingNewItems.delete(getNewItemKey(interaction));
 
   const uniqueCheck = await validateRoleUniqueness(interaction.guildId, draft.roleId);
   if (!uniqueCheck.valid) {
@@ -2712,7 +2724,7 @@ export async function handleDeleteItemStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const context = { action: 'delete_item', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete item start');
@@ -2742,7 +2754,7 @@ export async function handleDeleteItemSelect(interaction) {
 
     // 3. Return to Browser with Success Message
     const context = { action: 'delete_item', folder: 'root', message: `✅ Item **${itemName}** deleted.` };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete item select');
@@ -2753,7 +2765,7 @@ export async function handleDeletePackStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const context = { action: 'delete_pack', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete pack start');
@@ -2764,7 +2776,7 @@ export async function handleDeleteLootBoxStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const context = { action: 'delete_lootbox', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete lootbox start');
@@ -2788,7 +2800,7 @@ export async function handleDeletePackSelect(interaction) {
 
     // 3. Return to Browser with Success Message
     const context = { action: 'delete_pack', folder: 'root', message: `✅ Pack **${packName}** deleted.` };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete pack select');
@@ -3649,8 +3661,8 @@ export async function renderAdminBrowser(interaction, contextMap) {
       folderItems = await sortItemsByRarity(folderItems, interaction.guild);
 
       if (folderItems.length === 0) {
-         pendingAdminBrowser.set(interaction.user.id, { ...contextMap, folder: 'root', page: 1 });
-         return renderAdminBrowser(interaction, pendingAdminBrowser.get(interaction.user.id));
+         pendingAdminBrowser.set(getAdminBrowserKey(interaction), { ...contextMap, folder: 'root', page: 1 });
+         return renderAdminBrowser(interaction, pendingAdminBrowser.get(getAdminBrowserKey(interaction)));
       }
 
       const page = contextMap.page || 1;
@@ -3715,11 +3727,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
 export async function handleAdminBrowserBackRoot(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    let context = pendingAdminBrowser.get(interaction.user.id) || { action: 'edit_item', folder: 'root', page: 1, message: null };
+    let context = pendingAdminBrowser.get(getAdminBrowserKey(interaction)) || { action: 'edit_item', folder: 'root', page: 1, message: null };
     context.folder = 'root';
     context.page = 1;
     context.message = null;
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     return renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'admin browser back root');
@@ -3729,11 +3741,11 @@ export async function handleAdminBrowserBackRoot(interaction) {
 export async function handleAdminBrowserBackCat(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    let context = pendingAdminBrowser.get(interaction.user.id) || { action: 'edit_item', folder: 'browse_categories', page: 1, message: null };
+    let context = pendingAdminBrowser.get(getAdminBrowserKey(interaction)) || { action: 'edit_item', folder: 'browse_categories', page: 1, message: null };
     context.folder = 'browse_categories';
     context.page = 1;
     context.message = null;
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     return renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'admin browser back cat');
@@ -3747,17 +3759,17 @@ export async function handleAdminBrowserSelect(interaction) {
     }
 
     const selection = interaction.values[0];
-    let context = pendingAdminBrowser.get(interaction.user.id);
+    let context = pendingAdminBrowser.get(getAdminBrowserKey(interaction));
 
     if (!context) {
       context = { action: 'edit_item', folder: 'root', page: 1, message: null };
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     }
 
     // Handle pagination page change
     if (selection.startsWith('admin_browser_page_')) {
       context.page = parseInt(selection.replace('admin_browser_page_', ''), 10) || 1;
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
       return renderAdminBrowser(interaction, context);
     }
 
@@ -3766,7 +3778,7 @@ export async function handleAdminBrowserSelect(interaction) {
       context.folder = 'root';
       context.page = 1;
       context.message = null;
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
       return renderAdminBrowser(interaction, context);
     }
 
@@ -3775,7 +3787,7 @@ export async function handleAdminBrowserSelect(interaction) {
       context.folder = 'browse_categories';
       context.page = 1;
       context.message = null;
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
       return renderAdminBrowser(interaction, context);
     }
 
@@ -3784,7 +3796,7 @@ export async function handleAdminBrowserSelect(interaction) {
       context.folder = selection;
       context.page = 1;
       context.message = null;
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
       return renderAdminBrowser(interaction, context);
     }
 
@@ -3831,13 +3843,13 @@ export async function handleEditItemStart(interaction) {
     if (cid.startsWith(BACK_PREFIX)) {
       const folderId = cid.slice(BACK_PREFIX.length);
       const context = { action: 'edit_item', folder: folderId, message: null };
-      pendingAdminBrowser.set(interaction.user.id, context);
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
       return renderAdminBrowser(interaction, context);
     }
 
     // Fresh entry — always start from root
     const context = { action: 'edit_item', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'edit item start');
@@ -4451,7 +4463,7 @@ export async function handleEditPackStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const context = { action: 'edit_pack', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit pack start');
@@ -4462,7 +4474,7 @@ export async function handleEditLootBoxStart(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
     const context = { action: 'edit_lootbox', folder: 'root', message: null };
-    pendingAdminBrowser.set(interaction.user.id, context);
+    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit lootbox start');
