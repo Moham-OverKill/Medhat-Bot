@@ -28,8 +28,14 @@ import {
 import { sysError, sysLog, sendLog } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
-// Temporary storage for add-Quest flow (userId -> { channelId, channelType })
+// Temporary storage for add-Quest flow (Guild ID : User ID -> { channelId, channelType })
 const pendingQuestAdd = new Map();
+
+function getPendingQuestKey(interaction) {
+  const gId = interaction?.guildId || interaction?.guild?.id || 'global';
+  const uId = interaction?.user?.id || 'unknown';
+  return `${gId}:${uId}`;
+}
 
 // ============================================
 // MAIN DASHBOARD
@@ -400,11 +406,11 @@ export async function handleAddChannelSelect(interaction) {
     }
     // GuildText and GuildAnnouncement both fall through to 'text' (full action set)
 
-    pendingQuestAdd.set(interaction.user.id, { channelId, channelType });
+    pendingQuestAdd.set(getPendingQuestKey(interaction), { channelId, channelType });
     const actions = getActionsForChannelType(channelType);
 
     if (actions.length === 1) {
-      pendingQuestAdd.get(interaction.user.id).actionType = actions[0].value;
+      pendingQuestAdd.get(getPendingQuestKey(interaction)).actionType = actions[0].value;
       await showAddQuestModal(interaction, actions[0].value);
       return;
     }
@@ -442,7 +448,7 @@ export async function handleAddChannelSelect(interaction) {
 
 export async function handleAddActionSelect(interaction) {
   const actionType = interaction.values[0];
-  const pending = pendingQuestAdd.get(interaction.user.id);
+  const pending = pendingQuestAdd.get(getPendingQuestKey(interaction));
   if (!pending) {
     await interaction.reply({ content: '❌ Session expired. Please start over.', flags: MessageFlags.Ephemeral });
     return;
@@ -452,7 +458,7 @@ export async function handleAddActionSelect(interaction) {
 }
 
 async function showAddQuestModal(interaction, actionType) {
-  const pending = pendingQuestAdd.get(interaction.user.id);
+  const pending = pendingQuestAdd.get(getPendingQuestKey(interaction));
   const actionLabel = formatActionType(actionType);
 
   const channel = pending?.channelId ? interaction.guild?.channels.cache.get(pending.channelId) : null;
@@ -501,7 +507,7 @@ export async function handleAddQuestModal(interaction) {
     await interaction.deferUpdate();
     const guildId = interaction.guildId;
 
-    const pending = pendingQuestAdd.get(interaction.user.id);
+    const pending = pendingQuestAdd.get(getPendingQuestKey(interaction));
     if (!pending) {
       await interaction.followUp({ content: '❌ Session expired. Please start over.', flags: MessageFlags.Ephemeral });
       return;
@@ -533,7 +539,7 @@ export async function handleAddQuestModal(interaction) {
       customTitle
     });
 
-    pendingQuestAdd.delete(interaction.user.id);
+    pendingQuestAdd.delete(getPendingQuestKey(interaction));
 
     if (result.error) {
       await interaction.followUp({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
