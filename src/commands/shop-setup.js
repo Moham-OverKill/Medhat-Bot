@@ -1700,6 +1700,24 @@ export async function handleShopPostStart(interaction) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
   }
   components.push(new ActionRowBuilder().addComponents(userSelect));
+  if (state.showImageMenu && isCustomImage) {
+    const imageMenu = new StringSelectMenuBuilder()
+      .setCustomId(`shop_post_image_action_menu:${sessionId}`)
+      .setPlaceholder('Edit Item Image...')
+      .addOptions([
+        {
+          label: 'Update Image',
+          value: 'action_modal',
+          emoji: '➕'
+        },
+        {
+          label: 'Item Image',
+          value: 'clear_post_image',
+          emoji: '❌'
+        }
+      ]);
+    components.push(new ActionRowBuilder().addComponents(imageMenu));
+  }
   components.push(configRow);
   components.push(actionRow);
 
@@ -2070,26 +2088,8 @@ export async function handleShopPostReset(interaction) {
   await handleShopPostStart(interaction);
 }
 
-// Handle Image URL Button - Show Modal
-export async function handleShopPostImageBtn(interaction) {
-  const sessionId = getPostSessionId(interaction);
-  const state = (await getPendingPostSession(sessionId)) || {};
-
-  let currentCustomImage = '';
-  if (state.imageUrl) {
-    let defaultImg = null;
-    if (state.itemId) {
-      try {
-        const item = await getShopItem(state.itemId, interaction.guildId);
-        defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
-      } catch (_) {}
-    }
-    // Only pre-fill if it is genuinely a custom image overwriting the default item image
-    if (!defaultImg || !isSameImageUrl(state.imageUrl, defaultImg)) {
-      currentCustomImage = state.imageUrl;
-    }
-  }
-
+// Show Modal for Shop Post Image
+export async function showShopPostImageModal(interaction, sessionId, state) {
   const modal = new ModalBuilder()
     .setCustomId(`shop_post_image_modal:${sessionId}`)
     .setTitle('Item Image');
@@ -2100,11 +2100,58 @@ export async function handleShopPostImageBtn(interaction) {
 
   const imageLabel = new LabelBuilder()
     .setLabel('Overwrite Default Image')
-    .setDescription(formatCurrentImageDescription(state.imageUrl))
+    .setDescription(formatCurrentImageDescription(state?.imageUrl))
     .setFileUploadComponent(upload);
 
   modal.addLabelComponents(imageLabel);
   await interaction.showModal(modal);
+}
+
+// Handle Image URL Button - Direct Modal (if no custom image) or Toggle Select Menu (if custom image)
+export async function handleShopPostImageBtn(interaction) {
+  const sessionId = getPostSessionId(interaction);
+  const state = (await getPendingPostSession(sessionId)) || {};
+
+  let defaultImg = null;
+  if (state.itemId) {
+    try {
+      const item = await getShopItem(state.itemId, interaction.guildId);
+      defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
+    } catch (_) {}
+  }
+  const isCustomImage = Boolean(state.imageUrl && !isSameImageUrl(state.imageUrl, defaultImg));
+
+  if (!isCustomImage) {
+    return showShopPostImageModal(interaction, sessionId, state);
+  }
+
+  state.showImageMenu = !state.showImageMenu;
+  await setPendingPostSession(sessionId, state);
+  return handleShopPostStart(interaction);
+}
+
+// Handle Image Action Select Menu (Add / Remove)
+export async function handleShopPostImageActionSelect(interaction) {
+  const sessionId = getPostSessionId(interaction);
+  const selectedValue = interaction.values[0];
+  const state = (await getPendingPostSession(sessionId)) || {};
+
+  if (selectedValue === 'action_modal') {
+    state.showImageMenu = false;
+    await setPendingPostSession(sessionId, state);
+    return showShopPostImageModal(interaction, sessionId, state);
+  }
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+
+  if (selectedValue === 'clear_post_image') {
+    state.imageUrl = null;
+    state.showImageMenu = false;
+    await setPendingPostSession(sessionId, state);
+    return handleShopPostStart(interaction);
+  }
 }
 
 // Handle All Post Modal Submits (Image, Desc, Payout, Stock, Drop, Auto, Price)
@@ -3923,7 +3970,7 @@ export async function handleRevokeItemConfirm(interaction) {
   }
 }
 
-export async function handleEditItemSelect(interaction, successHeader = null) {
+export async function handleEditItemSelect(interaction, successHeader = null, options = {}) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   
   let itemId;
@@ -3938,6 +3985,8 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       'shop_item_page_prev_',
       'shop_item_page_next_',
       'shop_item_edit_select_',
+      'shop_item_images_btn_',
+      'shop_item_image_action_menu_',
     ];
     const matched = prefixes.find(p => cid.startsWith(p));
     if (matched) {
@@ -4212,12 +4261,48 @@ export async function handleEditItemSelect(interaction, successHeader = null) {
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary);
 
-    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
+    const hasItemImage = Boolean(item.default_image_url || item.image_url);
+    const itemImageBtn = new ButtonBuilder()
+      .setCustomId(`shop_item_images_btn_${itemId}`)
+      .setLabel('Image')
+      .setEmoji('🖼️')
+      .setStyle(options.showImageMenu ? ButtonStyle.Primary : (hasItemImage ? ButtonStyle.Primary : ButtonStyle.Secondary));
 
-    // Only show the 3 attribute dropdowns on the Details view — hide them on the Users page
-    const components = view === 'details'
-      ? [rowCat, rowRarity, rowTradable, rowNav, rowActions]
-      : [rowNav, rowActions];
+    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn, itemImageBtn);
+
+    let imageMenuRow = null;
+    if (options.showImageMenu && hasItemImage) {
+      imageMenuRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`shop_item_image_action_menu_${itemId}`)
+          .setPlaceholder('Edit Item Image...')
+          .addOptions([
+            {
+              label: 'Update Image',
+              value: 'action_modal',
+              emoji: '➕'
+            },
+            {
+              label: 'Item Image',
+              value: 'clear_item_image',
+              emoji: '❌'
+            }
+          ])
+      );
+    }
+
+    // Only show the 3 attribute dropdowns on Details view — hide them on Users page.
+    // If image menu is open, swap out rowTradable so rows stay <= 5.
+    let components;
+    if (view === 'details') {
+      components = imageMenuRow
+        ? [imageMenuRow, rowCat, rowRarity, rowNav, rowActions]
+        : [rowCat, rowRarity, rowTradable, rowNav, rowActions];
+    } else {
+      components = imageMenuRow
+        ? [imageMenuRow, rowNav, rowActions]
+        : [rowNav, rowActions];
+    }
 
     await interaction.editReply({
       content: successHeader || null,
@@ -4295,6 +4380,85 @@ export async function handleEditItemTradableSelect(interaction) {
   await handleEditItemSelect(mock, `✅ Status set to **${tradableLabel}**.`);
 }
 
+export async function showShopItemImageModal(interaction, itemId) {
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_item_image_modal_${itemId}_${Date.now()}`)
+    .setTitle(`Item Image: ${item.name.slice(0, 30)}`);
+
+  const imageUpload = new FileUploadBuilder()
+    .setCustomId('item_image_file')
+    .setRequired(false);
+
+  const imageLabel = new LabelBuilder()
+    .setLabel('Item Image')
+    .setDescription(formatCurrentImageDescription(item.default_image_url || item.image_url))
+    .setFileUploadComponent(imageUpload);
+
+  modal.addLabelComponents(imageLabel);
+  await interaction.showModal(modal);
+}
+
+export async function handleShopItemImagesButton(interaction, itemId) {
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return;
+
+  const hasImage = Boolean(item.default_image_url || item.image_url);
+  if (!hasImage) {
+    return showShopItemImageModal(interaction, itemId);
+  }
+
+  return handleEditItemSelect(interaction, null, { showImageMenu: true });
+}
+
+export async function handleShopItemImageActionSelect(interaction, itemId) {
+  const selectedValue = interaction.values[0];
+  const item = await getShopItem(itemId, interaction.guildId);
+  if (!item) return;
+
+  if (selectedValue === 'action_modal') {
+    return showShopItemImageModal(interaction, itemId);
+  }
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+
+  if (selectedValue === 'clear_item_image') {
+    await query(
+      `UPDATE shop_items SET default_image_url = NULL, image_url = NULL, updated_at = NOW() WHERE id = $1 AND guild_id = $2`,
+      [itemId, interaction.guildId]
+    );
+  }
+
+  return handleEditItemSelect(interaction, null, { showImageMenu: false });
+}
+
+export async function handleShopItemImageSubmit(interaction, itemId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return;
+
+    let default_image_url = item.default_image_url;
+    const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
+    const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+    if (uploadedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+        filename: uploadedFile.name,
+        label: `🖼️ Item Asset: **${item.name}**`
+      });
+      default_image_url = uploadRes.url;
+    }
+
+    await updateShopItem(itemId, { default_image_url }, interaction.guildId);
+    await handleEditItemSelect(interaction);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop item image submit');
+  }
+}
 
 export async function handleEditItemDetails(interaction) {
   try {
@@ -5748,10 +5912,43 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
   }
 }
 
+export function getLootBoxActiveImages(box) {
+  const list = [];
+  if (box.image_url) list.push({ key: 'image_url', label: 'Closed Box Image', value: 'clear_closed' });
+  if (box.opened_image_url) list.push({ key: 'opened_image_url', label: 'Opened Box Image', value: 'clear_opened' });
+  return list;
+}
+
+export function buildLootBoxImageActionMenu(box) {
+  const activeImages = getLootBoxActiveImages(box);
+  if (activeImages.length === 0) return null;
+
+  const options = [
+    {
+      label: 'Add Images',
+      value: 'action_modal',
+      emoji: '➕'
+    }
+  ];
+
+  for (const img of activeImages) {
+    options.push({
+      label: img.label,
+      value: img.value,
+      emoji: '❌'
+    });
+  }
+
+  return new StringSelectMenuBuilder()
+    .setCustomId(`shop_lb_image_action_menu_${box.id}`)
+    .setPlaceholder('Edit Images...')
+    .addOptions(options);
+}
+
 /**
  * Unified Loot Box Configuration Panel (Dropdown Config, Feature Toggles, Customize, Delete)
  */
-export async function showLootBoxEditorPanel(interaction, boxId) {
+export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
     const box = await getLootBox(boxId, interaction.guildId);
@@ -5873,7 +6070,15 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     );
     components.push(toggleRow);
 
-    // --- Row 3: Action Buttons (Back, Customize, Delete) ---
+    if (options.showImageMenu) {
+      const imageMenu = buildLootBoxImageActionMenu(box);
+      if (imageMenu) {
+        components.push(new ActionRowBuilder().addComponents(imageMenu));
+      }
+    }
+
+    // --- Row 3: Action Buttons (Back, Customize, Edit Images, Delete) ---
+    const hasBoxImages = Boolean(box.image_url || box.opened_image_url);
     const actionRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('shop_lb_home')
@@ -5885,6 +6090,11 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
         .setLabel('Customize')
         .setEmoji('✏️')
         .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_lb_images_btn_${boxId}`)
+        .setLabel('Edit Images')
+        .setEmoji('🖼️')
+        .setStyle(options.showImageMenu ? ButtonStyle.Primary : (hasBoxImages ? ButtonStyle.Primary : ButtonStyle.Secondary)),
       new ButtonBuilder()
         .setCustomId(`shop_lb_delete_start_${boxId}`)
         .setLabel('Delete')
@@ -5901,6 +6111,113 @@ export async function showLootBoxEditorPanel(interaction, boxId) {
     });
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box editor panel');
+  }
+}
+
+export async function showLootBoxImagesModal(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`shop_lb_images_modal_${boxId}_${Date.now()}`)
+    .setTitle(`Images: ${box.name.slice(0, 30)}`);
+
+  const closedUpload = new FileUploadBuilder()
+    .setCustomId('image_closed_file')
+    .setRequired(false);
+
+  const closedLabel = new LabelBuilder()
+    .setLabel('Closed Box Image')
+    .setDescription(formatCurrentImageDescription(box.image_url))
+    .setFileUploadComponent(closedUpload);
+
+  const openedUpload = new FileUploadBuilder()
+    .setCustomId('image_opened_file')
+    .setRequired(false);
+
+  const openedLabel = new LabelBuilder()
+    .setLabel('Opened Box Image')
+    .setDescription(formatCurrentImageDescription(box.opened_image_url))
+    .setFileUploadComponent(openedUpload);
+
+  modal.addLabelComponents(closedLabel, openedLabel);
+  await interaction.showModal(modal);
+}
+
+export async function handleLootBoxImagesButton(interaction, boxId) {
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  const activeImages = getLootBoxActiveImages(box);
+  if (activeImages.length === 0) {
+    return showLootBoxImagesModal(interaction, boxId);
+  }
+
+  return showLootBoxEditorPanel(interaction, boxId, { showImageMenu: true });
+}
+
+export async function handleLootBoxImageActionSelect(interaction, boxId) {
+  const selectedValue = interaction.values[0];
+  const box = await getLootBox(boxId, interaction.guildId);
+  if (!box) return;
+
+  if (selectedValue === 'action_modal') {
+    return showLootBoxImagesModal(interaction, boxId);
+  }
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+
+  const updates = {};
+  if (selectedValue === 'clear_closed') updates.imageUrl = null;
+  if (selectedValue === 'clear_opened') updates.openedImageUrl = null;
+
+  await updateLootBox(boxId, interaction.guildId, updates);
+  const updatedBox = await getLootBox(boxId, interaction.guildId);
+  const remaining = updatedBox ? getLootBoxActiveImages(updatedBox) : [];
+
+  return showLootBoxEditorPanel(interaction, boxId, { showImageMenu: remaining.length > 0 });
+}
+
+export async function handleLootBoxImagesSubmit(interaction, boxId) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) return;
+
+    let imageUrl = box.image_url || null;
+    let openedImageUrl = box.opened_image_url || null;
+
+    // 1. Process Closed Image
+    const closedFiles = interaction.fields.getUploadedFiles?.('image_closed_file');
+    const closedFile = closedFiles?.first?.() || (Array.isArray(closedFiles) ? closedFiles[0] : null);
+    if (closedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
+        filename: closedFile.name,
+        label: `📦 Loot Box (Closed): **${box.name}**`
+      });
+      imageUrl = uploadRes.url;
+    }
+
+    // 2. Process Opened Image
+    const openedFiles = interaction.fields.getUploadedFiles?.('image_opened_file');
+    const openedFile = openedFiles?.first?.() || (Array.isArray(openedFiles) ? openedFiles[0] : null);
+    if (openedFile) {
+      const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
+        filename: openedFile.name,
+        label: `📦 Loot Box (Opened): **${box.name}**`
+      });
+      openedImageUrl = uploadRes.url;
+    }
+
+    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
+    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
+
+    await updateLootBox(boxId, interaction.guildId, { imageUrl, openedImageUrl });
+    await showLootBoxEditorPanel(interaction, boxId);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'loot box images submit');
   }
 }
 
