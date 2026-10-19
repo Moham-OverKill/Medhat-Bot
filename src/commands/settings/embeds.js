@@ -248,13 +248,107 @@ export async function renderRootEmbedMenu(interaction) {
 }
 
 /**
+ * Returns a list of active image slots configured on the embed/group record.
+ */
+export function getEmbedActiveImages(record) {
+  const list = [];
+  if (record.image_url) list.push({ key: 'image_url', label: 'Banner', value: 'clear_banner' });
+  if (record.thumbnail_url) list.push({ key: 'thumbnail_url', label: 'Thumbnail', value: 'clear_thumbnail' });
+  if (record.author_icon_url) list.push({ key: 'author_icon_url', label: 'Author Icon', value: 'clear_author' });
+  if (record.footer_icon_url) list.push({ key: 'footer_icon_url', label: 'Footer Icon', value: 'clear_footer' });
+  return list;
+}
+
+/**
+ * Builds an in-place StringSelectMenu for image actions (Add Images / Remove specific images).
+ */
+export function buildEmbedImageActionMenu(record, isGroup = false) {
+  const activeImages = getEmbedActiveImages(record);
+  if (activeImages.length === 0) return null;
+
+  const customId = isGroup
+    ? `embed_group_image_action_menu_${record.id}`
+    : `embed_image_action_menu_${record.id}`;
+
+  const options = [
+    {
+      label: 'Add Images',
+      value: 'action_modal',
+      emoji: '➕'
+    }
+  ];
+
+  for (const img of activeImages) {
+    options.push({
+      label: img.label,
+      value: img.value,
+      emoji: '❌'
+    });
+  }
+
+  return new StringSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder('Edit Images...')
+    .addOptions(options);
+}
+
+/**
+ * Builds the modal for uploading/updating embed images.
+ */
+export function buildEmbedImagesModal(record, isGroup = false) {
+  const modal = new ModalBuilder()
+    .setCustomId(isGroup ? `embed_modal_group_images_${record.id}_${Date.now()}` : `embed_modal_images_${record.id}_${Date.now()}`)
+    .setTitle(isGroup ? 'Edit Group Images' : 'Edit Images');
+
+  // 1. Banner
+  const imageUpload = new FileUploadBuilder()
+    .setCustomId('embed_image_file')
+    .setRequired(false);
+  const imageLabel = new LabelBuilder()
+    .setLabel('Banner')
+    .setDescription(formatCurrentImageDescription(record.image_url))
+    .setFileUploadComponent(imageUpload);
+
+  // 2. Thumbnail
+  const thumbUpload = new FileUploadBuilder()
+    .setCustomId('embed_thumbnail_file')
+    .setRequired(false);
+  const thumbLabel = new LabelBuilder()
+    .setLabel('Thumbnail')
+    .setDescription(formatCurrentImageDescription(record.thumbnail_url))
+    .setFileUploadComponent(thumbUpload);
+
+  // 3. Author Icon
+  const authorIconUpload = new FileUploadBuilder()
+    .setCustomId('embed_author_icon_file')
+    .setRequired(false);
+  const authorIconLabel = new LabelBuilder()
+    .setLabel('Author Icon')
+    .setDescription(formatCurrentImageDescription(record.author_icon_url))
+    .setFileUploadComponent(authorIconUpload);
+
+  // 4. Footer Icon
+  const footerIconUpload = new FileUploadBuilder()
+    .setCustomId('embed_footer_icon_file')
+    .setRequired(false);
+  const footerIconLabel = new LabelBuilder()
+    .setLabel('Footer Icon')
+    .setDescription(formatCurrentImageDescription(record.footer_icon_url))
+    .setFileUploadComponent(footerIconUpload);
+
+  modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
+  return modal;
+}
+
+/**
  * Render the Manage Page for a specific embed
  * Layout:
+ * [ Optional Image Action Menu ]
  * Row 1: [ ✏️ Edit Text ] | [ 🖼️ Edit Images ]
  * Row 2: [ 🔄 Update ] | [ 📤 Send ]
  * Row 3: [ ⬅️ Back ]
  */
-export async function renderEmbedManagePage(interaction, embedId) {
+export async function renderEmbedManagePage(interaction, embedId, options = {}) {
   const guildId = interaction.guildId;
   const pool = getPool();
 
@@ -287,7 +381,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
       .setCustomId(`embed_edit_images_${emb.id}`)
       .setLabel('Edit Images')
       .setEmoji('🖼️')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(options.showImageMenu ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
 
   // Row 2: Update - Send
@@ -313,6 +407,15 @@ export async function renderEmbedManagePage(interaction, embedId) {
       .setStyle(ButtonStyle.Secondary)
   );
 
+  const components = [];
+  if (options.showImageMenu) {
+    const imageMenu = buildEmbedImageActionMenu(emb, false);
+    if (imageMenu) {
+      components.push(new ActionRowBuilder().addComponents(imageMenu));
+    }
+  }
+  components.push(actionRow1, actionRow2, actionRow3);
+
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
@@ -320,7 +423,7 @@ export async function renderEmbedManagePage(interaction, embedId) {
   await interaction[responseMethod]({
     content: '',
     embeds: [previewEmbed],
-    components: [actionRow1, actionRow2, actionRow3]
+    components
   });
 }
 
@@ -382,7 +485,7 @@ export async function renderEmbedSendPage(interaction, embedId) {
  * Row 3: [ 🔄 Update ] | [ 📤 Send ]
  * Row 4: [ ⬅️ Back ]
  */
-export async function renderGroupManagePage(interaction, groupId) {
+export async function renderGroupManagePage(interaction, groupId, options = {}) {
   const guildId = interaction.guildId;
   const pool = getPool();
 
@@ -422,7 +525,7 @@ export async function renderGroupManagePage(interaction, groupId) {
       .setCustomId(`embed_group_edit_images_${grp.id}`)
       .setLabel('Edit Images')
       .setEmoji('🖼️')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(options.showImageMenu ? ButtonStyle.Primary : ButtonStyle.Secondary)
   );
 
   // Row 2: Manage Attached Embeds
@@ -457,6 +560,15 @@ export async function renderGroupManagePage(interaction, groupId) {
       .setStyle(ButtonStyle.Secondary)
   );
 
+  const components = [];
+  if (options.showImageMenu) {
+    const imageMenu = buildEmbedImageActionMenu(grp, true);
+    if (imageMenu) {
+      components.push(new ActionRowBuilder().addComponents(imageMenu));
+    }
+  }
+  components.push(actionRow1, actionRow2, actionRow3, actionRow4);
+
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
@@ -464,7 +576,7 @@ export async function renderGroupManagePage(interaction, groupId) {
   await interaction[responseMethod]({
     content: '',
     embeds: [previewEmbed],
-    components: [actionRow1, actionRow2, actionRow3, actionRow4]
+    components
   });
 }
 
@@ -961,7 +1073,7 @@ export async function handleEmbedComponent(interaction) {
     return interaction.showModal(modal);
   }
 
-  // Button: Edit Images -> Show Images Modal
+  // Button: Edit Images -> Direct Modal (if 0 images) or Toggle Select Menu (if 1+ images)
   if (customId.startsWith('embed_edit_images_')) {
     const embedId = parseInt(customId.replace('embed_edit_images_', ''), 10);
     const pool = getPool();
@@ -972,50 +1084,61 @@ export async function handleEmbedComponent(interaction) {
 
     if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
     const emb = result.rows[0];
+    const activeImages = getEmbedActiveImages(emb);
 
-    const modal = new ModalBuilder()
-      .setCustomId(`embed_modal_images_${embedId}_${Date.now()}`)
-      .setTitle('Edit Images');
+    if (activeImages.length === 0) {
+      const modal = buildEmbedImagesModal(emb, false);
+      return interaction.showModal(modal);
+    }
 
-    // 1. Banner
-    const imageUpload = new FileUploadBuilder()
-      .setCustomId('embed_image_file')
-      .setRequired(false);
-    const imageLabel = new LabelBuilder()
-      .setLabel('Banner')
-      .setDescription(formatCurrentImageDescription(emb.image_url))
-      .setFileUploadComponent(imageUpload);
+    return renderEmbedManagePage(interaction, embedId, { showImageMenu: true });
+  }
 
-    // 2. Thumbnail
-    const thumbUpload = new FileUploadBuilder()
-      .setCustomId('embed_thumbnail_file')
-      .setRequired(false);
-    const thumbLabel = new LabelBuilder()
-      .setLabel('Thumbnail')
-      .setDescription(formatCurrentImageDescription(emb.thumbnail_url))
-      .setFileUploadComponent(thumbUpload);
+  // Select Menu: Image Action Menu (Add / Remove)
+  if (customId.startsWith('embed_image_action_menu_')) {
+    const embedId = parseInt(customId.replace('embed_image_action_menu_', ''), 10);
+    const selectedValue = interaction.values[0];
 
-    // 3. Author Icon
-    const authorIconUpload = new FileUploadBuilder()
-      .setCustomId('embed_author_icon_file')
-      .setRequired(false);
-    const authorIconLabel = new LabelBuilder()
-      .setLabel('Author Icon')
-      .setDescription(formatCurrentImageDescription(emb.author_icon_url))
-      .setFileUploadComponent(authorIconUpload);
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      [embedId, interaction.guildId]
+    );
+    if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const emb = result.rows[0];
 
-    // 4. Footer Icon
-    const footerIconUpload = new FileUploadBuilder()
-      .setCustomId('embed_footer_icon_file')
-      .setRequired(false);
-    const footerIconLabel = new LabelBuilder()
-      .setLabel('Footer Icon')
-      .setDescription(formatCurrentImageDescription(emb.footer_icon_url))
-      .setFileUploadComponent(footerIconUpload);
+    if (selectedValue === 'action_modal') {
+      const modal = buildEmbedImagesModal(emb, false);
+      return interaction.showModal(modal);
+    }
 
-    modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
-    return interaction.showModal(modal);
+    const columnMap = {
+      clear_banner: 'image_url',
+      clear_thumbnail: 'thumbnail_url',
+      clear_author: 'author_icon_url',
+      clear_footer: 'footer_icon_url'
+    };
+
+    const targetColumn = columnMap[selectedValue];
+    if (targetColumn) {
+      await pool.query(
+        `UPDATE server_embeds SET ${targetColumn} = NULL, updated_at = NOW() WHERE id = $1 AND guild_id = $2`,
+        [embedId, interaction.guildId]
+      );
+    }
+
+    const updatedRes = await pool.query(
+      `SELECT * FROM server_embeds WHERE id = $1 AND guild_id = $2`,
+      [embedId, interaction.guildId]
+    );
+    const updatedEmb = updatedRes.rows[0];
+    const remaining = updatedEmb ? getEmbedActiveImages(updatedEmb) : [];
+
+    return renderEmbedManagePage(interaction, embedId, { showImageMenu: remaining.length > 0 });
   }
 
   // Send Button -> Channel Select View
@@ -1185,7 +1308,7 @@ export async function handleEmbedComponent(interaction) {
     return interaction.showModal(modal);
   }
 
-  // Group: Edit Images -> Show Modal
+  // Group: Edit Images -> Direct Modal (if 0 images) or Toggle Select Menu (if 1+ images)
   if (customId.startsWith('embed_group_edit_images_')) {
     const groupId = parseInt(customId.replace('embed_group_edit_images_', ''), 10);
     const pool = getPool();
@@ -1196,50 +1319,61 @@ export async function handleEmbedComponent(interaction) {
 
     if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
     const grp = result.rows[0];
+    const activeImages = getEmbedActiveImages(grp);
 
-    const modal = new ModalBuilder()
-      .setCustomId(`embed_modal_group_images_${groupId}_${Date.now()}`)
-      .setTitle('Edit Group Images');
+    if (activeImages.length === 0) {
+      const modal = buildEmbedImagesModal(grp, true);
+      return interaction.showModal(modal);
+    }
 
-    // 1. Banner
-    const imageUpload = new FileUploadBuilder()
-      .setCustomId('embed_image_file')
-      .setRequired(false);
-    const imageLabel = new LabelBuilder()
-      .setLabel('Banner')
-      .setDescription(formatCurrentImageDescription(grp.image_url))
-      .setFileUploadComponent(imageUpload);
+    return renderGroupManagePage(interaction, groupId, { showImageMenu: true });
+  }
 
-    // 2. Thumbnail
-    const thumbUpload = new FileUploadBuilder()
-      .setCustomId('embed_thumbnail_file')
-      .setRequired(false);
-    const thumbLabel = new LabelBuilder()
-      .setLabel('Thumbnail')
-      .setDescription(formatCurrentImageDescription(grp.thumbnail_url))
-      .setFileUploadComponent(thumbUpload);
+  // Group: Select Menu: Image Action Menu (Add / Remove)
+  if (customId.startsWith('embed_group_image_action_menu_')) {
+    const groupId = parseInt(customId.replace('embed_group_image_action_menu_', ''), 10);
+    const selectedValue = interaction.values[0];
 
-    // 3. Author Icon
-    const authorIconUpload = new FileUploadBuilder()
-      .setCustomId('embed_author_icon_file')
-      .setRequired(false);
-    const authorIconLabel = new LabelBuilder()
-      .setLabel('Author Icon')
-      .setDescription(formatCurrentImageDescription(grp.author_icon_url))
-      .setFileUploadComponent(authorIconUpload);
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, interaction.guildId]
+    );
+    if (result.rows.length === 0) return renderRootEmbedMenu(interaction);
+    const grp = result.rows[0];
 
-    // 4. Footer Icon
-    const footerIconUpload = new FileUploadBuilder()
-      .setCustomId('embed_footer_icon_file')
-      .setRequired(false);
-    const footerIconLabel = new LabelBuilder()
-      .setLabel('Footer Icon')
-      .setDescription(formatCurrentImageDescription(grp.footer_icon_url))
-      .setFileUploadComponent(footerIconUpload);
+    if (selectedValue === 'action_modal') {
+      const modal = buildEmbedImagesModal(grp, true);
+      return interaction.showModal(modal);
+    }
 
-    modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
-    return interaction.showModal(modal);
+    const columnMap = {
+      clear_banner: 'image_url',
+      clear_thumbnail: 'thumbnail_url',
+      clear_author: 'author_icon_url',
+      clear_footer: 'footer_icon_url'
+    };
+
+    const targetColumn = columnMap[selectedValue];
+    if (targetColumn) {
+      await pool.query(
+        `UPDATE server_embed_groups SET ${targetColumn} = NULL, updated_at = NOW() WHERE id = $1 AND guild_id = $2`,
+        [groupId, interaction.guildId]
+      );
+    }
+
+    const updatedRes = await pool.query(
+      `SELECT * FROM server_embed_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, interaction.guildId]
+    );
+    const updatedGrp = updatedRes.rows[0];
+    const remaining = updatedGrp ? getEmbedActiveImages(updatedGrp) : [];
+
+    return renderGroupManagePage(interaction, groupId, { showImageMenu: remaining.length > 0 });
   }
 
   // Group: Manage Attached Embeds Button
