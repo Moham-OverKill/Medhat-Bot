@@ -26,13 +26,13 @@ try {
   // Ignore font re-registration
 }
 
-export const IMAGE_HOST_GUILD_ID = process.env.IMAGE_HOST_GUILD_ID || '1561304256428904488';
+export const IMAGE_HOST_GUILD_ID = process.env.IMAGE_HOST_GUILD_ID;
 
 export const IMAGE_HOST_CHANNELS = {
-  items: process.env.IMAGE_HOST_ITEMS_CHANNEL_ID || '1561304537208463462',
-  avatars: process.env.IMAGE_HOST_AVATARS_CHANNEL_ID || '1561304768410943498',
-  boxes: process.env.IMAGE_HOST_BOXES_CHANNEL_ID || '1561304601347498046',
-  embeds: process.env.IMAGE_HOST_EMBEDS_CHANNEL_ID || '1561304911793225801'
+  items: process.env.IMAGE_HOST_ITEMS_CHANNEL_ID,
+  avatars: process.env.IMAGE_HOST_AVATARS_CHANNEL_ID,
+  boxes: process.env.IMAGE_HOST_BOXES_CHANNEL_ID,
+  embeds: process.env.IMAGE_HOST_EMBEDS_CHANNEL_ID
 };
 
 export const CATEGORY_THEMES = {
@@ -77,7 +77,7 @@ export async function ensureImageHostTable() {
 export async function getOrCreateGuildThread(client, category, guild) {
   const channelId = IMAGE_HOST_CHANNELS[category];
   if (!channelId) {
-    throw new Error(`Invalid asset category '${category}'. Valid categories: ${Object.keys(IMAGE_HOST_CHANNELS).join(', ')}`);
+    throw new Error(`Asset host channel ID for category '${category}' is not configured in environment variables (IMAGE_HOST_${category.toUpperCase()}_CHANNEL_ID).`);
   }
 
   const guildId = typeof guild === 'string' ? guild : guild.id;
@@ -125,6 +125,10 @@ export async function getOrCreateGuildThread(client, category, guild) {
   }
 
   // 4. Fetch host guild and forum channel
+  if (!IMAGE_HOST_GUILD_ID) {
+    throw new Error('Asset host server ID is not configured in environment variables (IMAGE_HOST_GUILD_ID).');
+  }
+
   const hostGuild = client.guilds.cache.get(IMAGE_HOST_GUILD_ID) ||
     await client.guilds.fetch(IMAGE_HOST_GUILD_ID).catch(() => null);
 
