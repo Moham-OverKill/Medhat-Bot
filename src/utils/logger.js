@@ -328,7 +328,7 @@ export function sysWarn(action, { user, guild, target, role, item, channel, mess
     if (message) parts.push(`Message: ${message?.id || message}`);
     if (detail) parts.push(`Detail: ${stripLog(detail)}`);
     
-    console.warn(parts.join(' | '));
+    console.log(parts.join(' | '));
 }
 
 /**
