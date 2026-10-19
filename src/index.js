@@ -280,7 +280,7 @@ keepAliveServer = createServer((req, res) => {
       } catch (err) {
         sysError('Top.gg Webhook processing failure', err);
         res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end(`Error: ${err.message}\nStack: ${err.stack}`);
+        res.end('Internal Server Error');
       }
     });
     return;
