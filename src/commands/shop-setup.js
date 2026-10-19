@@ -6357,7 +6357,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const closedLabel = new LabelBuilder()
-    .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep current)' : ''))
+    .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep)' : ''))
     .setDescription('Upload closed chest image')
     .setFileUploadComponent(closedUpload);
 
@@ -6366,7 +6366,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const openedLabel = new LabelBuilder()
-    .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep current)' : ''))
+    .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep)' : ''))
     .setDescription('Upload opened chest image')
     .setFileUploadComponent(openedUpload);
 
