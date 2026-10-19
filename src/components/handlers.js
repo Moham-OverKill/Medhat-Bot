@@ -379,6 +379,8 @@ export function setupComponentHandlers(client) {
       // BANK: Shop
       else if (customId === 'shop_main' || customId === 'bank_shop') {
         await handleShopButton(interaction);
+      } else if (customId === 'bank_shop_category') {
+        await handleShopCategorySelect(interaction);
       } else if (customId === 'shop_select_pack_edit' || customId === 'shop_select_cat_edit_rename') {
         if (customId === 'shop_select_pack_edit') await handleEditPackSelect(interaction);
         else await handleEditCategorySelect(interaction);
@@ -408,7 +410,7 @@ export function setupComponentHandlers(client) {
         await handleEditItemSelect(interaction);
       } else if (customId.startsWith('shop_item_page_prev_') || customId.startsWith('shop_item_page_next_')) {
         await handleEditItemSelect(interaction);
-      } else if (customId.startsWith('shop_item_edit_select_')) {
+      } else if (customId.startsWith('shop_item_edit_select_') || (customId.startsWith('shop_item_edit_') && !customId.startsWith('shop_item_edit_details_'))) {
         await handleEditItemSelect(interaction);
       } else if (customId.startsWith('shop_item_revoke_confirm_')) {
         await handleRevokeItemConfirm(interaction);
@@ -633,7 +635,7 @@ export function setupComponentHandlers(client) {
         await handleQuestsComponent(interaction);
       }
       // Colors Components (Unified Routing)
-      else if (customId.startsWith('colors_')) {
+      else if (customId.startsWith('colors_') || customId === 'colors:back' || customId === 'boosters:back') {
         if (customId === 'colors:back' || customId === 'boosters:back') {
           const { handleColorsCommand } = await import('../commands/colors.js');
           await handleColorsCommand(interaction);
@@ -665,6 +667,18 @@ export function setupComponentHandlers(client) {
         } else if (customId.startsWith('trade_accept_') || customId.startsWith('trade_decline_')) {
           await handleTradeExecution(interaction);
         }
+      } else if (
+        customId.startsWith('shop_item_nav_noop_') ||
+        customId === 'shop_lb_select_box_empty' ||
+        customId.startsWith('quests_empty_') ||
+        customId === 'bank_inv_page_indicator' ||
+        customId.startsWith('bank_item_claimed_locked_') ||
+        customId.startsWith('bank_item_expired_') ||
+        customId === 'trade_setup_posting' ||
+        customId === 'organize_emoji_page_info'
+      ) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+        return;
       } else {
         // --- SAFETY NET: LOG UNHANDLED ---
         if (customId && !customId.startsWith('shop_main') && !customId.startsWith('bank_')) {

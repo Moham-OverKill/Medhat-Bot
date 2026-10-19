@@ -990,7 +990,7 @@ export async function handlePassComponent(interaction) {
       if (selectedValue.startsWith('add_item_')) {
         const itemId = parseInt(selectedValue.replace('add_item_', ''), 10);
         const pool = getPool();
-        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [itemId]);
+        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1 AND guild_id = $2', [itemId, guildId]);
         const itemName = itemRes.rows[0]?.name || 'Item';
         const existRes = await pool.query(
           'SELECT quantity FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND shop_item_id = $4',
@@ -1021,7 +1021,7 @@ export async function handlePassComponent(interaction) {
       if (selectedValue.startsWith('add_chest_')) {
         const chestId = parseInt(selectedValue.replace('add_chest_', ''), 10);
         const pool = getPool();
-        const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [chestId]);
+        const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1 AND guild_id = $2', [chestId, guildId]);
         const chestName = chestRes.rows[0]?.name || 'Chest';
         const existRes = await pool.query(
           'SELECT quantity FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4',
@@ -1559,10 +1559,10 @@ export async function handlePassModal(interaction) {
       const pool = getPool();
       let rewardName = `${type} #${targetId}`;
       if (type === 'item') {
-        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [targetId]);
+        const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1 AND guild_id = $2', [targetId, guildId]);
         if (itemRes.rows.length > 0) rewardName = itemRes.rows[0].name;
       } else {
-        const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [targetId]);
+        const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1 AND guild_id = $2', [targetId, guildId]);
         if (chestRes.rows.length > 0) rewardName = chestRes.rows[0].name;
       }
 
