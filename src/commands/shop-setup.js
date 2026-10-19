@@ -2098,7 +2098,7 @@ export async function handleShopPostImageBtn(interaction) {
     .setRequired(false);
 
   const imageLabel = new LabelBuilder()
-    .setLabel('Overwrite Default Image')
+    .setLabel('Overwrite Default Image' + (state.imageUrl ? ' (Leave empty to keep)' : ''))
     .setFileUploadComponent(upload);
 
   modal.addLabelComponents(imageLabel);
@@ -2136,9 +2136,9 @@ export async function handleShopPostModalSubmit(interaction) {
         let rawVal = '';
         try { rawVal = (interaction.fields.getTextInputValue('image_url') || '').trim(); } catch (_) {}
         const valLower = rawVal.toLowerCase();
-        if (valLower === '' || valLower === 'none' || valLower === 'default') {
+        if (valLower === 'clear' || valLower === 'none' || valLower === 'default') {
           state.imageUrl = null;
-        } else {
+        } else if (rawVal) {
           const cleaned = cleanImageUrl(rawVal);
           let defaultImg = null;
           if (state.itemId) {
@@ -2153,6 +2153,7 @@ export async function handleShopPostModalSubmit(interaction) {
             state.imageUrl = cleaned;
           }
         }
+        // If left empty, keep existing state.imageUrl untouched
       }
     } else if (customId === 'shop_post_desc_modal') {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
@@ -4324,8 +4325,9 @@ export async function handleEditItemDetails(interaction) {
       .setCustomId('item_image_file')
       .setRequired(false);
 
+    const hasExistingImage = Boolean(item.default_image_url || item.image_url);
     const imageLabel = new LabelBuilder()
-      .setLabel('Image')
+      .setLabel('Image' + (hasExistingImage ? ' (Leave empty to keep)' : ''))
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
