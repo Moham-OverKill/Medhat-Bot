@@ -49,9 +49,6 @@ import {
   handleAdminBrowserBackRoot,
   handleAdminBrowserBackCat,
   handleShopPostBackFolder,
-  handleManageTiers,
-  handleAddTierModal,
-  handleTierModalSubmit,
   handleEditCategoryStart,
   handleEditCategorySelect,
   handleEditCategoryModalSubmit,
@@ -214,8 +211,6 @@ export function setupComponentHandlers(client) {
           await handleItemModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_item_modal_')) {
           await handleItemModalSubmit(interaction);
-        } else if (interaction.customId.startsWith('shop_tier_modal_')) {
-          await handleTierModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_cat_modal_edit_')) {
           await handleEditCategoryModalSubmit(interaction);
         } else if (interaction.customId === 'shop_lb_create_modal') {
@@ -615,12 +610,6 @@ export function setupComponentHandlers(client) {
         await handleDeletePackStart(interaction);
       } else if (customId === 'shop_select_pack_delete') {
         await handleDeletePackSelect(interaction);
-      }
-      // ADMIN SHOP SETUP - TIERS
-      else if (customId.startsWith('shop_item_manage_tiers_') || customId.startsWith('shop_manage_tiers_')) {
-        await handleManageTiers(interaction);
-      } else if (customId.startsWith('shop_tier_add_')) {
-        await handleAddTierModal(interaction);
       }
       // MVP Components
       else if (customId.startsWith('mvp_')) {

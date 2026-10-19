@@ -32,8 +32,6 @@ import {
   getShopItems,
   getShopItem,
   getItemImage,
-  getItemTiers,
-  addItemTier,
   deleteShopCategory,
   updateShopCategory,
   detachItemsFromCategory,
@@ -2596,125 +2594,6 @@ export async function handleShopPostPublish(interaction) {
     const state = await getPendingPostSession(getPostSessionId(interaction));
     const targetChannel = state?.channelId ? interaction.guild?.channels?.cache?.get(state.channelId) : interaction.channel;
     await handleInteractionError(interaction, error, 'Publish Shop Post', { targetChannel });
-  }
-}
-
-// --- Tier Management ---
-export async function handleManageTiers(interaction) {
-  try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    const itemId = interaction.customId.split('_').pop();
-    const tiers = await getItemTiers(itemId, interaction.guildId);
-    const item = await getShopItem(itemId, interaction.guildId);
-
-    if (!item) {
-      return interaction.editReply({ files: [], content: '❌ Item not found.', embeds: [], components: [] });
-    }
-
-    const coinName = await getCurrencyName(interaction.guildId);
-    const embed = new EmbedBuilder()
-      .setTitle(`Tiers for ${item.name}`)
-      .setDescription(tiers.length === 0 ? 'No tiers configured.' : 'Current Tiers:')
-      .setColor('#F1C40F');
-
-    if (tiers.length > 0) {
-      const tierDesc = tiers.map(t => `**Level ${t.tier_level}**: ${t.upgrade_price === 0 ? 'FREE' : `${t.upgrade_price.toLocaleString()} ${coinName.toLowerCase()}`} (Role: <@&${t.role_id}>)`).join('\n');
-      embed.addFields({ name: 'Upgrades', value: tierDesc });
-    }
-
-    const actionRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_tier_add_${itemId}`)
-          .setLabel('Add Tier')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Success)
-      );
-
-    const backRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_item_edit_select_${itemId}`) // Go back to item manage 
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.editReply({ files: [], embeds: [embed], components: [actionRow, backRow] });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'shop manage tiers');
-  }
-}
-
-export async function handleAddTierModal(interaction) {
-  try {
-    const itemId = interaction.customId.split('_').pop();
-
-    const modal = new ModalBuilder()
-      .setCustomId(`shop_tier_modal_add_${itemId}`)
-      .setTitle('Add Upgrade Tier');
-
-    const levelInput = new TextInputBuilder()
-      .setCustomId('tier_level')
-      .setLabel('Tier Level (e.g. 2)')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    const priceInput = new TextInputBuilder()
-      .setCustomId('tier_price')
-      .setLabel('Upgrade Price')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('5000')
-      .setRequired(true);
-
-    const roleInput = new TextInputBuilder()
-      .setCustomId('tier_role')
-      .setLabel('Role ID for this Tier')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(levelInput),
-      new ActionRowBuilder().addComponents(priceInput),
-      new ActionRowBuilder().addComponents(roleInput)
-    );
-
-    await interaction.showModal(modal);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'shop add tier modal');
-  }
-}
-
-export async function handleTierModalSubmit(interaction) {
-  try {
-    await interaction.deferUpdate();
-    const itemId = interaction.customId.split('_').pop();
-
-    const level = parseInt(interaction.fields.getTextInputValue('tier_level'));
-    const price = parseInt(interaction.fields.getTextInputValue('tier_price'));
-    const roleId = interaction.fields.getTextInputValue('tier_role');
-
-    await addItemTier(itemId, interaction.guildId, level, roleId, price);
-
-    // Standardized Shop Admin Log
-    const item = await getShopItem(itemId, interaction.guildId);
-    sendLog(interaction.guild, 'shop', 'green', '📶 Tier Added', `Admin **<@${interaction.user.id}>** added Tier **${level}** to **${item?.name || itemId}** (Price: **${price.toLocaleString()}** ${COIN_EMOJI})`);
-
-    await interaction.followUp({ content: `✅ Tier ${level} added!`, flags: MessageFlags.Ephemeral });
-
-    // Refresh Tier View
-    const mockInteraction = {
-      deferred: true,
-      replied: false,
-      deferUpdate: async () => { },
-      editReply: interaction.editReply.bind(interaction),
-      customId: `shop_manage_tiers_${itemId}`,
-      guildId: interaction.guildId,
-      user: interaction.user
-    };
-    await handleManageTiers(mockInteraction);
-
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'Tier modal submit');
   }
 }
 
