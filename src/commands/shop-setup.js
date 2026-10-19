@@ -542,7 +542,6 @@ export async function handleAddTypeSelect(interaction) {
 
     const imageLabel = new LabelBuilder()
       .setLabel('Image')
-      .setDescription('Current: None')
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder()
@@ -553,7 +552,6 @@ export async function handleAddTypeSelect(interaction) {
 
     const durLabel = new LabelBuilder()
       .setLabel('Duration (Days)')
-      .setDescription('Leave empty for permanent')
       .setTextInputComponent(durInput);
 
     const reqInput = new TextInputBuilder()
@@ -564,7 +562,6 @@ export async function handleAddTypeSelect(interaction) {
 
     const reqLabel = new LabelBuilder()
       .setLabel('Required Roles (Role IDs)')
-      .setDescription('separate IDs by "-" or "," or space')
       .setTextInputComponent(reqInput);
 
     modal.addLabelComponents(nameLabel, roleLabel, imageLabel, durLabel, reqLabel);
@@ -3985,8 +3982,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       'shop_item_page_prev_',
       'shop_item_page_next_',
       'shop_item_edit_select_',
-      'shop_item_images_btn_',
-      'shop_item_image_action_menu_',
     ];
     const matched = prefixes.find(p => cid.startsWith(p));
     if (matched) {
@@ -4261,48 +4256,12 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary);
 
-    const hasItemImage = Boolean(item.default_image_url || item.image_url);
-    const itemImageBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_images_btn_${itemId}`)
-      .setLabel('Image')
-      .setEmoji('🖼️')
-      .setStyle(options.showImageMenu ? ButtonStyle.Primary : (hasItemImage ? ButtonStyle.Primary : ButtonStyle.Secondary));
-
-    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn, itemImageBtn);
-
-    let imageMenuRow = null;
-    if (options.showImageMenu && hasItemImage) {
-      imageMenuRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`shop_item_image_action_menu_${itemId}`)
-          .setPlaceholder('Edit Item Image...')
-          .addOptions([
-            {
-              label: 'Update Image',
-              value: 'action_modal',
-              emoji: '➕'
-            },
-            {
-              label: 'Item Image',
-              value: 'clear_item_image',
-              emoji: '❌'
-            }
-          ])
-      );
-    }
+    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
 
     // Only show the 3 attribute dropdowns on Details view — hide them on Users page.
-    // If image menu is open, swap out rowTradable so rows stay <= 5.
-    let components;
-    if (view === 'details') {
-      components = imageMenuRow
-        ? [imageMenuRow, rowCat, rowRarity, rowNav, rowActions]
-        : [rowCat, rowRarity, rowTradable, rowNav, rowActions];
-    } else {
-      components = imageMenuRow
-        ? [imageMenuRow, rowNav, rowActions]
-        : [rowNav, rowActions];
-    }
+    const components = view === 'details'
+      ? [rowCat, rowRarity, rowTradable, rowNav, rowActions]
+      : [rowNav, rowActions];
 
     await interaction.editReply({
       content: successHeader || null,
@@ -4378,86 +4337,6 @@ export async function handleEditItemTradableSelect(interaction) {
     memberPermissions: interaction.memberPermissions
   };
   await handleEditItemSelect(mock, `✅ Status set to **${tradableLabel}**.`);
-}
-
-export async function showShopItemImageModal(interaction, itemId) {
-  const item = await getShopItem(itemId, interaction.guildId);
-  if (!item) return;
-
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_item_image_modal_${itemId}_${Date.now()}`)
-    .setTitle(`Item Image: ${item.name.slice(0, 30)}`);
-
-  const imageUpload = new FileUploadBuilder()
-    .setCustomId('item_image_file')
-    .setRequired(false);
-
-  const imageLabel = new LabelBuilder()
-    .setLabel('Item Image')
-    .setDescription(formatCurrentImageDescription(item.default_image_url || item.image_url))
-    .setFileUploadComponent(imageUpload);
-
-  modal.addLabelComponents(imageLabel);
-  await interaction.showModal(modal);
-}
-
-export async function handleShopItemImagesButton(interaction, itemId) {
-  const item = await getShopItem(itemId, interaction.guildId);
-  if (!item) return;
-
-  const hasImage = Boolean(item.default_image_url || item.image_url);
-  if (!hasImage) {
-    return showShopItemImageModal(interaction, itemId);
-  }
-
-  return handleEditItemSelect(interaction, null, { showImageMenu: true });
-}
-
-export async function handleShopItemImageActionSelect(interaction, itemId) {
-  const selectedValue = interaction.values[0];
-  const item = await getShopItem(itemId, interaction.guildId);
-  if (!item) return;
-
-  if (selectedValue === 'action_modal') {
-    return showShopItemImageModal(interaction, itemId);
-  }
-
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferUpdate().catch(() => {});
-  }
-
-  if (selectedValue === 'clear_item_image') {
-    await query(
-      `UPDATE shop_items SET default_image_url = NULL, image_url = NULL, updated_at = NOW() WHERE id = $1 AND guild_id = $2`,
-      [itemId, interaction.guildId]
-    );
-  }
-
-  return handleEditItemSelect(interaction, null, { showImageMenu: false });
-}
-
-export async function handleShopItemImageSubmit(interaction, itemId) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const item = await getShopItem(itemId, interaction.guildId);
-    if (!item) return;
-
-    let default_image_url = item.default_image_url;
-    const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
-    const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
-    if (uploadedFile) {
-      const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
-        filename: uploadedFile.name,
-        label: `🖼️ Item Asset: **${item.name}**`
-      });
-      default_image_url = uploadRes.url;
-    }
-
-    await updateShopItem(itemId, { default_image_url }, interaction.guildId);
-    await handleEditItemSelect(interaction);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'shop item image submit');
-  }
 }
 
 export async function handleEditItemDetails(interaction) {
