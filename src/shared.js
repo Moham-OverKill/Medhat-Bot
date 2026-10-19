@@ -808,3 +808,25 @@ export async function safeDeferReply(interaction, options = {}) {
     return false;
   }
 }
+
+/**
+ * Formats a clean modal helper description showing the current image filename or 'Current: None'.
+ * @param {string|null|undefined} url
+ * @returns {string}
+ */
+export function formatCurrentImageDescription(url) {
+  if (!url || typeof url !== 'string' || !url.trim()) return 'Current: None';
+  try {
+    const cleanUrl = url.trim().split('?')[0];
+    const pathname = new URL(cleanUrl).pathname;
+    let filename = decodeURIComponent(pathname.split('/').pop() || '').trim();
+    if (!filename) return 'Current: Configured';
+    if (filename.length > 35) {
+      const ext = filename.includes('.') ? '.' + filename.split('.').pop() : '';
+      filename = filename.slice(0, 30) + '...' + ext;
+    }
+    return `Current: ${filename}`;
+  } catch {
+    return 'Current: Configured';
+  }
+}

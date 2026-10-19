@@ -36,7 +36,7 @@ import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponentEmoji } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponentEmoji, formatCurrentImageDescription } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -303,8 +303,8 @@ export async function showCustomizeModal(interaction) {
         .setRequired(false);
 
     const avatarLabel = new LabelBuilder()
-        .setLabel('Bot Server Avatar' + (currentServerAvatar ? ' (Leave empty to keep)' : ''))
-        .setDescription('Upload avatar image file')
+        .setLabel('Bot Server Avatar')
+        .setDescription(formatCurrentImageDescription(currentServerAvatar))
         .setFileUploadComponent(avatarUpload);
 
     modal.addLabelComponents(nameLabel, avatarLabel);

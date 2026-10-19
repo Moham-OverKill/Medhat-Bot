@@ -19,7 +19,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription } from '../shared.js';
 import { uploadHostAsset } from '../utils/image-host.js';
 
 import { query } from '../storage/postgres.js';
@@ -542,6 +542,7 @@ export async function handleAddTypeSelect(interaction) {
 
     const imageLabel = new LabelBuilder()
       .setLabel('Image')
+      .setDescription('Current: None')
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder()
@@ -2098,7 +2099,8 @@ export async function handleShopPostImageBtn(interaction) {
     .setRequired(false);
 
   const imageLabel = new LabelBuilder()
-    .setLabel('Overwrite Default Image' + (state.imageUrl ? ' (Leave empty to keep)' : ''))
+    .setLabel('Overwrite Default Image')
+    .setDescription(formatCurrentImageDescription(state.imageUrl))
     .setFileUploadComponent(upload);
 
   modal.addLabelComponents(imageLabel);
@@ -4325,9 +4327,9 @@ export async function handleEditItemDetails(interaction) {
       .setCustomId('item_image_file')
       .setRequired(false);
 
-    const hasExistingImage = Boolean(item.default_image_url || item.image_url);
     const imageLabel = new LabelBuilder()
-      .setLabel('Image' + (hasExistingImage ? ' (Leave empty to keep)' : ''))
+      .setLabel('Image')
+      .setDescription(formatCurrentImageDescription(item.default_image_url || item.image_url))
       .setFileUploadComponent(imageUpload);
 
     const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
@@ -5506,7 +5508,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
 
   const closedLabel = new LabelBuilder()
     .setLabel('Closed Box Image')
-    .setDescription('Upload closed chest image')
+    .setDescription('Current: None')
     .setFileUploadComponent(closedUpload);
 
   const openedUpload = new FileUploadBuilder()
@@ -5515,7 +5517,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
 
   const openedLabel = new LabelBuilder()
     .setLabel('Opened Box Image')
-    .setDescription('Upload opened chest image')
+    .setDescription('Current: None')
     .setFileUploadComponent(openedUpload);
 
   modal.addLabelComponents(nameLabel, closedLabel, openedLabel);
@@ -6357,8 +6359,8 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const closedLabel = new LabelBuilder()
-    .setLabel('Closed Box Image' + (box.image_url ? ' (Leave empty to keep)' : ''))
-    .setDescription('Upload closed chest image')
+    .setLabel('Closed Box Image')
+    .setDescription(formatCurrentImageDescription(box.image_url))
     .setFileUploadComponent(closedUpload);
 
   const openedUpload = new FileUploadBuilder()
@@ -6366,8 +6368,8 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const openedLabel = new LabelBuilder()
-    .setLabel('Opened Box Image' + (box.opened_image_url ? ' (Leave empty to keep)' : ''))
-    .setDescription('Upload opened chest image')
+    .setLabel('Opened Box Image')
+    .setDescription(formatCurrentImageDescription(box.opened_image_url))
     .setFileUploadComponent(openedUpload);
 
   modal.addLabelComponents(nameLabel, closedLabel, openedLabel);

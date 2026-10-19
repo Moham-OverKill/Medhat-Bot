@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysError, sysLog, sendLog } from '../../utils/logger.js';
-import { getUserLogName } from '../../shared.js';
+import { getUserLogName, formatCurrentImageDescription } from '../../shared.js';
 import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
 import { verifyAndHealMessageImages } from '../../utils/image-healer.js';
 import { sanitizeEmbed } from '../../utils/embed-sanitizer.js';
@@ -982,8 +982,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_image_file')
       .setRequired(false);
     const imageLabel = new LabelBuilder()
-      .setLabel('Banner' + (emb.image_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Big image under the text')
+      .setLabel('Banner')
+      .setDescription(formatCurrentImageDescription(emb.image_url))
       .setFileUploadComponent(imageUpload);
 
     // 2. Thumbnail
@@ -991,8 +991,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_thumbnail_file')
       .setRequired(false);
     const thumbLabel = new LabelBuilder()
-      .setLabel('Thumbnail' + (emb.thumbnail_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Image on the top-right')
+      .setLabel('Thumbnail')
+      .setDescription(formatCurrentImageDescription(emb.thumbnail_url))
       .setFileUploadComponent(thumbUpload);
 
     // 3. Author Icon
@@ -1000,8 +1000,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_author_icon_file')
       .setRequired(false);
     const authorIconLabel = new LabelBuilder()
-      .setLabel('Author Icon' + (emb.author_icon_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Icon on the top-left')
+      .setLabel('Author Icon')
+      .setDescription(formatCurrentImageDescription(emb.author_icon_url))
       .setFileUploadComponent(authorIconUpload);
 
     // 4. Footer Icon
@@ -1009,8 +1009,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_footer_icon_file')
       .setRequired(false);
     const footerIconLabel = new LabelBuilder()
-      .setLabel('Footer Icon' + (emb.footer_icon_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Icon on the bottom-left')
+      .setLabel('Footer Icon')
+      .setDescription(formatCurrentImageDescription(emb.footer_icon_url))
       .setFileUploadComponent(footerIconUpload);
 
     modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
@@ -1206,8 +1206,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_image_file')
       .setRequired(false);
     const imageLabel = new LabelBuilder()
-      .setLabel('Banner' + (grp.image_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Big image under the text')
+      .setLabel('Banner')
+      .setDescription(formatCurrentImageDescription(grp.image_url))
       .setFileUploadComponent(imageUpload);
 
     // 2. Thumbnail
@@ -1215,8 +1215,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_thumbnail_file')
       .setRequired(false);
     const thumbLabel = new LabelBuilder()
-      .setLabel('Thumbnail' + (grp.thumbnail_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Image on the top-right')
+      .setLabel('Thumbnail')
+      .setDescription(formatCurrentImageDescription(grp.thumbnail_url))
       .setFileUploadComponent(thumbUpload);
 
     // 3. Author Icon
@@ -1224,8 +1224,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_author_icon_file')
       .setRequired(false);
     const authorIconLabel = new LabelBuilder()
-      .setLabel('Author Icon' + (grp.author_icon_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Icon on the top-left')
+      .setLabel('Author Icon')
+      .setDescription(formatCurrentImageDescription(grp.author_icon_url))
       .setFileUploadComponent(authorIconUpload);
 
     // 4. Footer Icon
@@ -1233,8 +1233,8 @@ export async function handleEmbedComponent(interaction) {
       .setCustomId('embed_footer_icon_file')
       .setRequired(false);
     const footerIconLabel = new LabelBuilder()
-      .setLabel('Footer Icon' + (grp.footer_icon_url ? ' (Leave empty to keep)' : ''))
-      .setDescription('Icon on the bottom-left')
+      .setLabel('Footer Icon')
+      .setDescription(formatCurrentImageDescription(grp.footer_icon_url))
       .setFileUploadComponent(footerIconUpload);
 
     modal.addLabelComponents(imageLabel, thumbLabel, authorIconLabel, footerIconLabel);
