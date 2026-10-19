@@ -110,7 +110,14 @@ import {
   handleEditLootBoxStart,
   handleDeleteLootBoxStart,
   handleLootBoxToggleFeature,
-  handleLootBoxConfigMenuSelect
+  handleLootBoxConfigMenuSelect,
+  handleShopPostImageActionSelect,
+  handleLootBoxImagesButton,
+  handleLootBoxImageActionSelect,
+  handleLootBoxImagesSubmit,
+  handleShopItemImagesButton,
+  handleShopItemImageActionSelect,
+  handleShopItemImageSubmit
 } from '../commands/shop-setup.js';
 import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -230,6 +237,12 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('shop_lb_prizes_modal_')) {
           const boxId = parseInt(interaction.customId.replace('shop_lb_prizes_modal_', ''), 10);
           await handleLootBoxPrizeCountSubmit(interaction, boxId);
+        } else if (interaction.customId.startsWith('shop_lb_images_modal_')) {
+          const boxId = parseInt(interaction.customId.replace('shop_lb_images_modal_', '').split('_')[0], 10);
+          await handleLootBoxImagesSubmit(interaction, boxId);
+        } else if (interaction.customId.startsWith('shop_item_image_modal_')) {
+          const itemId = interaction.customId.replace('shop_item_image_modal_', '').split('_')[0];
+          await handleShopItemImageSubmit(interaction, itemId);
         } else if (
           interaction.customId.startsWith('shop_post_image_modal') ||
           interaction.customId.startsWith('shop_post_desc_modal') ||
@@ -409,6 +422,12 @@ export function setupComponentHandlers(client) {
         await handleRevokeItemStart(interaction);
       } else if (customId.startsWith('shop_item_edit_details_')) {
         await handleEditItemDetails(interaction);
+      } else if (customId.startsWith('shop_item_images_btn_')) {
+        const itemId = customId.replace('shop_item_images_btn_', '');
+        await handleShopItemImagesButton(interaction, itemId);
+      } else if (customId.startsWith('shop_item_image_action_menu_')) {
+        const itemId = customId.replace('shop_item_image_action_menu_', '');
+        await handleShopItemImageActionSelect(interaction, itemId);
       } else if (customId.startsWith('shop_pack_edit_')) {
         await handleEditPackDetails(interaction);
       } else if (customId.startsWith('bank_shop_buy_') || customId.startsWith('force_buy_')) {
@@ -508,6 +527,8 @@ export function setupComponentHandlers(client) {
         await handleShopPostPayoutBtn(interaction);
       } else if (baseCustomId === 'shop_post_image_btn') {
         await handleShopPostImageBtn(interaction);
+      } else if (baseCustomId === 'shop_post_image_action_menu') {
+        await handleShopPostImageActionSelect(interaction);
       } else if (baseCustomId === 'shop_post_publish') {
         await handleShopPostPublish(interaction);
       } else if (baseCustomId === 'shop_post_price_btn') {
@@ -559,6 +580,12 @@ export function setupComponentHandlers(client) {
       } else if (customId.startsWith('shop_lb_rename_box_btn_')) {
         const boxId = parseInt(customId.replace('shop_lb_rename_box_btn_', ''), 10);
         await handleLootBoxRenameModal(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_images_btn_')) {
+        const boxId = parseInt(customId.replace('shop_lb_images_btn_', ''), 10);
+        await handleLootBoxImagesButton(interaction, boxId);
+      } else if (customId.startsWith('shop_lb_image_action_menu_')) {
+        const boxId = parseInt(customId.replace('shop_lb_image_action_menu_', ''), 10);
+        await handleLootBoxImageActionSelect(interaction, boxId);
       } else if (customId.startsWith('shop_lb_view_') || customId.startsWith('shop_lb_edit_details_') || customId.startsWith('shop_lb_cancel_delete_')) {
         const boxId = parseInt(customId.replace('shop_lb_view_', '').replace('shop_lb_edit_details_', '').replace('shop_lb_cancel_delete_', ''), 10);
         await showLootBoxEditorPanel(interaction, boxId);
