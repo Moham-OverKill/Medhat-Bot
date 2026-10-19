@@ -406,6 +406,11 @@ export async function initializeImageHostStartupTest(client) {
   try {
     await ensureImageHostTable();
 
+    if (!IMAGE_HOST_GUILD_ID) {
+      sysWarn('Image host guild ID is not configured in environment variables (IMAGE_HOST_GUILD_ID)');
+      return;
+    }
+
     const hostGuild = client.guilds.cache.get(IMAGE_HOST_GUILD_ID) ||
       await client.guilds.fetch(IMAGE_HOST_GUILD_ID).catch(() => null);
 
@@ -414,28 +419,20 @@ export async function initializeImageHostStartupTest(client) {
       return;
     }
 
-    const pool = getPool();
-    let hasExisting = false;
-    if (pool) {
-      const res = await pool.query('SELECT 1 FROM image_host_threads LIMIT 1').catch(() => ({ rows: [] }));
-      hasExisting = res.rows.length > 0;
-    }
+    // Run test cycle across all 4 host forum channels to verify environment variables
+    const targetGuild = Array.from(client.guilds.cache.values()).find(g => g.id !== IMAGE_HOST_GUILD_ID) || hostGuild;
+    sysLog('Verifying Image Host Environment Variables', {
+      guild: targetGuild.id,
+      detail: `Testing host server (${IMAGE_HOST_GUILD_ID}) and all 4 channel variables`
+    });
 
-    // If no threads have been seeded yet in DB, run test for the host guild and the first connected guild
-    if (!hasExisting) {
-      sysLog('Running Initial Image Host Test Cycle', { detail: 'Seeding forum posts for host guild' });
-      await sendTestImagesForGuild(client, hostGuild);
+    const testResults = await sendTestImagesForGuild(client, targetGuild);
+    const passed = testResults.filter(r => r.success).length;
 
-      // Also check if bot is in another server (e.g. user server) and seed it as well
-      const otherGuild = Array.from(client.guilds.cache.values()).find(g => g.id !== IMAGE_HOST_GUILD_ID);
-      if (otherGuild) {
-        sysLog('Running Initial Image Host Test Cycle for Connected Server', {
-          guild: otherGuild.id,
-          name: otherGuild.name
-        });
-        await sendTestImagesForGuild(client, otherGuild);
-      }
-    }
+    sysLog('Image Host Verification Complete', {
+      guild: targetGuild.id,
+      detail: `${passed}/${testResults.length} channel pipelines verified successfully via environment variables`
+    });
   } catch (startupErr) {
     sysError('Image Host Startup Check Error', startupErr);
   }
