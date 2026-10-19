@@ -3866,11 +3866,10 @@ export async function handleRevokeItemStart(interaction) {
       .setTitle('Confirm Revoke')
       .setDescription(
         `You are about to revoke all owned copies of **${item.name}**.\n\n` +
-        `**This will:**\n` +
-        `• Remove it from every user's inventory\n` +
-        `• Strip the item's role from all members who currently have it\n` +
-        `• Keep the item in the shop database for future purchases or assignments\n\n` +
-        `After confirmation, **0 users** will own or hold this item. This action cannot be undone.`
+        `This will:\n` +
+        `- Remove it from every user's inventory\n` +
+        `- Strip the item's role from all members who currently have it\n\n` +
+        `This action cannot be undone.`
       )
       .setColor('#E74C3C');
 
@@ -4209,16 +4208,16 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!nextSibling);
     } else {
-      // On Users view: ⬅️ and ➡️ navigate between pages of users
+      // On Users view: ◀️ and ▶️ navigate between pages of users
       prevBtn = new ButtonBuilder()
         .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-        .setEmoji('⬅️')
+        .setEmoji('◀️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(page <= 1);
 
       nextBtn = new ButtonBuilder()
         .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-        .setEmoji('➡️')
+        .setEmoji('▶️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(page >= totalPages || !hasPagination);
     }
@@ -4241,8 +4240,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Danger);
 
-    const rowNav = new ActionRowBuilder().addComponents(prevBtn, usersBtn, revokeBtn, nextBtn);
-
     const backFolderId = item.category_id ? `cat_${item.category_id}` : 'cat_null';
     const backBtn = new ButtonBuilder()
       .setCustomId(`shop_edit_item_back_${backFolderId}`)
@@ -4256,12 +4253,14 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary);
 
-    const rowActions = new ActionRowBuilder().addComponents(backBtn, detailsBtn, editDetailsBtn);
+    const actionBtn = view === 'users' ? revokeBtn : editDetailsBtn;
+    const rowTabsAction = new ActionRowBuilder().addComponents(detailsBtn, usersBtn, actionBtn);
+    const rowNav = new ActionRowBuilder().addComponents(backBtn, prevBtn, nextBtn);
 
     // Only show the 3 attribute dropdowns on Details view — hide them on Users page.
     const components = view === 'details'
-      ? [rowCat, rowRarity, rowTradable, rowNav, rowActions]
-      : [rowNav, rowActions];
+      ? [rowCat, rowRarity, rowTradable, rowTabsAction, rowNav]
+      : [rowTabsAction, rowNav];
 
     await interaction.editReply({
       content: successHeader || null,
