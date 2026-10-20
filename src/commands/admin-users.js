@@ -2098,28 +2098,28 @@ export async function showAntiCheatHub(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Anti-Cheat')
         .setDescription(
-            'Configure anti-cheat protections and farming gates.\n\n' +
-            '• **Text Spam** — Message cooldown and anti-spam gates\n' +
-            '• **Voice AFK** — Voice farming prevention\n' +
-            '• **Alt Farming** — Account age and join date gates'
+            'Configure anti-cheat rules and farming protections.\n\n' +
+            '• **Text XP** — Cooldowns and spam filters for chat XP\n' +
+            '• **Voice XP** — AFK and mute/deafen rules for voice XP\n' +
+            '• **Trading** — Account age and join date limits for trading'
         )
         .setColor(0x3498DB);
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_text')
-            .setLabel('Text Spam')
+            .setLabel('Text XP')
             .setEmoji('💬')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_voice')
-            .setLabel('Voice AFK')
+            .setLabel('Voice XP')
             .setEmoji('🎙️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_anticheat_alt')
-            .setLabel('Alt Farming')
-            .setEmoji('🎭')
+            .setLabel('Trading')
+            .setEmoji('🤝')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -2153,14 +2153,14 @@ export async function showAltFarmingDashboard(interaction) {
     
     const desc = [
         '📅 **Account Age Gate**',
-        'Requires a (30-day) old Discord account to trade.',
+        'Requires Discord account to be at least 30 days old to trade.',
         '',
         '⏳ **Join Date Gate**',
-        'Requires (7-days) of server membership to trade.'
+        'Requires at least 7 days of server membership to trade.'
     ].join('\n');
 
     const embed = new EmbedBuilder()
-        .setTitle('Alt Farming')
+        .setTitle('Trading')
         .setDescription(desc)
         .setColor(0x3498DB);
 
@@ -2212,20 +2212,20 @@ export async function showVoiceAfkDashboard(interaction) {
 
     const desc = [
         '👥 **Minimum 2 Humans**',
-        'Requires at least 2 non-bot users in call to earn points.',
+        'Requires at least 2 active, unmuted users in the call to earn XP.',
         '',
         '🔇 **Mute Filter**',
-        'Pauses point accumulation while self-muted or server-muted.',
+        'Pauses XP while muted (self or server).',
         '',
         '🎧 **Deafen Filter**',
-        'Pauses point accumulation while self-deafened or server-deafened.',
+        'Pauses XP while deafened (self or server).',
         '',
-        '⛔ **AFK Channel Blacklist**',
-        'Blocks point accumulation inside Discord\'s official AFK channel.'
+        '⛔ **AFK Channel**',
+        'Blocks XP inside Discord\'s official AFK channel.'
     ].join('\n');
 
     const embed = new EmbedBuilder()
-        .setTitle('Voice AFK')
+        .setTitle('Voice XP')
         .setDescription(desc)
         .setColor(0x3498DB);
 
@@ -2325,20 +2325,20 @@ export async function showTextSpamDashboard(interaction) {
 
     const desc = [
         '⏱️ **5-Second Cooldown**',
-        'Limits point accumulation to one message every 5 seconds.',
+        'Limits XP to one message every 5 seconds.',
         '',
         '📏 **Minimum Length**',
-        'Requires at least 5 characters to earn points (attachments bypass).',
+        'Requires at least 5 characters to earn XP (attachments bypass).',
         '',
         '🔁 **Duplicate Filter**',
-        'Blocks points for sending the same message twice in a row.',
+        'Blocks XP for sending the same message repeatedly.',
         '',
-        '⌨️ **Command Prefix Filter**',
-        'Blocks points for messages starting with bot command prefixes.'
+        '⌨️ **Command Filter**',
+        'Blocks XP for bot commands.'
     ].join('\n');
 
     const embed = new EmbedBuilder()
-        .setTitle('Text Spam')
+        .setTitle('Text XP')
         .setDescription(desc)
         .setColor(0x3498DB);
 
