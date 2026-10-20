@@ -51,10 +51,12 @@ export async function showUserSelector(interaction) {
             .setCustomId('admin_user_anticheat')
             .setLabel('Anti Cheat')
             .setEmoji('🚫')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    row1Buttons.addComponents(
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('admin_user_automod')
+            .setLabel('Auto Mod')
+            .setEmoji('🛡️')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('admin_user_admins')
             .setLabel('Admins')
@@ -1871,6 +1873,13 @@ export async function handleAdminUserComponent(interaction) {
         if (!(await verifyAdminAccess(interaction))) return;
 
         const customId = interaction.customId;
+
+        if (customId === 'admin_user_automod') {
+            if (interaction.deferred || interaction.replied) {
+                return interaction.followUp({ content: 'Coming Soon...', flags: MessageFlags.Ephemeral });
+            }
+            return interaction.reply({ content: 'Coming Soon...', flags: MessageFlags.Ephemeral });
+        }
 
         if (customId === 'admin_user_admins') {
             if (!(await verifyAdminManagerAccess(interaction))) return;
