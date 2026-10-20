@@ -47,22 +47,39 @@ export const LOG_CATEGORIES = {
 /**
  * Handle the Logs configuration panel
  */
-export async function handleLogsSettings(interaction, selectedId = null, configOverride = null) {
+export async function handleLogsSettings(interaction, selectedId = null, configOverride = null, warningMessage = null) {
     try {
         const guildId = interaction.guildId;
         const config = configOverride || (await getGuildConfig(guildId)) || {};
 
         let desc = '';
+        if (warningMessage) {
+            desc += `⚠️ **Notice:** ${warningMessage}\n\n`;
+        }
+
         for (const cat of Object.values(LOG_CATEGORIES)) {
             const chanId = config[cat.dbId];
-            const statusLabel = chanId ? `<#${chanId}>` : '*Disabled*';
+            let statusLabel = '*Disabled*';
+            if (chanId) {
+                const targetChan = interaction.guild?.channels?.cache?.get(chanId);
+                if (targetChan) {
+                    const perm = checkChannelPermissions(targetChan);
+                    if (!perm.valid) {
+                        statusLabel = `<#${chanId}> ⚠️ *(Missing Permissions)*`;
+                    } else {
+                        statusLabel = `<#${chanId}>`;
+                    }
+                } else {
+                    statusLabel = `<#${chanId}>`;
+                }
+            }
             desc += `**${cat.emoji} ${cat.name}**\n↳ ${statusLabel}\n\n`;
         }
 
         const embed = new EmbedBuilder()
             .setTitle('Logs Configuration')
             .setDescription(desc)
-            .setColor(selectedId ? 0xF1C40F : 0x3498DB);
+            .setColor(warningMessage ? 0xE74C3C : (selectedId ? 0xF1C40F : 0x3498DB));
 
         const components = [];
 
@@ -175,10 +192,11 @@ export async function handleLogChannelSelect(interaction) {
         const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
         const permissionCheck = checkChannelPermissions(channel);
         if (!permissionCheck.valid) {
-            return interaction.followUp({ 
-                content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel** and **Send Messages** there.`,
+            await interaction.followUp({ 
+                content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel**, **Send Messages**, and **Embed Links** there.`,
                 flags: MessageFlags.Ephemeral
-            });
+            }).catch(() => {});
+            return handleLogsSettings(interaction, cat.id, null, `Cannot assign <#${channelId}>: ${permissionCheck.error}`);
         }
 
         // Update database and cache using setGuildConfig
