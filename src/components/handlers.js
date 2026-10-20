@@ -328,6 +328,7 @@ export function setupComponentHandlers(client) {
         customId.startsWith('admin_user_') ||
         customId.startsWith('admin_manage_') ||
         customId.startsWith('lb_') ||
+        customId.startsWith('logs_') ||
         customId.startsWith('role_rewards_') ||
         customId.startsWith('pass_') ||
         customId.startsWith('interface_') ||

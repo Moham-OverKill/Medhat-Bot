@@ -31,7 +31,7 @@ import {
 } from './settings/leaderboards.js';
 import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
-import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from './settings/logs.js';
+import { handleLogsSettings, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
@@ -925,12 +925,17 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('logs_assign_') || customId === 'logs_category_select') {
+        if (customId === 'logs_type_select' || customId === 'logs_category_select') {
             await handleLogCategorySelect(interaction);
             return;
         }
 
-        if (customId.startsWith('logs_disable_btn_')) {
+        if (customId.startsWith('logs_set_channel_') || customId.startsWith('logs_assign_')) {
+            await handleLogChannelSelect(interaction);
+            return;
+        }
+
+        if (customId.startsWith('logs_disable_')) {
             await handleLogDisable(interaction);
             return;
         }
