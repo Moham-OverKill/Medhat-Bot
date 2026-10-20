@@ -1,4 +1,3 @@
-
 import {
     EmbedBuilder,
     ActionRowBuilder,
@@ -7,182 +6,258 @@ import {
     StringSelectMenuBuilder,
     ChannelSelectMenuBuilder,
     ChannelType,
-    ComponentType,
     MessageFlags
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
-import { sendLog, sysLog, checkChannelPermissions } from '../../utils/logger.js';
+import { sendLog, sysLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
 import { getUserLogName } from '../../shared.js';
+import { handleInteractionError } from '../../utils/errors.js';
+
+export const LOG_CATEGORIES = {
+    economy: {
+        id: 'economy',
+        name: 'Economy',
+        emoji: '📈',
+        dbId: 'log_eco_channel_id',
+        desc: 'Logs balance transfers, claims, and rewards'
+    },
+    inventory: {
+        id: 'inventory',
+        name: 'Inventory',
+        emoji: '🎒',
+        dbId: 'log_inv_channel_id',
+        desc: 'Logs item usage, crafting, and trades'
+    },
+    shop: {
+        id: 'shop',
+        name: 'Shop',
+        emoji: '🛒',
+        dbId: 'log_shop_channel_id',
+        desc: 'Logs shop purchases and box openings'
+    },
+    audit: {
+        id: 'audit',
+        name: 'Audit',
+        emoji: '🛡️',
+        dbId: 'log_audit_channel_id',
+        desc: 'Logs administrative and security events'
+    }
+};
 
 /**
  * Handle the Logs configuration panel
  */
-export async function handleLogsSettings(interaction) {
-    const guildId = interaction.guildId;
-    const config = (await getGuildConfig(guildId)) || {};
-    
-    // Helper to get channel mention
-    const getChannelInfo = (id) => {
-        if (!id) return 'Disabled';
-        return `<#${id}>`;
-    };
+export async function handleLogsSettings(interaction, selectedId = null, configOverride = null) {
+    try {
+        const guildId = interaction.guildId;
+        const config = configOverride || (await getGuildConfig(guildId)) || {};
 
-    const embed = new EmbedBuilder()
-        .setTitle('Logs Configuration')
-        .setDescription('Configure where the bot logs all server events. You can assign different channels for each category.')
-        .addFields(
-            { name: '📈 Economy', value: getChannelInfo(config.log_eco_channel_id), inline: true },
-            { name: '🎒 Inventory', value: getChannelInfo(config.log_inv_channel_id), inline: true },
-            { name: '\u200B', value: '\u200B', inline: true }, // Spacer
-            { name: '🛒 Shop', value: getChannelInfo(config.log_shop_channel_id), inline: true },
-            { name: '🛡️ Audit', value: getChannelInfo(config.log_audit_channel_id), inline: true },
-            { name: '\u200B', value: '\u200B', inline: true } // Spacer
-        )
-        .setColor(0x2B2D31);
+        let desc = '';
+        for (const cat of Object.values(LOG_CATEGORIES)) {
+            const chanId = config[cat.dbId];
+            const statusLabel = chanId ? `<#${chanId}>` : '*Disabled*';
+            desc += `**${cat.emoji} ${cat.name}**\n↳ ${statusLabel}\n\n`;
+        }
 
-    // Create 4 rows for selection + 1 for navigation
-    const ecoSelect = new ChannelSelectMenuBuilder()
-        .setCustomId('logs_assign_economy')
-        .setPlaceholder('Assign Economy Log Channel...')
-        .setChannelTypes(ChannelType.GuildText);
+        const embed = new EmbedBuilder()
+            .setTitle('Logs Configuration')
+            .setDescription(desc)
+            .setColor(selectedId ? 0xF1C40F : 0x3498DB);
 
-    const invSelect = new ChannelSelectMenuBuilder()
-        .setCustomId('logs_assign_inventory')
-        .setPlaceholder('Assign Inventory Log Channel...')
-        .setChannelTypes(ChannelType.GuildText);
+        const components = [];
 
-    const shopSelect = new ChannelSelectMenuBuilder()
-        .setCustomId('logs_assign_shop')
-        .setPlaceholder('Assign Shop Log Channel...')
-        .setChannelTypes(ChannelType.GuildText);
+        // Row 1: Category selection dropdown
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('logs_type_select')
+            .setPlaceholder('1. Select a Log Category to configure...')
+            .addOptions(Object.values(LOG_CATEGORIES).map(cat => ({
+                label: cat.name,
+                description: cat.desc,
+                value: cat.id,
+                emoji: cat.emoji,
+                default: selectedId === cat.id
+            })));
+        components.push(new ActionRowBuilder().addComponents(selectMenu));
 
-    const auditSelect = new ChannelSelectMenuBuilder()
-        .setCustomId('logs_assign_audit')
-        .setPlaceholder('Assign Audit Log Channel...')
-        .setChannelTypes(ChannelType.GuildText);
+        if (selectedId && LOG_CATEGORIES[selectedId]) {
+            const active = LOG_CATEGORIES[selectedId];
+            const chan = config[active.dbId];
 
-    const backButton = new ButtonBuilder()
-        .setCustomId('settings_home')
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary);
+            // Row 2: Channel selection dropdown
+            const channelSelect = new ChannelSelectMenuBuilder()
+                .setCustomId(`logs_set_channel_${active.id}`)
+                .setPlaceholder(`2. Select a channel for ${active.name}...`)
+                .setChannelTypes(ChannelType.GuildText);
+            components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-    const disableButton = new ButtonBuilder()
-        .setCustomId('logs_disable_all')
-        .setLabel('Disable')
-        .setEmoji('✖️')
-        .setStyle(ButtonStyle.Danger);
+            // Row 3: Navigation & Disable
+            const disableButton = new ButtonBuilder()
+                .setCustomId(`logs_disable_${active.id}`)
+                .setLabel('Disable')
+                .setEmoji('✖️')
+                .setStyle(ButtonStyle.Danger)
+                .setDisabled(!chan);
 
-    const row1 = new ActionRowBuilder().addComponents(ecoSelect);
-    const row2 = new ActionRowBuilder().addComponents(invSelect);
-    const row3 = new ActionRowBuilder().addComponents(shopSelect);
-    const row4 = new ActionRowBuilder().addComponents(auditSelect);
-    const row5 = new ActionRowBuilder().addComponents(backButton, disableButton);
+            const backButton = new ButtonBuilder()
+                .setCustomId('settings_logs')
+                .setLabel('Back')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary);
 
-    const responseMethod = (interaction.deferred || interaction.replied || interaction.isCommand?.() || interaction.isModalSubmit?.()) ? 'reply' : 'update';
-    const msgData = {
-        embeds: [embed],
-        components: [row1, row2, row3, row4, row5],
-        flags: MessageFlags.Ephemeral
-    };
+            components.push(new ActionRowBuilder().addComponents(backButton, disableButton));
+        } else {
+            // Home Panel Navigation
+            const backButton = new ButtonBuilder()
+                .setCustomId('settings_home')
+                .setLabel('Back')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary);
 
-    if (responseMethod === 'reply') {
-        if (interaction.deferred || interaction.replied) await interaction.editReply(msgData);
-        else await interaction.reply(msgData);
-    } else {
-        await interaction.update(msgData);
+            const disableAllButton = new ButtonBuilder()
+                .setCustomId('logs_disable_all')
+                .setLabel('Disable All')
+                .setEmoji('✖️')
+                .setStyle(ButtonStyle.Danger);
+
+            components.push(new ActionRowBuilder().addComponents(backButton, disableAllButton));
+        }
+
+        const msgData = {
+            embeds: [embed],
+            components,
+            flags: MessageFlags.Ephemeral,
+            content: ''
+        };
+
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(msgData);
+        } else if (interaction.isButton?.() || interaction.isAnySelectMenu?.()) {
+            await interaction.update(msgData);
+        } else {
+            await interaction.reply(msgData);
+        }
+    } catch (error) {
+        sysError('Logs settings panel failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        const err = { content: '❌ Error loading log settings.', flags: MessageFlags.Ephemeral };
+        if (interaction.deferred || interaction.replied) await interaction.followUp(err).catch(() => {});
+        else await interaction.reply(err).catch(() => {});
+    }
+}
+
+/**
+ * Handle category selection from StringSelectMenu
+ */
+export async function handleLogCategorySelect(interaction) {
+    try {
+        const selectedId = interaction.values[0];
+        return handleLogsSettings(interaction, selectedId);
+    } catch (error) {
+        sysError('Log category select failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Log Category Select');
     }
 }
 
 /**
  * Handle log channel assignment for specific categories
  */
-export async function handleLogCategorySelect(interaction) {
-    const customId = interaction.customId; // logs_assign_CATEGORY
-    const category = customId.split('_')[2]; // economy, inventory, etc
+export async function handleLogChannelSelect(interaction) {
+    try {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        const customId = interaction.customId; // logs_set_channel_CATEGORY
+        const category = customId.replace('logs_set_channel_', '');
+        const cat = LOG_CATEGORIES[category];
+        if (!cat) return;
 
+        const channelId = interaction.values[0];
+        const guildId = interaction.guildId;
 
-    const channelId = interaction.values[0];
-    const guildId = interaction.guildId;
+        // Validate channel permissions
+        const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+        const permissionCheck = checkChannelPermissions(channel);
+        if (!permissionCheck.valid) {
+            return interaction.followUp({ 
+                content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel** and **Send Messages** there.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
 
-    // Map internal key
-    const categoryMap = {
-        economy: 'log_eco_channel_id',
-        inventory: 'log_inv_channel_id',
-        shop: 'log_shop_channel_id',
-        audit: 'log_audit_channel_id'
-    };
+        // Update database and cache using setGuildConfig
+        await setGuildConfig(guildId, { [cat.dbId]: channelId });
 
-    const configKey = categoryMap[category];
-    if (!configKey) return;
+        const logName = getUserLogName(interaction);
+        const guildName = interaction.guild.name;
 
-    // Validate channel permissions
-    const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
-    const permissionCheck = checkChannelPermissions(channel);
-    if (!permissionCheck.valid) {
-        return interaction.reply({ 
-            content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel** and **Send Messages** there.`,
-            flags: MessageFlags.Ephemeral
-        });
+        // Send confirmation to the NEW channel
+        if (channel) {
+            const confirmEmbed = new EmbedBuilder()
+                .setTitle('Logging System Updated')
+                .setDescription(`Admin **${logName}** has assigned this channel for **${cat.name}** logs.`)
+                .setColor(0x2ECC71)
+                .setFooter({ text: `${guildName} • ${new Date().toLocaleString()}` });
+            
+            await channel.send({ embeds: [confirmEmbed] }).catch(() => {});
+
+            // Standard Audit Log
+            sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Log Settings Changed', 
+                `**Admin:** \`${logName}\`\n` +
+                `**Category:** \`${cat.name}\`\n` +
+                `**Action:** Set log channel to ${channel}`
+            );
+        }
+
+        // System Audit Log
+        sysLog('Log Settings Changed', { user: interaction.user.id, guild: guildId, detail: `Category: ${category} | Channel: ${channelId}` });
+
+        const updatedConfig = (await getGuildConfig(guildId)) || {};
+        return handleLogsSettings(interaction, cat.id, updatedConfig);
+    } catch (error) {
+        sysError('Log channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Log Channel Select');
     }
-
-    // Update database and cache using setGuildConfig
-    await setGuildConfig(guildId, { [configKey]: channelId });
-
-    // Format human-readable name
-    const logName = getUserLogName(interaction);
-    const guildName = interaction.guild.name;
-
-    // Send confirmation to the NEW channel
-    const targetChannel = interaction.guild.channels.cache.get(channelId);
-    if (targetChannel) {
-        const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
-        const confirmEmbed = new EmbedBuilder()
-            .setTitle('Logging System Updated')
-            .setDescription(`Admin **${logName}** has assigned this channel for **${categoryLabel}** logs.`)
-            .setColor(0x2ECC71)
-            .setFooter({ text: `${guildName} • ${new Date().toLocaleString()}` });
-        
-        await targetChannel.send({ embeds: [confirmEmbed] }).catch(() => {});
-
-        // Standard Audit Log
-        sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Log Settings Changed', 
-            `**Admin:** \`${logName}\`\n` +
-            `**Category:** \`${categoryLabel}\`\n` +
-            `**Action:** Set log channel to ${targetChannel}`
-        );
-    }
-
-    // System Audit Log
-    sysLog('Log Settings Changed', { user: interaction.user.id, guild: guildId, detail: `Category: ${category} | Channel: ${channelId}` });
-
-    // Refresh UI
-    return handleLogsSettings(interaction);
 }
 
 /**
- * Handle disabling all logs
+ * Handle disabling logs (single category or all)
  */
 export async function handleLogDisable(interaction) {
-    const guildId = interaction.guildId;
-    const logName = getUserLogName(interaction);
+    try {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        const guildId = interaction.guildId;
+        const logName = getUserLogName(interaction);
+        const customId = interaction.customId;
+        const target = customId.replace('logs_disable_', '');
 
-    // Remove all log-related keys from config
-    await setGuildConfig(guildId, {
-        log_eco_channel_id: null,
-        log_inv_channel_id: null,
-        log_shop_channel_id: null,
-        log_audit_channel_id: null
-    });
+        if (target === 'all') {
+            await setGuildConfig(guildId, {
+                log_eco_channel_id: null,
+                log_inv_channel_id: null,
+                log_shop_channel_id: null,
+                log_audit_channel_id: null
+            });
 
-    // Standard Audit Log
-    sendLog(interaction.guild, 'audit', 'crimson', '🚫 Logs Disabled', 
-        `**Admin:** \`${logName}\`\n` +
-        `**Action:** Disabled all Discord logging categories.`
-    );
+            sendLog(interaction.guild, 'audit', 'crimson', '🚫 Logs Disabled', 
+                `**Admin:** \`${logName}\`\n` +
+                `**Action:** Disabled all Discord logging categories.`
+            );
 
-    sysLog('Logs Disabled', { user: interaction.user.id, guild: guildId });
+            sysLog('Logs Disabled All', { user: interaction.user.id, guild: guildId });
+            return handleLogsSettings(interaction);
+        } else if (LOG_CATEGORIES[target]) {
+            const cat = LOG_CATEGORIES[target];
+            await setGuildConfig(guildId, { [cat.dbId]: null });
 
-    // Refresh UI
-    return handleLogsSettings(interaction);
+            sendLog(interaction.guild, 'audit', 'crimson', '🚫 Log Category Disabled', 
+                `**Admin:** \`${logName}\`\n` +
+                `**Category:** \`${cat.name}\`\n` +
+                `**Action:** Disabled ${cat.name} logging.`
+            );
+
+            sysLog('Log Category Disabled', { user: interaction.user.id, guild: guildId, detail: `Category: ${target}` });
+            const updatedConfig = (await getGuildConfig(guildId)) || {};
+            return handleLogsSettings(interaction, cat.id, updatedConfig);
+        }
+    } catch (error) {
+        sysError('Log disable failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Log Disable');
+    }
 }
