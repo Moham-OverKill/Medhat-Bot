@@ -51,8 +51,9 @@ export function validateRoleForAssignment(role, guild) {
  * Level L: L * Base + (L * (L - 1) / 2) * Increment
  */
 export function getTotalXpForLevel(level, base = 100, increment = 50) {
-  if (level <= 0) return 0;
-  const L = Math.floor(level);
+  const parsedLevel = typeof level === 'number' ? level : parseFloat(level);
+  if (!Number.isFinite(parsedLevel) || parsedLevel <= 0) return 0;
+  const L = Math.floor(parsedLevel);
   const B = Math.max(1, parseInt(base, 10) || 100);
   const I = Math.max(1, parseInt(increment, 10) > 0 ? parseInt(increment, 10) : 50);
   return L * B + Math.floor((L * (L - 1) * I) / 2);
@@ -73,7 +74,8 @@ export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
   }
   const B = Math.max(1, parseInt(base, 10) || 100);
   const I = Math.max(1, rawInc > 0 ? rawInc : 50);
-  const xp = Math.max(0, parseFloat(totalXp || 0));
+  const parsedXp = typeof totalXp === 'number' ? totalXp : parseFloat(totalXp || 0);
+  const xp = Number.isFinite(parsedXp) && parsedXp > 0 ? parsedXp : 0;
 
   if (xp === 0) {
     return {
@@ -140,7 +142,9 @@ export async function getMemberXpMultiplier(guildId, userId) {
     );
 
     const totalBoost = res.rows.reduce((sum, r) => sum + (parseInt(r.boost_percentage, 10) || 0), 0);
-    return 1.0 + totalBoost / 100;
+    // Bounded additive multiplier: floor of 1.0x (no boost), ceiling of 10.0x (+900% max cap)
+    const safeBoost = Math.max(0, Math.min(900, Number.isFinite(totalBoost) ? totalBoost : 0));
+    return Number((1.0 + safeBoost / 100).toFixed(2));
   } catch {
     return 1.0;
   }
@@ -157,7 +161,11 @@ export async function getMemberXpMultiplier(guildId, userId) {
  * @param {object} client — Discord client, used to DM or post level-up notification
  */
 export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client = null) {
-  if (!guildId || !userId || xpToAdd <= 0) return;
+  const parsedXp = typeof xpToAdd === 'number' ? xpToAdd : parseFloat(xpToAdd);
+  if (!guildId || !userId || !Number.isFinite(parsedXp) || parsedXp <= 0) return;
+
+  // Strict safety ceiling: no single tick or grant can exceed 50,000 XP
+  const sanitizedXp = Math.min(50000, parsedXp);
 
   try {
     const { getGuildConfig } = await import('../../storage/config.js');
@@ -168,7 +176,8 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 
     // Apply role XP multiplier (multiplicative boost)
     const multiplier = await getMemberXpMultiplier(guildId, userId);
-    const finalXp = Number((xpToAdd * multiplier).toFixed(2));
+    const finalXp = Number((sanitizedXp * multiplier).toFixed(2));
+    if (!Number.isFinite(finalXp) || finalXp <= 0) return;
 
     // Atomically increment battlepass_xp
     await pool.query(
@@ -631,10 +640,12 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
 
     if (coins === 0 && grantedRewards.length === 0) {
       await client2.query('COMMIT');
-      return null;
+      if (!isNewBaseClaim) {
+        return null;
+      }
+    } else {
+      await client2.query('COMMIT');
     }
-
-    await client2.query('COMMIT');
 
     sysLog('Level Reward Dispatched', {
       user: userId,
