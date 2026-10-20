@@ -1589,6 +1589,13 @@ export function getPool() {
 }
 
 /**
+ * Set a mock pool for testing environments
+ */
+export function setMockPool(mock) {
+  pool = mock;
+}
+
+/**
  * Close the database connection pool
  */
 export async function closeDatabase() {
