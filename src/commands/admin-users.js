@@ -33,12 +33,11 @@ function getAdminPendingKey(guildId, adminUserId, targetUserId) {
 export async function showUserSelector(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('User Management')
-        .setDescription('Select a user to manage their balance or inventory')
         .setColor(0x2F3136);
 
     const select = new UserSelectMenuBuilder()
         .setCustomId('admin_user_select')
-        .setPlaceholder('Select a user...')
+        .setPlaceholder('Select a user to manage')
         .setMinValues(1)
         .setMaxValues(1);
 
@@ -2098,7 +2097,6 @@ export async function showAntiCheatHub(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('Anti-Cheat')
         .setDescription(
-            'Configure anti-cheat rules and farming protections.\n\n' +
             '• **Text XP** — Cooldowns and spam filters for chat XP\n' +
             '• **Voice XP** — AFK and mute/deafen rules for voice XP\n' +
             '• **Trading** — Account age and join date limits for trading'
