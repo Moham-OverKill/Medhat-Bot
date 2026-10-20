@@ -327,7 +327,8 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   import('../storage/config.js')
     .then(({ getGuildConfig }) => getGuildConfig(guildId))
     .then(cfg => {
-      const msgXp = Math.max(0, parseInt(cfg?.battlepass_msg_xp ?? 1, 10));
+      const rawMsgXp = parseInt(cfg?.battlepass_msg_xp ?? 1, 10);
+      const msgXp = Number.isFinite(rawMsgXp) && rawMsgXp > 0 ? Math.min(1000, rawMsgXp) : 0;
       if (msgXp <= 0) return;
       const totalMsgXp = pointsEarned * msgXp;
       return import('../commands/settings/pass-engine.js')
@@ -432,6 +433,27 @@ export async function stopAllVoiceTracking(guildId) {
 // VOICE CHAT: EVENT-BASED STOPWATCH SYSTEM
 // ============================================
 
+/**
+ * Count active human participants in a voice channel.
+ * Requires members to be non-bot, unmuted (neither self nor server muted),
+ * and undeafened (neither self nor server deafened).
+ */
+export function countActiveVoiceHumans(channel) {
+  if (!channel || !channel.members) return 0;
+  const memberList = typeof channel.members.values === 'function'
+    ? Array.from(channel.members.values())
+    : (Array.isArray(channel.members) ? channel.members : []);
+
+  let count = 0;
+  for (const m of memberList) {
+    if (!m || m.user?.bot) continue;
+    const voice = m.voice;
+    if (voice?.selfMute || voice?.serverMute || voice?.selfDeaf || voice?.serverDeaf) continue;
+    count++;
+  }
+  return count;
+}
+
 export function isVoiceStateValid(voiceState, config = null) {
   if (!voiceState || !voiceState.channel) return false;
 
@@ -446,12 +468,7 @@ export function isVoiceStateValid(voiceState, config = null) {
 
   const minHumans = config ? (config.anti_cheat_voice_min_humans ?? false) : false;
   if (minHumans) {
-    const members = voiceState.channel.members;
-    if (!members) return false;
-    const humanCount = typeof members.filter === 'function'
-      ? members.filter(m => !m.user?.bot).size
-      : Array.from(members.values ? members.values() : []).filter(m => !m.user?.bot).length;
-    if (humanCount < 2) return false;
+    if (countActiveVoiceHumans(voiceState.channel) < 2) return false;
   }
 
   return true;
@@ -500,8 +517,8 @@ async function reevaluateOtherUsersInChannel(guild, channel, excludeUserId, conf
   const noAfk = config?.anti_cheat_voice_no_afk_channel ?? false;
 
   const humanMembers = channel.members.filter(m => !m.user.bot && m.id !== excludeUserId);
-  const totalHumans = channel.members.filter(m => !m.user.bot).size;
-  const hasEnoughPeople = !minHumans || totalHumans >= 2;
+  const activeHumans = countActiveVoiceHumans(channel);
+  const hasEnoughPeople = !minHumans || activeHumans >= 2;
   const isAfkChannel = Boolean(guild.afkChannelId && channel.id === guild.afkChannelId);
 
   for (const [memberId, member] of humanMembers) {
@@ -623,7 +640,8 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
       import('../storage/config.js')
         .then(({ getGuildConfig }) => getGuildConfig(guildId))
         .then(cfg => {
-          const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
+          const rawVoiceXp = parseInt(cfg?.battlepass_voice_xp ?? 1, 10);
+          const voiceXpRate = Number.isFinite(rawVoiceXp) && rawVoiceXp > 0 ? Math.min(1000, rawVoiceXp) : 0;
           if (voiceXpRate <= 0) return;
           const totalVoiceXp = pointsToAward * voiceXpRate;
           return import('../commands/settings/pass-engine.js')
@@ -670,11 +688,14 @@ export async function voicePointsTick(client) {
       const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased?.() || c.type === 2 || c.type === 13);
       for (const [channelId, channel] of voiceChannels) {
         if (await isActivityIgnored(guildId, channelId)) continue;
-        const humanMembers = channel.members?.filter(m => !m.user.bot);
-        if (humanMembers && (!minHumans || humanMembers.size >= 2)) {
-          for (const [memberId, member] of humanMembers) {
-            if (isVoiceStateValid(member.voice, config)) {
-              await startVoiceTracking(guild, memberId, member.user.username);
+        const activeHumans = countActiveVoiceHumans(channel);
+        if (!minHumans || activeHumans >= 2) {
+          const humanMembers = channel.members?.filter(m => !m.user.bot);
+          if (humanMembers) {
+            for (const [memberId, member] of humanMembers) {
+              if (isVoiceStateValid(member.voice, config)) {
+                await startVoiceTracking(guild, memberId, member.user.username);
+              }
             }
           }
         }
@@ -758,8 +779,7 @@ export async function voicePointsTick(client) {
         }
 
         if (minHumans) {
-          const humanCount = voiceState.channel.members.filter(m => !m.user.bot).size;
-          if (humanCount < 2) {
+          if (countActiveVoiceHumans(voiceState.channel) < 2) {
             await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
             return;
           }
@@ -802,7 +822,8 @@ export async function voicePointsTick(client) {
           import('../storage/config.js')
             .then(({ getGuildConfig }) => getGuildConfig(row.guild_id))
             .then(cfg => {
-              const voiceXpRate = Math.max(0, parseInt(cfg?.battlepass_voice_xp ?? 1, 10));
+              const rawVoiceXp = parseInt(cfg?.battlepass_voice_xp ?? 1, 10);
+              const voiceXpRate = Number.isFinite(rawVoiceXp) && rawVoiceXp > 0 ? Math.min(1000, rawVoiceXp) : 0;
               if (voiceXpRate <= 0) return;
               const totalVoiceXp = pointsToAward * voiceXpRate;
               return import('../commands/settings/pass-engine.js')
@@ -848,8 +869,9 @@ export async function syncVoicePresence(guild) {
     const minHumans = config?.anti_cheat_voice_min_humans ?? false;
     const channels = guild.channels.cache.filter(c => c.isVoiceBased());
     for (const [id, channel] of channels) {
-      const humanMembers = channel.members.filter(m => !m.user.bot);
-      if (!minHumans || humanMembers.size >= 2) {
+      const activeHumans = countActiveVoiceHumans(channel);
+      if (!minHumans || activeHumans >= 2) {
+        const humanMembers = channel.members.filter(m => !m.user.bot);
         for (const [memberId, member] of humanMembers) {
           if (isVoiceStateValid(member.voice, config)) {
             await startVoiceTracking(guild, memberId, member.user.username);
