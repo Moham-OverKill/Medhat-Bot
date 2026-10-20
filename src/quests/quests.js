@@ -301,7 +301,8 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
         import('./index.js').then(m => m.client || null).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
-          const questXp = Math.max(0, parseInt(cfg?.battlepass_quest_xp ?? 150, 10));
+          const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
+          const questXp = Number.isFinite(rawQuestXp) && rawQuestXp > 0 ? Math.min(50000, rawQuestXp) : 0;
           if (questXp <= 0) return;
           return import('../commands/settings/pass-engine.js')
             .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, null, questXp, discordClient));
@@ -471,7 +472,8 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
         import('./index.js').then(m => m.client || null).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
-          const questXp = Math.max(0, parseInt(cfg?.battlepass_quest_xp ?? 150, 10));
+          const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
+          const questXp = Number.isFinite(rawQuestXp) && rawQuestXp > 0 ? Math.min(50000, rawQuestXp) : 0;
           if (questXp <= 0) return;
           return import('../commands/settings/pass-engine.js')
             .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, null, questXp, discordClient));
