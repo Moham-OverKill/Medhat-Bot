@@ -138,6 +138,13 @@ function extractUrls(content) {
  * Returns true if the message should be deleted, false if it should be kept.
  */
 export async function checkContentFilter(message) {
+  if (!message || !message.guild || !message.author || message.author.bot || message.webhookId) return false;
+
+  // EXEMPTION: Server owners and administrators are never subject to content filter rules
+  const { isGuildOwnerOrAdmin } = await import('../storage/admins.js');
+  const isPrivileged = await isGuildOwnerOrAdmin(message.guild, message.member || message.author);
+  if (isPrivileged) return false;
+
   const guildId = message.guild.id;
   const channelId = message.channel.id;
 
@@ -715,6 +722,11 @@ export async function handleForumThreadCreateModeration(thread, parentChannel = 
 
   // If we can't find a starter message or if the author is a bot, skip
   if (!starterMessage || starterMessage.author?.bot) return false;
+
+  // EXEMPTION: Server owners and administrators are never subject to No Attachment rule
+  const { isGuildOwnerOrAdmin } = await import('../storage/admins.js');
+  const isPrivileged = await isGuildOwnerOrAdmin(thread.guild, starterMessage.member || starterMessage.author);
+  if (isPrivileged) return false;
 
   // Check if starter message has attachments
   const hasAttachments = Boolean(starterMessage.attachments && starterMessage.attachments.size > 0);

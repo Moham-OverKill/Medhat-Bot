@@ -254,6 +254,12 @@ export function isReactionBlacklisted(reactionEmoji, blacklist) {
  */
 export async function processMessageEmojiFilter(message) {
   if (!message || !message.guild || !message.author || message.author.bot || message.webhookId) return false;
+
+  // EXEMPTION: Server owners and administrators are never subject to emoji blacklist rules
+  const { isGuildOwnerOrAdmin } = await import('../storage/admins.js');
+  const isPrivileged = await isGuildOwnerOrAdmin(message.guild, message.member || message.author);
+  if (isPrivileged) return false;
+
   const guildId = message.guild.id;
 
   const config = await getGuildEmojiBlacklist(guildId);
@@ -338,6 +344,13 @@ export async function processReactionEmojiFilter(reaction, user) {
   if (!isReactionBlacklisted(reaction.emoji, config.blacklist)) return false;
 
   const guild = reaction.message.guild || reaction.client?.guilds?.cache?.get(guildId);
+  if (!guild) return false;
+
+  // EXEMPTION: Server owners and administrators are never subject to reaction emoji filters
+  const { isGuildOwnerOrAdmin } = await import('../storage/admins.js');
+  const isPrivileged = await isGuildOwnerOrAdmin(guild, user);
+  if (isPrivileged) return false;
+
   const botMember = guild?.members?.me;
   if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
     sysWarn('Cannot remove blacklisted reaction — missing ManageMessages', { guild: guildId });
@@ -401,6 +414,11 @@ export async function processMemberNicknameEmojiFilter(member) {
 
   const currentNick = member.nickname || member.user.displayName || member.user.username;
   if (!containsBlacklistedEmoji(currentNick, config.blacklist)) return false;
+
+  // EXEMPTION: Server owners and administrators are never subject to nickname sanitization
+  const { isGuildOwnerOrAdmin } = await import('../storage/admins.js');
+  const isPrivileged = await isGuildOwnerOrAdmin(member.guild, member);
+  if (isPrivileged) return false;
 
   const botMember = member.guild.members.me || await member.guild.members.fetchMe().catch(() => null);
   if (!botMember) return false;

@@ -7,7 +7,7 @@
  * 4. Real-time revocation check on every interaction.
  */
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
-import { getPool } from './postgres.js';
+import { getPool, isDatabaseReady } from './postgres.js';
 import { sysError, sysLog } from '../utils/logger.js';
 
 /**
@@ -22,6 +22,7 @@ import { sysError, sysLog } from '../utils/logger.js';
 export async function isServerAdmin(guildId, userId, ownerId = null) {
   if (!guildId || !userId || guildId === 'null' || guildId === 'undefined' || userId === 'null' || userId === 'undefined') return false;
   if (ownerId && userId === ownerId) return true;
+  if (!isDatabaseReady()) return false;
 
   try {
     const pool = getPool();
@@ -347,3 +348,72 @@ export async function verifyAdminManagerAccess(interaction) {
 // Aliases for compatibility
 export const isGuildOwner = hasAdminManagerAccess;
 export const verifyOwnerAccess = verifyAdminManagerAccess;
+
+/**
+ * Check if a user is the server owner or an administrator in a specific guild.
+ * Zero-leak multi-tenant evaluation:
+ * - Checks if the user is the owner of THIS specific guild.
+ * - Checks if the user has Administrator or ManageGuild permissions in THIS specific guild.
+ * - Checks if the user is registered in server_admins for THIS specific guild.
+ * - Being an owner or admin in a different server will NEVER grant access here.
+ *
+ * @param {import('discord.js').Guild|string} guild - The guild object or guild ID
+ * @param {import('discord.js').User|import('discord.js').GuildMember|string} userOrMember - User, Member, or User ID
+ * @returns {Promise<boolean>}
+ */
+export async function isGuildOwnerOrAdmin(guild, userOrMember) {
+  if (!guild || !userOrMember) return false;
+
+  const guildId = typeof guild === 'string' ? guild : guild.id;
+  const userId = typeof userOrMember === 'string' ? userOrMember : userOrMember.id;
+
+  if (!guildId || !userId) return false;
+
+  try {
+    const guildObj = typeof guild === 'object' ? guild : null;
+
+    // 1. Owner check in THIS specific guild
+    let ownerId = guildObj?.ownerId;
+    if (ownerId && userId === ownerId) {
+      return true;
+    }
+
+    // 2. Member permission check in THIS specific guild
+    let member = (typeof userOrMember === 'object' && userOrMember.permissions?.has)
+      ? userOrMember
+      : guildObj?.members?.cache?.get(userId);
+
+    if (!member && guildObj?.members?.fetch) {
+      member = await guildObj.members.fetch(userId).catch(() => null);
+    }
+
+    if (member?.permissions?.has) {
+      if (
+        member.permissions.has(PermissionFlagsBits.Administrator) ||
+        member.permissions.has(PermissionFlagsBits.ManageGuild)
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Fallback check for ownerId if guild was partial
+    if (!ownerId && guildObj?.fetch) {
+      const freshGuild = await guildObj.fetch().catch(() => null);
+      if (freshGuild?.ownerId && userId === freshGuild.ownerId) {
+        return true;
+      }
+    }
+
+    // 4. Database whitelist check for THIS specific guild
+    const isDbAdmin = await isServerAdmin(guildId, userId, ownerId);
+    if (isDbAdmin) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    // Fail-safe: Any error returns false without breaking caller
+    return false;
+  }
+}
+
