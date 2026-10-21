@@ -190,8 +190,8 @@ assert.strictEqual(logsRow5.components.length, 1, 'Row 5 must have ONLY 1 button
 assert.strictEqual(logsRow5.components[0].data.label, 'Back', 'Row 5 button must be Back');
 console.log('✅ Logs Configuration UI: Exactly 4 select menus with 3 options each and ONLY the Back button on Row 5.');
 
-// Test Logs Action: Select A Channel
-mockLogsInteraction.customId = 'logs_menu_economy';
+// Test Logs Action: Select A Channel (with dynamic nonce customId)
+mockLogsInteraction.customId = 'logs_menu_economy_999999999';
 mockLogsInteraction.values = ['channel'];
 await handleLogMenuAction(mockLogsInteraction);
 assert.strictEqual(lastRenderedPayload.components.length, 2, 'Channel picker view must have 2 rows');
@@ -205,14 +205,16 @@ await handleLogChannelSelect(mockLogsInteraction);
 assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, VALID_CHAN_1, 'DB must store assigned channel');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
 assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
 console.log('✅ Logs Action (Select A Channel): Opens channel picker, saves channel to DB, and returns to 4-menu view.');
 
-// Test Logs Action: Disable
-mockLogsInteraction.customId = 'logs_menu_economy';
+// Test Logs Action: Disable (with dynamic nonce customId)
+mockLogsInteraction.customId = 'logs_menu_economy_888888888';
 mockLogsInteraction.values = ['disable'];
 await handleLogMenuAction(mockLogsInteraction);
 assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, null, 'DB log_eco_channel_id must be null');
 assert(lastRenderedPayload.embeds[0].data.description.includes('**📈 Economy**\n↳ *Disabled*'), 'Embed must show Disabled');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
 console.log('✅ Logs Action (Disable): Successfully disables category from dropdown.');
 
 // -------------------------------------------------------------
@@ -317,25 +319,28 @@ assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_ch
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, 'lb_msg_2002', 'DB must store coins_message_id');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
 assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
 console.log('✅ Leaderboard Action (Select A Channel): Opens channel picker, dispatches live embed, saves to DB, returns to 4-menu view.');
 
-// Test Leaderboard Action: Force Refresh
+// Test Leaderboard Action: Force Refresh (with dynamic nonce customId)
 sentFollowUps = [];
-mockLbInteraction.customId = 'lb_menu_coins';
+mockLbInteraction.customId = 'lb_menu_coins_777777777';
 mockLbInteraction.values = ['refresh'];
 await handleLeaderboardMenuAction(mockLbInteraction);
 assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on force refresh');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
 console.log('✅ Leaderboard Action (Force Refresh): Successfully triggers role and message synchronization without sending feedback messages.');
 
-// Test Leaderboard Action: Disable
+// Test Leaderboard Action: Disable (with dynamic nonce customId)
 sentFollowUps = [];
-mockLbInteraction.customId = 'lb_menu_coins';
+mockLbInteraction.customId = 'lb_menu_coins_666666666';
 mockLbInteraction.values = ['disable'];
 await handleLeaderboardMenuAction(mockLbInteraction);
 assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on disable');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'DB coins_channel_id must be null');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB coins_message_id must be null');
 assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must show Not Set');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
 console.log('✅ Leaderboard Action (Disable): Successfully deletes old Discord message and nullifies DB config without sending feedback messages.');
 
 console.log('--- ALL VERIFICATIONS PASSED SUCCESSFULLY ---');

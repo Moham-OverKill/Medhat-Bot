@@ -104,9 +104,10 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
             components.push(new ActionRowBuilder().addComponents(backButton));
         } else {
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
+            const nonce = Date.now();
             for (const cat of Object.values(LOG_CATEGORIES)) {
                 const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`logs_menu_${cat.id}`)
+                    .setCustomId(`logs_menu_${cat.id}_${nonce}`)
                     .setPlaceholder(`${cat.emoji} ${cat.name} Logs...`)
                     .addOptions([
                         {
@@ -164,8 +165,9 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
  */
 export async function handleLogMenuAction(interaction) {
     try {
-        const customId = interaction.customId; // logs_menu_CATEGORY
-        const categoryId = customId.replace('logs_menu_', '');
+        const customId = interaction.customId; // logs_menu_CATEGORY or logs_menu_CATEGORY_NONCE
+        const raw = customId.replace('logs_menu_', '');
+        const categoryId = raw.split('_')[0];
         const action = interaction.values[0]; // channel | test | disable
         const guildId = interaction.guildId;
 
