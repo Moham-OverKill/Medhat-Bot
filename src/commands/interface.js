@@ -1972,7 +1972,7 @@ export async function showAdminInterfaceSetup(interaction) {
     new ButtonBuilder()
       .setCustomId('admin_interface_reset_defaults')
       .setLabel('Reset')
-      .setEmoji('🔄')
+      .setEmoji('🔃')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('admin_interface_publish_btn')
@@ -2159,7 +2159,7 @@ export async function showInterfaceSetup(interaction) {
     new ButtonBuilder()
       .setCustomId('interface_reset_defaults')
       .setLabel('Reset')
-      .setEmoji('🔄')
+      .setEmoji('🔃')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('interface_publish_btn')
