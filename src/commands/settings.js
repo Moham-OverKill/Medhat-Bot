@@ -289,7 +289,7 @@ export async function showOtherSubMenu(interaction) {
  * Open the Bot Customization modal directly (modal cannot be deferred)
  * @param {import('discord.js').Interaction} interaction 
  */
-export async function showCustomizeModal(interaction) {
+export async function showCustomizeModal(interaction, source = 'settings') {
     const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(interaction.guildId) || {};
 
@@ -297,7 +297,7 @@ export async function showCustomizeModal(interaction) {
     const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
     const currentServerAvatar = config.bot_avatar !== undefined ? (config.bot_avatar || '') : '';
 
-    const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${Date.now()}`).setTitle('Customize Bot');
+    const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${source}_${Date.now()}`).setTitle('Customize Bot');
     
     const nameInput = new TextInputBuilder()
         .setCustomId('bot_name')
@@ -585,8 +585,20 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId.startsWith('settings_customize_modal')) {
+            const isSettingsSource = !customId.includes('_admin_hub_');
+            const isFromMsg = typeof interaction.isFromMessage === 'function' ? interaction.isFromMessage() : Boolean(interaction.message);
+            const shouldResetSettings = isSettingsSource && isFromMsg;
+
             if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+                if (shouldResetSettings) {
+                    try {
+                        await interaction.deferUpdate();
+                    } catch (_) {
+                        await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+                    }
+                } else {
+                    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+                }
             }
             
             const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
@@ -765,7 +777,16 @@ export async function handleSettingsComponent(interaction) {
                 formatField('Avatar', avatarStatus, avatarReason)
             ].join('\n\n');
 
-            await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
+            if (shouldResetSettings && interaction.deferred) {
+                await showMainMenu(interaction).catch(err => {
+                    sysError('Failed to reset main menu after modal submit', err);
+                });
+                await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
+            } else if (interaction.deferred) {
+                await interaction.editReply({ content: responseContent });
+            } else {
+                await interaction.reply({ content: responseContent, flags: MessageFlags.Ephemeral });
+            }
             return;
         }
 
