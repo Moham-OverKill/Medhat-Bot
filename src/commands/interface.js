@@ -177,7 +177,7 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     name: 'Levels',
     label: 'LEVELS',
     description: 'Configure battlepass and level progression',
-    emoji: '🎫',
+    emoji: '⭐',
     buttonCustomId: 'admin_hub_pass'
   },
   roles: {
@@ -185,7 +185,7 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     name: 'Roles',
     label: 'ROLES',
     description: 'Manage self-assignable and milestone roles',
-    emoji: '🏷️',
+    emoji: '🎭',
     buttonCustomId: 'admin_hub_roles'
   },
   coins: {
@@ -249,7 +249,7 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     name: 'Leaderboards',
     label: 'LEADERBOARD',
     description: 'Configure live automated leaderboard channels',
-    emoji: '🏆',
+    emoji: '📊',
     buttonCustomId: 'admin_hub_leaderboards'
   },
   embed: {
@@ -257,7 +257,7 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     name: 'Embeds',
     label: 'EMBEDS',
     description: 'Create, edit, and schedule custom embeds',
-    emoji: '🖼️',
+    emoji: '📰',
     buttonCustomId: 'admin_hub_embed'
   },
   logs: {
@@ -1318,8 +1318,8 @@ export function getAdminShortcutItems(guildId = null) {
   return [
     [
       { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
-      { id: 'levels', label: 'LEVELS', emoji: '🎫', btnId: 'admin_hub_pass' },
-      { id: 'roles', label: 'ROLES', emoji: '🏷️', btnId: 'admin_hub_roles' }
+      { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
+      { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' }
     ],
     [
       { id: 'coins', label: coinName.toUpperCase(), emoji: coinEmoji, btnId: 'admin_hub_coins' },
