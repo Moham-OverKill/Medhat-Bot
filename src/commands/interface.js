@@ -924,7 +924,7 @@ export async function buildHubEmbed(guild, config = null) {
   const questFieldName = isSingular ? 'Current Quest' : 'Current Quests';
 
   const embed = new EmbedBuilder()
-    .setTitle('INTERFACE')
+    .setTitle('SHORTCUTS')
     .setColor(0x000000)
     .setImage('attachment://interface.png')
     .addFields({
@@ -1160,7 +1160,7 @@ export async function generateAdminInterfaceBanner(guildId = null) {
 
 export function buildAdminHubEmbed() {
   return new EmbedBuilder()
-    .setTitle('ADMIN INTERFACE')
+    .setTitle('DASHBOARD')
     .setColor(0x000000)
     .setImage('attachment://admin_interface.png');
 }
@@ -1433,20 +1433,20 @@ export async function showInterfaceSettings(interaction) {
   }
 
   const desc = [
-    'Configure the public Community Interface message with active quests, countdown timers, and quick shortcuts.\n',
+    'Configure the public Community Shortcuts message with active quests, countdown timers, and quick shortcuts.\n',
     `• **Target Channel:** ${currentChannel}`,
     `• **Status:** ${statusText}`
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('Interface Configuration')
+    .setTitle('Shortcuts')
     .setDescription(desc)
     .setColor(0x5865F2);
 
   // Row 0: Channel Selector
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId('interface_set_channel')
-    .setPlaceholder("Select target channel for user's interface...")
+    .setPlaceholder("Select target channel for shortcuts...")
     .setChannelTypes(ChannelType.GuildText);
 
   if (config.target_channel_id) {
@@ -1538,20 +1538,20 @@ export async function showAdminInterfaceSettings(interaction) {
   }
 
   const desc = [
-    'Configure the private Admin Interface message with direct shortcuts to all Control Panel modules.\n',
+    'Configure the private Admin Dashboard message with direct shortcuts to all Control Panel modules.\n',
     `• **Target Channel:** ${currentChannel}`,
     `• **Status:** ${statusText}`
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('Admin Interface Configuration')
+    .setTitle('Dashboard')
     .setDescription(desc)
     .setColor(0x5865F2);
 
   // Row 0: Channel Selector
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId('admin_interface_set_channel')
-    .setPlaceholder("Select target channel for admins interface...")
+    .setPlaceholder("Select target channel for dashboard...")
     .setChannelTypes(ChannelType.GuildText);
 
   if (config.admin_target_channel_id) {
@@ -1606,7 +1606,7 @@ export async function showInterfaceSetup(interaction) {
   const attachment = new AttachmentBuilder(bannerBuffer, { name: 'preview.png' });
 
   const embed = new EmbedBuilder()
-    .setTitle('Interface Shortcut Setup')
+    .setTitle('Shortcuts Setup')
     .setDescription('Click any slot button below to assign or clear a feature. The preview image updates in real time.')
     .setColor(0x5865F2)
     .setImage('attachment://preview.png');
@@ -1640,7 +1640,7 @@ export async function showInterfaceSetup(interaction) {
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('interface_back_to_main')
-      .setLabel('Back to Interface')
+      .setLabel('Back to Shortcuts')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
