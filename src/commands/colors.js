@@ -105,7 +105,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
   const endIdx = startIdx + PAGE_SIZE;
   const pageColors = sortedColors.slice(startIdx, endIdx);
 
-  const titlePrefix = isBoosterTab ? 'Booster Colors' : 'Normal Colors';
+  const titlePrefix = isBoosterTab ? 'Boosters' : 'Default';
   const colorHex = isBoosterTab ? 0xFEE75C : 0x5865F2;
 
   let files = [];
@@ -136,13 +136,13 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
   // Row 1: Add Role
   const addSelector = new RoleSelectMenuBuilder()
     .setCustomId(`colors_add_${type}_${currentPage}`)
-    .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
+    .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Boosters' : 'Default'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
   // Row 2: Remove Role (Select menu showing only configured colors)
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}_${currentPage}`)
-    .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Booster' : 'Normal'} list...`);
+    .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Boosters' : 'Default'} list...`);
 
   if (sortedColors.length === 0) {
     removeSelector
@@ -184,18 +184,29 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
 
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
-  // Row 3: Tabs & Pagination Controls
+  // Row 3: Tabs
   const tabsRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('colors_tab_normal')
-      .setLabel('Normal Colors')
+      .setLabel('Default')
       .setEmoji('🎨')
       .setStyle(isBoosterTab ? ButtonStyle.Secondary : ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('colors_tab_booster')
-      .setLabel('Booster Colors')
+      .setLabel('Boosters')
       .setEmoji('🚀')
-      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  components.push(tabsRow);
+
+  // Row 4: Navigation / Actions (Arrows next to Back)
+  const actionRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings_back')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(isBackDisabled(interaction)),
     new ButtonBuilder()
       .setCustomId(`colors_page_prev_${type}_${currentPage}`)
       .setEmoji('◀️')
@@ -205,18 +216,7 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       .setCustomId(`colors_page_next_${type}_${currentPage}`)
       .setEmoji('▶️')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage >= totalPages)
-  );
-  components.push(tabsRow);
-
-  // Row 4: Navigation / Actions
-  const actionRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('settings_back')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(isBackDisabled(interaction)),
+      .setDisabled(currentPage >= totalPages),
     new ButtonBuilder()
       .setCustomId(`colors_create_${type}`)
       .setLabel('Create Panel')
@@ -481,7 +481,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
 
   const attachment = new AttachmentBuilder(imageBuffer, { name: 'color_panel_preview.png' });
 
-  const titlePrefix = isBooster ? 'Booster Colors' : 'Normal Colors';
+  const titlePrefix = isBooster ? 'Boosters' : 'Default';
   const colorHex = isBooster ? 0xFEE75C : 0x5865F2;
 
   const embed = new EmbedBuilder()
@@ -508,9 +508,17 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
   }
   components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-  // Row 1: Panel Navigation (if multiple panels)
+  // Row 1: Navigation & Actions (Arrows next to Back)
+  const actionButtons = [
+    new ButtonBuilder()
+      .setCustomId(`colors_preview_back_${type}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  ];
+
   if (PANELS_COUNT > 1) {
-    const navRow = new ActionRowBuilder().addComponents(
+    actionButtons.push(
       new ButtonBuilder()
         .setCustomId(`colors_preview_prev_${type}_${currentPanelIdx}_${channelId}`)
         .setEmoji('◀️')
@@ -522,23 +530,16 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(currentPanelIdx >= PANELS_COUNT - 1)
     );
-    components.push(navRow);
   }
 
-  // Row 2: Back and Post buttons
-  const actionRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`colors_preview_back_${type}`)
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
+  actionButtons.push(
     new ButtonBuilder()
       .setCustomId(`colors_preview_publish_${type}_${channelId}`)
       .setLabel('Post to Channel')
       .setEmoji('🚀')
       .setStyle(ButtonStyle.Success)
   );
-  components.push(actionRow);
+  components.push(new ActionRowBuilder().addComponents(actionButtons));
 
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
