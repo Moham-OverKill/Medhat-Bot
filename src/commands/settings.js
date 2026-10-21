@@ -141,7 +141,7 @@ export async function showMainMenu(interaction) {
             { label: 'Customize', value: 'other_customize', emoji: '✨' },
             { label: 'Embeds', value: 'other_embeds', emoji: '📰' },
             { label: 'Dashboard', value: 'other_dashboard', emoji: '🎛️' },
-            { label: 'Shortcuts', value: 'other_shortcuts', emoji: '🪟' }
+            { label: 'Shortcuts', value: 'other_shortcuts', emoji: '⚡' }
         ]);
     const row4 = new ActionRowBuilder().addComponents(otherSelect);
 
