@@ -133,13 +133,26 @@ export async function getConfiguredLevel(guildId, level) {
 // DASHBOARD PAYLOAD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null, rewardFolder = 'root', rewardPage = 1) {
-  const levels = await getConfiguredLevels(guildId);
-  const config = await getGuildConfig(guildId) || {};
+export async function getPassDashboardPayload(guildId, page = 0, selectedLevel = null, rewardFolder = 'root', rewardPage = 1, interaction = null) {
+  let interactionObj = interaction;
+  let activeRewardFolder = rewardFolder;
+  let activeRewardPage = rewardPage;
+
+  if (rewardFolder && typeof rewardFolder === 'object' && (rewardFolder.guildId || rewardFolder.customId || rewardFolder.isButton)) {
+    interactionObj = rewardFolder;
+    activeRewardFolder = 'root';
+    activeRewardPage = 1;
+  } else if (guildId && typeof guildId === 'object' && (guildId.guildId || guildId.customId || guildId.isButton)) {
+    interactionObj = guildId;
+  }
+
+  const actualGuildId = interactionObj?.guildId || guildId;
+  const levels = await getConfiguredLevels(actualGuildId);
+  const config = await getGuildConfig(actualGuildId) || {};
   const isEnabled = config.battlepass_enabled === true;
-  const coinEmoji = COIN_EMOJI.forGuild(guildId);
-  const lootBoxCatName = await getLootBoxCategoryName(guildId);
-  const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+  const coinEmoji = COIN_EMOJI.forGuild(actualGuildId);
+  const lootBoxCatName = await getLootBoxCategoryName(actualGuildId);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(actualGuildId);
   const selectChestEmoji = lootBoxEmoji || '🎁';
 
   const totalLevels = levels.length;
@@ -475,7 +488,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     .setLabel('Back')
     .setEmoji('⬅️')
     .setStyle(ButtonStyle.Secondary)
-    .setDisabled(isBackDisabled(interaction));
+    .setDisabled(isBackDisabled(interactionObj));
 
   const importBtn = new ButtonBuilder()
     .setCustomId('pass_import_start_pg_' + currentPage)
@@ -564,7 +577,7 @@ export async function handlePassSetup(interaction) {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate().catch(() => {});
     }
-    const payload = await getPassDashboardPayload(guildId, 0, null);
+    const payload = await getPassDashboardPayload(guildId, 0, null, 'root', 1, interaction);
     await interaction.editReply({ files: [], content: '', ...payload });
   } catch (error) {
     await handleInteractionError(interaction, error, 'pass setup');
@@ -593,7 +606,7 @@ export async function handlePassComponent(interaction) {
       import('../register.js').then(({ syncGuildSlashCommands }) => {
         syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
       }).catch(() => {});
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
@@ -651,7 +664,7 @@ export async function handlePassComponent(interaction) {
         }
       }).catch(() => {});
 
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
@@ -660,7 +673,7 @@ export async function handlePassComponent(interaction) {
     if (customId.startsWith('pass_home_page_') || customId === 'pass_home') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const page = customId.startsWith('pass_home_page_') ? (parseInt(customId.replace('pass_home_page_', ''), 10) || 0) : 0;
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
@@ -852,7 +865,7 @@ export async function handlePassComponent(interaction) {
       if (selectedValue.startsWith('pass_page_')) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
         const page = parseInt(selectedValue.replace('pass_page_', ''), 10) || 0;
-        const payload = await getPassDashboardPayload(guildId, page, null);
+        const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
         await interaction.editReply({ files: [], content: '', ...payload });
         return;
       }
@@ -1156,7 +1169,7 @@ export async function handlePassComponent(interaction) {
 
       if (!state) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-        const payload = await getPassDashboardPayload(guildId, page, null);
+        const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
         return interaction.editReply({ files: [], content: '⚠️ Import session expired. Please start again.', ...payload });
       }
 
@@ -1214,7 +1227,7 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_import_cancel_pg_', ''), 10) || 0;
       const flowKey = `${guildId}:${interaction.user.id}`;
       importFlowState.delete(flowKey);
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
@@ -1717,7 +1730,7 @@ export async function handlePassModal(interaction) {
         `• Quest Completion XP: **${questXp}**`
       );
 
-      const payload = await getPassDashboardPayload(guildId, page, null);
+      const payload = await getPassDashboardPayload(guildId, page, null, 'root', 1, interaction);
       await interaction.editReply({ files: [], content: '', ...payload });
       return;
     }
