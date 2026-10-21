@@ -269,27 +269,43 @@ export async function handleShopSetup(interaction) {
         { name: '🏷️ Items', value: `${itemsCount}`, inline: true }
       );
 
-    const row1 = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('shop_admin_add')
-          .setLabel('Create')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('shop_admin_edit')
-          .setLabel('Edit')
-          .setEmoji('✏️')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('shop_admin_delete')
-          .setLabel('Delete')
-          .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger)
-      );
+    const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-    // Row 2: Back (left), Loot Boxes (center), Post (right)
-    const row2 = new ActionRowBuilder()
+    // Select Menu 1: Categories
+    const categoriesSelect = new StringSelectMenuBuilder()
+      .setCustomId(`shop_menu_categories_${nonce}`)
+      .setPlaceholder('📂 Categories')
+      .addOptions([
+        { label: 'Create Category', value: 'shop_action_create_cat', emoji: '➕' },
+        { label: 'Edit Category', value: 'shop_action_edit_cat', emoji: '✏️' },
+        { label: 'Delete Category', value: 'shop_action_delete_cat', emoji: '🗑️' }
+      ]);
+    const rowCategories = new ActionRowBuilder().addComponents(categoriesSelect);
+
+    // Select Menu 2: Items
+    const itemsSelect = new StringSelectMenuBuilder()
+      .setCustomId(`shop_menu_items_${nonce}`)
+      .setPlaceholder('🏷️ Items')
+      .addOptions([
+        { label: 'Create Item', value: 'shop_action_create_item', emoji: '➕' },
+        { label: 'Edit Item', value: 'shop_action_edit_item', emoji: '✏️' },
+        { label: 'Delete Item', value: 'shop_action_delete_item', emoji: '🗑️' }
+      ]);
+    const rowItems = new ActionRowBuilder().addComponents(itemsSelect);
+
+    // Select Menu 3: Packs
+    const packsSelect = new StringSelectMenuBuilder()
+      .setCustomId(`shop_menu_packs_${nonce}`)
+      .setPlaceholder('📦 Packs')
+      .addOptions([
+        { label: 'Create Pack', value: 'shop_action_create_pack', emoji: '➕' },
+        { label: 'Edit Pack', value: 'shop_action_edit_pack', emoji: '✏️' },
+        { label: 'Delete Pack', value: 'shop_action_delete_pack', emoji: '🗑️' }
+      ]);
+    const rowPacks = new ActionRowBuilder().addComponents(packsSelect);
+
+    // Row 4: Back (left), Loot Boxes (center), Post (right)
+    const rowButtons = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
           .setCustomId('settings_back')
@@ -314,7 +330,7 @@ export async function handleShopSetup(interaction) {
       );
 
     // Always use editReply since we likely deferred
-    await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [row1, row2] });
+    await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [rowCategories, rowItems, rowPacks, rowButtons] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop setup');
   }
@@ -322,118 +338,50 @@ export async function handleShopSetup(interaction) {
 
 // --- Main Menu Handlers ---
 
+export async function handleShopMenuSelect(interaction) {
+  const value = interaction.values?.[0];
+  if (!value) return;
+
+  switch (value) {
+    // Categories
+    case 'shop_action_create_cat':
+      return handleCreateCategory(interaction);
+    case 'shop_action_edit_cat':
+      return handleEditCategoryStart(interaction);
+    case 'shop_action_delete_cat':
+      return handleDeleteCategoryStart(interaction);
+
+    // Items
+    case 'shop_action_create_item':
+      return handleCreateItemStart(interaction);
+    case 'shop_action_edit_item':
+      return handleEditItemStart(interaction);
+    case 'shop_action_delete_item':
+      return handleDeleteItemStart(interaction);
+
+    // Packs
+    case 'shop_action_create_pack':
+      return handleCreatePackStart(interaction);
+    case 'shop_action_edit_pack':
+      return handleEditPackStart(interaction);
+    case 'shop_action_delete_pack':
+      return handleDeletePackStart(interaction);
+
+    default:
+      return;
+  }
+}
+
 export async function handleShopAdminAdd(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const embed = new EmbedBuilder()
-    .setColor('#2ECC71')
-    .setTitle('Add Content')
-    .setDescription('Select what you want to add:');
-
-  const actionRow = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_add_type_cat')
-        .setLabel('Category')
-        .setEmoji('📂')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('shop_add_type_pack')
-        .setLabel('Pack')
-        .setEmoji('📦')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('shop_add_type_item')
-        .setLabel('Item')
-        .setEmoji('🏷️')
-        .setStyle(ButtonStyle.Success)
-    );
-
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('shop_admin_home')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
+  return handleShopSetup(interaction);
 }
 
 export async function handleShopAdminEdit(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const embed = new EmbedBuilder()
-    .setColor('#3498DB')
-    .setTitle('Edit Content')
-    .setDescription('What would you like to edit?');
-
-  const actionRow = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_edit_category_start')
-        .setLabel('Category')
-        .setEmoji('📂')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('shop_edit_pack_start')
-        .setLabel('Pack')
-        .setEmoji('📦')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('shop_edit_item')
-        .setLabel('Item')
-        .setEmoji('🏷️')
-        .setStyle(ButtonStyle.Primary)
-    );
-
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('shop_admin_home')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
+  return handleShopSetup(interaction);
 }
 
 export async function handleShopAdminDelete(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const embed = new EmbedBuilder()
-    .setColor('#E74C3C')
-    .setTitle('Delete Content')
-    .setDescription('What would you like to delete?');
-
-  const actionRow = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_delete_category_start')
-        .setLabel('Category')
-        .setEmoji('📂')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('shop_delete_pack')
-        .setLabel('Pack')
-        .setEmoji('📦')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('shop_delete_item')
-        .setLabel('Item')
-        .setEmoji('🏷️')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-  const backRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('shop_admin_home')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
+  return handleShopSetup(interaction);
 }
 
 /**
@@ -515,14 +463,15 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
   }
 }
 
-export async function handleAddTypeSelect(interaction) {
-  const type = interaction.customId.split('_').pop(); // item, pack, cat
+export async function handleCreateItemStart(interaction) {
+  return openCreateItemModal(interaction, 'item');
+}
 
-  if (type === 'cat') {
-    await handleCreateCategory(interaction);
-    return;
-  }
+export async function handleCreatePackStart(interaction) {
+  return openCreateItemModal(interaction, 'pack');
+}
 
+export async function openCreateItemModal(interaction, type) {
   const modal = new ModalBuilder()
     .setCustomId(`shop_item_modal_add_new_${type}_${Date.now()}`)
     .setTitle(type === 'pack' ? 'Create Item Pack' : 'Create Item');
@@ -581,6 +530,14 @@ export async function handleAddTypeSelect(interaction) {
   }
 
   await interaction.showModal(modal);
+}
+
+export async function handleAddTypeSelect(interaction) {
+  const type = interaction.customId.split('_').pop(); // item, pack, cat
+  if (type === 'cat') {
+    return handleCreateCategory(interaction);
+  }
+  return openCreateItemModal(interaction, type);
 }
 
 /**
@@ -916,7 +873,7 @@ export async function handleItemModalSubmit(interaction) {
         await addShopItem(interaction.guildId, null, '', name, '', 0, null, null, 'pack');
         sendLog(interaction.guild, 'shop', 'green', '📦 Pack Created', `Admin **<@${interaction.user.id}>** created pack **${name}** (Price: Unset — must be set at post time)`);
         await interaction.followUp({ content: `✅ Pack items created!`, flags: MessageFlags.Ephemeral });
-        await handleShopAdminAdd(interaction);
+        await handleShopSetup(interaction);
       }
     } else if (action === 'edit') {
       // ========== EDIT FLOW ==========
@@ -1211,7 +1168,7 @@ export async function handleNewItemAttrSelect(interaction) {
 export async function handleNewItemCancel(interaction) {
   await interaction.deferUpdate();
   pendingNewItems.delete(getNewItemKey(interaction));
-  await handleShopAdminAdd(interaction);
+  await handleShopSetup(interaction);
 }
 
 /**
@@ -1263,7 +1220,7 @@ export async function handleNewItemSave(interaction) {
     sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin <@${interaction.user.id}> assigned item **${item.name}** to category **${catName}**.`);
   }
 
-  await handleShopAdminAdd(interaction);
+  await handleShopSetup(interaction);
 }
 
 
@@ -2775,7 +2732,7 @@ export async function handleCategoryModalSubmit(interaction) {
       await addShopCategory(interaction.guildId, name, 0, type);
       sendLog(interaction.guild, 'shop', 'green', '📂 Category Created', `Admin **<@${interaction.user.id}>** created shop category **${name}**`);
       
-      await handleShopAdminAdd(interaction); // Return to Add Menu
+      await handleShopSetup(interaction);
       await interaction.followUp({ content: `✅ Category **${name}** created!`, flags: MessageFlags.Ephemeral });
     }
   } catch (error) {
@@ -2789,7 +2746,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
     const categories = await getShopCategories(interaction.guildId);
 
     const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_edit').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('shop_admin_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
     if (categories.length === 0) {
@@ -3274,7 +3231,7 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
     const categories = await getShopCategories(interaction.guildId);
 
     const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('shop_admin_home').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
 
     if (categories.length === 0) {
@@ -3405,7 +3362,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     // Smart hierarchical Back button routing:
     let backRoute;
     if (folder === 'root') {
-      backRoute = isLootBox ? 'shop_lb_home' : (isEdit ? 'shop_admin_edit' : 'shop_admin_delete');
+      backRoute = isLootBox ? 'shop_lb_home' : 'shop_admin_home';
     } else if (folder === 'browse_categories' || folder === 'cat_null') {
       backRoute = 'shop_admin_browser_back_root';
     } else {
