@@ -261,6 +261,22 @@ export async function showCustomizeModal(interaction, source = 'settings') {
 
     modal.addLabelComponents(nameLabel, avatarLabel);
     await interaction.showModal(modal);
+    if (source === 'settings' && interaction.webhook) {
+        try {
+            await showMainMenu({
+                ...interaction,
+                deferred: false,
+                replied: true,
+                editReply: async (payload) => {
+                    return interaction.webhook.editMessage('@original', payload).catch(async () => {
+                        if (interaction.message?.id) {
+                            return interaction.webhook.editMessage(interaction.message.id, payload).catch(() => {});
+                        }
+                    });
+                }
+            });
+        } catch (_) {}
+    }
 }
 
 /**
