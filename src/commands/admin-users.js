@@ -1886,6 +1886,11 @@ export async function handleAdminUserComponent(interaction) {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferUpdate().catch(() => {});
             }
+            const isFromSettings = Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
+            if (isFromSettings) {
+                const { showMainMenu } = await import('./settings.js');
+                return showMainMenu(interaction);
+            }
             await showUserSelector(interaction);
             return;
         }
@@ -2037,8 +2042,9 @@ export async function handleAdminUserComponent(interaction) {
                 const subAction = parts[3];
                 const gateType = parts.slice(4).join('_');
 
+                const isFromSettingsContext = Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
                 if (!subAction || subAction === 'hub') {
-                    await showAntiCheatHub(interaction);
+                    await showAntiCheatHub(interaction, isFromSettingsContext);
                 } else if (subAction === 'alt') {
                     if (!gateType) {
                         await showAltFarmingDashboard(interaction);
@@ -2047,13 +2053,13 @@ export async function handleAdminUserComponent(interaction) {
                     } else if (gateType === 'join') {
                         await handleToggleAltFarmingGate(interaction, 'join');
                     } else if (gateType === 'back') {
-                        await showAntiCheatHub(interaction);
+                        await showAntiCheatHub(interaction, isFromSettingsContext);
                     }
                 } else if (subAction === 'voice') {
                     if (!gateType) {
                         await showVoiceAfkDashboard(interaction);
                     } else if (gateType === 'back') {
-                        await showAntiCheatHub(interaction);
+                        await showAntiCheatHub(interaction, isFromSettingsContext);
                     } else {
                         await handleToggleVoiceAfkGate(interaction, gateType);
                     }
@@ -2061,11 +2067,15 @@ export async function handleAdminUserComponent(interaction) {
                     if (!gateType) {
                         await showTextSpamDashboard(interaction);
                     } else if (gateType === 'back') {
-                        await showAntiCheatHub(interaction);
+                        await showAntiCheatHub(interaction, isFromSettingsContext);
                     } else {
                         await handleToggleTextSpamGate(interaction, gateType);
                     }
                 } else if (subAction === 'back') {
+                    if (isFromSettingsContext) {
+                        const { showMainMenu } = await import('./settings.js');
+                        return showMainMenu(interaction);
+                    }
                     await showUserSelector(interaction);
                 }
                 break;
@@ -2080,7 +2090,11 @@ export async function handleAdminUserComponent(interaction) {
 /**
  * Show the main Anti-Cheat navigation hub
  */
-export async function showAntiCheatHub(interaction) {
+export async function showAntiCheatHub(interaction, fromSettings = false) {
+    const isSettingsOrigin = fromSettings || Boolean(interaction.customId?.startsWith('settings_menu_')) ||
+        Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
+    const backCustomId = isSettingsOrigin ? 'settings_home' : 'admin_user_anticheat_back';
+
     const embed = new EmbedBuilder()
         .setTitle('Anti-Cheat')
         .setDescription(
@@ -2110,10 +2124,11 @@ export async function showAntiCheatHub(interaction) {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('admin_user_anticheat_back')
+            .setCustomId(backCustomId)
             .setLabel('Back')
-            .setEmoji('◀️')
+            .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isSettingsOrigin ? isBackDisabled(interaction) : false)
     );
 
     const responseMethod = (interaction.deferred || interaction.replied)
@@ -2443,7 +2458,7 @@ export const handleToggleAntiCheat = handleToggleAltFarmingGate;
  * Shows server owner, list of authorized bot admins, and UserSelectMenu to toggle admin status
  * @param {import('discord.js').Interaction} interaction
  */
-export async function showAdminManagement(interaction) {
+export async function showAdminManagement(interaction, fromSettings = false) {
     const { verifyAdminManagerAccess } = await import('../storage/admins.js');
     if (!(await verifyAdminManagerAccess(interaction))) return;
 
@@ -2475,8 +2490,8 @@ export async function showAdminManagement(interaction) {
     if (guild) {
         try {
             await guild.members.fetch().catch(() => {});
-            for (const member of guild.members.cache.values()) {
-                if (!member.user.bot && member.id !== ownerId && member.permissions?.has(PermissionFlagsBits.Administrator)) {
+            for (const member of (guild.members?.cache?.values?.() || [])) {
+                if (!member.user?.bot && member.id !== ownerId && member.permissions?.has(PermissionFlagsBits.Administrator)) {
                     discordAdminIds.add(member.id);
                 }
             }
@@ -2523,11 +2538,16 @@ export async function showAdminManagement(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
+    const isSettingsOrigin = fromSettings || Boolean(interaction.customId?.startsWith('settings_menu_')) ||
+        Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
+    const backCustomId = isSettingsOrigin ? 'settings_home' : 'admin_manage_back';
+
     const backButton = new ButtonBuilder()
-        .setCustomId('admin_manage_back')
+        .setCustomId(backCustomId)
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary);
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(isSettingsOrigin ? isBackDisabled(interaction) : false);
 
     const row1 = new ActionRowBuilder().addComponents(userSelect);
     const row2 = new ActionRowBuilder().addComponents(backButton);
