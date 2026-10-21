@@ -24,6 +24,7 @@ import { showColorPanel as showColorsPanel, handleColorsComponent } from './colo
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from './leaderboard.js';
 import { 
     handleLeaderboardSettings, 
+    handleLeaderboardMenuAction,
     handleLeaderboardCategorySelect, 
     handleLeaderboardChannelSelect as handleLeaderboardChannelSelectV2,
     handleLeaderboardRefresh as handleLeaderboardRefreshV2,
@@ -31,7 +32,7 @@ import {
 } from './settings/leaderboards.js';
 import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
-import { handleLogsSettings, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
+import { handleLogsSettings, handleLogMenuAction, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
 import { handleOrganizeComponent } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
@@ -925,6 +926,11 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
+        if (customId.startsWith('logs_menu_')) {
+            await handleLogMenuAction(interaction);
+            return;
+        }
+
         if (customId === 'logs_type_select' || customId === 'logs_category_select') {
             await handleLogCategorySelect(interaction);
             return;
@@ -937,6 +943,11 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId.startsWith('logs_disable_')) {
             await handleLogDisable(interaction);
+            return;
+        }
+
+        if (customId.startsWith('lb_menu_')) {
+            await handleLeaderboardMenuAction(interaction);
             return;
         }
 
