@@ -830,3 +830,32 @@ export function formatCurrentImageDescription(url) {
     return 'Current: Configured';
   }
 }
+
+/**
+ * Determines if the root Back button should be disabled (unclickable).
+ * Disabled when an interaction originates from the public Admin Hub shortcuts (admin_hub_*),
+ * or when an existing interaction message already has a disabled Back button.
+ * @param {import("discord.js").Interaction} interaction
+ * @returns {boolean}
+ */
+export function isBackDisabled(interaction) {
+  if (!interaction) return false;
+  if (interaction.customId && typeof interaction.customId === "string") {
+    if (interaction.customId.startsWith("admin_hub_")) {
+      return true;
+    }
+  }
+  const components = interaction.message?.components;
+  if (Array.isArray(components)) {
+    for (const row of components) {
+      if (Array.isArray(row.components)) {
+        for (const comp of row.components) {
+          if ((comp.customId === "settings_back" || comp.customId === "settings_home") && comp.disabled) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}

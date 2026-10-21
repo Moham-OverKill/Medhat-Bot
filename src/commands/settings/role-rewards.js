@@ -8,7 +8,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
-import { isValidSnowflake, COIN_EMOJI, hasAnyDangerousPermission } from '../../shared.js';
+import { isValidSnowflake, COIN_EMOJI, hasAnyDangerousPermission, isBackDisabled } from '../../shared.js';
 import { sendLog, sysError } from '../../utils/logger.js';
 import { handleInteractionError, diagnoseRolePermissions } from '../../utils/errors.js';
 
@@ -186,6 +186,7 @@ export async function showRolesMenu(interaction) {
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction))
     );
 
     const responseMethod = (interaction.deferred || interaction.replied)

@@ -11,7 +11,7 @@ import {
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
 import { sendLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
-import { getUserLogName, getCurrencyName, COIN_EMOJI } from '../../shared.js';
+import { getUserLogName, getCurrencyName, COIN_EMOJI, isBackDisabled } from '../../shared.js';
 
 /**
  * Smart Leaderboard Categories Helper
@@ -120,7 +120,8 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                 .setCustomId('settings_home')
                 .setLabel('Back')
                 .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary);
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(isBackDisabled(interaction));
             components.push(new ActionRowBuilder().addComponents(backButton));
         }
 

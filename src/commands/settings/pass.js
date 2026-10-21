@@ -15,7 +15,7 @@ import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { sysLog, sendLog } from '../../utils/logger.js';
 import { getShopCategories } from '../../economy/shop.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
-import { COIN_EMOJI, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity, getCurrencyName } from '../../shared.js';
+import { COIN_EMOJI, parseSelectEmoji, getItemRarityEmoji, sortItemsByRarity, getCurrencyName, isBackDisabled } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { validateRoleForAssignment } from './pass-engine.js';
 import { buildPaginatedSelectMenu } from '../../utils/paginator.js';
@@ -474,7 +474,8 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
     .setCustomId('settings_home')
     .setLabel('Back')
     .setEmoji('⬅️')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(isBackDisabled(interaction));
 
   const importBtn = new ButtonBuilder()
     .setCustomId('pass_import_start_pg_' + currentPage)

@@ -19,7 +19,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled } from '../shared.js';
 import { uploadHostAsset } from '../utils/image-host.js';
 
 import { query } from '../storage/postgres.js';
@@ -295,7 +295,8 @@ export async function handleShopSetup(interaction) {
           .setCustomId('settings_back')
           .setLabel('Back')
           .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(isBackDisabled(interaction)),
         safeSetButtonEmoji(
           new ButtonBuilder()
             .setCustomId('shop_lb_home')

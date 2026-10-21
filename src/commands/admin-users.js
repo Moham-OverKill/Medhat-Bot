@@ -12,7 +12,7 @@ import {
     PermissionFlagsBits
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji, isBackDisabled } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
@@ -71,6 +71,7 @@ export async function showUserSelector(interaction) {
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction))
     );
 
     const responseMethod = (interaction.deferred || interaction.replied)
@@ -1876,10 +1877,8 @@ export async function handleAdminUserComponent(interaction) {
         const customId = interaction.customId;
 
         if (customId === 'admin_user_automod') {
-            if (interaction.deferred || interaction.replied) {
-                return interaction.followUp({ content: 'Coming Soon...', flags: MessageFlags.Ephemeral });
-            }
-            return interaction.reply({ content: 'Coming Soon...', flags: MessageFlags.Ephemeral });
+            const { showOrganizeMenu } = await import('./settings/organize.js');
+            return showOrganizeMenu(interaction);
         }
 
         if (customId === 'admin_user_admins') {

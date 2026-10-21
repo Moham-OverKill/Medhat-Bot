@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sysError, sysLog, sendLog } from '../../utils/logger.js';
-import { getUserLogName, formatCurrentImageDescription } from '../../shared.js';
+import { getUserLogName, formatCurrentImageDescription, isBackDisabled } from '../../shared.js';
 import { createErrorEmbed, handleInteractionError, diagnoseChannelPermissions } from '../../utils/errors.js';
 import { verifyAndHealMessageImages } from '../../utils/image-healer.js';
 import { sanitizeEmbed } from '../../utils/embed-sanitizer.js';
@@ -234,6 +234,7 @@ export async function renderRootEmbedMenu(interaction) {
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
+      .setDisabled(isBackDisabled(interaction))
   );
 
   const responseMethod = (interaction.deferred || interaction.replied)
