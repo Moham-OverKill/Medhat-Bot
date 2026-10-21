@@ -52,6 +52,9 @@ import {
   handleShopPostBackFolder,
   handleEditCategoryStart,
   handleEditCategorySelect,
+  renderManageCategoryScreen,
+  handleCategoryAddSelect,
+  handleCategoryRemoveSelect,
   handleEditCategoryModalSubmit,
   handleManageItemCategorySelect,
   handleEditCategoryRemoveItemsStart,
@@ -445,6 +448,10 @@ export function setupComponentHandlers(client) {
         await handleEditCategoryRenameStart(interaction);
       } else if (customId.startsWith('shop_cat_manage_')) {
         await handleEditCategorySelect(interaction);
+      } else if (customId.startsWith('shop_cat_add_item_')) {
+        await handleCategoryAddSelect(interaction);
+      } else if (customId.startsWith('shop_cat_remove_item_')) {
+        await handleCategoryRemoveSelect(interaction);
       } else if (customId.startsWith('shop_pack_manage_')) {
         await handleEditPackSelect(interaction);
       } else if (customId.startsWith('shop_edit_cat_add_select_')) {
