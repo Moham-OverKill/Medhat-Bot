@@ -2734,6 +2734,13 @@ export async function handleCategoryModalSubmit(interaction) {
       }
     } else {
       // ========== ADD FLOW ==========
+      const existingCategories = await getShopCategories(interaction.guildId);
+      if (existingCategories.some(c => c.name.trim().toLowerCase() === name.trim().toLowerCase())) {
+        return interaction.followUp({
+          content: `❌ A category named **${name.trim()}** already exists.`,
+          flags: MessageFlags.Ephemeral
+        });
+      }
       const newCat = await addShopCategory(interaction.guildId, name, 0, type);
       sendLog(interaction.guild, 'shop', 'green', '📂 Category Created', `Admin **<@${interaction.user.id}>** created shop category **${name}**`);
       await renderManageCategoryScreen(interaction, newCat.id, { from: 'create' });
@@ -3457,7 +3464,13 @@ export async function handleDeleteCategoryConfirm(interaction) {
     const detachResult = await detachItemsFromCategory(categoryId, interaction.guildId);
 
     // Step 2: Delete Category (scoped to guild)
-    await deleteShopCategory(categoryId, interaction.guildId);
+    const deleted = await deleteShopCategory(categoryId, interaction.guildId);
+    if (!deleted) {
+      return interaction.followUp({
+        content: '❌ Failed to delete category from database.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     // Bulk Audit Log
     sendBulkLog(
@@ -3468,43 +3481,8 @@ export async function handleDeleteCategoryConfirm(interaction) {
       `Admin ${getUserLogName(interaction.member)} deleted category **'${categoryName}'**.\n• **Status:** Removed successfully.\n• **Items Affected:** **${detachResult.count}** items were made standalone.`
     );
 
-    // Step 3: Fetch remaining categories
-    const categories = await getShopCategories(interaction.guildId);
-
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('shop_admin_delete').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-
-    if (categories.length === 0) {
-      const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({
-        content: `✅ Category **${categoryName}** deleted.`,
-        components: [rowBack],
-        embeds: [emptyEmbed]
-      });
-    } else {
-      const { selectMenu } = buildPaginatedSelectMenu({
-        items: categories,
-        page: 1,
-        customId: 'shop_select_cat_delete_confirm',
-        placeholder: 'Select Category to Delete',
-        pageNavPrefix: 'cat_del_nav_',
-        pageSize: 20,
-        mapOption: c => ({
-          label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
-          value: c.id.toString(),
-          emoji: '📂'
-        })
-      });
-
-      const row = new ActionRowBuilder().addComponents(selectMenu);
-
-      await interaction.editReply({
-        content: `✅ Category **${categoryName}** deleted. Select another to delete:`,
-        components: [row, rowBack],
-        embeds: []
-      });
-    }
+    // Directly re-render category delete view in place (zero header text, clean state)
+    return handleDeleteCategoryStart(interaction, 1);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete category confirm');
   }

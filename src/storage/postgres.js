@@ -506,6 +506,15 @@ async function createTables() {
       // Category Upgrade: Add category_type (0=Multi, 1=Single)
       await pool.query(`ALTER TABLE shop_categories ADD COLUMN IF NOT EXISTS category_type INTEGER DEFAULT 0`);
 
+      // Category FK Migration: Ensure ON DELETE SET NULL on shop_items.category_id
+      try {
+        await pool.query(`
+          ALTER TABLE shop_items DROP CONSTRAINT IF EXISTS shop_items_category_id_fkey;
+          ALTER TABLE shop_items ADD CONSTRAINT shop_items_category_id_fkey 
+            FOREIGN KEY (category_id) REFERENCES shop_categories(id) ON DELETE SET NULL;
+        `);
+      } catch (_) {}
+
       // Prerequisite System: Store array of shop item IDs that must be owned before purchase/equip
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS required_items JSONB DEFAULT '[]'::jsonb`);
       

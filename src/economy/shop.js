@@ -290,8 +290,10 @@ export async function updateShopCategory(categoryId, updates, guildId = null) {
  */
 export async function detachItemsFromCategory(categoryId, guildId = null) {
   try {
+    const numId = parseInt(categoryId, 10);
+    if (isNaN(numId)) return { success: false, count: 0 };
     let sql = 'UPDATE shop_items SET category_id = NULL WHERE category_id = $1';
-    const params = [categoryId];
+    const params = [numId];
     if (guildId) {
       sql += ' AND guild_id = $2';
       params.push(String(guildId));
@@ -309,14 +311,19 @@ export async function detachItemsFromCategory(categoryId, guildId = null) {
  */
 export async function deleteShopCategory(categoryId, guildId = null) {
   try {
+    const numId = parseInt(categoryId, 10);
+    if (isNaN(numId)) {
+      logSystemError(`Failed to delete shop category: Invalid categoryId ${categoryId}`);
+      return false;
+    }
     let sql = 'DELETE FROM shop_categories WHERE id = $1';
-    const params = [categoryId];
+    const params = [numId];
     if (guildId) {
       sql += ' AND guild_id = $2';
       params.push(String(guildId));
     }
-    await query(sql, params);
-    return true;
+    const result = await query(sql, params);
+    return result.rowCount > 0;
   } catch (error) {
     logSystemError(`Failed to delete shop category: ${sanitizeError(error)}`);
     return false;
