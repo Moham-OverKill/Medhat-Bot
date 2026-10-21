@@ -233,106 +233,123 @@ export async function handleShopSetup(interaction) {
       }
     }
 
-    const guildId = interaction.guildId;
-
-    // Get shop statistics
-    const categoriesResult = await query(
-      'SELECT COUNT(*) as count FROM shop_categories WHERE guild_id = $1',
-      [guildId]
-    );
-
-    // Get Items, Packs, and Loot Boxes counts
-    const itemsResult = await query(
-      `SELECT 
-        COUNT(*) FILTER (WHERE item_type = 'pack') as pack_count,
-        COUNT(*) FILTER (WHERE item_type = 'loot_box') as lootbox_count,
-        COUNT(*) FILTER (WHERE item_type != 'pack' AND item_type != 'loot_box' OR item_type IS NULL) as item_count
-       FROM shop_items 
-       WHERE guild_id = $1 AND is_active = true`,
-      [guildId]
-    );
-
-    const lootBoxCatName = await getLootBoxCategoryName(guildId);
-    const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-    const categoriesCount = parseInt(categoriesResult.rows[0]?.count || 0);
-    const packCount = parseInt(itemsResult.rows[0]?.pack_count || 0);
-    const itemsCount = parseInt(itemsResult.rows[0]?.item_count || 0);
-    const lootBoxesCount = parseInt(itemsResult.rows[0]?.lootbox_count || 0);
-
-    const embed = new EmbedBuilder()
-      .setColor('#9B59B6')
-      .setTitle('Shop Configuration')
-      .setDescription('Manage categories and items in your server shop.')
-      .addFields(
-        { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
-        { name: '📦 Packs', value: `${packCount}`, inline: true },
-        { name: '🏷️ Items', value: `${itemsCount}`, inline: true }
-      );
-
-    const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-
-    // Select Menu 1: Categories
-    const categoriesSelect = new StringSelectMenuBuilder()
-      .setCustomId(`shop_menu_categories_${nonce}`)
-      .setPlaceholder('📂 Categories')
-      .addOptions([
-        { label: 'Create Category', value: 'shop_action_create_cat', emoji: '➕' },
-        { label: 'Edit Category', value: 'shop_action_edit_cat', emoji: '✏️' },
-        { label: 'Delete Category', value: 'shop_action_delete_cat', emoji: '🗑️' }
-      ]);
-    const rowCategories = new ActionRowBuilder().addComponents(categoriesSelect);
-
-    // Select Menu 2: Items
-    const itemsSelect = new StringSelectMenuBuilder()
-      .setCustomId(`shop_menu_items_${nonce}`)
-      .setPlaceholder('🏷️ Items')
-      .addOptions([
-        { label: 'Create Item', value: 'shop_action_create_item', emoji: '➕' },
-        { label: 'Edit Item', value: 'shop_action_edit_item', emoji: '✏️' },
-        { label: 'Delete Item', value: 'shop_action_delete_item', emoji: '🗑️' }
-      ]);
-    const rowItems = new ActionRowBuilder().addComponents(itemsSelect);
-
-    // Select Menu 3: Packs
-    const packsSelect = new StringSelectMenuBuilder()
-      .setCustomId(`shop_menu_packs_${nonce}`)
-      .setPlaceholder('📦 Packs')
-      .addOptions([
-        { label: 'Create Pack', value: 'shop_action_create_pack', emoji: '➕' },
-        { label: 'Edit Pack', value: 'shop_action_edit_pack', emoji: '✏️' },
-        { label: 'Delete Pack', value: 'shop_action_delete_pack', emoji: '🗑️' }
-      ]);
-    const rowPacks = new ActionRowBuilder().addComponents(packsSelect);
-
-    // Row 4: Back (left), Loot Boxes (center), Post (right)
-    const rowButtons = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('settings_back')
-          .setLabel('Back')
-          .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(isBackDisabled(interaction)),
-        safeSetButtonEmoji(
-          new ButtonBuilder()
-            .setCustomId('shop_lb_home')
-            .setLabel(lootBoxCatName.slice(0, 50))
-            .setStyle(ButtonStyle.Secondary),
-          lootBoxEmoji,
-          interaction.guild,
-          '🎁'
-        ),
-        new ButtonBuilder()
-          .setCustomId('shop_admin_post')
-          .setLabel('Post')
-          .setEmoji('📢')
-          .setStyle(ButtonStyle.Secondary)
-      );
-
+    const payload = await getShopSetupPayload(interaction.guild, interaction.guildId, interaction);
     // Always use editReply since we likely deferred
-    await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [rowCategories, rowItems, rowPacks, rowButtons] });
+    await interaction.editReply(payload);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop setup');
+  }
+}
+
+export async function getShopSetupPayload(guild, guildId, interaction = null) {
+  // Get shop statistics
+  const categoriesResult = await query(
+    'SELECT COUNT(*) as count FROM shop_categories WHERE guild_id = $1',
+    [guildId]
+  );
+
+  // Get Items, Packs, and Loot Boxes counts
+  const itemsResult = await query(
+    `SELECT 
+      COUNT(*) FILTER (WHERE item_type = 'pack') as pack_count,
+      COUNT(*) FILTER (WHERE item_type = 'loot_box') as lootbox_count,
+      COUNT(*) FILTER (WHERE item_type != 'pack' AND item_type != 'loot_box' OR item_type IS NULL) as item_count
+     FROM shop_items 
+     WHERE guild_id = $1 AND is_active = true`,
+    [guildId]
+  );
+
+  const lootBoxCatName = await getLootBoxCategoryName(guildId);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+  const categoriesCount = parseInt(categoriesResult.rows[0]?.count || 0);
+  const packCount = parseInt(itemsResult.rows[0]?.pack_count || 0);
+  const itemsCount = parseInt(itemsResult.rows[0]?.item_count || 0);
+
+  const embed = new EmbedBuilder()
+    .setColor('#9B59B6')
+    .setTitle('Shop Configuration')
+    .setDescription('Manage categories and items in your server shop.')
+    .addFields(
+      { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
+      { name: '📦 Packs', value: `${packCount}`, inline: true },
+      { name: '🏷️ Items', value: `${itemsCount}`, inline: true }
+    );
+
+  const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+  // Select Menu 1: Categories
+  const categoriesSelect = new StringSelectMenuBuilder()
+    .setCustomId(`shop_menu_categories_${nonce}`)
+    .setPlaceholder('📂 Categories')
+    .addOptions([
+      { label: 'Create Category', value: 'shop_action_create_cat', emoji: '➕' },
+      { label: 'Edit Category', value: 'shop_action_edit_cat', emoji: '✏️' },
+      { label: 'Delete Category', value: 'shop_action_delete_cat', emoji: '🗑️' }
+    ]);
+  const rowCategories = new ActionRowBuilder().addComponents(categoriesSelect);
+
+  // Select Menu 2: Items
+  const itemsSelect = new StringSelectMenuBuilder()
+    .setCustomId(`shop_menu_items_${nonce}`)
+    .setPlaceholder('🏷️ Items')
+    .addOptions([
+      { label: 'Create Item', value: 'shop_action_create_item', emoji: '➕' },
+      { label: 'Edit Item', value: 'shop_action_edit_item', emoji: '✏️' },
+      { label: 'Delete Item', value: 'shop_action_delete_item', emoji: '🗑️' }
+    ]);
+  const rowItems = new ActionRowBuilder().addComponents(itemsSelect);
+
+  // Select Menu 3: Packs
+  const packsSelect = new StringSelectMenuBuilder()
+    .setCustomId(`shop_menu_packs_${nonce}`)
+    .setPlaceholder('📦 Packs')
+    .addOptions([
+      { label: 'Create Pack', value: 'shop_action_create_pack', emoji: '➕' },
+      { label: 'Edit Pack', value: 'shop_action_edit_pack', emoji: '✏️' },
+      { label: 'Delete Pack', value: 'shop_action_delete_pack', emoji: '🗑️' }
+    ]);
+  const rowPacks = new ActionRowBuilder().addComponents(packsSelect);
+
+  // Row 4: Back (left), Loot Boxes (center), Post (right)
+  const rowButtons = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('settings_back')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(isBackDisabled(interaction)),
+      safeSetButtonEmoji(
+        new ButtonBuilder()
+          .setCustomId('shop_lb_home')
+          .setLabel(lootBoxCatName.slice(0, 50))
+          .setStyle(ButtonStyle.Secondary),
+        lootBoxEmoji,
+        guild,
+        '🎁'
+      ),
+      new ButtonBuilder()
+        .setCustomId('shop_admin_post')
+        .setLabel('Post')
+        .setEmoji('📢')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+  return { content: null, embeds: [embed], files: [], attachments: [], components: [rowCategories, rowItems, rowPacks, rowButtons] };
+}
+
+export async function refreshShopSetupMessage(interaction) {
+  try {
+    const payload = await getShopSetupPayload(interaction.guild, interaction.guildId, interaction);
+    if (interaction.webhook) {
+      await interaction.webhook.editMessage('@original', payload).catch(async () => {
+        if (interaction.message?.id) {
+          await interaction.webhook.editMessage(interaction.message.id, payload).catch(() => {});
+        }
+      });
+    }
+  } catch (err) {
+    sysError('Failed to refresh shop setup message', err);
   }
 }
 
@@ -530,6 +547,7 @@ export async function openCreateItemModal(interaction, type) {
   }
 
   await interaction.showModal(modal);
+  await refreshShopSetupMessage(interaction);
 }
 
 export async function handleAddTypeSelect(interaction) {
@@ -2674,6 +2692,7 @@ export async function handleCreateCategory(interaction) {
     );
 
     await interaction.showModal(modal);
+    await refreshShopSetupMessage(interaction);
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop create category');
   }
