@@ -591,10 +591,9 @@ export function setupComponentHandlers(client) {
       } else if (customId.startsWith('shop_delete_lootbox_confirm_')) {
         const boxId = parseInt(customId.replace('shop_delete_lootbox_confirm_', ''), 10);
         await handleLootBoxDeleteConfirm(interaction, boxId);
-      } else if (customId.startsWith('shop_cat_add_')) {
-        await handleEditCategoryAddItemsStart(interaction);
-      } else if (customId.startsWith('shop_cat_remove_')) {
-        await handleEditCategoryRemoveItemsStart(interaction);
+      } else if (customId.startsWith('shop_cat_add_') || customId.startsWith('shop_cat_remove_')) {
+        const catId = customId.split('_').pop();
+        await renderManageCategoryScreen(interaction, catId, { from: 'list' });
       } else if (customId === 'shop_admin_browser_back_root') {
         await handleAdminBrowserBackRoot(interaction);
       } else if (customId === 'shop_admin_browser_back_cat') {
