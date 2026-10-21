@@ -1597,7 +1597,7 @@ export async function handleAdminHubComponent(interaction) {
   // 2. Customize modal must be opened without deferring
   if (customId === 'admin_hub_customize') {
     const { showCustomizeModal } = await import('./settings.js');
-    return showCustomizeModal(interaction);
+    return showCustomizeModal(interaction, 'admin_hub');
   }
 
   // 3. Admins shortcut: ONLY server owner and Discord Administrators can manage admins!
