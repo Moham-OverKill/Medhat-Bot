@@ -313,7 +313,7 @@ export async function handleShopSetup(interaction) {
       );
 
     // Always use editReply since we likely deferred
-    await interaction.editReply({ content: null, embeds: [embed], files: [], components: [row1, row2] });
+    await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [row1, row2] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop setup');
   }
@@ -356,7 +356,7 @@ export async function handleShopAdminAdd(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
 }
 
 export async function handleShopAdminEdit(interaction) {
@@ -394,7 +394,7 @@ export async function handleShopAdminEdit(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
 }
 
 export async function handleShopAdminDelete(interaction) {
@@ -432,7 +432,7 @@ export async function handleShopAdminDelete(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.editReply({ content: null, embeds: [embed], files: [], components: [actionRow, backRow] });
+  await interaction.editReply({ content: null, embeds: [embed], files: [], attachments: [], components: [actionRow, backRow] });
 }
 
 /**
@@ -505,7 +505,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     await interaction.editReply({
       content: statusMessage || null,
       embeds: [embed],
-      files: [],
+      files: [], attachments: [],
       components
     });
 
@@ -740,7 +740,7 @@ export async function handleItemModalSubmit(interaction) {
         } catch (e) { /* field may be absent */ }
 
         if (!/^\d{17,20}$/.test(roleId)) {
-          return interaction.editReply({ files: [], content: '❌ Invalid Role ID.', 
+          return interaction.editReply({ files: [], attachments: [], content: '❌ Invalid Role ID.', 
             embeds: [],
             components: [
               new ActionRowBuilder().addComponents(
@@ -764,7 +764,7 @@ export async function handleItemModalSubmit(interaction) {
 
         const targetItemRole = interaction.guild.roles.cache.get(roleId);
         if (!targetItemRole) {
-          return interaction.editReply({ files: [], content: '❌ Role not found in server.', 
+          return interaction.editReply({ files: [], attachments: [], content: '❌ Role not found in server.', 
             embeds: [],
             components: [
               new ActionRowBuilder().addComponents(
@@ -775,7 +775,7 @@ export async function handleItemModalSubmit(interaction) {
 
         if (hasAnyDangerousPermission(targetItemRole)) {
           return interaction.editReply({
-            files: [],
+            files: [], attachments: [],
             content: '❌ **Security Violation**: This role holds administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members) and cannot be added to the shop.',
             embeds: [],
             components: [
@@ -905,7 +905,7 @@ export async function handleItemModalSubmit(interaction) {
         await interaction.editReply({
           content: null,
           embeds: [confirmEmbed],
-          files: [],
+          files: [], attachments: [],
           components: [rowCat, rowRarity, rowTradable, rowActions]
         });
         return;
@@ -1198,7 +1198,7 @@ export async function handleNewItemAttrSelect(interaction) {
   await interaction.editReply({
     content: null,
     embeds: [embed],
-    files: [],
+    files: [], attachments: [],
     components: [rowCat, rowRarity, rowTradable, rowActions]
   });
 }
@@ -1320,7 +1320,7 @@ export async function handleShopPostStart(interaction) {
       new ButtonBuilder().setCustomId(`shop_admin_home:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
     );
     const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-    return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
+    return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
   }
 
   // Get current pending state or initialize
@@ -1536,7 +1536,7 @@ export async function handleShopPostStart(interaction) {
           new ButtonBuilder().setCustomId(`shop_post_back_folder:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
         const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-        return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
+        return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
       }
 
       const page = state.postPage || 1;
@@ -1576,7 +1576,7 @@ export async function handleShopPostStart(interaction) {
       const emptyEmbed = new EmbedBuilder()
         .setColor('#95A5A6')
         .setDescription('No items found.');
-      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
+      return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
     }
 
     if (state.postStep === 0) {
@@ -1731,7 +1731,7 @@ export async function handleShopPostStart(interaction) {
   await interaction.editReply({
     content: null,
     embeds: [embed],
-    files: [],
+    files: [], attachments: [],
     components: components
   });
 }
@@ -2793,7 +2793,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     if (categories.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2818,7 +2818,7 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
-    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row, rowBack] });
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row, rowBack] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category start');
   }
@@ -2845,7 +2845,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
     const category = categories.find(c => c.id.toString() === categoryId);
 
     if (!category) {
-      return interaction.editReply({ files: [], content: '❌ Category not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], attachments: [], content: '❌ Category not found.', embeds: [], components: [] });
     }
 
     // NEW: Fetch items to show count in dashboard
@@ -2885,7 +2885,7 @@ export async function handleEditCategorySelect(interaction, successHeader = null
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ files: [], content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
+    await interaction.editReply({ files: [], attachments: [], content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category select');
   }
@@ -2960,7 +2960,7 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
 
     if (sortedStandalone.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -2984,7 +2984,7 @@ export async function handleEditCategoryAddItemsStart(interaction, page = 1) {
       .setColor('#2ECC71')
       .setTitle('Select Item(s) to Add to Category');
 
-    await interaction.editReply({ files: [], content: null, 
+    await interaction.editReply({ files: [], attachments: [], content: null, 
         components: [row, rowBack], 
         embeds: [embedPrompt] });
   } catch (error) {
@@ -3110,7 +3110,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
 
     if (sortedItems.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -3134,7 +3134,7 @@ export async function handleEditCategoryRemoveItemsStart(interaction, successHea
       .setColor('#3498DB')
       .setTitle('Select Item(s) to Remove from Category');
 
-    await interaction.editReply({ files: [], content: successHeader || null, 
+    await interaction.editReply({ files: [], attachments: [], content: successHeader || null, 
         components: [row, rowBack], 
         embeds: [embedPrompt] });
   } catch (error) {
@@ -3278,7 +3278,7 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
 
     if (categories.length === 0) {
       const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
-      return interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
+      return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [rowBack] });
     }
 
     const pageNum = typeof page === 'number' ? page : (parseInt(page, 10) || 1);
@@ -3303,7 +3303,7 @@ export async function handleDeleteCategoryStart(interaction, page = 1) {
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
-    await interaction.editReply({ files: [], content: null,
+    await interaction.editReply({ files: [], attachments: [], content: null,
       embeds: [embed],
       components: [row, rowBack] });
   } catch (error) {
@@ -3458,7 +3458,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         })
       });
 
-      return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+      return interaction.editReply({ files: [], attachments: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
         components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
         embeds: [embed] });
     }
@@ -3503,7 +3503,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           .setPlaceholder('Select')
           .addOptions(options);
 
-        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], attachments: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(select), rowBack],
           embeds: [embed] });
       }
@@ -3529,7 +3529,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           })
         });
 
-        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], attachments: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
           embeds: [embed] });
       }
@@ -3560,7 +3560,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         })
       });
 
-      return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+      return interaction.editReply({ files: [], attachments: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
          components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
          embeds: [embed] });
     }
@@ -3594,7 +3594,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
           })
         });
 
-        return interaction.editReply({ files: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
+        return interaction.editReply({ files: [], attachments: [], content: (message && (message.startsWith('✅') || message.startsWith('❌'))) ? message : null,
           components: [new ActionRowBuilder().addComponents(selectMenu), rowBack],
           embeds: [embed] });
     }
@@ -3777,7 +3777,7 @@ export async function handleRevokeItemStart(interaction) {
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(cancelBtn, confirmBtn);
-    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item start');
   }
@@ -3851,7 +3851,7 @@ export async function handleRevokeItemConfirm(interaction) {
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(backBtn);
-    await interaction.editReply({ files: [], content: null, embeds: [successEmbed], components: [row] });
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [successEmbed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'revoke item confirm');
   }
@@ -4157,7 +4157,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
     await interaction.editReply({
       content: successHeader || null,
       embeds: [embed],
-      files: [],
+      files: [], attachments: [],
       components
     });
   } catch (error) {
@@ -4415,7 +4415,7 @@ export async function handleEditPackSelect(interaction, successHeader = null) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ files: [], content: successHeader || null, 
+    await interaction.editReply({ files: [], attachments: [], content: successHeader || null, 
       embeds: [embed], 
       components: [actionRow, backRow] });
   } catch (error) {
@@ -4452,7 +4452,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         .setColor('#95A5A6')
         .setDescription('No items found.');
 
-      return interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+      return interaction.editReply({ files: [], attachments: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
         embeds: [emptyEmbed] });
     }
@@ -4567,7 +4567,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       .setColor('#3498DB')
       .setTitle('Select Item(s) to Add to Pack');
 
-    await interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+    await interaction.editReply({ files: [], attachments: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
         embeds: [embedPrompt] });
   } catch (error) {
@@ -4688,7 +4688,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
         .setColor('#95A5A6')
         .setDescription('No items found.');
 
-      return interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+      return interaction.editReply({ files: [], attachments: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [emptyRow], 
         embeds: [emptyEmbed] });
     }
@@ -4726,7 +4726,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
       .setColor('#E74C3C')
       .setTitle('Select Item(s) to Remove from Pack');
 
-    await interaction.editReply({ files: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
+    await interaction.editReply({ files: [], attachments: [], content: (messageStr && (messageStr.startsWith('✅') || messageStr.startsWith('❌'))) ? messageStr : null,
         components: [row, rowBack],
         embeds: [embedPrompt] });
   } catch (error) {
@@ -4838,7 +4838,7 @@ export async function handleShopPostGate(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop post gate');
   }
@@ -5723,7 +5723,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
   try {
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) {
-      return interaction.editReply({ files: [], content: '❌ Loot box not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], attachments: [], content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
@@ -5876,7 +5876,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
     await interaction.editReply({
       content: null,
       embeds: [embed],
-      files: [],
+      files: [], attachments: [],
       components
     });
   } catch (error) {
@@ -6555,7 +6555,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
   try {
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) {
-      return interaction.editReply({ files: [], content: '❌ Loot box not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], attachments: [], content: '❌ Loot box not found.', embeds: [], components: [] });
     }
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
@@ -6586,7 +6586,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await interaction.editReply({ files: [], content: null, embeds: [embed], components: [row] });
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'loot box delete confirm view');
   }
