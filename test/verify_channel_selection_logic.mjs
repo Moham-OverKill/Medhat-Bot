@@ -175,9 +175,12 @@ for (let i = 0; i < 4; i++) {
     assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
     assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
     assert.strictEqual(menu.options[0].data.emoji.name, '💬', 'Option 1 emoji must be 💬');
+    assert(!menu.options[0].data.description, 'Option 1 must have no description');
     assert.strictEqual(menu.options[1].data.value, 'test', 'Option 2 must be Send Test Log');
+    assert(!menu.options[1].data.description, 'Option 2 must have no description');
     assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
     assert.strictEqual(menu.options[2].data.emoji.name, '❌', 'Option 3 emoji must be ❌');
+    assert(!menu.options[2].data.description, 'Option 3 must have no description');
     assert(!menu.data.placeholder.includes('<:'), 'Placeholder must not contain raw emoji IDs');
 }
 
@@ -281,9 +284,12 @@ for (let i = 0; i < 4; i++) {
     assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
     assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
     assert.strictEqual(menu.options[0].data.emoji.name, '💬', 'Option 1 emoji must be 💬');
+    assert(!menu.options[0].data.description, 'Option 1 must have no description');
     assert.strictEqual(menu.options[1].data.value, 'refresh', 'Option 2 must be Force Refresh');
+    assert(!menu.options[1].data.description, 'Option 2 must have no description');
     assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
     assert.strictEqual(menu.options[2].data.emoji.name, '❌', 'Option 3 emoji must be ❌');
+    assert(!menu.options[2].data.description, 'Option 3 must have no description');
     assert(!menu.data.placeholder.includes('<:'), 'Placeholder must not contain raw emoji IDs');
 }
 
@@ -302,9 +308,11 @@ assert(lastRenderedPayload.components[0].components[0].data.custom_id.startsWith
 assert.strictEqual(lastRenderedPayload.components[1].components[0].data.label, 'Back', 'Row 2 must be Back button');
 
 // Assign Channel
+sentFollowUps = [];
 mockLbInteraction.customId = 'lb_set_channel_coins';
 mockLbInteraction.values = [VALID_CHAN_1];
 await handleLeaderboardChannelSelect(mockLbInteraction);
+assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on channel assignment');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'DB must store coins_channel_id');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, 'lb_msg_2002', 'DB must store coins_message_id');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
@@ -316,17 +324,19 @@ sentFollowUps = [];
 mockLbInteraction.customId = 'lb_menu_coins';
 mockLbInteraction.values = ['refresh'];
 await handleLeaderboardMenuAction(mockLbInteraction);
-assert(sentFollowUps.length > 0, 'Must send ephemeral confirmation upon refresh');
-console.log('✅ Leaderboard Action (Force Refresh): Successfully triggers role and message synchronization.');
+assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on force refresh');
+console.log('✅ Leaderboard Action (Force Refresh): Successfully triggers role and message synchronization without sending feedback messages.');
 
 // Test Leaderboard Action: Disable
+sentFollowUps = [];
 mockLbInteraction.customId = 'lb_menu_coins';
 mockLbInteraction.values = ['disable'];
 await handleLeaderboardMenuAction(mockLbInteraction);
+assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on disable');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'DB coins_channel_id must be null');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB coins_message_id must be null');
 assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must show Not Set');
-console.log('✅ Leaderboard Action (Disable): Successfully deletes old Discord message and nullifies DB config.');
+console.log('✅ Leaderboard Action (Disable): Successfully deletes old Discord message and nullifies DB config without sending feedback messages.');
 
 console.log('--- ALL VERIFICATIONS PASSED SUCCESSFULLY ---');
 process.exit(0);
