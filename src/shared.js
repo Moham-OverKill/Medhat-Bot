@@ -542,7 +542,18 @@ export async function getCurrencyName(guildId) {
  * @returns {Promise<string>}
  */
 export async function getCurrencyEmoji(guildId) {
-  return COIN_EMOJI.forGuild(guildId);
+  if (!guildId) return DEFAULT_COIN_EMOJI;
+  if (emojiResolver) {
+    const customEmoji = emojiResolver(guildId);
+    if (customEmoji) return customEmoji;
+  }
+  try {
+    const { getGuildConfig } = await import('./storage/config.js');
+    const config = await getGuildConfig(guildId);
+    return config?.coin_emoji || DEFAULT_COIN_EMOJI;
+  } catch (_) {
+    return DEFAULT_COIN_EMOJI;
+  }
 }
 
 
