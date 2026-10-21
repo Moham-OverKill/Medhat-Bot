@@ -150,7 +150,9 @@ export async function showMainMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2, row3]
+        components: [row1, row2, row3],
+        files: [],
+        attachments: []
     });
 }
 
@@ -214,7 +216,9 @@ export async function showCoinsSubMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2],
+        files: [],
+        attachments: []
     });
 }
 
@@ -271,7 +275,9 @@ export async function showOtherSubMenu(interaction) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2],
+        files: [],
+        attachments: []
     });
 }
 

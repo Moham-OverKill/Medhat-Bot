@@ -142,7 +142,9 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
             embeds: [embed],
             components,
             flags: MessageFlags.Ephemeral,
-            content: ''
+            content: '',
+            files: [],
+            attachments: []
         };
 
         if (interaction.deferred || interaction.replied) {
