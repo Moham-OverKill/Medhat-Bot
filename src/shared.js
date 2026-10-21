@@ -215,6 +215,22 @@ export const RARITY_WEIGHTS = {
   common: 1
 };
 
+export const NUMERIC_RARITY_MAP = {
+  1: 'common',
+  2: 'uncommon',
+  3: 'rare',
+  4: 'epic',
+  5: 'legendary'
+};
+
+export function normalizeRarity(raw) {
+  if (raw === null || raw === undefined) return 'common';
+  if (typeof raw === 'number' || (!isNaN(raw) && NUMERIC_RARITY_MAP[raw])) {
+    raw = NUMERIC_RARITY_MAP[raw] || raw;
+  }
+  return String(raw || 'common').toLowerCase();
+}
+
 /**
  * Helper: Sort items strictly by:
  * 1- Rarity (Highest first: Mythic > Legendary > Epic > Rare > Uncommon > Common)
@@ -241,8 +257,8 @@ export async function sortItemsByRarity(items, guild) {
   // Sort: 1- Rarity, 2- Quantity, 3- A-Z, 4- ID
   sorted.sort((a, b) => {
     // 1- Rarity
-    const weightA = RARITY_WEIGHTS[String(a.rarity || 'common').toLowerCase()] ?? 1;
-    const weightB = RARITY_WEIGHTS[String(b.rarity || 'common').toLowerCase()] ?? 1;
+    const weightA = RARITY_WEIGHTS[normalizeRarity(a.rarity)] ?? 1;
+    const weightB = RARITY_WEIGHTS[normalizeRarity(b.rarity)] ?? 1;
     if (weightB !== weightA) {
       return weightB - weightA;
     }
@@ -305,8 +321,8 @@ export function sortInventoryItems(items, sortMode = 'date') {
 
     case 'rarity_asc':
       return copy.sort((a, b) => {
-        const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
-        const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
+        const weightA = RARITY_WEIGHTS[normalizeRarity(a.rarity)] ?? 1;
+        const weightB = RARITY_WEIGHTS[normalizeRarity(b.rarity)] ?? 1;
         if (weightA !== weightB) return weightA - weightB; // Lowest rarity first
         const nameA = String(a.name || '').trim();
         const nameB = String(b.name || '').trim();
@@ -318,8 +334,8 @@ export function sortInventoryItems(items, sortMode = 'date') {
     case 'rarity':
     case 'rarity_desc':
       return copy.sort((a, b) => {
-        const weightA = RARITY_WEIGHTS[(a.rarity || 'common').toLowerCase()] ?? 1;
-        const weightB = RARITY_WEIGHTS[(b.rarity || 'common').toLowerCase()] ?? 1;
+        const weightA = RARITY_WEIGHTS[normalizeRarity(a.rarity)] ?? 1;
+        const weightB = RARITY_WEIGHTS[normalizeRarity(b.rarity)] ?? 1;
         if (weightB !== weightA) return weightB - weightA; // Highest rarity first
         const nameA = String(a.name || '').trim();
         const nameB = String(b.name || '').trim();
@@ -651,7 +667,8 @@ export const RARITY_EMOJIS = {
  */
 export function getItemRarityEmoji(item) {
   if (!item) return RARITY_EMOJIS.common;
-  const rarity = (typeof item === 'string' ? item : (item.rarity || 'common')).toLowerCase();
+  const raw = typeof item === 'string' ? item : item.rarity;
+  const rarity = normalizeRarity(raw);
   return RARITY_EMOJIS[rarity] || RARITY_EMOJIS.common;
 }
 
