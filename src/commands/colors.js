@@ -191,7 +191,8 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     if (currentPage > 1) {
       removeOptions.push({
         label: 'Previous',
-        value: `page_${currentPage - 1}`
+        value: `page_${currentPage - 1}`,
+        emoji: '◀️'
       });
     }
 
@@ -210,7 +211,8 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
     if (currentPage < totalPages) {
       removeOptions.push({
         label: 'Next',
-        value: `page_${currentPage + 1}`
+        value: `page_${currentPage + 1}`,
+        emoji: '▶️'
       });
     }
 
