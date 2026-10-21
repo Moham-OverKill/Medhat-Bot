@@ -2728,31 +2728,15 @@ export async function handleCategoryModalSubmit(interaction) {
       
       if (res.rowCount > 0) {
         sendLog(interaction.guild, 'shop', 'blue', '📂 Category Updated', `Admin **<@${interaction.user.id}>** updated category **${name}** (ID: ${categoryId})`);
-        
-        // Re-render dashboard with success header
-        const mock = {
-          deferred: true, replied: false,
-          deferUpdate: async () => {},
-          editReply: interaction.editReply.bind(interaction),
-          followUp: interaction.followUp.bind(interaction),
-          customId: `shop_cat_manage_${categoryId}`,
-          values: [String(categoryId)],
-          isAnySelectMenu: () => false,
-          guildId: interaction.guildId,
-          user: interaction.user,
-          guild: interaction.guild
-        };
-        await handleEditCategorySelect(mock, `✅ Category **${name}** updated!`);
+        await renderManageCategoryScreen(interaction, categoryId, { from: 'list', successHeader: `✅ Category **${name}** updated!` });
       } else {
         await interaction.followUp({ content: '❌ Category not found.', flags: MessageFlags.Ephemeral });
       }
     } else {
       // ========== ADD FLOW ==========
-      await addShopCategory(interaction.guildId, name, 0, type);
+      const newCat = await addShopCategory(interaction.guildId, name, 0, type);
       sendLog(interaction.guild, 'shop', 'green', '📂 Category Created', `Admin **<@${interaction.user.id}>** created shop category **${name}**`);
-      
-      await handleShopSetup(interaction);
-      await interaction.followUp({ content: `✅ Category **${name}** created!`, flags: MessageFlags.Ephemeral });
+      await renderManageCategoryScreen(interaction, newCat.id, { from: 'create', successHeader: `✅ Category **${name}** created!` });
     }
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop category modal submit');
@@ -2801,33 +2785,42 @@ export async function handleEditCategoryStart(interaction, page = 1) {
   }
 }
 
-export async function handleEditCategorySelect(interaction, successHeader = null) {
+export async function renderManageCategoryScreen(interaction, categoryId, options = {}) {
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-    // Determine categoryId: from select menu (values[0]) or from back button (customId)
-    let categoryId;
-    if (interaction.isAnySelectMenu()) {
-      categoryId = interaction.values[0];
-    } else {
-      categoryId = interaction.customId.split('_').pop();
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
     }
 
-    if (categoryId.startsWith('cat_edit_rename_page_')) {
-      const page = parseInt(categoryId.replace('cat_edit_rename_page_', ''), 10) || 1;
-      return handleEditCategoryStart(interaction, page);
-    }
+    const {
+      addPage = 1,
+      removePage = 1,
+      from = 'list',
+      successHeader = null
+    } = options;
 
-    const categories = await getShopCategories(interaction.guildId);
-    const category = categories.find(c => c.id.toString() === categoryId);
+    const guildId = interaction.guildId;
+    const categories = await getShopCategories(guildId);
+    const category = categories.find(c => c.id.toString() === String(categoryId));
 
     if (!category) {
       return interaction.editReply({ files: [], attachments: [], content: '❌ Category not found.', embeds: [], components: [] });
     }
 
-    // NEW: Fetch items to show count in dashboard
-    const items = await getShopItems(interaction.guildId, parseInt(categoryId), 'price', true);
-    const count = items.length;
+    // Query all shop items for this guild
+    const allItems = await getShopItems(guildId, null, 'name', true);
+
+    // Filter items in this category vs standalone
+    const catItems = allItems.filter(i =>
+      i.category_id === parseInt(categoryId) && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box'
+    );
+    const standaloneItems = allItems.filter(i =>
+      !i.category_id && !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box'
+    );
+
+    const sortedCatItems = await sortItemsByRarity(catItems, interaction.guild);
+    const sortedStandalone = await sortItemsByRarity(standaloneItems, interaction.guild);
+
+    const count = sortedCatItems.length;
     const typeLabel = category.category_type === 1 ? 'Single (Swap)' : 'Multi (Stack)';
 
     const embed = new EmbedBuilder()
@@ -2835,23 +2828,67 @@ export async function handleEditCategorySelect(interaction, successHeader = null
       .setDescription(`Manage items and settings for this category.\n\n**Type:** \`${typeLabel}\`\n**Items:** \`${count}\``)
       .setColor('#9B59B6');
 
-    const actionRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_cat_add_${categoryId}`)
-          .setLabel('Add Items')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`shop_cat_remove_${categoryId}`)
-          .setLabel('Remove Items')
-          .setEmoji('➖')
-          .setStyle(ButtonStyle.Danger)
-      );
+    const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+    // 1. Select Menu 1: Add Items
+    let rowAdd;
+    if (sortedStandalone.length > 0) {
+      const pageNum = typeof addPage === 'number' ? addPage : (parseInt(addPage, 10) || 1);
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: sortedStandalone,
+        page: pageNum,
+        customId: `shop_cat_add_item_${categoryId}_${pageNum}_${removePage}_${from}_${nonce}`,
+        placeholder: `➕ Add Items (${sortedStandalone.length} available)`,
+        pageNavPrefix: `cat_add_nav_`,
+        pageSize: 23,
+        mapOption: i => ({
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
+          value: i.id.toString(),
+          emoji: getItemRarityEmoji(i)
+        })
+      });
+      rowAdd = new ActionRowBuilder().addComponents(selectMenu);
+    } else {
+      const emptyAdd = new StringSelectMenuBuilder()
+        .setCustomId(`shop_cat_add_empty_${nonce}`)
+        .setPlaceholder('➕ No standalone items to add')
+        .setDisabled(true)
+        .addOptions([{ label: 'No standalone items available', value: 'none' }]);
+      rowAdd = new ActionRowBuilder().addComponents(emptyAdd);
+    }
+
+    // 2. Select Menu 2: Remove Items
+    let rowRemove;
+    if (sortedCatItems.length > 0) {
+      const pageNum = typeof removePage === 'number' ? removePage : (parseInt(removePage, 10) || 1);
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items: sortedCatItems,
+        page: pageNum,
+        customId: `shop_cat_remove_item_${categoryId}_${addPage}_${pageNum}_${from}_${nonce}`,
+        placeholder: `➖ Remove Items (${sortedCatItems.length} in category)`,
+        pageNavPrefix: `cat_remove_nav_`,
+        pageSize: 23,
+        mapOption: i => ({
+          label: ((i.name && i.name.trim().length > 0) ? i.name : `Unnamed Item #${i.id}`).slice(0, 100),
+          value: i.id.toString(),
+          emoji: getItemRarityEmoji(i)
+        })
+      });
+      rowRemove = new ActionRowBuilder().addComponents(selectMenu);
+    } else {
+      const emptyRemove = new StringSelectMenuBuilder()
+        .setCustomId(`shop_cat_remove_empty_${nonce}`)
+        .setPlaceholder('➖ No items in this category')
+        .setDisabled(true)
+        .addOptions([{ label: 'No items in this category', value: 'none' }]);
+      rowRemove = new ActionRowBuilder().addComponents(emptyRemove);
+    }
+
+    // 3. Button Row: Back and Edit
+    const backCustomId = from === 'create' ? 'shop_admin_home' : 'shop_edit_category_start';
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('shop_edit_category_start') // Back to list
+        .setCustomId(backCustomId)
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary),
@@ -2862,9 +2899,119 @@ export async function handleEditCategorySelect(interaction, successHeader = null
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ files: [], attachments: [], content: successHeader || null, embeds: [embed], components: [actionRow, backRow] });
+    await interaction.editReply({
+      files: [],
+      attachments: [],
+      content: successHeader || null,
+      embeds: [embed],
+      components: [rowAdd, rowRemove, backRow]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop manage category');
+  }
+}
+
+export async function handleEditCategorySelect(interaction, successHeader = null, options = {}) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+
+    // Determine categoryId: from select menu (values[0]) or from customId
+    let categoryId;
+    if (interaction.isAnySelectMenu()) {
+      categoryId = interaction.values[0];
+    } else if (interaction.customId) {
+      categoryId = interaction.customId.split('_').pop();
+    }
+
+    if (categoryId && categoryId.startsWith('cat_edit_rename_page_')) {
+      const page = parseInt(categoryId.replace('cat_edit_rename_page_', ''), 10) || 1;
+      return handleEditCategoryStart(interaction, page);
+    }
+
+    return renderManageCategoryScreen(interaction, categoryId, {
+      from: options.from || 'list',
+      successHeader
+    });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop edit category select');
+  }
+}
+
+export async function handleCategoryAddSelect(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const parts = interaction.customId.split('_');
+    // customId format: shop_cat_add_item_${categoryId}_${addPage}_${removePage}_${from}_${nonce}
+    const categoryId = parts[4];
+    const addPage = parseInt(parts[5], 10) || 1;
+    const removePage = parseInt(parts[6], 10) || 1;
+    const from = parts[7] || 'list';
+
+    const selection = interaction.values[0];
+    if (selection.startsWith('cat_add_nav_')) {
+      const nextAddPage = parseInt(selection.replace('cat_add_nav_', ''), 10) || 1;
+      return renderManageCategoryScreen(interaction, categoryId, { addPage: nextAddPage, removePage, from });
+    }
+
+    const itemId = parseInt(selection, 10);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (item && item.category_id !== null && item.category_id !== undefined) {
+      return interaction.followUp({
+        content: '❌ This item is already in a category. Remove it first.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    await updateShopItem(itemId, { category_id: parseInt(categoryId) }, interaction.guildId);
+
+    const categories = await getShopCategories(interaction.guildId);
+    const category = categories.find(c => c.id.toString() === String(categoryId));
+    sendLog(interaction.guild, 'shop', 'blue', '📂 Item Added to Category', `Admin **<@${interaction.user.id}>** added item **${item?.name || itemId}** to category **${category?.name || 'Unknown'}**`);
+
+    return renderManageCategoryScreen(interaction, categoryId, {
+      addPage,
+      removePage,
+      from,
+      successHeader: `✅ Added **${item?.name || 'Item'}** to **${category?.name || 'Category'}**.`
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop category add select');
+  }
+}
+
+export async function handleCategoryRemoveSelect(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    const parts = interaction.customId.split('_');
+    // customId format: shop_cat_remove_item_${categoryId}_${addPage}_${removePage}_${from}_${nonce}
+    const categoryId = parts[4];
+    const addPage = parseInt(parts[5], 10) || 1;
+    const removePage = parseInt(parts[6], 10) || 1;
+    const from = parts[7] || 'list';
+
+    const selection = interaction.values[0];
+    if (selection.startsWith('cat_remove_nav_')) {
+      const nextRemovePage = parseInt(selection.replace('cat_remove_nav_', ''), 10) || 1;
+      return renderManageCategoryScreen(interaction, categoryId, { addPage, removePage: nextRemovePage, from });
+    }
+
+    const itemId = parseInt(selection, 10);
+    const item = await getShopItem(itemId, interaction.guildId);
+
+    await updateShopItem(itemId, { category_id: null }, interaction.guildId);
+
+    const categories = await getShopCategories(interaction.guildId);
+    const category = categories.find(c => c.id.toString() === String(categoryId));
+    sendLog(interaction.guild, 'shop', 'blue', '📂 Item Removed from Category', `Admin **<@${interaction.user.id}>** removed item **${item?.name || itemId}** from category **${category?.name || 'Unknown'}**`);
+
+    return renderManageCategoryScreen(interaction, categoryId, {
+      addPage,
+      removePage,
+      from,
+      successHeader: `✅ Removed **${item?.name || 'Item'}** from **${category?.name || 'Category'}**.`
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop category remove select');
   }
 }
 
