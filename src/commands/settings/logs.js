@@ -359,3 +359,17 @@ export async function handleLogDisable(interaction) {
         return handleInteractionError(interaction, error, 'Log Disable');
     }
 }
+
+
+/**
+ * Handle category selection (backward compatibility)
+ */
+export async function handleLogCategorySelect(interaction) {
+    try {
+        const selectedId = interaction.values?.[0] || null;
+        return handleLogsSettings(interaction, selectedId);
+    } catch (error) {
+        sysError('Log category select failed', error, { user: interaction.user?.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Log Category Select');
+    }
+}
