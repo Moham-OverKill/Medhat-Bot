@@ -1651,20 +1651,6 @@ export async function handleAdminGiveModal(interaction) {
             `**Admin:** ${adminLogName} (via User Inventory Settings)`
         );
 
-        // Safe Discord role assignment for role items if applicable
-        if (targetMember && roleId && !roleId.startsWith('LOOT_BOX_') && !roleId.startsWith('CHEST_')) {
-            const roleIds = roleId.split(/[,\s]+/);
-            const botMember = interaction.guild.members.me;
-            for (const rId of roleIds) {
-                const role = interaction.guild.roles.cache.get(rId);
-                if (role && botMember && role.comparePositionTo(botMember.roles.highest) < 0) {
-                    await targetMember.roles.add(role).catch(err => {
-                        sysError('Role Assignment Failed on Admin Give', err, { user: targetUserId, roleId: rId });
-                    });
-                }
-            }
-        }
-
         // Return admin directly to the user's updated inventory screen
         return showUserItems(interaction, targetUserId);
 
