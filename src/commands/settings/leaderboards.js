@@ -20,10 +20,10 @@ export async function getCategories(guildId) {
     const coinName = await getCurrencyName(guildId);
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
     return {
-        activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
-        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
-        streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
-        level: { id: 'level', name: 'Highest Level', emoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
+        activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', menuEmoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
+        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '💰', menuEmoji: '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
+        streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', menuEmoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
+        level: { id: 'level', name: 'Highest Level', emoji: '⭐', menuEmoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
     };
 }
 
@@ -90,15 +90,20 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
             for (const cat of Object.values(categories)) {
                 const chanId = config[cat.dbId];
+                let currentChanText = 'None';
+                if (chanId) {
+                    const targetChan = interaction.guild?.channels?.cache?.get(chanId) || (await interaction.guild?.channels?.fetch(chanId).catch(() => null));
+                    currentChanText = targetChan?.name ? `#${targetChan.name}` : 'Configured';
+                }
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`lb_menu_${cat.id}`)
-                    .setPlaceholder(`${cat.emoji} ${cat.name}...`)
+                    .setPlaceholder(`${cat.menuEmoji || '📊'} ${cat.name}...`)
                     .addOptions([
                         {
                             label: 'Select A Channel',
                             value: 'channel',
-                            emoji: '📌',
-                            description: chanId ? `Currently: <#${chanId}>` : 'Assign a text channel for this leaderboard'
+                            emoji: '💬',
+                            description: chanId ? `Currently: ${currentChanText}` : 'Assign a text channel for this leaderboard'
                         },
                         {
                             label: 'Force Refresh',
@@ -109,7 +114,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                         {
                             label: 'Disable',
                             value: 'disable',
-                            emoji: '✖️',
+                            emoji: '❌',
                             description: 'Turn off this leaderboard'
                         }
                     ]);

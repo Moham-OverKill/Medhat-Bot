@@ -106,6 +106,11 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
             for (const cat of Object.values(LOG_CATEGORIES)) {
                 const chanId = config[cat.dbId];
+                let currentChanText = 'None';
+                if (chanId) {
+                    const targetChan = interaction.guild?.channels?.cache?.get(chanId) || (await interaction.guild?.channels?.fetch(chanId).catch(() => null));
+                    currentChanText = targetChan?.name ? `#${targetChan.name}` : 'Configured';
+                }
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`logs_menu_${cat.id}`)
                     .setPlaceholder(`${cat.emoji} ${cat.name} Logs...`)
@@ -113,8 +118,8 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
                         {
                             label: 'Select A Channel',
                             value: 'channel',
-                            emoji: '📌',
-                            description: chanId ? `Currently: <#${chanId}>` : 'Assign a text channel for this log category'
+                            emoji: '💬',
+                            description: chanId ? `Currently: ${currentChanText}` : 'Assign a text channel for this log category'
                         },
                         {
                             label: 'Send Test Log',
@@ -125,7 +130,7 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
                         {
                             label: 'Disable',
                             value: 'disable',
-                            emoji: '✖️',
+                            emoji: '❌',
                             description: 'Turn off this log category'
                         }
                     ]);
