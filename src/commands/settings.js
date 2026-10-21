@@ -226,66 +226,6 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
- * Show the Other Sub-Menu (Customize, Organize, Logs, Leaderboards, Economy)
- */
-export async function showOtherSubMenu(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle('Other Settings')
-        .setDescription('Configure additional server utilities.')
-        .setColor(0x2F3136);
-
-    // Row 1: Customize | Organize | Logs
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_customize')
-            .setLabel('Customize')
-            .setEmoji('✨')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_organize')
-            .setLabel('Organize')
-            .setEmoji('🧹')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Row 2: Back | Leaderboards | Economy
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(isBackDisabled(interaction)),
-        new ButtonBuilder()
-            .setCustomId('settings_leaderboards')
-            .setLabel('Leaderboards')
-            .setEmoji('📊')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_economy')
-            .setLabel('Economy')
-            .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    const responseMethod = (interaction.deferred || interaction.replied)
-        ? 'editReply'
-        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-    await interaction[responseMethod]({
-        content: '',
-        embeds: [embed],
-        components: [row1, row2],
-        files: [],
-        attachments: []
-    });
-}
-
-/**
  * Open the Bot Customization modal directly (modal cannot be deferred)
  * @param {import('discord.js').Interaction} interaction 
  */
