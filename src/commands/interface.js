@@ -24,7 +24,7 @@ import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
 import { handleInventoryButton, getCoinThumbnailUrl } from './bank.js';
 import { isMemberBooster } from './colors.js';
-import { COIN_EMOJI, COIN_NAME, getCurrencyName, safeSetButtonEmoji, getUserDisplayName, getUserLogName, isBackDisabled } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, getCurrencyEmoji, safeSetButtonEmoji, getUserDisplayName, getUserLogName, isBackDisabled } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -537,7 +537,7 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 8
 
   targetCtx.save();
   // Multi-ring concentric dilation with subpixel floating-point anti-aliased coordinates
-  const stepSize = Math.max(1.8, strokeWidth / 4);
+  const stepSize = Math.max(1.2, strokeWidth / 4);
   for (let r = stepSize; r <= strokeWidth; r += stepSize) {
     const ringSteps = Math.max(14, Math.ceil(2 * Math.PI * r));
     for (let i = 0; i < ringSteps; i++) {
@@ -686,7 +686,7 @@ function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8
   silCtx.fillRect(0, 0, tempW, tempH);
 
   targetCtx.save();
-  const stepSize = Math.max(1.8, strokeWidth / 4);
+  const stepSize = Math.max(1.2, strokeWidth / 4);
   for (let r = stepSize; r <= strokeWidth; r += stepSize) {
     const ringSteps = Math.max(14, Math.ceil(2 * Math.PI * r));
     for (let i = 0; i < ringSteps; i++) {
@@ -728,13 +728,8 @@ async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#00000
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji / Icon — prominent in center with thick, smooth black outline
-  // Optical sizing: circular and coin assets have lower visual density than square glyphs; apply 1.06x optical boost and balanced center
+  // 1. Emoji / Icon — prominent in center with crisp, refined black outline and clean spacing
   const isCoinSlot = meta.id === 'coins';
-  const opticalScale = isCoinSlot ? 1.06 : 1.0;
-  const emojiSize = Math.round(cardH * 0.60 * opticalScale);
-  const emojiStrokeWidth = Math.max(7, Math.round(cardH * 0.030));
-  const emojiCenterY = isCoinSlot ? (y + cardH * 0.43) : (y + cardH * 0.44);
   const rawEmoji = meta.emoji || '⭐';
 
   const customUrl = parseEmojiImageUrl(rawEmoji);
@@ -743,7 +738,13 @@ async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#00000
     customData = await fetchEmojiImageSafe(customUrl);
   }
 
-  if (customData && customData.img) {
+  const isCustomImage = Boolean(customData && customData.img);
+  // Custom images are trimmed to non-transparent bounds (100% visual density); scale slightly lower than font glyphs
+  const emojiSize = isCustomImage ? Math.round(cardH * 0.46) : Math.round(cardH * 0.50);
+  const emojiStrokeWidth = Math.max(3, Math.round(cardH * 0.016));
+  const emojiCenterY = y + Math.round(cardH * 0.41);
+
+  if (isCustomImage) {
     drawImageWithStroke(ctx, customData.img, x + cardW / 2, emojiCenterY, emojiSize, emojiStrokeWidth, customData.trim);
   } else {
     // If it was supposed to be a custom emoji but fetch failed or is unparseable text, fallback to standard glyph
@@ -1344,8 +1345,8 @@ export const ADMIN_SHORTCUT_ITEMS = getAdminShortcutItems();
  */
 export async function generateAdminInterfaceBanner(shortcutOrder = null, options = {}) {
   const guildId = options?.guildId || null;
-  const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'COINS';
-  const coinEmoji = guildId ? COIN_EMOJI.forGuild(guildId) : '🪙';
+  const coinName = options?.coinName || (guildId ? await getCurrencyName(guildId) : 'COINS');
+  const coinEmoji = options?.coinEmoji || (guildId ? await getCurrencyEmoji(guildId) : '🪙');
 
   const normalized = normalizeAdminShortcutOrder(shortcutOrder);
   const slotColors = normalizeSlotColors(
@@ -1419,8 +1420,8 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
       if (meta) {
         const itemMeta = { ...meta };
         if (item.id === 'coins') {
-          itemMeta.label = coinName.toUpperCase();
-          itemMeta.emoji = coinEmoji;
+          itemMeta.label = (coinName || 'Coins').toUpperCase();
+          itemMeta.emoji = coinEmoji || '🪙';
         }
         await drawShortcutCard(ctx, x, y, cardW, cardH, itemMeta, bgColor);
       }
@@ -1967,7 +1968,7 @@ export async function showAdminInterfaceSetup(interaction) {
 
       if (meta && meta.emoji) {
         if (slotId === 'coins') {
-          const coinEmoji = COIN_EMOJI.forGuild(guildId);
+          const coinEmoji = await getCurrencyEmoji(guildId);
           safeSetButtonEmoji(button, coinEmoji, interaction.guild, '🪙');
         } else {
           button.setEmoji(meta.emoji);
@@ -2018,7 +2019,8 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
   const currentId = slots[slotIndex];
   const currentMeta = ADMIN_SHORTCUT_REGISTRY[currentId];
   const coinName = await getCurrencyName(guildId);
-  const currentLabel = currentMeta ? `${currentMeta.emoji} ${currentId === 'coins' ? coinName : currentMeta.name}` : 'None';
+  const coinEmoji = await getCurrencyEmoji(guildId);
+  const currentLabel = currentMeta ? `${currentId === 'coins' ? coinEmoji : currentMeta.emoji} ${currentId === 'coins' ? coinName : currentMeta.name}` : 'None';
 
   const currentColorHex = slotColors[slotIndex] || '#000000';
   const colorMeta = getCardColorMeta(currentColorHex);
@@ -2044,7 +2046,7 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
       label: item.id === 'coins' ? coinName : item.name,
       value: item.id,
       description: item.description,
-      emoji: item.emoji,
+      emoji: item.id === 'coins' ? coinEmoji : item.emoji,
       default: item.id === currentId
     })),
     {
