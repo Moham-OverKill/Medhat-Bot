@@ -174,8 +174,11 @@ for (let i = 0; i < 4; i++) {
     assert(menu.data.custom_id.startsWith('logs_menu_'), `Row ${i + 1} must be a logs_menu_ select menu`);
     assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
     assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
+    assert.strictEqual(menu.options[0].data.emoji.name, '💬', 'Option 1 emoji must be 💬');
     assert.strictEqual(menu.options[1].data.value, 'test', 'Option 2 must be Send Test Log');
     assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
+    assert.strictEqual(menu.options[2].data.emoji.name, '❌', 'Option 3 emoji must be ❌');
+    assert(!menu.data.placeholder.includes('<:'), 'Placeholder must not contain raw emoji IDs');
 }
 
 // Verify Row 5 has ONLY the Back button
@@ -277,8 +280,11 @@ for (let i = 0; i < 4; i++) {
     assert(menu.data.custom_id.startsWith('lb_menu_'), `Row ${i + 1} must be an lb_menu_ select menu`);
     assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
     assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
+    assert.strictEqual(menu.options[0].data.emoji.name, '💬', 'Option 1 emoji must be 💬');
     assert.strictEqual(menu.options[1].data.value, 'refresh', 'Option 2 must be Force Refresh');
     assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
+    assert.strictEqual(menu.options[2].data.emoji.name, '❌', 'Option 3 emoji must be ❌');
+    assert(!menu.data.placeholder.includes('<:'), 'Placeholder must not contain raw emoji IDs');
 }
 
 // Verify Row 5 has ONLY the Back button
