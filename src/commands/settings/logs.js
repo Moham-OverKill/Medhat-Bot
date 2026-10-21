@@ -92,7 +92,7 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
             const channelSelect = new ChannelSelectMenuBuilder()
                 .setCustomId(`logs_set_channel_${active.id}`)
                 .setPlaceholder(`Select a channel for ${active.name}...`)
-                .setChannelTypes(ChannelType.GuildText);
+                .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
             components.push(new ActionRowBuilder().addComponents(channelSelect));
 
             // Row 2: Single Back button returning to 4-menu view
@@ -259,8 +259,8 @@ export async function handleLogMenuAction(interaction) {
 export async function handleLogChannelSelect(interaction) {
     try {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-        const customId = interaction.customId; // logs_set_channel_CATEGORY
-        const category = customId.replace('logs_set_channel_', '');
+        const customId = interaction.customId; // logs_set_channel_CATEGORY or logs_assign_CATEGORY
+        const category = customId.replace('logs_set_channel_', '').replace('logs_assign_', '');
         const cat = LOG_CATEGORIES[category];
         if (!cat) return;
 
@@ -325,7 +325,7 @@ export async function handleLogDisable(interaction) {
         const customId = interaction.customId;
         const target = customId.replace('logs_disable_', '');
 
-        if (target === 'all') {
+        if (target === 'all' || target === 'btn') {
             await setGuildConfig(guildId, {
                 log_eco_channel_id: null,
                 log_inv_channel_id: null,
