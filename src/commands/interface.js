@@ -121,10 +121,10 @@ export const SHORTCUT_REGISTRY = {
   },
   items: {
     id: 'items',
-    name: 'Shop',
-    label: 'SHOP',
+    name: 'Items',
+    label: 'ITEMS',
     description: 'Browse items available in the shop',
-    emoji: '🛒',
+    emoji: '📦',
     buttonCustomId: 'hub_btn_items',
     tileFile: 'items.png'
   },
@@ -2753,7 +2753,7 @@ export async function handleHubShortcut(interaction) {
       return handleBankCommand(interaction);
     }
 
-    // 8. Shop Items Shortcut (🛒)
+    // 8. Items Shortcut (📦)
     if (customId === 'hub_btn_items') {
       const { handleItemsCommand } = await import('./items.js');
       return handleItemsCommand(interaction);
