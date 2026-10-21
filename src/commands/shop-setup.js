@@ -254,10 +254,10 @@ export async function handleShopSetup(interaction) {
 
     const lootBoxCatName = await getLootBoxCategoryName(guildId);
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-    const categoriesCount = parseInt(categoriesResult.rows[0].count);
-    const packCount = parseInt(itemsResult.rows[0].pack_count || 0);
-    const itemsCount = parseInt(itemsResult.rows[0].item_count || 0);
-    const lootBoxesCount = parseInt(itemsResult.rows[0].lootbox_count || 0);
+    const categoriesCount = parseInt(categoriesResult.rows[0]?.count || 0);
+    const packCount = parseInt(itemsResult.rows[0]?.pack_count || 0);
+    const itemsCount = parseInt(itemsResult.rows[0]?.item_count || 0);
+    const lootBoxesCount = parseInt(itemsResult.rows[0]?.lootbox_count || 0);
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
