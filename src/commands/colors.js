@@ -133,13 +133,48 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
 
   const components = [];
 
-  // Row 1: Add Role
+  // Row 1: Tabs (Default - Boosters)
+  const tabsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('colors_tab_normal')
+      .setLabel('Default')
+      .setEmoji('🎨')
+      .setStyle(isBoosterTab ? ButtonStyle.Secondary : ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('colors_tab_booster')
+      .setLabel('Boosters')
+      .setEmoji('🚀')
+      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  components.push(tabsRow);
+
+  // Row 2: Pagination & Actions (Arrows - Create)
+  const controlsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`colors_page_prev_${type}_${currentPage}`)
+      .setEmoji('◀️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(currentPage <= 1),
+    new ButtonBuilder()
+      .setCustomId(`colors_page_next_${type}_${currentPage}`)
+      .setEmoji('▶️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(currentPage >= totalPages),
+    new ButtonBuilder()
+      .setCustomId(`colors_create_${type}`)
+      .setLabel('Create Panel')
+      .setEmoji('🖼️')
+      .setStyle(ButtonStyle.Success)
+  );
+  components.push(controlsRow);
+
+  // Row 3: Add Role
   const addSelector = new RoleSelectMenuBuilder()
     .setCustomId(`colors_add_${type}_${currentPage}`)
     .setPlaceholder(`➕ Add a color to the ${isBoosterTab ? 'Boosters' : 'Default'} list...`);
   components.push(new ActionRowBuilder().addComponents(addSelector));
 
-  // Row 2: Remove Role (Select menu showing only configured colors)
+  // Row 4: Remove Role (Select menu showing only configured colors)
   const removeSelector = new StringSelectMenuBuilder()
     .setCustomId(`colors_remove_${type}_${currentPage}`)
     .setPlaceholder(`➖ Remove a color from the ${isBoosterTab ? 'Boosters' : 'Default'} list...`);
@@ -184,46 +219,16 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
 
   components.push(new ActionRowBuilder().addComponents(removeSelector));
 
-  // Row 3: Tabs
-  const tabsRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('colors_tab_normal')
-      .setLabel('Default')
-      .setEmoji('🎨')
-      .setStyle(isBoosterTab ? ButtonStyle.Secondary : ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('colors_tab_booster')
-      .setLabel('Boosters')
-      .setEmoji('🚀')
-      .setStyle(isBoosterTab ? ButtonStyle.Primary : ButtonStyle.Secondary)
-  );
-  components.push(tabsRow);
-
-  // Row 4: Navigation / Actions (Arrows next to Back)
-  const actionRow = new ActionRowBuilder().addComponents(
+  // Row 5: Back Button
+  const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_back')
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(isBackDisabled(interaction)),
-    new ButtonBuilder()
-      .setCustomId(`colors_page_prev_${type}_${currentPage}`)
-      .setEmoji('◀️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage <= 1),
-    new ButtonBuilder()
-      .setCustomId(`colors_page_next_${type}_${currentPage}`)
-      .setEmoji('▶️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage >= totalPages),
-    new ButtonBuilder()
-      .setCustomId(`colors_create_${type}`)
-      .setLabel('Create Panel')
-      .setEmoji('🖼️')
-      .setStyle(ButtonStyle.Success)
+      .setDisabled(isBackDisabled(interaction))
   );
-  components.push(actionRow);
+  components.push(backRow);
 
   // Determine the correct response method based on the interaction state
   const responseMethod = (interaction.deferred || interaction.replied)
