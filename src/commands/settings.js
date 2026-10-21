@@ -99,7 +99,7 @@ export async function showMainMenu(interaction) {
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_users')
-            .setLabel('Users')
+            .setLabel('Moderate')
             .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
@@ -122,14 +122,14 @@ export async function showMainMenu(interaction) {
     // Row 3: Leaderboard / Embed / Logs / Economy
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('settings_leaderboards')
-            .setLabel('Leaderboard')
-            .setEmoji('📊')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
             .setCustomId('settings_embed')
             .setLabel('Embed')
             .setEmoji('📰')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('settings_leaderboards')
+            .setLabel('Leaderboard')
+            .setEmoji('📊')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_logs')
