@@ -20,7 +20,7 @@ import {
   getAllColorRoles,
   setBoosterRole
 } from '../storage/colors.js';
-import { sanitizeError, getUserDisplayName, getUserLogName, hasAnyDangerousPermission } from '../shared.js';
+import { sanitizeError, getUserDisplayName, getUserLogName, hasAnyDangerousPermission, isBackDisabled } from '../shared.js';
 import { logServerEvent, sendLog, sendBulkLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 // Helper to check if a member is a server booster
@@ -215,7 +215,8 @@ export async function showColorPanel(interaction, type = 'normal', page = 1) {
       .setCustomId('settings_back')
       .setLabel('Back')
       .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(isBackDisabled(interaction)),
     new ButtonBuilder()
       .setCustomId(`colors_create_${type}`)
       .setLabel('Create Panel')

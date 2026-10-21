@@ -14,7 +14,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { sendLog, sysLog, sysError } from '../../utils/logger.js';
-import { getUserLogName } from '../../shared.js';
+import { getUserLogName, isBackDisabled } from '../../shared.js';
 import { invalidateFilterCache } from '../../middleware/organize.js';
 import { createErrorEmbed } from '../../utils/errors.js';
 
@@ -321,14 +321,14 @@ async function handleChannelToggle(interaction, filterKey) {
 }
 
 /**
- * Render the main Organize Hub
- * Row 1: [Filters] [Emojis] [Forums] [Interface]
+ * Render the main Auto Mod Hub (formerly Organize)
+ * Row 1: [Filters] [Emojis] [Forums]
  * Row 2: [Back]
  */
 export async function showOrganizeMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('Organize')
-        .setDescription('Manage server channels, automation filters, and interface hubs.')
+        .setTitle('Auto Mod')
+        .setDescription('Manage server channels, automation filters, blacklisted emojis, and forum rules.')
         .setColor(0x2B2D31);
 
     const row1 = new ActionRowBuilder().addComponents(
@@ -346,11 +346,6 @@ export async function showOrganizeMenu(interaction) {
             .setCustomId('organize_forums')
             .setLabel('Forums')
             .setEmoji('📁')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('organize_interface')
-            .setLabel('Interface')
-            .setEmoji('🖥️')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -360,6 +355,7 @@ export async function showOrganizeMenu(interaction) {
             .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction))
     );
 
     const responseMethod = (interaction.deferred || interaction.replied)
