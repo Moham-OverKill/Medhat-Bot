@@ -286,6 +286,24 @@ keepAliveServer = createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && (req.url === '/health' || req.url === '/status')) {
+    const wsStatusMap = ['READY', 'CONNECTING', 'RECONNECTING', 'IDLE', 'NEARLY', 'DISCONNECTED', 'WAITING_FOR_GUILDS', 'IDENTIFYING', 'RESUMING'];
+    const payload = {
+      status: client.isReady() ? 'healthy' : 'starting',
+      version: appVersion,
+      commit: shortCommit,
+      ready: client.isReady(),
+      wsStatus: wsStatusMap[client.ws?.status] || client.ws?.status,
+      ping: client.ws?.ping ?? -1,
+      guilds: client.guilds?.cache?.size || 0,
+      uptime: Math.round(process.uptime()),
+      timestamp: new Date().toISOString()
+    };
+    res.writeHead(client.isReady() ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('ok');
 });
@@ -298,6 +316,7 @@ keepAliveServer.on('error', (error) => {
 keepAliveServer.listen(keepalivePort, '0.0.0.0', () => {
   depsState.keepalive = `0.0.0.0:${keepalivePort}`;
   depsState.platform = os.platform();
+  sysLog('Keepalive Server Listening', { detail: `Port: ${keepalivePort}` });
   tryEmitDeps();
 });
 
@@ -1017,10 +1036,44 @@ client.on('guildCreate', async (guild) => {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
+client.rest.on('rateLimited', (info) => {
+  sysLog('Discord REST Rate Limited', {
+    detail: `Route: ${info.route} | Retry After: ${info.timeToReset}ms | Global: ${info.global}`
+  });
+});
+
+client.on(Events.Debug, (msg) => {
+  if (
+    msg.includes('[WS =>') ||
+    msg.includes('Heartbeat') ||
+    msg.includes('Identify') ||
+    msg.includes('Session') ||
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('Waiting for') ||
+    msg.includes('Invalid session')
+  ) {
+    sysLog('Gateway Debug', { detail: msg });
+  }
+});
+
+let authInterval = setInterval(() => {
+  if (client.isReady()) {
+    clearInterval(authInterval);
+    return;
+  }
+  const wsStatusMap = ['READY', 'CONNECTING', 'RECONNECTING', 'IDLE', 'NEARLY', 'DISCONNECTED', 'WAITING_FOR_GUILDS', 'IDENTIFYING', 'RESUMING'];
+  const wsState = wsStatusMap[client.ws?.status] || `Status(${client.ws?.status})`;
+  sysLog('Gateway Handshake In Progress', { detail: `WebSocket: ${wsState} | Elapsed: ${Math.round((performance.now() - startupContext.startedAt) / 1000)}s` });
+}, 5000);
+if (typeof authInterval.unref === 'function') authInterval.unref();
+
 sysLog('Client Authenticating', { detail: 'Initiating Discord gateway login' });
 client.login(process.env.DISCORD_TOKEN).then(() => {
+  if (authInterval) clearInterval(authInterval);
   sysLog('Discord Gateway Login Succeeded');
 }).catch((error) => {
+  if (authInterval) clearInterval(authInterval);
   sysError('Discord Login Critical Failure', error);
   process.exit(1);
 });
