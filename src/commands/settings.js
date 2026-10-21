@@ -329,15 +329,13 @@ export async function showCoinsCustomizeModal(interaction) {
 
     const currentCoinName = config.coin_name || '';
     const currentCoinEmoji = config.coin_emoji || '';
-    const activeCoinName = currentCoinName || 'Coins';
-
     const modal = new ModalBuilder()
         .setCustomId(`settings_coins_customize_modal_${Date.now()}`)
-        .setTitle(`Customize ${activeCoinName}`);
+        .setTitle('Coins Name');
 
     const nameInput = new TextInputBuilder()
         .setCustomId('coin_name')
-        .setLabel(`${activeCoinName} Name`)
+        .setLabel('Coins Name')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('Coins')
         .setRequired(false);
@@ -347,7 +345,7 @@ export async function showCoinsCustomizeModal(interaction) {
 
     const emojiInput = new TextInputBuilder()
         .setCustomId('coin_emoji')
-        .setLabel(`${activeCoinName} Emoji`)
+        .setLabel('Coins Emoji')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('🪙')
         .setRequired(false);
