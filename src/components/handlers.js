@@ -37,6 +37,7 @@ import {
   handleShopAdminAdd,
   handleShopAdminEdit,
   handleShopAdminDelete,
+  handleShopMenuSelect,
   handleDeleteCategoryStart,
   handleDeleteCategoryConfirm,
   handleDeletePackStart,
@@ -450,6 +451,14 @@ export function setupComponentHandlers(client) {
         await handleEditCategoryAddItemsSelect(interaction);
       } else if (customId.startsWith('shop_edit_cat_remove_select_')) {
         await handleEditCategoryRemoveItemsSelect(interaction);
+      }
+      // ADMIN SHOP SETUP - MAIN MENU SELECT MENUS
+      else if (
+        customId.startsWith('shop_menu_categories') ||
+        customId.startsWith('shop_menu_items') ||
+        customId.startsWith('shop_menu_packs')
+      ) {
+        await handleShopMenuSelect(interaction);
       }
       // ADMIN SHOP SETUP - MAIN MENU
       else if (baseCustomId === 'shop_admin_home' || baseCustomId === 'shop_setup_home') {
