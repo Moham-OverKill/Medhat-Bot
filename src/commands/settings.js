@@ -97,7 +97,7 @@ export async function showMainMenu(interaction) {
         ]);
     const row1 = new ActionRowBuilder().addComponents(marketSelect);
 
-    // Row 2: FUN Select Menu (Colors, Levels, Roles, Leaderboard, Shortcuts)
+    // Row 2: FUN Select Menu (Colors, Levels, Roles, Leaderboard)
     const funSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_fun_${nonce}`)
         .setPlaceholder('🎮 Fun')
@@ -105,8 +105,7 @@ export async function showMainMenu(interaction) {
             { label: 'Colors', value: 'fun_colors', emoji: '🎨' },
             { label: 'Levels', value: 'fun_levels', emoji: '⭐' },
             { label: 'Roles', value: 'fun_roles', emoji: '🎭' },
-            { label: 'Leaderboard', value: 'fun_leaderboards', emoji: '📊' },
-            { label: 'Shortcuts', value: 'fun_shortcuts', emoji: '🪟' }
+            { label: 'Leaderboard', value: 'fun_leaderboards', emoji: '📊' }
         ]);
     const row2 = new ActionRowBuilder().addComponents(funSelect);
 
@@ -135,13 +134,14 @@ export async function showMainMenu(interaction) {
         .addOptions(moderateOptions);
     const row3 = new ActionRowBuilder().addComponents(moderateSelect);
 
-    // Row 4: OTHER Select Menu (Customize, Embeds)
+    // Row 4: OTHER Select Menu (Customize, Embeds, Shortcuts)
     const otherSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_other_${nonce}`)
         .setPlaceholder('⚙️ Other')
         .addOptions([
             { label: 'Customize', value: 'other_customize', emoji: '✨' },
-            { label: 'Embeds', value: 'other_embeds', emoji: '📰' }
+            { label: 'Embeds', value: 'other_embeds', emoji: '📰' },
+            { label: 'Shortcuts', value: 'other_shortcuts', emoji: '🪟' }
         ]);
     const row4 = new ActionRowBuilder().addComponents(otherSelect);
 
@@ -413,10 +413,6 @@ export async function handleSettingsComponent(interaction) {
                     const { handleLeaderboardSettings } = await import('./settings/leaderboards.js');
                     return handleLeaderboardSettings(interaction);
                 }
-                case 'fun_shortcuts': {
-                    const { showInterfaceSettings } = await import('./interface.js');
-                    return showInterfaceSettings(interaction);
-                }
 
                 // 3. MODERATE
                 case 'mod_users':
@@ -444,6 +440,11 @@ export async function handleSettingsComponent(interaction) {
                 case 'other_embeds': {
                     const { renderRootEmbedMenu } = await import('./settings/embeds.js');
                     return renderRootEmbedMenu(interaction);
+                }
+                case 'other_shortcuts':
+                case 'fun_shortcuts': {
+                    const { showInterfaceSettings } = await import('./interface.js');
+                    return showInterfaceSettings(interaction);
                 }
                 default:
                     return;
