@@ -90,9 +90,10 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             components.push(new ActionRowBuilder().addComponents(backButton));
         } else {
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
+            const nonce = Date.now();
             for (const cat of Object.values(categories)) {
                 const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`lb_menu_${cat.id}`)
+                    .setCustomId(`lb_menu_${cat.id}_${nonce}`)
                     .setPlaceholder(`${cat.menuEmoji || '📊'} ${cat.name}...`)
                     .addOptions([
                         {
@@ -150,8 +151,9 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
  */
 export async function handleLeaderboardMenuAction(interaction) {
     try {
-        const customId = interaction.customId; // lb_menu_CATEGORY
-        const categoryId = customId.replace('lb_menu_', '');
+        const customId = interaction.customId; // lb_menu_CATEGORY or lb_menu_CATEGORY_NONCE
+        const raw = customId.replace('lb_menu_', '');
+        const categoryId = raw.split('_')[0];
         const action = interaction.values[0]; // channel | refresh | disable
         const guildId = interaction.guildId;
 
