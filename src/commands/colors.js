@@ -421,7 +421,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
       content: `❌ Add ${isBooster ? 'Booster ' : ''}color roles first before deploying a panel!`,
       embeds: [],
       components: [backRow],
-      files: []
+      files: [], attachments: []
     });
   }
 
@@ -459,7 +459,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
       content: '❌ Configured color roles no longer exist on this server.',
       embeds: [],
       components: [backRow],
-      files: []
+      files: [], attachments: []
     });
   }
 
@@ -575,7 +575,7 @@ async function deployColorPanels(interaction, type, channelId) {
             .setStyle(ButtonStyle.Secondary)
         )
       ],
-      files: []
+      files: [], attachments: []
     });
   }
 
@@ -595,7 +595,7 @@ async function deployColorPanels(interaction, type, channelId) {
             .setStyle(ButtonStyle.Secondary)
         )
       ],
-      files: []
+      files: [], attachments: []
     });
   }
 
@@ -629,7 +629,7 @@ async function deployColorPanels(interaction, type, channelId) {
             .setStyle(ButtonStyle.Secondary)
         )
       ],
-      files: []
+      files: [], attachments: []
     });
   }
 
@@ -691,7 +691,7 @@ async function deployColorPanels(interaction, type, channelId) {
               .setStyle(ButtonStyle.Secondary)
           )
         ],
-        files: []
+        files: [], attachments: []
       });
     }
   }
@@ -718,7 +718,7 @@ async function deployColorPanels(interaction, type, channelId) {
     content: '',
     embeds: [successEmbed],
     components: [backRow],
-    files: []
+    files: [], attachments: []
   });
 }
 
@@ -1073,7 +1073,7 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.editReply({ files: [], content: '❌ Boost the server to unlock this color!', });
+      await interaction.editReply({ files: [], attachments: [], content: '❌ Boost the server to unlock this color!', });
       return;
     }
 
@@ -1089,7 +1089,7 @@ export async function handleColorButton(interaction) {
       const targetRole = interaction.guild.roles.cache.get(roleId);
       
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({ files: [], content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!', });
+        return interaction.editReply({ files: [], attachments: [], content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!', });
       }
 
       // Remove the role
@@ -1120,12 +1120,12 @@ export async function handleColorButton(interaction) {
       // Add the new color role (Check hierarchy and security first)
       const targetRole = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({ files: [], content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.', });
+        return interaction.editReply({ files: [], attachments: [], content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.', });
       }
 
       if (targetRole && hasAnyDangerousPermission(targetRole)) {
         sysWarn('Dangerous Color Role Assignment Blocked', { user: member.id, guild: interaction.guildId, role: roleId, detail: 'Target color role holds dangerous permissions' });
-        return interaction.editReply({ files: [], content: '❌ This color role holds administrative or moderation permissions and cannot be assigned.', });
+        return interaction.editReply({ files: [], attachments: [], content: '❌ This color role holds administrative or moderation permissions and cannot be assigned.', });
       }
 
       await member.roles.add(roleId);
@@ -1156,7 +1156,7 @@ export async function handleColorButton(interaction) {
     }
 
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ files: [], content: errorMsg }).catch(() => { });
+      await interaction.editReply({ files: [], attachments: [], content: errorMsg }).catch(() => { });
     } else {
       await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
     }
