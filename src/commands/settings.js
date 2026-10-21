@@ -124,7 +124,6 @@ export async function showMainMenu(interaction) {
     }
 
     moderateOptions.push(
-        { label: 'Dashboard', value: 'mod_dashboard', emoji: '🎛️' },
         { label: 'Logs', value: 'mod_logs', emoji: '📜' }
     );
 
@@ -134,13 +133,14 @@ export async function showMainMenu(interaction) {
         .addOptions(moderateOptions);
     const row3 = new ActionRowBuilder().addComponents(moderateSelect);
 
-    // Row 4: OTHER Select Menu (Customize, Embeds, Shortcuts)
+    // Row 4: OTHER Select Menu (Customize, Embeds, Dashboard, Shortcuts)
     const otherSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_other_${nonce}`)
         .setPlaceholder('⚙️ Other')
         .addOptions([
             { label: 'Customize', value: 'other_customize', emoji: '✨' },
             { label: 'Embeds', value: 'other_embeds', emoji: '📰' },
+            { label: 'Dashboard', value: 'other_dashboard', emoji: '🎛️' },
             { label: 'Shortcuts', value: 'other_shortcuts', emoji: '🪟' }
         ]);
     const row4 = new ActionRowBuilder().addComponents(otherSelect);
@@ -427,6 +427,7 @@ export async function handleSettingsComponent(interaction) {
                     const { showAdminManagement } = await import('./admin-users.js');
                     return showAdminManagement(interaction, true);
                 }
+                case 'other_dashboard':
                 case 'mod_dashboard': {
                     const { showAdminInterfaceSettings } = await import('./interface.js');
                     return showAdminInterfaceSettings(interaction);

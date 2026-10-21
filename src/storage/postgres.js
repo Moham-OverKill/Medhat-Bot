@@ -1448,6 +1448,9 @@ async function createTables() {
       ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
       ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32);
       ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32);
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_shortcut_order JSONB NOT NULL DEFAULT '["colors","levels","roles","empty","coins","shop","economy","empty","users","anticheat","automod","empty"]'::jsonb;
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#43b581","#43b581","#43b581","#000000","#2374e1","#2374e1","#2374e1","#000000","#e02443","#e02443","#e02443","#000000"]'::jsonb;
+      ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["success","success","success","secondary","primary","primary","primary","secondary","danger","danger","danger","secondary"]'::jsonb;
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_channel ON server_interface_config(target_channel_id);
       CREATE INDEX IF NOT EXISTS idx_server_interface_config_admin_channel ON server_interface_config(admin_target_channel_id);
     `);

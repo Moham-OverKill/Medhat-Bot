@@ -163,11 +163,184 @@ export const DEFAULT_SHORTCUT_ORDER = [
   'empty'
 ];
 
+export const ADMIN_SHORTCUT_REGISTRY = {
+  colors: {
+    id: 'colors',
+    name: 'Colors',
+    label: 'COLORS',
+    description: 'Configure and manage color roles',
+    emoji: '🎨',
+    buttonCustomId: 'admin_hub_colors'
+  },
+  levels: {
+    id: 'levels',
+    name: 'Levels',
+    label: 'LEVELS',
+    description: 'Configure battlepass and level progression',
+    emoji: '🎫',
+    buttonCustomId: 'admin_hub_pass'
+  },
+  roles: {
+    id: 'roles',
+    name: 'Roles',
+    label: 'ROLES',
+    description: 'Manage self-assignable and milestone roles',
+    emoji: '🏷️',
+    buttonCustomId: 'admin_hub_roles'
+  },
+  coins: {
+    id: 'coins',
+    name: 'Coins',
+    label: 'COINS',
+    description: 'Configure server currency name and rates',
+    emoji: '🪙',
+    buttonCustomId: 'admin_hub_coins'
+  },
+  shop: {
+    id: 'shop',
+    name: 'Shop',
+    label: 'SHOP',
+    description: 'Manage shop categories, items, and packs',
+    emoji: '🛒',
+    buttonCustomId: 'admin_hub_shop'
+  },
+  economy: {
+    id: 'economy',
+    name: 'Economy',
+    label: 'ECONOMY',
+    description: 'View server economy health and multipliers',
+    emoji: '📈',
+    buttonCustomId: 'admin_hub_economy'
+  },
+  users: {
+    id: 'users',
+    name: 'Users',
+    label: 'USERS',
+    description: 'Manage user balances, streaks, and inventory',
+    emoji: '👥',
+    buttonCustomId: 'admin_hub_users'
+  },
+  anticheat: {
+    id: 'anticheat',
+    name: 'Anti Cheat',
+    label: 'ANTI CHEAT',
+    description: 'Configure text spam, voice AFK, and alt farming gates',
+    emoji: '🚫',
+    buttonCustomId: 'admin_hub_anticheat'
+  },
+  automod: {
+    id: 'automod',
+    name: 'Auto Mod',
+    label: 'AUTO MOD',
+    description: 'Manage channel filters, forums, and auto-reactions',
+    emoji: '🛡️',
+    buttonCustomId: 'admin_hub_automod'
+  },
+  admins: {
+    id: 'admins',
+    name: 'Admins',
+    label: 'ADMINS',
+    description: 'Manage authorized server bot administrators',
+    emoji: '💼',
+    buttonCustomId: 'admin_hub_admins'
+  },
+  leaderboard: {
+    id: 'leaderboard',
+    name: 'Leaderboards',
+    label: 'LEADERBOARD',
+    description: 'Configure live automated leaderboard channels',
+    emoji: '🏆',
+    buttonCustomId: 'admin_hub_leaderboards'
+  },
+  embed: {
+    id: 'embed',
+    name: 'Embeds',
+    label: 'EMBEDS',
+    description: 'Create, edit, and schedule custom embeds',
+    emoji: '🖼️',
+    buttonCustomId: 'admin_hub_embed'
+  },
+  logs: {
+    id: 'logs',
+    name: 'Logs',
+    label: 'LOGS',
+    description: 'Configure audit log routing channels',
+    emoji: '📜',
+    buttonCustomId: 'admin_hub_logs'
+  },
+  dashboard: {
+    id: 'dashboard',
+    name: 'Dashboard',
+    label: 'DASHBOARD',
+    description: 'Configure the private staff dashboard interface',
+    emoji: '🎛️',
+    buttonCustomId: 'admin_hub_dashboard'
+  },
+  shortcuts: {
+    id: 'shortcuts',
+    name: 'Shortcuts',
+    label: 'SHORTCUTS',
+    description: 'Configure the public community shortcuts interface',
+    emoji: '🪟',
+    buttonCustomId: 'admin_hub_shortcuts'
+  },
+  customize: {
+    id: 'customize',
+    name: 'Customize',
+    label: 'CUSTOMIZE',
+    description: 'Configure custom bot status, presence, and visuals',
+    emoji: '✨',
+    buttonCustomId: 'admin_hub_customize'
+  }
+};
+
+export const DEFAULT_ADMIN_SHORTCUT_ORDER = [
+  'colors', 'levels', 'roles', 'empty',
+  'coins', 'shop', 'economy', 'empty',
+  'users', 'anticheat', 'automod', 'empty'
+];
+
+export const DEFAULT_ADMIN_SLOT_COLORS = [
+  '#43b581', '#43b581', '#43b581', '#000000',
+  '#2374e1', '#2374e1', '#2374e1', '#000000',
+  '#e02443', '#e02443', '#e02443', '#000000'
+];
+
+export const DEFAULT_ADMIN_SLOT_BUTTON_COLORS = [
+  'success', 'success', 'success', 'secondary',
+  'primary', 'primary', 'primary', 'secondary',
+  'danger', 'danger', 'danger', 'secondary'
+];
+
 export function getShortcutMeta(id) {
   if (id && SHORTCUT_REGISTRY[id]) {
     return SHORTCUT_REGISTRY[id];
   }
   return null;
+}
+
+export function getAdminShortcutMeta(id) {
+  if (id && ADMIN_SHORTCUT_REGISTRY[id]) {
+    return ADMIN_SHORTCUT_REGISTRY[id];
+  }
+  return null;
+}
+
+export function normalizeAdminShortcutOrder(order) {
+  const result = [...DEFAULT_ADMIN_SHORTCUT_ORDER];
+  if (Array.isArray(order) && order.length > 0) {
+    for (let i = 0; i < Math.min(order.length, 12); i++) {
+      const id = order[i];
+      if (id === 'empty') {
+        result[i] = 'empty';
+      } else if (id && ADMIN_SHORTCUT_REGISTRY[id]) {
+        result[i] = id;
+      } else if (id === undefined) {
+        result[i] = DEFAULT_ADMIN_SHORTCUT_ORDER[i];
+      }
+    }
+  }
+  return result;
 }
 
 export function normalizeShortcutOrder(order) {
@@ -269,8 +442,11 @@ function getContrastColor(hex) {
   return yiq >= 180 ? '#111214' : '#ffffff';
 }
 
-export function normalizeSlotColors(raw) {
-  const result = new Array(12).fill('#000000');
+export function normalizeSlotColors(raw, defaultColors = null) {
+  const defaults = Array.isArray(defaultColors) && defaultColors.length === 12
+    ? defaultColors
+    : new Array(12).fill('#000000');
+  const result = [...defaults];
   if (Array.isArray(raw)) {
     for (let i = 0; i < Math.min(raw.length, 12); i++) {
       if (typeof raw[i] === 'string' && raw[i].startsWith('#')) {
@@ -295,8 +471,11 @@ export const DISCORD_BUTTON_COLORS = [
   { id: 'secondary', name: 'Gray', emoji: '🩶', style: ButtonStyle.Secondary, description: 'Gray button' }
 ];
 
-export function normalizeSlotButtonColors(raw) {
-  const result = new Array(12).fill('secondary');
+export function normalizeSlotButtonColors(raw, defaultBtnColors = null) {
+  const defaults = Array.isArray(defaultBtnColors) && defaultBtnColors.length === 12
+    ? defaultBtnColors
+    : new Array(12).fill('secondary');
+  const result = [...defaults];
   const valid = new Set(['secondary', 'primary', 'success', 'danger']);
   if (Array.isArray(raw)) {
     for (let i = 0; i < Math.min(raw.length, 12); i++) {
@@ -702,7 +881,8 @@ export async function getInterfaceConfig(guildId) {
     const pool = getPool();
     const res = await pool.query(
       `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id,
-              admin_is_enabled, admin_target_channel_id, admin_message_id
+              admin_is_enabled, admin_target_channel_id, admin_message_id,
+              admin_shortcut_order, admin_slot_colors, admin_slot_button_colors
        FROM server_interface_config 
        WHERE guild_id = $1`,
       [guildId]
@@ -712,9 +892,13 @@ export async function getInterfaceConfig(guildId) {
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_shortcut_order JSONB NOT NULL DEFAULT '["colors","levels","roles","empty","coins","shop","economy","empty","users","anticheat","automod","empty"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#43b581","#43b581","#43b581","#000000","#2374e1","#2374e1","#2374e1","#000000","#e02443","#e02443","#e02443","#000000"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["success","success","success","secondary","primary","primary","primary","secondary","danger","danger","danger","secondary"]'::jsonb`).catch(() => {});
       return pool.query(
         `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id,
-                admin_is_enabled, admin_target_channel_id, admin_message_id
+                admin_is_enabled, admin_target_channel_id, admin_message_id,
+                admin_shortcut_order, admin_slot_colors, admin_slot_button_colors
          FROM server_interface_config 
          WHERE guild_id = $1`,
         [guildId]
@@ -733,7 +917,10 @@ export async function getInterfaceConfig(guildId) {
         message_id: row.message_id || null,
         admin_is_enabled: Boolean(row.admin_is_enabled ?? true),
         admin_target_channel_id: row.admin_target_channel_id || null,
-        admin_message_id: row.admin_message_id || null
+        admin_message_id: row.admin_message_id || null,
+        admin_shortcut_order: normalizeAdminShortcutOrder(row.admin_shortcut_order),
+        admin_slot_colors: normalizeSlotColors(row.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS),
+        admin_slot_button_colors: normalizeSlotButtonColors(row.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
       };
     }
 
@@ -752,7 +939,10 @@ export async function getInterfaceConfig(guildId) {
       message_id: fallbackMessage,
       admin_is_enabled: true,
       admin_target_channel_id: null,
-      admin_message_id: null
+      admin_message_id: null,
+      admin_shortcut_order: [...DEFAULT_ADMIN_SHORTCUT_ORDER],
+      admin_slot_colors: [...DEFAULT_ADMIN_SLOT_COLORS],
+      admin_slot_button_colors: [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS]
     };
   } catch (err) {
     sysError('Failed to fetch interface config', err, { guildId });
@@ -766,7 +956,10 @@ export async function getInterfaceConfig(guildId) {
       message_id: null,
       admin_is_enabled: true,
       admin_target_channel_id: null,
-      admin_message_id: null
+      admin_message_id: null,
+      admin_shortcut_order: [...DEFAULT_ADMIN_SHORTCUT_ORDER],
+      admin_slot_colors: [...DEFAULT_ADMIN_SLOT_COLORS],
+      admin_slot_button_colors: [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS]
     };
   }
 }
@@ -793,14 +986,25 @@ export async function saveInterfaceConfig(guildId, data) {
     const adminChannelId = data.admin_target_channel_id !== undefined ? (data.admin_target_channel_id || null) : existing.admin_target_channel_id;
     const adminMessageId = data.admin_message_id !== undefined ? (data.admin_message_id || null) : existing.admin_message_id;
 
+    const adminNormalizedOrder = data.admin_shortcut_order !== undefined
+      ? normalizeAdminShortcutOrder(data.admin_shortcut_order)
+      : (existing.admin_shortcut_order || [...DEFAULT_ADMIN_SHORTCUT_ORDER]);
+    const adminNormalizedColors = data.admin_slot_colors !== undefined
+      ? normalizeSlotColors(data.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS)
+      : (existing.admin_slot_colors || [...DEFAULT_ADMIN_SLOT_COLORS]);
+    const adminNormalizedBtnColors = data.admin_slot_button_colors !== undefined
+      ? normalizeSlotButtonColors(data.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
+      : (existing.admin_slot_button_colors || [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS]);
+
     const queryStr = `
       INSERT INTO server_interface_config (
         guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors,
         target_channel_id, message_id,
         admin_is_enabled, admin_target_channel_id, admin_message_id,
+        admin_shortcut_order, admin_slot_colors, admin_slot_button_colors,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
       ON CONFLICT (guild_id)
       DO UPDATE SET
         is_enabled = EXCLUDED.is_enabled,
@@ -812,10 +1016,14 @@ export async function saveInterfaceConfig(guildId, data) {
         admin_is_enabled = EXCLUDED.admin_is_enabled,
         admin_target_channel_id = EXCLUDED.admin_target_channel_id,
         admin_message_id = EXCLUDED.admin_message_id,
+        admin_shortcut_order = EXCLUDED.admin_shortcut_order,
+        admin_slot_colors = EXCLUDED.admin_slot_colors,
+        admin_slot_button_colors = EXCLUDED.admin_slot_button_colors,
         updated_at = NOW()
       RETURNING guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors,
                 target_channel_id, message_id,
-                admin_is_enabled, admin_target_channel_id, admin_message_id
+                admin_is_enabled, admin_target_channel_id, admin_message_id,
+                admin_shortcut_order, admin_slot_colors, admin_slot_button_colors
     `;
     const params = [
       guildId,
@@ -827,7 +1035,10 @@ export async function saveInterfaceConfig(guildId, data) {
       messageId,
       adminIsEnabled,
       adminChannelId,
-      adminMessageId
+      adminMessageId,
+      JSON.stringify(adminNormalizedOrder),
+      JSON.stringify(adminNormalizedColors),
+      JSON.stringify(adminNormalizedBtnColors)
     ];
 
     let res;
@@ -839,6 +1050,9 @@ export async function saveInterfaceConfig(guildId, data) {
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_is_enabled BOOLEAN NOT NULL DEFAULT TRUE`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_shortcut_order JSONB NOT NULL DEFAULT '["colors","levels","roles","empty","coins","shop","economy","empty","users","anticheat","automod","empty"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#43b581","#43b581","#43b581","#000000","#2374e1","#2374e1","#2374e1","#000000","#e02443","#e02443","#e02443","#000000"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["success","success","success","secondary","primary","primary","primary","secondary","danger","danger","danger","secondary"]'::jsonb`).catch(() => {});
       res = await pool.query(queryStr, params);
     }
 
@@ -865,7 +1079,10 @@ export async function saveInterfaceConfig(guildId, data) {
       message_id: row.message_id || null,
       admin_is_enabled: Boolean(row.admin_is_enabled ?? true),
       admin_target_channel_id: row.admin_target_channel_id || null,
-      admin_message_id: row.admin_message_id || null
+      admin_message_id: row.admin_message_id || null,
+      admin_shortcut_order: normalizeAdminShortcutOrder(row.admin_shortcut_order),
+      admin_slot_colors: normalizeSlotColors(row.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS),
+      admin_slot_button_colors: normalizeSlotButtonColors(row.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
     };
   } catch (err) {
     sysError('Failed to save interface config', err, { guildId });
@@ -1100,21 +1317,18 @@ export function getAdminShortcutItems(guildId = null) {
   return [
     [
       { id: 'colors', label: 'COLORS', emoji: '🎨', btnId: 'admin_hub_colors' },
-      { id: 'levels', label: 'LEVELS', emoji: '⭐', btnId: 'admin_hub_pass' },
+      { id: 'levels', label: 'LEVELS', emoji: '🎫', btnId: 'admin_hub_pass' },
+      { id: 'roles', label: 'ROLES', emoji: '🏷️', btnId: 'admin_hub_roles' }
+    ],
+    [
       { id: 'coins', label: coinName.toUpperCase(), emoji: coinEmoji, btnId: 'admin_hub_coins' },
-      { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' }
-    ],
-    [
-      { id: 'users', label: 'MODERATE', emoji: '👥', btnId: 'admin_hub_users' },
-      { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' },
-      { id: 'organize', label: 'ORGANIZE', emoji: '🧹', btnId: 'admin_hub_organize' },
-      { id: 'customize', label: 'CUSTOMIZE', emoji: '✨', btnId: 'admin_hub_customize' }
-    ],
-    [
-      { id: 'embed', label: 'EMBED', emoji: '📰', btnId: 'admin_hub_embed' },
-      { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
-      { id: 'logs', label: 'LOGS', emoji: '📜', btnId: 'admin_hub_logs' },
+      { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' },
       { id: 'economy', label: 'ECONOMY', emoji: '📈', btnId: 'admin_hub_economy' }
+    ],
+    [
+      { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
+      { id: 'anticheat', label: 'ANTI CHEAT', emoji: '🚫', btnId: 'admin_hub_anticheat' },
+      { id: 'automod', label: 'AUTO MOD', emoji: '🛡️', btnId: 'admin_hub_automod' }
     ]
   ];
 }
@@ -1123,35 +1337,93 @@ export const ADMIN_SHORTCUT_ITEMS = getAdminShortcutItems();
 
 /**
  * Generate composite Admin Interface banner image buffer
- * 4x3 grid with all 12 Control Panel module shortcuts
- * @param {string} [guildId]
+ * Dynamic row balancing and auto-centering, omitting empty slots
+ * @param {string[]} [shortcutOrder]
+ * @param {object} [options]
  * @returns {Promise<Buffer>}
  */
-export async function generateAdminInterfaceBanner(guildId = null) {
-  const cardW = 312;
-  const cardH = 262;
-  const marginX = 24;
-  const marginY = 20;
-  const gapX = 29;
-  const gapY = 28;
+export async function generateAdminInterfaceBanner(shortcutOrder = null, options = {}) {
+  const guildId = options?.guildId || null;
+  const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'COINS';
+  const coinEmoji = guildId ? COIN_EMOJI.forGuild(guildId) : '🪙';
 
-  const maxCols = 4;
-  const rowCount = 3;
+  const normalized = normalizeAdminShortcutOrder(shortcutOrder);
+  const slotColors = normalizeSlotColors(
+    Array.isArray(options) ? options : (options?.slotColors || options?.slot_colors || []),
+    DEFAULT_ADMIN_SLOT_COLORS
+  );
+
+  // Group slots into 3 configured rows of 4 slots each with their original slot index (0-11)
+  const configuredRows = [
+    [0, 1, 2, 3].map(i => ({ id: normalized[i], slotIndex: i })),
+    [4, 5, 6, 7].map(i => ({ id: normalized[i], slotIndex: i })),
+    [8, 9, 10, 11].map(i => ({ id: normalized[i], slotIndex: i }))
+  ];
+
+  // For each row, extract active (non-empty) shortcuts
+  const activeRows = [];
+  for (const row of configuredRows) {
+    const activeInRow = row.filter(item => item.id && item.id !== 'empty' && ADMIN_SHORTCUT_REGISTRY[item.id]);
+    if (activeInRow.length > 0) {
+      activeRows.push(activeInRow);
+    }
+  }
+
+  // Fallback to default 3x3 layout if nothing is configured
+  if (activeRows.length === 0) {
+    activeRows.push(
+      [{ id: 'colors', slotIndex: 0 }, { id: 'levels', slotIndex: 1 }, { id: 'roles', slotIndex: 2 }],
+      [{ id: 'coins', slotIndex: 4 }, { id: 'shop', slotIndex: 5 }, { id: 'economy', slotIndex: 6 }],
+      [{ id: 'users', slotIndex: 8 }, { id: 'anticheat', slotIndex: 9 }, { id: 'automod', slotIndex: 10 }]
+    );
+  }
+
+  const maxCols = Math.min(4, Math.max(...activeRows.map(r => r.length)));
+  const rowCount = activeRows.length;
+
+  let cardW, cardH, marginX, marginY, gapX, gapY;
+  if (maxCols >= 4) {
+    cardW = 312;
+    cardH = 262;
+    marginX = 24;
+    marginY = 20;
+    gapX = 29;
+    gapY = 28;
+  } else {
+    cardW = 419;
+    cardH = 352;
+    marginX = 32;
+    marginY = 16;
+    gapX = 38;
+    gapY = 26;
+  }
 
   const canvasW = maxCols * cardW + (maxCols - 1) * gapX + 2 * marginX;
   const canvasH = rowCount * cardH + (rowCount - 1) * gapY + 2 * marginY;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
-  const items = getAdminShortcutItems(guildId);
 
   for (let r = 0; r < rowCount; r++) {
-    const rowItems = items[r];
+    const rowItems = activeRows[r];
+    const k = rowItems.length;
+    const rowW = k * cardW + (k - 1) * gapX;
+    const rowMarginX = (canvasW - rowW) / 2;
     const y = marginY + r * (cardH + gapY);
-    for (let c = 0; c < maxCols; c++) {
+
+    for (let c = 0; c < k; c++) {
       const item = rowItems[c];
-      const x = marginX + c * (cardW + gapX);
-      await drawShortcutCard(ctx, x, y, cardW, cardH, item, '#000000');
+      const x = rowMarginX + c * (cardW + gapX);
+      const meta = ADMIN_SHORTCUT_REGISTRY[item.id];
+      const bgColor = slotColors[item.slotIndex] || '#000000';
+      if (meta) {
+        const itemMeta = { ...meta };
+        if (item.id === 'coins') {
+          itemMeta.label = coinName.toUpperCase();
+          itemMeta.emoji = coinEmoji;
+        }
+        await drawShortcutCard(ctx, x, y, cardW, cardH, itemMeta, bgColor);
+      }
     }
   }
 
@@ -1165,23 +1437,40 @@ export function buildAdminHubEmbed() {
     .setImage('attachment://admin_interface.png');
 }
 
-export function buildAdminHubButtons(guildId = null, guild = null) {
+export function buildAdminHubButtons(guildId = null, guild = null, shortcutOrder = null, slotButtonColors = null) {
+  const order = normalizeAdminShortcutOrder(shortcutOrder);
+  const buttonColors = normalizeSlotButtonColors(slotButtonColors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS);
   const rows = [];
-  const items = getAdminShortcutItems(guildId);
-  for (const rowItems of items) {
+  const configuredRows = [
+    [0, 1, 2, 3].map(i => ({ id: order[i], slotIndex: i })),
+    [4, 5, 6, 7].map(i => ({ id: order[i], slotIndex: i })),
+    [8, 9, 10, 11].map(i => ({ id: order[i], slotIndex: i }))
+  ];
+
+  for (const row of configuredRows) {
     const actionRow = new ActionRowBuilder();
-    for (const item of rowItems) {
-      const btn = new ButtonBuilder()
-        .setCustomId(item.btnId)
-        .setStyle(ButtonStyle.Secondary);
-      if (item.id === 'coins' && guildId) {
-        safeSetButtonEmoji(btn, item.emoji, guild, '🪙');
-      } else {
-        btn.setEmoji(item.emoji);
+    for (const item of row) {
+      if (item.id && item.id !== 'empty') {
+        const meta = ADMIN_SHORTCUT_REGISTRY[item.id];
+        if (meta) {
+          const btnColorMeta = getButtonColorMeta(buttonColors[item.slotIndex]);
+          const btn = new ButtonBuilder()
+            .setCustomId(meta.buttonCustomId)
+            .setStyle(btnColorMeta.style);
+
+          if (item.id === 'coins' && guildId) {
+            const coinEmoji = COIN_EMOJI.forGuild(guildId);
+            safeSetButtonEmoji(btn, coinEmoji, guild, '🪙');
+          } else {
+            safeSetButtonEmoji(btn, meta.emoji, guild, '⭐');
+          }
+          actionRow.addComponents(btn);
+        }
       }
-      actionRow.addComponents(btn);
     }
-    rows.push(actionRow);
+    if (actionRow.components.length > 0) {
+      rows.push(actionRow);
+    }
   }
   return rows;
 }
@@ -1227,10 +1516,13 @@ export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
       return false;
     }
 
-    const bannerBuffer = await generateAdminInterfaceBanner(guildId);
+    const bannerBuffer = await generateAdminInterfaceBanner(interfaceConfig.admin_shortcut_order, {
+      slotColors: interfaceConfig.admin_slot_colors,
+      guildId
+    });
     const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_interface.png' });
     const embed = buildAdminHubEmbed();
-    const buttonRows = buildAdminHubButtons(guildId, guild);
+    const buttonRows = buildAdminHubButtons(guildId, guild, interfaceConfig.admin_shortcut_order, interfaceConfig.admin_slot_button_colors);
     const payload = {
       embeds: [embed],
       components: buttonRows,
@@ -1297,13 +1589,24 @@ export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
 export async function handleAdminHubComponent(interaction) {
   const customId = interaction.customId;
 
-  const { verifyAdminAccess } = await import('../storage/admins.js');
+  // 1. Strict security check: User MUST be server owner, Discord admin, or on server_admins whitelist
+  const { verifyAdminAccess, verifyAdminManagerAccess } = await import('../storage/admins.js');
   if (!(await verifyAdminAccess(interaction))) return;
 
-  // Customize modal must be opened without deferring
+  // 2. Customize modal must be opened without deferring
   if (customId === 'admin_hub_customize') {
     const { showCustomizeModal } = await import('./settings.js');
     return showCustomizeModal(interaction);
+  }
+
+  // 3. Admins shortcut: ONLY server owner and Discord Administrators can manage admins!
+  if (customId === 'admin_hub_admins') {
+    if (!(await verifyAdminManagerAccess(interaction))) return;
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+    const { showAdminManagement } = await import('./admin-users.js');
+    return showAdminManagement(interaction, true);
   }
 
   if (!interaction.deferred && !interaction.replied) {
@@ -1332,13 +1635,18 @@ export async function handleAdminHubComponent(interaction) {
       const { showUserSelector } = await import('./admin-users.js');
       return showUserSelector(interaction);
     }
-    case 'admin_hub_roles': {
-      const { showRolesMenu } = await import('./settings/role-rewards.js');
-      return showRolesMenu(interaction);
+    case 'admin_hub_anticheat': {
+      const { showAntiCheatHub } = await import('./admin-users.js');
+      return showAntiCheatHub(interaction, true);
     }
+    case 'admin_hub_automod':
     case 'admin_hub_organize': {
       const { showOrganizeMenu } = await import('./settings/organize.js');
       return showOrganizeMenu(interaction);
+    }
+    case 'admin_hub_roles': {
+      const { showRolesMenu } = await import('./settings/role-rewards.js');
+      return showRolesMenu(interaction);
     }
     case 'admin_hub_leaderboards': {
       const { handleLeaderboardSettings } = await import('./settings/leaderboards.js');
@@ -1355,6 +1663,12 @@ export async function handleAdminHubComponent(interaction) {
     case 'admin_hub_economy': {
       const { handleEconomySettings } = await import('./settings/economy.js');
       return handleEconomySettings(interaction);
+    }
+    case 'admin_hub_dashboard': {
+      return showAdminInterfaceSettings(interaction);
+    }
+    case 'admin_hub_shortcuts': {
+      return showInterfaceSettings(interaction);
     }
     default:
       return;
@@ -1532,9 +1846,15 @@ export async function showAdminInterfaceSettings(interaction) {
 
   const currentChannel = config.admin_target_channel_id ? `<#${config.admin_target_channel_id}>` : '*Not Set*';
 
-  let statusText = '`🟡 Pending Setup (Channel Required)`';
-  if (config.admin_target_channel_id) {
-    statusText = isPublished ? '`🟢 Published & Active`' : '`🟡 Pending Deployment`';
+  let statusText = '`🔴 Disabled`';
+  if (config.admin_is_enabled) {
+    if (isPublished) {
+      statusText = '`🟢 Published & Active`';
+    } else if (config.admin_target_channel_id) {
+      statusText = '`🟡 Pending Deployment`';
+    } else {
+      statusText = '`🟡 Pending Setup (Channel Required)`';
+    }
   }
 
   const desc = [
@@ -1558,7 +1878,29 @@ export async function showAdminInterfaceSettings(interaction) {
     channelSelect.setDefaultChannels([config.admin_target_channel_id]);
   }
 
-  // Row 1: [ Back ] | [ Update ] (side by side)
+  // Row 1: [ Enable / Disable ] | [ Update ]
+  const toggleBtn = config.admin_is_enabled
+    ? new ButtonBuilder()
+        .setCustomId('admin_interface_disable_btn')
+        .setLabel('Disable')
+        .setEmoji('🔴')
+        .setStyle(ButtonStyle.Secondary)
+    : new ButtonBuilder()
+        .setCustomId('admin_interface_enable_btn')
+        .setLabel('Enable')
+        .setEmoji('🟢')
+        .setStyle(ButtonStyle.Secondary);
+
+  const updateBtn = new ButtonBuilder()
+    .setCustomId('admin_interface_publish_btn')
+    .setLabel(isPublished ? 'Update' : 'Publish')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!config.admin_target_channel_id);
+
+  const row1 = new ActionRowBuilder().addComponents(toggleBtn, updateBtn);
+
+  // Row 2: [ Back ] | [ Setup ]
   const backBtn = new ButtonBuilder()
     .setCustomId('settings_home')
     .setLabel('Back')
@@ -1566,18 +1908,18 @@ export async function showAdminInterfaceSettings(interaction) {
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(isBackDisabled(interaction));
 
-  const updateBtn = new ButtonBuilder()
-    .setCustomId('admin_interface_publish_btn')
-    .setLabel('Update')
-    .setEmoji('🔄')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(!config.admin_target_channel_id);
+  const setupBtn = new ButtonBuilder()
+    .setCustomId('admin_interface_setup_btn')
+    .setLabel('Setup')
+    .setEmoji('🛠️')
+    .setStyle(ButtonStyle.Secondary);
 
-  const row1 = new ActionRowBuilder().addComponents(backBtn, updateBtn);
+  const row2 = new ActionRowBuilder().addComponents(backBtn, setupBtn);
 
   const components = [
     new ActionRowBuilder().addComponents(channelSelect),
-    row1
+    row1,
+    row2
   ];
 
   const method = (interaction.deferred || interaction.replied)
@@ -1585,6 +1927,187 @@ export async function showAdminInterfaceSettings(interaction) {
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
   await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+}
+
+/**
+ * Render the Admin Dashboard Shortcut Setup Panel
+ * Shows dynamic real-time image preview of all 12 slots (4 per row, 3 rows)
+ * @param {import('discord.js').Interaction} interaction 
+ */
+export async function showAdminInterfaceSetup(interaction) {
+  const guildId = interaction.guildId;
+  const config = await getInterfaceConfig(guildId);
+  const slots = normalizeAdminShortcutOrder(config.admin_shortcut_order);
+  const slotColors = normalizeSlotColors(config.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS);
+  const slotButtonColors = normalizeSlotButtonColors(config.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS);
+
+  // 1. Generate real-time preview of the layout
+  const bannerBuffer = await generateAdminInterfaceBanner(slots, { slotColors, guildId });
+  const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_preview.png' });
+
+  const embed = new EmbedBuilder()
+    .setTitle('Dashboard Setup')
+    .setDescription('Click any slot button below to assign or clear a module. The preview image updates in real time.')
+    .setColor(0x5865F2)
+    .setImage('attachment://admin_preview.png');
+
+  // 2. Build 3 rows of 4 slot buttons
+  const rows = [];
+  for (let r = 0; r < 3; r++) {
+    const row = new ActionRowBuilder();
+    for (let c = 0; c < 4; c++) {
+      const idx = r * 4 + c;
+      const slotId = slots[idx];
+      const meta = ADMIN_SHORTCUT_REGISTRY[slotId];
+      const buttonColorMeta = getButtonColorMeta(slotButtonColors[idx]);
+
+      const button = new ButtonBuilder()
+        .setCustomId(`admin_interface_slot_${idx}`)
+        .setStyle(meta ? buttonColorMeta.style : ButtonStyle.Secondary);
+
+      if (meta && meta.emoji) {
+        if (slotId === 'coins') {
+          const coinEmoji = COIN_EMOJI.forGuild(guildId);
+          safeSetButtonEmoji(button, coinEmoji, interaction.guild, '🪙');
+        } else {
+          button.setEmoji(meta.emoji);
+        }
+      } else {
+        button.setLabel('+');
+      }
+
+      row.addComponents(button);
+    }
+    rows.push(row);
+  }
+
+  // 3. Navigation & Reset row
+  const navRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_interface_back_to_main')
+      .setLabel('Back to Dashboard')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('admin_interface_reset_defaults')
+      .setLabel('Reset Defaults')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(navRow);
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+
+  await interaction.editReply({ embeds: [embed], components: rows, files: [attachment] });
+}
+
+/**
+ * Render Module Assignment picker for a specific Admin Dashboard slot
+ * @param {import('discord.js').Interaction} interaction 
+ * @param {number} slotIndex 
+ */
+export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
+  const guildId = interaction.guildId;
+  const config = await getInterfaceConfig(guildId);
+  const slots = normalizeAdminShortcutOrder(config.admin_shortcut_order);
+  const slotColors = normalizeSlotColors(config.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS);
+  const slotButtonColors = normalizeSlotButtonColors(config.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS);
+
+  const currentId = slots[slotIndex];
+  const currentMeta = ADMIN_SHORTCUT_REGISTRY[currentId];
+  const coinName = await getCurrencyName(guildId);
+  const currentLabel = currentMeta ? `${currentMeta.emoji} ${currentId === 'coins' ? coinName : currentMeta.name}` : 'None';
+
+  const currentColorHex = slotColors[slotIndex] || '#000000';
+  const colorMeta = getCardColorMeta(currentColorHex);
+  const currentColorLabel = `${colorMeta.emoji} ${colorMeta.name}`;
+
+  const currentBtnColorId = slotButtonColors[slotIndex] || 'secondary';
+  const btnColorMeta = getButtonColorMeta(currentBtnColorId);
+  const currentBtnColorLabel = `${btnColorMeta.emoji} ${btnColorMeta.name}`;
+
+  const desc = [
+    `• **Current Module:** ${currentLabel}`,
+    `• **Box Color:** ${currentColorLabel}`,
+    `• **Button Color:** ${currentBtnColorLabel}`
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Assign Module — Slot ${slotIndex + 1}`)
+    .setDescription(desc)
+    .setColor(0x5865F2);
+
+  const moduleOptions = [
+    ...Object.values(ADMIN_SHORTCUT_REGISTRY).map(item => ({
+      label: item.id === 'coins' ? coinName : item.name,
+      value: item.id,
+      description: item.description,
+      emoji: item.emoji,
+      default: item.id === currentId
+    })),
+    {
+      label: 'None',
+      value: 'empty',
+      description: 'Leave this slot empty',
+      emoji: '🚫',
+      default: !currentMeta || currentId === 'empty'
+    }
+  ];
+
+  const moduleSelect = new StringSelectMenuBuilder()
+    .setCustomId(`admin_interface_set_feature_${slotIndex}`)
+    .setPlaceholder(`Choose a module for Slot ${slotIndex + 1}...`)
+    .addOptions(moduleOptions);
+
+  const colorOptions = INTERFACE_CARD_COLORS.map(c => ({
+    label: c.name,
+    value: c.hex,
+    description: c.description,
+    emoji: c.emoji,
+    default: currentColorHex.toLowerCase() === c.hex.toLowerCase() ||
+             (c.id === 'black' && (!currentColorHex || currentColorHex === '#000000'))
+  }));
+
+  const colorSelect = new StringSelectMenuBuilder()
+    .setCustomId(`admin_interface_set_color_${slotIndex}`)
+    .setPlaceholder(`Choose a box color for Slot ${slotIndex + 1}...`)
+    .addOptions(colorOptions);
+
+  const buttonColorOptions = DISCORD_BUTTON_COLORS.map(c => ({
+    label: c.name,
+    value: c.id,
+    description: c.description,
+    emoji: c.emoji,
+    default: currentBtnColorId === c.id
+  }));
+
+  const buttonColorSelect = new StringSelectMenuBuilder()
+    .setCustomId(`admin_interface_set_btn_color_${slotIndex}`)
+    .setPlaceholder(`Choose a button color for Slot ${slotIndex + 1}...`)
+    .addOptions(buttonColorOptions);
+
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_interface_setup_btn')
+      .setLabel('Back to Setup')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const components = [
+    new ActionRowBuilder().addComponents(moduleSelect),
+    new ActionRowBuilder().addComponents(colorSelect),
+    new ActionRowBuilder().addComponents(buttonColorSelect),
+    backRow
+  ];
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+
+  await interaction.editReply({ embeds: [embed], components, files: [], attachments: [] });
 }
 
 /**
@@ -1787,6 +2310,72 @@ export async function handleInterfaceComponent(interaction) {
     }
 
     // Admin Interface Handlers
+    if (customId === 'admin_interface_setup_btn') {
+      return showAdminInterfaceSetup(interaction);
+    }
+
+    if (customId === 'admin_interface_back_to_main') {
+      return showAdminInterfaceSettings(interaction);
+    }
+
+    if (customId.startsWith('admin_interface_slot_')) {
+      const slotIndex = parseInt(customId.replace('admin_interface_slot_', ''), 10);
+      return showAdminInterfaceSlotAssign(interaction, slotIndex);
+    }
+
+    if (customId.startsWith('admin_interface_set_feature_')) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const slotIndex = parseInt(customId.replace('admin_interface_set_feature_', ''), 10);
+      const selectedFeature = interaction.values[0];
+
+      const config = await getInterfaceConfig(guildId);
+      const slots = normalizeAdminShortcutOrder(config.admin_shortcut_order);
+      slots[slotIndex] = selectedFeature === 'empty' ? 'empty' : selectedFeature;
+      config.admin_shortcut_order = slots;
+      await saveInterfaceConfig(guildId, config);
+
+      return showAdminInterfaceSlotAssign(interaction, slotIndex);
+    }
+
+    if (customId.startsWith('admin_interface_set_color_')) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const slotIndex = parseInt(customId.replace('admin_interface_set_color_', ''), 10);
+      const selectedColor = interaction.values[0];
+
+      const config = await getInterfaceConfig(guildId);
+      const slotColors = normalizeSlotColors(config.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS);
+      slotColors[slotIndex] = selectedColor;
+      config.admin_slot_colors = slotColors;
+      await saveInterfaceConfig(guildId, config);
+
+      return showAdminInterfaceSlotAssign(interaction, slotIndex);
+    }
+
+    if (customId.startsWith('admin_interface_set_btn_color_')) {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const slotIndex = parseInt(customId.replace('admin_interface_set_btn_color_', ''), 10);
+      const selectedBtnColor = interaction.values[0];
+
+      const config = await getInterfaceConfig(guildId);
+      const slotButtonColors = normalizeSlotButtonColors(config.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS);
+      slotButtonColors[slotIndex] = selectedBtnColor;
+      config.admin_slot_button_colors = slotButtonColors;
+      await saveInterfaceConfig(guildId, config);
+
+      return showAdminInterfaceSlotAssign(interaction, slotIndex);
+    }
+
+    if (customId === 'admin_interface_reset_defaults') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+      const config = await getInterfaceConfig(guildId);
+      config.admin_shortcut_order = [...DEFAULT_ADMIN_SHORTCUT_ORDER];
+      config.admin_slot_colors = [...DEFAULT_ADMIN_SLOT_COLORS];
+      config.admin_slot_button_colors = [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS];
+      await saveInterfaceConfig(guildId, config);
+
+      return showAdminInterfaceSetup(interaction);
+    }
+
     if (customId === 'admin_interface_set_channel') {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const channelId = interaction.values[0];
