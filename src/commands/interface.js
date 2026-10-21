@@ -398,9 +398,39 @@ export function parseEmojiImageUrl(emojiStr) {
 const emojiImageCache = new Map();
 
 /**
+ * Detect non-transparent bounding box in an Image to crop empty margins
+ * @param {import('@napi-rs/canvas').Image} image
+ * @returns {{ sx: number, sy: number, sw: number, sh: number }|null}
+ */
+function getNonTransparentBounds(image) {
+  try {
+    const temp = createCanvas(image.width, image.height);
+    const tCtx = temp.getContext('2d');
+    tCtx.drawImage(image, 0, 0);
+    const data = tCtx.getImageData(0, 0, image.width, image.height).data;
+    let minX = image.width, maxX = 0, minY = image.height, maxY = 0;
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        if (data[(y * image.width + x) * 4 + 3] > 10) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) return null;
+    return { sx: minX, sy: minY, sw: maxX - minX + 1, sh: maxY - minY + 1 };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch and load an image safely from a URL or CDN with timeout and in-memory caching.
+ * Automatically analyzes non-transparent bounds to trim empty border padding.
  * @param {string} url
- * @returns {Promise<import('@napi-rs/canvas').Image|null>}
+ * @returns {Promise<{ img: import('@napi-rs/canvas').Image, trim: { sx: number, sy: number, sw: number, sh: number }|null }|null>}
  */
 async function fetchEmojiImageSafe(url) {
   if (!url) return null;
@@ -416,12 +446,14 @@ async function fetchEmojiImageSafe(url) {
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const img = await loadImage(buffer);
+    const trim = getNonTransparentBounds(img);
+    const entry = { img, trim };
     if (emojiImageCache.size > 100) {
       const firstKey = emojiImageCache.keys().next().value;
       emojiImageCache.delete(firstKey);
     }
-    emojiImageCache.set(url, img);
-    return img;
+    emojiImageCache.set(url, entry);
+    return entry;
   } catch (err) {
     sysError('Failed to fetch custom emoji image for interface banner', err, { url });
     return null;
@@ -431,15 +463,21 @@ async function fetchEmojiImageSafe(url) {
 /**
  * Draw an Image onto targetCtx centered at (cx, cy) with concentric silhouette dilation
  * creating a crisp black outline matching drawEmojiWithStroke.
+ * Supports source sub-rect trimming to eliminate transparent padding.
  * @param {import('@napi-rs/canvas').SKRSContext2D} targetCtx 
  * @param {import('@napi-rs/canvas').Image} img 
  * @param {number} cx 
  * @param {number} cy 
  * @param {number} targetSize 
  * @param {number} strokeWidth 
+ * @param {{ sx: number, sy: number, sw: number, sh: number }|null} [trim]
  */
-function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8) {
-  const aspect = (img.width && img.height) ? (img.width / img.height) : 1;
+function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8, trim = null) {
+  const sx = trim?.sx ?? 0;
+  const sy = trim?.sy ?? 0;
+  const sw = trim?.sw ?? img.width;
+  const sh = trim?.sh ?? img.height;
+  const aspect = (sw && sh) ? (sw / sh) : 1;
   let drawW = targetSize;
   let drawH = targetSize;
   if (aspect > 1) {
@@ -449,7 +487,7 @@ function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8
   }
 
   if (!strokeWidth || strokeWidth <= 0) {
-    targetCtx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
+    targetCtx.drawImage(img, sx, sy, sw, sh, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
     return;
   }
 
@@ -459,7 +497,7 @@ function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8
 
   const colorCanvas = createCanvas(tempW, tempH);
   const colorCtx = colorCanvas.getContext('2d');
-  colorCtx.drawImage(img, pad, pad, drawW, drawH);
+  colorCtx.drawImage(img, sx, sy, sw, sh, pad, pad, drawW, drawH);
 
   const silCanvas = createCanvas(tempW, tempH);
   const silCtx = silCanvas.getContext('2d');
@@ -511,26 +549,30 @@ async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#00000
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji / Icon — prominent in center (60% of card height, positioned at 44%) with thick, smooth black outline
-  const emojiSize = Math.round(cardH * 0.60);
+  // 1. Emoji / Icon — prominent in center with thick, smooth black outline
+  // Optical sizing: circular and coin assets have lower visual density than square glyphs; apply 1.06x optical boost and balanced center
+  const isCoinSlot = meta.id === 'coins';
+  const opticalScale = isCoinSlot ? 1.06 : 1.0;
+  const emojiSize = Math.round(cardH * 0.60 * opticalScale);
   const emojiStrokeWidth = Math.max(7, Math.round(cardH * 0.030));
+  const emojiCenterY = isCoinSlot ? (y + cardH * 0.43) : (y + cardH * 0.44);
   const rawEmoji = meta.emoji || '⭐';
 
   const customUrl = parseEmojiImageUrl(rawEmoji);
-  let customImg = null;
+  let customData = null;
   if (customUrl) {
-    customImg = await fetchEmojiImageSafe(customUrl);
+    customData = await fetchEmojiImageSafe(customUrl);
   }
 
-  if (customImg) {
-    drawImageWithStroke(ctx, customImg, x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
+  if (customData && customData.img) {
+    drawImageWithStroke(ctx, customData.img, x + cardW / 2, emojiCenterY, emojiSize, emojiStrokeWidth, customData.trim);
   } else {
     // If it was supposed to be a custom emoji but fetch failed or is unparseable text, fallback to standard glyph
     let fallbackEmoji = rawEmoji;
     if (customUrl || rawEmoji.includes('<') || rawEmoji.includes('>')) {
-      fallbackEmoji = meta.id === 'coins' ? '🪙' : '⭐';
+      fallbackEmoji = isCoinSlot ? '🪙' : '⭐';
     }
-    drawEmojiWithStroke(ctx, fallbackEmoji, x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
+    drawEmojiWithStroke(ctx, fallbackEmoji, x + cardW / 2, emojiCenterY, emojiSize, emojiStrokeWidth);
   }
 
   // 2. Label Text — bold, uppercase, positioned at 83% with thick, smooth rounded black outline
