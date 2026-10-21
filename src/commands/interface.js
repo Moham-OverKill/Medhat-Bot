@@ -374,8 +374,120 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 8
 }
 
 /**
+ * Resolve an emoji string to an image URL if it is a Discord custom emoji or direct image URL.
+ * Supports <:name:id>, <a:name:id>, pure snowflake ID, and direct URLs.
+ * @param {string} emojiStr
+ * @returns {string|null}
+ */
+export function parseEmojiImageUrl(emojiStr) {
+  if (!emojiStr || typeof emojiStr !== 'string') return null;
+  const str = emojiStr.trim();
+  if (str.startsWith('http://') || str.startsWith('https://')) {
+    return str;
+  }
+  const customMatch = str.match(/<a?:[a-zA-Z0-9_]+:(\d{17,22})>/);
+  if (customMatch && customMatch[1]) {
+    return `https://cdn.discordapp.com/emojis/${customMatch[1]}.png?size=128&quality=lossless`;
+  }
+  if (/^\d{17,22}$/.test(str)) {
+    return `https://cdn.discordapp.com/emojis/${str}.png?size=128&quality=lossless`;
+  }
+  return null;
+}
+
+const emojiImageCache = new Map();
+
+/**
+ * Fetch and load an image safely from a URL or CDN with timeout and in-memory caching.
+ * @param {string} url
+ * @returns {Promise<import('@napi-rs/canvas').Image|null>}
+ */
+async function fetchEmojiImageSafe(url) {
+  if (!url) return null;
+  if (emojiImageCache.has(url)) {
+    return emojiImageCache.get(url);
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const img = await loadImage(buffer);
+    if (emojiImageCache.size > 100) {
+      const firstKey = emojiImageCache.keys().next().value;
+      emojiImageCache.delete(firstKey);
+    }
+    emojiImageCache.set(url, img);
+    return img;
+  } catch (err) {
+    sysError('Failed to fetch custom emoji image for interface banner', err, { url });
+    return null;
+  }
+}
+
+/**
+ * Draw an Image onto targetCtx centered at (cx, cy) with concentric silhouette dilation
+ * creating a crisp black outline matching drawEmojiWithStroke.
+ * @param {import('@napi-rs/canvas').SKRSContext2D} targetCtx 
+ * @param {import('@napi-rs/canvas').Image} img 
+ * @param {number} cx 
+ * @param {number} cy 
+ * @param {number} targetSize 
+ * @param {number} strokeWidth 
+ */
+function drawImageWithStroke(targetCtx, img, cx, cy, targetSize, strokeWidth = 8) {
+  const aspect = (img.width && img.height) ? (img.width / img.height) : 1;
+  let drawW = targetSize;
+  let drawH = targetSize;
+  if (aspect > 1) {
+    drawH = targetSize / aspect;
+  } else if (aspect < 1) {
+    drawW = targetSize * aspect;
+  }
+
+  if (!strokeWidth || strokeWidth <= 0) {
+    targetCtx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
+    return;
+  }
+
+  const pad = strokeWidth * 2 + 12;
+  const tempW = Math.ceil(drawW + pad * 2);
+  const tempH = Math.ceil(drawH + pad * 2);
+
+  const colorCanvas = createCanvas(tempW, tempH);
+  const colorCtx = colorCanvas.getContext('2d');
+  colorCtx.drawImage(img, pad, pad, drawW, drawH);
+
+  const silCanvas = createCanvas(tempW, tempH);
+  const silCtx = silCanvas.getContext('2d');
+  silCtx.drawImage(colorCanvas, 0, 0);
+  silCtx.globalCompositeOperation = 'source-in';
+  silCtx.fillStyle = '#000000';
+  silCtx.fillRect(0, 0, tempW, tempH);
+
+  targetCtx.save();
+  const stepSize = Math.max(1.8, strokeWidth / 4);
+  for (let r = stepSize; r <= strokeWidth; r += stepSize) {
+    const ringSteps = Math.max(14, Math.ceil(2 * Math.PI * r));
+    for (let i = 0; i < ringSteps; i++) {
+      const angle = (i * 2 * Math.PI) / ringSteps;
+      const ox = Math.cos(angle) * r;
+      const oy = Math.sin(angle) * r;
+      targetCtx.drawImage(silCanvas, cx - tempW / 2 + ox, cy - tempH / 2 + oy);
+    }
+  }
+  targetCtx.drawImage(silCanvas, cx - tempW / 2, cy - tempH / 2);
+  targetCtx.drawImage(colorCanvas, cx - tempW / 2, cy - tempH / 2);
+  targetCtx.restore();
+}
+
+/**
  * Render an individual shortcut card tile
  * Features a solid colored card base, crisp border, prominent centered emoji with black outline, and bold bottom label with black outline.
+ * Supports both Unicode emoji glyphs and custom Discord emojis (rendered as images).
  * @param {import('@napi-rs/canvas').SKRSContext2D} ctx 
  * @param {number} x 
  * @param {number} y 
@@ -384,7 +496,7 @@ function drawEmojiWithStroke(targetCtx, emoji, cx, cy, fontSize, strokeWidth = 8
  * @param {object} meta 
  * @param {string} [bgColor]
  */
-function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
+async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   const radius = Math.round(cardH * 0.08);
   const borderWidth = Math.max(4, Math.round(cardH * 0.024));
   const strokeColor = '#ffffff';
@@ -399,10 +511,27 @@ function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#000000') {
   ctx.stroke();
   ctx.clip();
 
-  // 1. Emoji — prominent in center (60% of card height, positioned at 44%) with thick, smooth black outline
+  // 1. Emoji / Icon — prominent in center (60% of card height, positioned at 44%) with thick, smooth black outline
   const emojiSize = Math.round(cardH * 0.60);
   const emojiStrokeWidth = Math.max(7, Math.round(cardH * 0.030));
-  drawEmojiWithStroke(ctx, meta.emoji || '⭐', x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
+  const rawEmoji = meta.emoji || '⭐';
+
+  const customUrl = parseEmojiImageUrl(rawEmoji);
+  let customImg = null;
+  if (customUrl) {
+    customImg = await fetchEmojiImageSafe(customUrl);
+  }
+
+  if (customImg) {
+    drawImageWithStroke(ctx, customImg, x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
+  } else {
+    // If it was supposed to be a custom emoji but fetch failed or is unparseable text, fallback to standard glyph
+    let fallbackEmoji = rawEmoji;
+    if (customUrl || rawEmoji.includes('<') || rawEmoji.includes('>')) {
+      fallbackEmoji = meta.id === 'coins' ? '🪙' : '⭐';
+    }
+    drawEmojiWithStroke(ctx, fallbackEmoji, x + cardW / 2, y + cardH * 0.44, emojiSize, emojiStrokeWidth);
+  }
 
   // 2. Label Text — bold, uppercase, positioned at 83% with thick, smooth rounded black outline
   let labelFontSize = Math.round(cardH * 0.135);
@@ -513,7 +642,7 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
       const meta = SHORTCUT_REGISTRY[item.id];
       const bgColor = slotColors[item.slotIndex] || '#000000';
       if (meta) {
-        drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor);
+        await drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor);
       }
     }
   }
@@ -980,7 +1109,7 @@ export async function generateAdminInterfaceBanner(guildId = null) {
     for (let c = 0; c < maxCols; c++) {
       const item = rowItems[c];
       const x = marginX + c * (cardW + gapX);
-      drawShortcutCard(ctx, x, y, cardW, cardH, item, '#000000');
+      await drawShortcutCard(ctx, x, y, cardW, cardH, item, '#000000');
     }
   }
 
