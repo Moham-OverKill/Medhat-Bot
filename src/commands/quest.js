@@ -133,7 +133,7 @@ export async function renderQuests(interaction, page = 0) {
             new ButtonBuilder()
                 .setCustomId('quest_refresh')
                 .setLabel('Refresh')
-                .setEmoji('🔄')
+                .setEmoji('🔁')
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`quest_page_${currentPage + 1}`)
@@ -148,7 +148,7 @@ export async function renderQuests(interaction, page = 0) {
             new ButtonBuilder()
                 .setCustomId('quest_refresh')
                 .setLabel('Refresh')
-                .setEmoji('🔄')
+                .setEmoji('🔁')
                 .setStyle(ButtonStyle.Secondary)
         );
     }

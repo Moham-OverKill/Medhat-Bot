@@ -829,6 +829,7 @@ export async function showTradeSetup(interaction, setupInfo = null, ...extraComp
         new ButtonBuilder()
             .setCustomId(`trade_setup_reset`)
             .setLabel('Reset')
+            .setEmoji('🔃')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(`trade_setup_post`)

@@ -202,7 +202,7 @@ export async function showQuestsSchedule(interaction) {
       new ButtonBuilder()
         .setCustomId('quests_force_rotate')
         .setLabel('Rotate Now')
-        .setEmoji('🔄')
+        .setEmoji('🔁')
         .setStyle(ButtonStyle.Primary)
     );
 
