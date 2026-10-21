@@ -91,12 +91,6 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         } else {
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
             for (const cat of Object.values(categories)) {
-                const chanId = config[cat.dbId];
-                let currentChanText = 'None';
-                if (chanId) {
-                    const targetChan = interaction.guild?.channels?.cache?.get(chanId) || (await interaction.guild?.channels?.fetch(chanId).catch(() => null));
-                    currentChanText = targetChan?.name ? `#${targetChan.name}` : 'Configured';
-                }
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`lb_menu_${cat.id}`)
                     .setPlaceholder(`${cat.menuEmoji || '📊'} ${cat.name}...`)
@@ -104,20 +98,17 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                         {
                             label: 'Select A Channel',
                             value: 'channel',
-                            emoji: '💬',
-                            description: chanId ? `Currently: ${currentChanText}` : 'Assign a text channel for this leaderboard'
+                            emoji: '💬'
                         },
                         {
                             label: 'Force Refresh',
                             value: 'refresh',
-                            emoji: '🔄',
-                            description: 'Update live rankings immediately'
+                            emoji: '🔄'
                         },
                         {
                             label: 'Disable',
                             value: 'disable',
-                            emoji: '❌',
-                            description: 'Turn off this leaderboard'
+                            emoji: '❌'
                         }
                     ]);
                 components.push(new ActionRowBuilder().addComponents(menu));
@@ -179,11 +170,7 @@ export async function handleLeaderboardMenuAction(interaction) {
             const chanId = config[cat.dbId];
 
             if (!chanId) {
-                await interaction.followUp({
-                    content: `❌ Please assign a channel for **${cat.name}** leaderboard first before refreshing.`,
-                    flags: MessageFlags.Ephemeral
-                }).catch(() => {});
-                return handleLeaderboardSettings(interaction);
+                return handleLeaderboardSettings(interaction, cat.id, null, `Please assign a channel for **${cat.name}** leaderboard first before refreshing.`);
             }
 
             await handleLeaderboardRefresh(interaction, cat.id);
@@ -197,10 +184,6 @@ export async function handleLeaderboardMenuAction(interaction) {
             const oldMsg = config[cat.msgId];
 
             if (!oldChan) {
-                await interaction.followUp({
-                    content: `ℹ️ The **${cat.name}** leaderboard is already disabled.`,
-                    flags: MessageFlags.Ephemeral
-                }).catch(() => {});
                 return handleLeaderboardSettings(interaction);
             }
 
@@ -224,11 +207,6 @@ export async function handleLeaderboardMenuAction(interaction) {
                 `**Admin:** \`${logName}\`\n` +
                 `**Action:** Disabled the **${cat.name}** leaderboard.`
             );
-
-            await interaction.followUp({
-                content: `✖️ The **${cat.name}** leaderboard has been disabled.`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
 
             return handleLeaderboardSettings(interaction, null, config);
         }
@@ -259,10 +237,6 @@ export async function handleLeaderboardChannelSelect(interaction) {
         const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
         const permissionCheck = checkChannelPermissions(channel);
         if (!permissionCheck.valid) {
-            await interaction.followUp({ 
-                content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel**, **Send Messages**, and **Embed Links** there.`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
             return handleLeaderboardSettings(interaction, cat.id, null, `Cannot assign <#${channelId}>: ${permissionCheck.error}`);
         }
 
@@ -284,10 +258,6 @@ export async function handleLeaderboardChannelSelect(interaction) {
         // Send new leaderboard
         const nextMsgId = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
         if (!nextMsgId) {
-            await interaction.followUp({
-                content: `⚠️ Could not dispatch the **${cat.name}** leaderboard to <#${channelId}>. Please verify bot permissions in that channel.`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
             return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>`);
         }
         
@@ -338,12 +308,6 @@ export async function handleLeaderboardRefresh(interaction, targetCategory = nul
             `**Admin:** \`${logName}\`\n` +
             `**Action:** Manually triggered refresh of leaderboard channels and synchronized roles.`
         );
-
-        // Feedback
-        await interaction.followUp({ 
-            content: '✅ Leaderboard channels and live roles have been synchronized.', 
-            flags: MessageFlags.Ephemeral 
-        }).catch(() => {});
     } catch (error) {
         sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Refresh');

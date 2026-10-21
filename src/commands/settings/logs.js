@@ -105,12 +105,6 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
         } else {
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
             for (const cat of Object.values(LOG_CATEGORIES)) {
-                const chanId = config[cat.dbId];
-                let currentChanText = 'None';
-                if (chanId) {
-                    const targetChan = interaction.guild?.channels?.cache?.get(chanId) || (await interaction.guild?.channels?.fetch(chanId).catch(() => null));
-                    currentChanText = targetChan?.name ? `#${targetChan.name}` : 'Configured';
-                }
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`logs_menu_${cat.id}`)
                     .setPlaceholder(`${cat.emoji} ${cat.name} Logs...`)
@@ -118,20 +112,17 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
                         {
                             label: 'Select A Channel',
                             value: 'channel',
-                            emoji: '💬',
-                            description: chanId ? `Currently: ${currentChanText}` : 'Assign a text channel for this log category'
+                            emoji: '💬'
                         },
                         {
                             label: 'Send Test Log',
                             value: 'test',
-                            emoji: '🧪',
-                            description: 'Dispatch a test log embed to verify routing'
+                            emoji: '🧪'
                         },
                         {
                             label: 'Disable',
                             value: 'disable',
-                            emoji: '❌',
-                            description: 'Turn off this log category'
+                            emoji: '❌'
                         }
                     ]);
                 components.push(new ActionRowBuilder().addComponents(menu));
@@ -192,19 +183,13 @@ export async function handleLogMenuAction(interaction) {
             const chanId = config[cat.dbId];
 
             if (!chanId) {
-                return interaction.followUp({
-                    content: `❌ Please assign a channel for **${cat.name}** logs first before sending a test log.`,
-                    flags: MessageFlags.Ephemeral
-                });
+                return handleLogsSettings(interaction, cat.id, null, `Please assign a channel for **${cat.name}** logs first before sending a test log.`);
             }
 
             const targetChan = interaction.guild?.channels?.cache?.get(chanId) || await interaction.guild?.channels?.fetch(chanId).catch(() => null);
             const perm = checkChannelPermissions(targetChan);
             if (!perm.valid) {
-                return interaction.followUp({
-                    content: `❌ Cannot send test log to <#${chanId}>: ${perm.error}`,
-                    flags: MessageFlags.Ephemeral
-                });
+                return handleLogsSettings(interaction, cat.id, null, `Cannot send test log to <#${chanId}>: ${perm.error}`);
             }
 
             const logName = getUserLogName(interaction);
@@ -215,11 +200,7 @@ export async function handleLogMenuAction(interaction) {
                 .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleString()}` });
 
             await targetChan.send({ embeds: [testEmbed] }).catch(() => {});
-
-            return interaction.followUp({
-                content: `✅ Test log successfully sent to <#${chanId}>.`,
-                flags: MessageFlags.Ephemeral
-            });
+            return handleLogsSettings(interaction, null, config);
         }
 
         if (action === 'disable') {
@@ -228,10 +209,6 @@ export async function handleLogMenuAction(interaction) {
             const oldChan = config[cat.dbId];
 
             if (!oldChan) {
-                await interaction.followUp({
-                    content: `ℹ️ The **${cat.name}** log category is already disabled.`,
-                    flags: MessageFlags.Ephemeral
-                }).catch(() => {});
                 return handleLogsSettings(interaction);
             }
 
@@ -243,11 +220,6 @@ export async function handleLogMenuAction(interaction) {
                 `**Category:** \`${cat.name}\`\n` +
                 `**Action:** Disabled ${cat.name} logging.`
             );
-
-            await interaction.followUp({
-                content: `✖️ **${cat.name}** logging has been disabled.`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
 
             const updatedConfig = (await getGuildConfig(guildId)) || {};
             return handleLogsSettings(interaction, null, updatedConfig);
@@ -276,10 +248,6 @@ export async function handleLogChannelSelect(interaction) {
         const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
         const permissionCheck = checkChannelPermissions(channel);
         if (!permissionCheck.valid) {
-            await interaction.followUp({ 
-                content: `❌ **I can't use that channel.** ${permissionCheck.error}\nPlease make sure I have permission to **View Channel**, **Send Messages**, and **Embed Links** there.`,
-                flags: MessageFlags.Ephemeral
-            }).catch(() => {});
             return handleLogsSettings(interaction, cat.id, null, `Cannot assign <#${channelId}>: ${permissionCheck.error}`);
         }
 
