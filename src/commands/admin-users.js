@@ -82,7 +82,9 @@ export async function showUserSelector(interaction) {
             new ActionRowBuilder().addComponents(select),
             row1Buttons,
             row2Buttons
-        ]
+        ],
+        files: [],
+        attachments: []
     });
 }
 

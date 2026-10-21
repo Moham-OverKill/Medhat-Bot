@@ -611,7 +611,8 @@ export async function renderEmojiModerationPanel(interaction, page = 0) {
         content: '',
         embeds: [embed],
         components,
-        files: []
+        files: [],
+        attachments: []
     });
 }
 
@@ -749,7 +750,8 @@ export async function renderForumsPanel(interaction) {
         content: '',
         embeds: [embed],
         components,
-        files: []
+        files: [],
+        attachments: []
     });
 }
 

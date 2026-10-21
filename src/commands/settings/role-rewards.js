@@ -194,7 +194,9 @@ export async function showRolesMenu(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2],
+        files: [],
+        attachments: []
     });
 }
 
@@ -221,7 +223,9 @@ export async function showSelfRolesDashboard(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1]
+        components: [row1],
+        files: [],
+        attachments: []
     });
 }
 
@@ -279,7 +283,9 @@ export async function showRoleRewardsMenu(interaction) {
 
     await interaction[responseMethod]({
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2],
+        files: [],
+        attachments: []
     });
 }
 
