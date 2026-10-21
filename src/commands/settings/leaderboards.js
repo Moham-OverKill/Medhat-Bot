@@ -76,7 +76,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             const channelSelect = new ChannelSelectMenuBuilder()
                 .setCustomId(`lb_set_channel_${active.id}`)
                 .setPlaceholder(`Select a channel for ${active.name}...`)
-                .setChannelTypes(ChannelType.GuildText);
+                .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
             components.push(new ActionRowBuilder().addComponents(channelSelect));
 
             // Row 2: Single Back button returning to 4-menu view
@@ -168,6 +168,17 @@ export async function handleLeaderboardMenuAction(interaction) {
 
         if (action === 'refresh') {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            const config = await getLeaderboardConfig(guildId) || {};
+            const chanId = config[cat.dbId];
+
+            if (!chanId) {
+                await interaction.followUp({
+                    content: `❌ Please assign a channel for **${cat.name}** leaderboard first before refreshing.`,
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+                return handleLeaderboardSettings(interaction);
+            }
+
             await handleLeaderboardRefresh(interaction, cat.id);
             return handleLeaderboardSettings(interaction);
         }
@@ -228,7 +239,10 @@ export async function handleLeaderboardChannelSelect(interaction) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
         const channelId = interaction.values[0];
-        const categoryId = interaction.customId.replace('lb_set_channel_', '');
+        const categoryId = interaction.customId
+            .replace('lb_set_channel_', '')
+            .replace('leaderboard_channel_', '')
+            .replace('lb_assign_', '');
         
         const categories = await getCategories(guildId);
         if (!categories[categoryId]) return;
@@ -247,8 +261,28 @@ export async function handleLeaderboardChannelSelect(interaction) {
 
         let config = await getLeaderboardConfig(guildId) || {};
 
+        // Cleanup old message if reassigning
+        const oldChanId = config[cat.dbId];
+        const oldMsgId = config[cat.msgId];
+        if (oldMsgId && oldChanId) {
+            try {
+                const oldChan = interaction.guild.channels.cache.get(oldChanId) || await interaction.guild.channels.fetch(oldChanId).catch(() => null);
+                if (oldChan) {
+                    const oldMsg = await oldChan.messages.fetch(oldMsgId).catch(() => null);
+                    if (oldMsg) await oldMsg.delete().catch(() => {});
+                }
+            } catch {}
+        }
+
         // Send new leaderboard
         const nextMsgId = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
+        if (!nextMsgId) {
+            await interaction.followUp({
+                content: `⚠️ Could not dispatch the **${cat.name}** leaderboard to <#${channelId}>. Please verify bot permissions in that channel.`,
+                flags: MessageFlags.Ephemeral
+            }).catch(() => {});
+            return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>`);
+        }
         
         // Update DB
         config[cat.dbId] = channelId;
@@ -325,7 +359,9 @@ export async function handleLeaderboardDisable(interaction, targetCategoryId = n
     try {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
-        const categoryId = targetCategoryId || interaction.customId.replace('lb_disable_', '');
+        const categoryId = targetCategoryId || interaction.customId
+            .replace('lb_disable_', '')
+            .replace('leaderboard_disable_', '');
         const categories = await getCategories(guildId);
         if (!categories[categoryId]) return;
         const cat = categories[categoryId];

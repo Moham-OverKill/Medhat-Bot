@@ -113,7 +113,6 @@ import {
   handleLootBoxImageActionSelect,
   handleLootBoxImagesSubmit
 } from '../commands/shop-setup.js';
-import { handleLogsSettings, handleLogCategorySelect, handleLogDisable } from '../commands/settings/logs.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
 import { handleQuestsComponent, handleQuestsModal } from '../commands/quests-dashboard.js';
 import { handleQuestInteraction } from '../commands/quest.js';
@@ -324,7 +323,7 @@ export function setupComponentHandlers(client) {
       if (
         customId.startsWith('settings_') ||
         customId.startsWith('organize_') ||
-        customId.startsWith('leaderboard_channel_') ||
+        customId.startsWith('leaderboard_') ||
         customId.startsWith('admin_user_') ||
         customId.startsWith('admin_manage_') ||
         customId.startsWith('lb_') ||
@@ -455,17 +454,12 @@ export function setupComponentHandlers(client) {
       // ADMIN SHOP SETUP - MAIN MENU
       else if (baseCustomId === 'shop_admin_home' || baseCustomId === 'shop_setup_home') {
         await handleShopSetup(interaction);
-      } else if (customId === 'settings_home') {
-        await handleSettingsComponent(interaction);
-      } else if (customId === 'settings_logs') {
-        await handleLogsSettings(interaction);
-      } else if (customId === 'logs_disable_all' || customId === 'logs_disable_btn') {
-        await handleLogDisable(interaction);
-      } else if (customId.startsWith('logs_assign_')) {
-        await handleLogCategorySelect(interaction);
-      } else if (customId === 'leaderboard_refresh') {
-        // Leaderboard refresh button - import dynamically
-        const { handleSettingsComponent } = await import('../commands/settings.js');
+      } else if (
+        customId === 'settings_home' ||
+        customId === 'settings_logs' ||
+        customId.startsWith('logs_') ||
+        customId.startsWith('leaderboard_')
+      ) {
         await handleSettingsComponent(interaction);
       }
       // Shop Setup Button Routing
