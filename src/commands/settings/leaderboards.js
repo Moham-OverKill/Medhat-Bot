@@ -128,7 +128,9 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             embeds: [embed],
             components,
             flags: MessageFlags.Ephemeral,
-            content: ''
+            content: '',
+            files: [],
+            attachments: []
         };
 
         if (interaction.deferred || interaction.replied) {
