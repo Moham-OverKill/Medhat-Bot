@@ -271,8 +271,8 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
     .setDescription('Manage categories and items in your server shop.')
     .addFields(
       { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
-      { name: '📦 Packs', value: `${packCount}`, inline: true },
-      { name: '🏷️ Items', value: `${itemsCount}`, inline: true }
+      { name: '🏷️ Items', value: `${itemsCount}`, inline: true },
+      { name: '📦 Packs', value: `${packCount}`, inline: true }
     );
 
   const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
