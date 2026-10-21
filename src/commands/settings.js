@@ -124,7 +124,7 @@ export async function showMainMenu(interaction) {
     }
 
     moderateOptions.push(
-        { label: 'Dashboard', value: 'mod_dashboard', emoji: '🖥️' },
+        { label: 'Dashboard', value: 'mod_dashboard', emoji: '🎛️' },
         { label: 'Logs', value: 'mod_logs', emoji: '📜' }
     );
 
