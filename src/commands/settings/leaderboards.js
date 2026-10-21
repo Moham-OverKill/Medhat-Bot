@@ -19,9 +19,11 @@ import { getUserLogName, getCurrencyName, COIN_EMOJI } from '../../shared.js';
 export async function getCategories(guildId) {
     const coinName = await getCurrencyName(guildId);
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    const isUnicode = Boolean(coinEmoji && !coinEmoji.startsWith('<'));
+    const menuEmoji = isUnicode ? coinEmoji : '🪙';
     return {
         activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', menuEmoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
-        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '💰', menuEmoji: '💰', dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
+        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '🪙', menuEmoji, dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
         streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', menuEmoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
         level: { id: 'level', name: 'Highest Level', emoji: '⭐', menuEmoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
     };
