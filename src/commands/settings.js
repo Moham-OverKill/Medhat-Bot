@@ -12,7 +12,8 @@ import {
     TextInputBuilder,
     TextInputStyle,
     FileUploadBuilder,
-    LabelBuilder
+    LabelBuilder,
+    StringSelectMenuBuilder
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
@@ -34,10 +35,10 @@ import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
 import { handleLogsSettings, handleLogMenuAction, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
-import { handleOrganizeComponent } from './settings/organize.js';
+import { handleOrganizeComponent, handleOrganizeSettings } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponentEmoji, formatCurrentImageDescription } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, getUserLogName, resolveComponentEmoji, formatCurrentImageDescription, isBackDisabled } from '../shared.js';
 
 // /settings command - unified control panel
 export const settingsCommand = new SlashCommandBuilder()
@@ -71,86 +72,87 @@ export async function showMainMenu(interaction) {
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
-    // Row 1: Colors / Levels / Coins / Shop
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_colors')
-            .setLabel('Colors')
-            .setEmoji('🎨')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_pass')
-            .setLabel('Levels')
-            .setEmoji('⭐')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_coins')
-            .setLabel(coinName)
-            .setEmoji(resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙'))
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_shop')
-            .setLabel('Shop')
-            .setEmoji('🛒')
-            .setStyle(ButtonStyle.Secondary)
+    const nonce = Date.now();
+
+    // Row 1: MARKET Select Menu (Coins, Shop, Economy)
+    const marketSelect = new StringSelectMenuBuilder()
+        .setCustomId(`settings_menu_market_${nonce}`)
+        .setPlaceholder('🛒 Market')
+        .addOptions([
+            {
+                label: coinName,
+                value: 'market_coins',
+                emoji: resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙')
+            },
+            {
+                label: 'Shop',
+                value: 'market_shop',
+                emoji: '🛒'
+            },
+            {
+                label: 'Economy',
+                value: 'market_economy',
+                emoji: '📈'
+            }
+        ]);
+    const row1 = new ActionRowBuilder().addComponents(marketSelect);
+
+    // Row 2: FUN Select Menu (Colors, Levels, Roles, Leaderboard, Shortcuts)
+    const funSelect = new StringSelectMenuBuilder()
+        .setCustomId(`settings_menu_fun_${nonce}`)
+        .setPlaceholder('🎮 Fun')
+        .addOptions([
+            { label: 'Colors', value: 'fun_colors', emoji: '🎨' },
+            { label: 'Levels', value: 'fun_levels', emoji: '⭐' },
+            { label: 'Roles', value: 'fun_roles', emoji: '🎭' },
+            { label: 'Leaderboard', value: 'fun_leaderboards', emoji: '📊' },
+            { label: 'Shortcuts', value: 'fun_shortcuts', emoji: '🪟' }
+        ]);
+    const row2 = new ActionRowBuilder().addComponents(funSelect);
+
+    // Row 3: MODERATE Select Menu (Users, Anti Cheat, Auto Mod, Admins, Dashboard, Logs)
+    const { hasAdminManagerAccess } = await import('../storage/admins.js');
+    const canManageAdmins = await hasAdminManagerAccess(interaction);
+
+    const moderateOptions = [
+        { label: 'Users', value: 'mod_users', emoji: '👥' },
+        { label: 'Anti Cheat', value: 'mod_anticheat', emoji: '🚫' },
+        { label: 'Auto Mod', value: 'mod_automod', emoji: '🛡️' }
+    ];
+
+    if (canManageAdmins) {
+        moderateOptions.push({ label: 'Admins', value: 'mod_admins', emoji: '💼' });
+    }
+
+    moderateOptions.push(
+        { label: 'Dashboard', value: 'mod_dashboard', emoji: '🖥️' },
+        { label: 'Logs', value: 'mod_logs', emoji: '📜' }
     );
 
-    // Row 2: Users / Roles / Organize / Customize
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_users')
-            .setLabel('Moderate')
-            .setEmoji('👥')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_roles')
-            .setLabel('Roles')
-            .setEmoji('🎭')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_organize')
-            .setLabel('Organize')
-            .setEmoji('🧹')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_customize')
-            .setLabel('Customize')
-            .setEmoji('✨')
-            .setStyle(ButtonStyle.Secondary)
-    );
+    const moderateSelect = new StringSelectMenuBuilder()
+        .setCustomId(`settings_menu_moderate_${nonce}`)
+        .setPlaceholder('🛡️ Moderate')
+        .addOptions(moderateOptions);
+    const row3 = new ActionRowBuilder().addComponents(moderateSelect);
 
-    // Row 3: Leaderboard / Embed / Logs / Economy
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_embed')
-            .setLabel('Embed')
-            .setEmoji('📰')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_leaderboards')
-            .setLabel('Leaderboard')
-            .setEmoji('📊')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_logs')
-            .setLabel('Logs')
-            .setEmoji('📜')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('settings_economy')
-            .setLabel('Economy')
-            .setEmoji('📈')
-            .setStyle(ButtonStyle.Secondary)
-    );
+    // Row 4: OTHER Select Menu (Customize, Embeds)
+    const otherSelect = new StringSelectMenuBuilder()
+        .setCustomId(`settings_menu_other_${nonce}`)
+        .setPlaceholder('⚙️ Other')
+        .addOptions([
+            { label: 'Customize', value: 'other_customize', emoji: '✨' },
+            { label: 'Embeds', value: 'other_embeds', emoji: '📰' }
+        ]);
+    const row4 = new ActionRowBuilder().addComponents(otherSelect);
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
-        : (interaction.isButton() ? 'update' : 'editReply');
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2, row3],
+        components: [row1, row2, row3, row4],
         files: [],
         attachments: []
     });
@@ -197,7 +199,8 @@ export async function showCoinsSubMenu(interaction) {
             .setCustomId('settings_home')
             .setLabel('Back')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
             .setCustomId('settings_coins_customize')
             .setLabel('Customize')
@@ -256,7 +259,8 @@ export async function showOtherSubMenu(interaction) {
             .setCustomId('settings_home')
             .setLabel('Back')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
             .setCustomId('settings_leaderboards')
             .setLabel('Leaderboards')
@@ -378,6 +382,72 @@ export async function handleSettingsComponent(interaction) {
             }
             await showMainMenu(interaction);
             return;
+        }
+
+        // Handle categorized select menus from the main settings control panel
+        if (customId.startsWith('settings_menu_')) {
+            const selected = interaction.values?.[0];
+            if (!selected) return;
+
+            switch (selected) {
+                // 1. MARKET
+                case 'market_coins':
+                    return showCoinsSubMenu(interaction);
+                case 'market_shop':
+                    return showShopPanel(interaction);
+                case 'market_economy':
+                    return handleEconomySettings(interaction);
+
+                // 2. FUN
+                case 'fun_colors':
+                    return showColorsPanel(interaction, 'normal');
+                case 'fun_levels': {
+                    const { handlePassSetup } = await import('./settings/pass.js');
+                    return handlePassSetup(interaction);
+                }
+                case 'fun_roles': {
+                    const { showRolesMenu } = await import('./settings/role-rewards.js');
+                    return showRolesMenu(interaction);
+                }
+                case 'fun_leaderboards': {
+                    const { handleLeaderboardSettings } = await import('./settings/leaderboards.js');
+                    return handleLeaderboardSettings(interaction);
+                }
+                case 'fun_shortcuts': {
+                    const { showInterfaceSettings } = await import('./interface.js');
+                    return showInterfaceSettings(interaction);
+                }
+
+                // 3. MODERATE
+                case 'mod_users':
+                    return showUserSelector(interaction);
+                case 'mod_anticheat': {
+                    const { showAntiCheatHub } = await import('./admin-users.js');
+                    return showAntiCheatHub(interaction);
+                }
+                case 'mod_automod':
+                    return handleOrganizeSettings(interaction);
+                case 'mod_admins': {
+                    const { showAdminManagement } = await import('./admin-users.js');
+                    return showAdminManagement(interaction);
+                }
+                case 'mod_dashboard': {
+                    const { showAdminInterfaceSettings } = await import('./interface.js');
+                    return showAdminInterfaceSettings(interaction);
+                }
+                case 'mod_logs':
+                    return handleLogsSettings(interaction);
+
+                // 4. OTHER
+                case 'other_customize':
+                    return showCustomizeModal(interaction);
+                case 'other_embeds': {
+                    const { renderRootEmbedMenu } = await import('./settings/embeds.js');
+                    return renderRootEmbedMenu(interaction);
+                }
+                default:
+                    return;
+            }
         }
 
         // Navigation to main modules

@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import { getGuildConfig, setGuildConfig } from '../../storage/config.js';
 import { sendLog, sysLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
-import { getUserLogName } from '../../shared.js';
+import { getUserLogName, isBackDisabled } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
 
 export const LOG_CATEGORIES = {
@@ -134,7 +134,8 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
                 .setCustomId('settings_home')
                 .setLabel('Back')
                 .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary);
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(isBackDisabled(interaction));
             components.push(new ActionRowBuilder().addComponents(backButton));
         }
 

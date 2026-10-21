@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig } from '../../storage/config.js';
-import { COIN_EMOJI } from '../../shared.js';
+import { COIN_EMOJI, isBackDisabled } from '../../shared.js';
 import { sysLog } from '../../utils/logger.js';
 
 export async function handleEconomySettings(interaction) {
@@ -311,7 +311,8 @@ async function showEconomyDashboard(interaction, view) {
             .setCustomId('settings_home')
             .setLabel('Back')
             .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
             .setCustomId('eco_prices')
             .setLabel('Prices')

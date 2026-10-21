@@ -24,7 +24,7 @@ import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
 import { handleInventoryButton, getCoinThumbnailUrl } from './bank.js';
 import { isMemberBooster } from './colors.js';
-import { COIN_EMOJI, COIN_NAME, getCurrencyName, safeSetButtonEmoji, getUserDisplayName, getUserLogName } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, safeSetButtonEmoji, getUserDisplayName, getUserLogName, isBackDisabled } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -1386,10 +1386,11 @@ export async function showInterfaceMainMenu(interaction) {
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('settings_organize')
+      .setCustomId('settings_home')
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
+      .setDisabled(isBackDisabled(interaction))
   );
 
   const responseMethod = (interaction.deferred || interaction.replied)
@@ -1476,10 +1477,11 @@ export async function showInterfaceSettings(interaction) {
 
   // Row 2: [ Back ] | [ Setup ] (all gray)
   const backBtn = new ButtonBuilder()
-    .setCustomId('interface_home')
+    .setCustomId('settings_home')
     .setLabel('Back')
     .setEmoji('⬅️')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(isBackDisabled(interaction));
 
   const setupBtn = new ButtonBuilder()
     .setCustomId('interface_setup_btn')
@@ -1558,10 +1560,11 @@ export async function showAdminInterfaceSettings(interaction) {
 
   // Row 1: [ Back ] | [ Update ] (side by side)
   const backBtn = new ButtonBuilder()
-    .setCustomId('interface_home')
+    .setCustomId('settings_home')
     .setLabel('Back')
     .setEmoji('⬅️')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(isBackDisabled(interaction));
 
   const updateBtn = new ButtonBuilder()
     .setCustomId('admin_interface_publish_btn')
