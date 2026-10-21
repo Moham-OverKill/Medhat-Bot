@@ -301,15 +301,15 @@ export const DEFAULT_ADMIN_SHORTCUT_ORDER = [
 ];
 
 export const DEFAULT_ADMIN_SLOT_COLORS = [
-  '#43b581', '#43b581', '#43b581', '#000000',
-  '#2374e1', '#2374e1', '#2374e1', '#000000',
-  '#e02443', '#e02443', '#e02443', '#000000'
+  '#636e72', '#636e72', '#636e72', '#636e72',
+  '#636e72', '#636e72', '#636e72', '#636e72',
+  '#636e72', '#636e72', '#636e72', '#636e72'
 ];
 
 export const DEFAULT_ADMIN_SLOT_BUTTON_COLORS = [
-  'success', 'success', 'success', 'secondary',
-  'primary', 'primary', 'primary', 'secondary',
-  'danger', 'danger', 'danger', 'secondary'
+  'secondary', 'secondary', 'secondary', 'secondary',
+  'secondary', 'secondary', 'secondary', 'secondary',
+  'secondary', 'secondary', 'secondary', 'secondary'
 ];
 
 export function getShortcutMeta(id) {
@@ -445,7 +445,7 @@ function getContrastColor(hex) {
 export function normalizeSlotColors(raw, defaultColors = null) {
   const defaults = Array.isArray(defaultColors) && defaultColors.length === 12
     ? defaultColors
-    : new Array(12).fill('#000000');
+    : new Array(12).fill('#636e72');
   const result = [...defaults];
   if (Array.isArray(raw)) {
     for (let i = 0; i < Math.min(raw.length, 12); i++) {
@@ -894,8 +894,8 @@ export async function getInterfaceConfig(guildId) {
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_shortcut_order JSONB NOT NULL DEFAULT '["colors","levels","roles","empty","coins","shop","economy","empty","users","anticheat","automod","empty"]'::jsonb`).catch(() => {});
-      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#43b581","#43b581","#43b581","#000000","#2374e1","#2374e1","#2374e1","#000000","#e02443","#e02443","#e02443","#000000"]'::jsonb`).catch(() => {});
-      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["success","success","success","secondary","primary","primary","primary","secondary","danger","danger","danger","secondary"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary"]'::jsonb`).catch(() => {});
       return pool.query(
         `SELECT guild_id, is_enabled, shortcut_order, slot_colors, slot_button_colors, target_channel_id, message_id,
                 admin_is_enabled, admin_target_channel_id, admin_message_id,
@@ -908,6 +908,13 @@ export async function getInterfaceConfig(guildId) {
 
     if (res.rows.length > 0) {
       const row = res.rows[0];
+      const rawAdminColors = row.admin_slot_colors;
+      const isLegacyAdminColors = Array.isArray(rawAdminColors) &&
+        rawAdminColors[0] === '#43b581' && rawAdminColors[4] === '#2374e1' && rawAdminColors[8] === '#e02443';
+      const rawAdminBtnColors = row.admin_slot_button_colors;
+      const isLegacyAdminBtnColors = Array.isArray(rawAdminBtnColors) &&
+        rawAdminBtnColors[0] === 'success' && rawAdminBtnColors[4] === 'primary' && rawAdminBtnColors[8] === 'danger';
+
       return {
         guild_id: row.guild_id,
         is_enabled: Boolean(row.is_enabled),
@@ -920,8 +927,8 @@ export async function getInterfaceConfig(guildId) {
         admin_target_channel_id: row.admin_target_channel_id || null,
         admin_message_id: row.admin_message_id || null,
         admin_shortcut_order: normalizeAdminShortcutOrder(row.admin_shortcut_order),
-        admin_slot_colors: normalizeSlotColors(row.admin_slot_colors, DEFAULT_ADMIN_SLOT_COLORS),
-        admin_slot_button_colors: normalizeSlotButtonColors(row.admin_slot_button_colors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
+        admin_slot_colors: isLegacyAdminColors ? [...DEFAULT_ADMIN_SLOT_COLORS] : normalizeSlotColors(rawAdminColors, DEFAULT_ADMIN_SLOT_COLORS),
+        admin_slot_button_colors: isLegacyAdminBtnColors ? [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS] : normalizeSlotButtonColors(rawAdminBtnColors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
       };
     }
 
@@ -934,7 +941,7 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
-      slot_colors: new Array(12).fill('#000000'),
+      slot_colors: new Array(12).fill('#636e72'),
       slot_button_colors: new Array(12).fill('secondary'),
       target_channel_id: fallbackChannel,
       message_id: fallbackMessage,
@@ -951,7 +958,7 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
-      slot_colors: new Array(12).fill('#000000'),
+      slot_colors: new Array(12).fill('#636e72'),
       slot_button_colors: new Array(12).fill('secondary'),
       target_channel_id: null,
       message_id: null,
@@ -1052,8 +1059,8 @@ export async function saveInterfaceConfig(guildId, data) {
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_target_channel_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_message_id VARCHAR(32)`).catch(() => {});
       await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_shortcut_order JSONB NOT NULL DEFAULT '["colors","levels","roles","empty","coins","shop","economy","empty","users","anticheat","automod","empty"]'::jsonb`).catch(() => {});
-      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#43b581","#43b581","#43b581","#000000","#2374e1","#2374e1","#2374e1","#000000","#e02443","#e02443","#e02443","#000000"]'::jsonb`).catch(() => {});
-      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["success","success","success","secondary","primary","primary","primary","secondary","danger","danger","danger","secondary"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_colors JSONB NOT NULL DEFAULT '["#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72","#636e72"]'::jsonb`).catch(() => {});
+      await pool.query(`ALTER TABLE server_interface_config ADD COLUMN IF NOT EXISTS admin_slot_button_colors JSONB NOT NULL DEFAULT '["secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary","secondary"]'::jsonb`).catch(() => {});
       res = await pool.query(queryStr, params);
     }
 
@@ -2563,7 +2570,7 @@ export async function handleInterfaceComponent(interaction) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
       config.shortcut_order = [...DEFAULT_SHORTCUT_ORDER];
-      config.slot_colors = new Array(12).fill('#000000');
+      config.slot_colors = new Array(12).fill('#636e72');
       config.slot_button_colors = new Array(12).fill('secondary');
       await saveInterfaceConfig(guildId, config);
 
