@@ -934,14 +934,14 @@ export function getAdminShortcutItems(guildId = null) {
       { id: 'shop', label: 'SHOP', emoji: '🛒', btnId: 'admin_hub_shop' }
     ],
     [
-      { id: 'users', label: 'USERS', emoji: '👥', btnId: 'admin_hub_users' },
+      { id: 'users', label: 'MODERATE', emoji: '👥', btnId: 'admin_hub_users' },
       { id: 'roles', label: 'ROLES', emoji: '🎭', btnId: 'admin_hub_roles' },
       { id: 'organize', label: 'ORGANIZE', emoji: '🧹', btnId: 'admin_hub_organize' },
       { id: 'customize', label: 'CUSTOMIZE', emoji: '✨', btnId: 'admin_hub_customize' }
     ],
     [
-      { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
       { id: 'embed', label: 'EMBED', emoji: '📰', btnId: 'admin_hub_embed' },
+      { id: 'leaderboard', label: 'LEADERBOARD', emoji: '📊', btnId: 'admin_hub_leaderboards' },
       { id: 'logs', label: 'LOGS', emoji: '📜', btnId: 'admin_hub_logs' },
       { id: 'economy', label: 'ECONOMY', emoji: '📈', btnId: 'admin_hub_economy' }
     ]
@@ -1156,6 +1156,7 @@ export async function handleAdminHubComponent(interaction) {
       const { handleShopSetup } = await import('./shop-setup.js');
       return handleShopSetup(interaction);
     }
+    case 'admin_hub_moderate':
     case 'admin_hub_users': {
       const { showUserSelector } = await import('./admin-users.js');
       return showUserSelector(interaction);
