@@ -41,31 +41,8 @@ export async function showUserSelector(interaction) {
         .setMinValues(1)
         .setMaxValues(1);
 
-    // Button Row 1: Anti Cheat | Admins (Owner & Discord Admins only)
-    const { hasAdminManagerAccess } = await import('../storage/admins.js');
-    const canManageAdmins = await hasAdminManagerAccess(interaction);
-
-    const row1Buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('admin_user_anticheat')
-            .setLabel('Anti Cheat')
-            .setEmoji('🚫')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('admin_user_automod')
-            .setLabel('Auto Mod')
-            .setEmoji('🛡️')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('admin_user_admins')
-            .setLabel('Admins')
-            .setEmoji('💼')
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(!canManageAdmins)
-    );
-
-    // Button Row 2: Back
-    const row2Buttons = new ActionRowBuilder().addComponents(
+    // Button Row: Back
+    const backRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_back')
             .setLabel('Back')
@@ -81,8 +58,7 @@ export async function showUserSelector(interaction) {
         embeds: [embed],
         components: [
             new ActionRowBuilder().addComponents(select),
-            row1Buttons,
-            row2Buttons
+            backRow
         ],
         files: [],
         attachments: []
