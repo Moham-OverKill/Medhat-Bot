@@ -281,7 +281,7 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     name: 'Shortcuts',
     label: 'SHORTCUTS',
     description: 'Configure the public community shortcuts interface',
-    emoji: '🪟',
+    emoji: '⚡',
     buttonCustomId: 'admin_hub_shortcuts'
   },
   customize: {
