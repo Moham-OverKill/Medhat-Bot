@@ -951,22 +951,22 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId === 'lb_type_select') {
+        if (customId === 'lb_type_select' || customId === 'leaderboard_type_select') {
             await handleLeaderboardCategorySelect(interaction);
             return;
         }
 
-        if (customId.startsWith('lb_set_channel_')) {
+        if (customId.startsWith('lb_set_channel_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('lb_assign_')) {
             await handleLeaderboardChannelSelectV2(interaction);
             return;
         }
 
-        if (customId.startsWith('lb_disable_')) {
+        if (customId.startsWith('lb_disable_') || customId.startsWith('leaderboard_disable_')) {
             await handleLeaderboardDisable(interaction);
             return;
         }
 
-        if (customId === 'lb_refresh') {
+        if (customId === 'lb_refresh' || customId === 'leaderboard_refresh') {
             await handleLeaderboardRefreshV2(interaction);
             return;
         }
