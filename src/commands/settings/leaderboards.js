@@ -104,7 +104,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                         {
                             label: 'Force Refresh',
                             value: 'refresh',
-                            emoji: '🔄'
+                            emoji: '🔁'
                         },
                         {
                             label: 'Disable',

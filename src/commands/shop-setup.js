@@ -1684,7 +1684,7 @@ export async function handleShopPostStart(interaction) {
       new ButtonBuilder()
         .setCustomId(`shop_post_reset:${sessionId}`)
         .setLabel('Reset')
-        .setEmoji('🔄')
+        .setEmoji('🔃')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!isModified)
     );
