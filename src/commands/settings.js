@@ -419,13 +419,13 @@ export async function handleSettingsComponent(interaction) {
                     return showUserSelector(interaction);
                 case 'mod_anticheat': {
                     const { showAntiCheatHub } = await import('./admin-users.js');
-                    return showAntiCheatHub(interaction);
+                    return showAntiCheatHub(interaction, true);
                 }
                 case 'mod_automod':
                     return handleOrganizeSettings(interaction);
                 case 'mod_admins': {
                     const { showAdminManagement } = await import('./admin-users.js');
-                    return showAdminManagement(interaction);
+                    return showAdminManagement(interaction, true);
                 }
                 case 'mod_dashboard': {
                     const { showAdminInterfaceSettings } = await import('./interface.js');
