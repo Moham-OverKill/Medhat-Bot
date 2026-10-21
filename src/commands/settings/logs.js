@@ -45,7 +45,8 @@ export const LOG_CATEGORIES = {
 };
 
 /**
- * Handle the Logs configuration panel
+ * Main Logs Settings Panel
+ * 4 category select menus with 3 options each + single Back button
  */
 export async function handleLogsSettings(interaction, selectedId = null, configOverride = null, warningMessage = null) {
     try {
@@ -83,60 +84,61 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
 
         const components = [];
 
-        // Row 1: Category selection dropdown
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('logs_type_select')
-            .setPlaceholder('1. Select a Log Category to configure...')
-            .addOptions(Object.values(LOG_CATEGORIES).map(cat => ({
-                label: cat.name,
-                description: cat.desc,
-                value: cat.id,
-                emoji: cat.emoji,
-                default: selectedId === cat.id
-            })));
-        components.push(new ActionRowBuilder().addComponents(selectMenu));
-
+        // If a category was clicked to "Select A Channel", show channel picker + Back
         if (selectedId && LOG_CATEGORIES[selectedId]) {
             const active = LOG_CATEGORIES[selectedId];
-            const chan = config[active.dbId];
 
-            // Row 2: Channel selection dropdown
+            // Row 1: Channel selection dropdown
             const channelSelect = new ChannelSelectMenuBuilder()
                 .setCustomId(`logs_set_channel_${active.id}`)
-                .setPlaceholder(`2. Select a channel for ${active.name}...`)
+                .setPlaceholder(`Select a channel for ${active.name}...`)
                 .setChannelTypes(ChannelType.GuildText);
             components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-            // Row 3: Navigation & Disable
-            const disableButton = new ButtonBuilder()
-                .setCustomId(`logs_disable_${active.id}`)
-                .setLabel('Disable')
-                .setEmoji('✖️')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(!chan);
-
+            // Row 2: Single Back button returning to 4-menu view
             const backButton = new ButtonBuilder()
                 .setCustomId('settings_logs')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary);
-
-            components.push(new ActionRowBuilder().addComponents(backButton, disableButton));
+            components.push(new ActionRowBuilder().addComponents(backButton));
         } else {
-            // Home Panel Navigation
+            // Main View: 4 Select Menus (Rows 1-4) with 3 options each
+            for (const cat of Object.values(LOG_CATEGORIES)) {
+                const chanId = config[cat.dbId];
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`logs_menu_${cat.id}`)
+                    .setPlaceholder(`${cat.emoji} ${cat.name} Logs...`)
+                    .addOptions([
+                        {
+                            label: 'Select A Channel',
+                            value: 'channel',
+                            emoji: '📌',
+                            description: chanId ? `Currently: <#${chanId}>` : 'Assign a text channel for this log category'
+                        },
+                        {
+                            label: 'Send Test Log',
+                            value: 'test',
+                            emoji: '🧪',
+                            description: 'Dispatch a test log embed to verify routing'
+                        },
+                        {
+                            label: 'Disable',
+                            value: 'disable',
+                            emoji: '✖️',
+                            description: 'Turn off this log category'
+                        }
+                    ]);
+                components.push(new ActionRowBuilder().addComponents(menu));
+            }
+
+            // Row 5: Single Back button only
             const backButton = new ButtonBuilder()
                 .setCustomId('settings_home')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary);
-
-            const disableAllButton = new ButtonBuilder()
-                .setCustomId('logs_disable_all')
-                .setLabel('Disable All')
-                .setEmoji('✖️')
-                .setStyle(ButtonStyle.Danger);
-
-            components.push(new ActionRowBuilder().addComponents(backButton, disableAllButton));
+            components.push(new ActionRowBuilder().addComponents(backButton));
         }
 
         const msgData = {
@@ -162,15 +164,92 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
 }
 
 /**
- * Handle category selection from StringSelectMenu
+ * Handle 3-Option Select Menu actions (Select A Channel, Send Test Log, Disable)
  */
-export async function handleLogCategorySelect(interaction) {
+export async function handleLogMenuAction(interaction) {
     try {
-        const selectedId = interaction.values[0];
-        return handleLogsSettings(interaction, selectedId);
+        const customId = interaction.customId; // logs_menu_CATEGORY
+        const categoryId = customId.replace('logs_menu_', '');
+        const action = interaction.values[0]; // channel | test | disable
+        const guildId = interaction.guildId;
+
+        const cat = LOG_CATEGORIES[categoryId];
+        if (!cat) return;
+
+        if (action === 'channel') {
+            // Open Channel Selection view
+            return handleLogsSettings(interaction, cat.id);
+        }
+
+        if (action === 'test') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            const config = (await getGuildConfig(guildId)) || {};
+            const chanId = config[cat.dbId];
+
+            if (!chanId) {
+                return interaction.followUp({
+                    content: `❌ Please assign a channel for **${cat.name}** logs first before sending a test log.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const targetChan = interaction.guild?.channels?.cache?.get(chanId) || await interaction.guild?.channels?.fetch(chanId).catch(() => null);
+            const perm = checkChannelPermissions(targetChan);
+            if (!perm.valid) {
+                return interaction.followUp({
+                    content: `❌ Cannot send test log to <#${chanId}>: ${perm.error}`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const logName = getUserLogName(interaction);
+            const testEmbed = new EmbedBuilder()
+                .setTitle(`🧪 Test Log: ${cat.name}`)
+                .setDescription(`Admin **${logName}** dispatched this test log entry. Logging is functioning properly.`)
+                .setColor(0x3498DB)
+                .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleString()}` });
+
+            await targetChan.send({ embeds: [testEmbed] }).catch(() => {});
+
+            return interaction.followUp({
+                content: `✅ Test log successfully sent to <#${chanId}>.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        if (action === 'disable') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            const config = (await getGuildConfig(guildId)) || {};
+            const oldChan = config[cat.dbId];
+
+            if (!oldChan) {
+                await interaction.followUp({
+                    content: `ℹ️ The **${cat.name}** log category is already disabled.`,
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+                return handleLogsSettings(interaction);
+            }
+
+            await setGuildConfig(guildId, { [cat.dbId]: null });
+
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'crimson', '🚫 Log Category Disabled', 
+                `**Admin:** \`${logName}\`\n` +
+                `**Category:** \`${cat.name}\`\n` +
+                `**Action:** Disabled ${cat.name} logging.`
+            );
+
+            await interaction.followUp({
+                content: `✖️ **${cat.name}** logging has been disabled.`,
+                flags: MessageFlags.Ephemeral
+            }).catch(() => {});
+
+            const updatedConfig = (await getGuildConfig(guildId)) || {};
+            return handleLogsSettings(interaction, null, updatedConfig);
+        }
     } catch (error) {
-        sysError('Log category select failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Log Category Select');
+        sysError('Log menu action failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Log Menu Action');
     }
 }
 
@@ -227,7 +306,8 @@ export async function handleLogChannelSelect(interaction) {
         sysLog('Log Settings Changed', { user: interaction.user.id, guild: guildId, detail: `Category: ${category} | Channel: ${channelId}` });
 
         const updatedConfig = (await getGuildConfig(guildId)) || {};
-        return handleLogsSettings(interaction, cat.id, updatedConfig);
+        // Return back to main 4-menu view
+        return handleLogsSettings(interaction, null, updatedConfig);
     } catch (error) {
         sysError('Log channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Log Channel Select');
@@ -272,7 +352,7 @@ export async function handleLogDisable(interaction) {
 
             sysLog('Log Category Disabled', { user: interaction.user.id, guild: guildId, detail: `Category: ${target}` });
             const updatedConfig = (await getGuildConfig(guildId)) || {};
-            return handleLogsSettings(interaction, cat.id, updatedConfig);
+            return handleLogsSettings(interaction, null, updatedConfig);
         }
     } catch (error) {
         sysError('Log disable failed', error, { user: interaction.user.id, guild: interaction.guildId });

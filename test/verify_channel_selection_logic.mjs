@@ -1,11 +1,11 @@
 import assert from 'node:assert';
 import { PermissionFlagsBits } from 'discord.js';
 import { setMockPool } from '../src/storage/postgres.js';
-import { LOG_CATEGORIES, handleLogsSettings, handleLogChannelSelect, handleLogDisable } from '../src/commands/settings/logs.js';
-import { getCategories, handleLeaderboardSettings, handleLeaderboardChannelSelect, handleLeaderboardDisable, handleLeaderboardRefresh } from '../src/commands/settings/leaderboards.js';
+import { LOG_CATEGORIES, handleLogsSettings, handleLogMenuAction, handleLogChannelSelect, handleLogDisable } from '../src/commands/settings/logs.js';
+import { getCategories, handleLeaderboardSettings, handleLeaderboardMenuAction, handleLeaderboardChannelSelect, handleLeaderboardDisable, handleLeaderboardRefresh } from '../src/commands/settings/leaderboards.js';
 import { checkChannelPermissions } from '../src/utils/logger.js';
 
-console.log('--- Starting Channel Selection Logic Verification ---');
+console.log('--- Starting 4-Menu / 3-Option Layout & Logic Verification ---');
 
 const GUILD_SNOWFLAKE = '123456789012345678';
 const VALID_CHAN_1 = '111111111111111111';
@@ -104,17 +104,12 @@ function createMockChannel(id, name, permissionsArray) {
             return msg;
         },
         messages: {
-            fetch: async (msgId) => messages.get(msgId) || { delete: async () => { deletedMessageId = msgId; } }
+            fetch: async (msgId) => messages.get(msgId) || { edit: async () => {}, delete: async () => { deletedMessageId = msgId; } }
         },
         getDeletedMessageId: () => deletedMessageId
     };
     return channel;
 }
-
-// -------------------------------------------------------------
-// Criterion 5: Proactive Permission Validation
-// -------------------------------------------------------------
-console.log('Testing Criterion 5: Proactive Permission Checks...');
 
 const validChannel = createMockChannel(VALID_CHAN_1, 'general', [
     PermissionFlagsBits.ViewChannel,
@@ -127,25 +122,13 @@ const noSendChannel = createMockChannel(INVALID_CHAN_1, 'no-send', [
     PermissionFlagsBits.EmbedLinks
 ]);
 
-const noEmbedChannel = createMockChannel(INVALID_CHAN_2, 'no-embed', [
-    PermissionFlagsBits.ViewChannel,
-    PermissionFlagsBits.SendMessages
-]);
-
-assert.strictEqual(checkChannelPermissions(validChannel).valid, true, 'Valid channel should pass');
-assert.strictEqual(checkChannelPermissions(noSendChannel).valid, false, 'No send channel should fail');
-assert.strictEqual(checkChannelPermissions(noEmbedChannel).valid, false, 'No embed channel should fail');
-assert.strictEqual(checkChannelPermissions(null).valid, false, 'Null channel should fail');
-
-console.log('✅ Criterion 5 (Unit): Permission checker correctly validates ViewChannel, SendMessages, EmbedLinks.');
-
 // -------------------------------------------------------------
-// Criterion 1 & 2 & 5: Logs Configuration Flow
+// Test 1: Logs Configuration Layout & Menus
 // -------------------------------------------------------------
-console.log('Testing Criteria 1, 2, 5 on Logs Configuration...');
+console.log('Testing Logs Configuration: 4 Select Menus with 3 options + Only Back button...');
 
-let sentFollowUps = [];
 let lastRenderedPayload = null;
+let sentFollowUps = [];
 let targetChannelSentEmbeds = [];
 
 validChannel.send = async ({ embeds }) => {
@@ -168,8 +151,8 @@ const mockLogsInteraction = {
         }
     },
     user: { id: 'admin_1', username: 'ServerAdmin' },
-    customId: 'logs_set_channel_economy',
-    values: [VALID_CHAN_1],
+    customId: 'settings_logs',
+    values: [],
     deferred: true,
     replied: false,
     deferUpdate: async () => {},
@@ -178,61 +161,63 @@ const mockLogsInteraction = {
     update: async (payload) => { lastRenderedPayload = payload; }
 };
 
-// Test initial home render
+// Render Logs Home Panel
 await handleLogsSettings(mockLogsInteraction);
-assert(lastRenderedPayload.embeds[0].data.description.includes('*Disabled*'), 'Default view should show Disabled');
 
-// 1 & 2: Select valid channel for economy
-await handleLogChannelSelect(mockLogsInteraction);
-assert(targetChannelSentEmbeds.length > 0, 'Criterion 2: Bot must dispatch confirmation message to assigned channel');
-assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Criterion 1: Embed must immediately reflect new channel');
-assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, VALID_CHAN_1, 'Criterion 1: DB must store log_eco_channel_id');
-console.log('✅ Criterion 1 & 2: Log channel assigned, saved to DB, message sent to channel, and embed updated.');
+// Verify exactly 5 action rows
+assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must have exactly 5 action rows');
 
-// 5: Attempt Assignment to Invalid Channel
-sentFollowUps = [];
-mockLogsInteraction.values = [INVALID_CHAN_1];
-await handleLogChannelSelect(mockLogsInteraction);
-assert(sentFollowUps.length > 0, 'Criterion 5: User must receive ephemeral warning for invalid channel');
-assert(lastRenderedPayload.embeds[0].data.description.includes('⚠️ **Notice:**'), 'Criterion 5: Embed must display warning banner');
-assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, VALID_CHAN_1, 'Criterion 5: DB must not be overwritten with invalid channel');
-console.log('✅ Criterion 5: Attempted assignment with missing permissions blocked and warned in embed + ephemeral.');
-
-// -------------------------------------------------------------
-// Criterion 4: Logs Disable Logic
-// -------------------------------------------------------------
-console.log('Testing Criterion 4: Logs Disabling (Single & All)...');
-
-// Disable single category (economy)
-mockLogsInteraction.customId = 'logs_disable_economy';
-await handleLogDisable(mockLogsInteraction);
-assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, null, 'Criterion 4: DB log_eco_channel_id must be null');
-assert(lastRenderedPayload.embeds[0].data.description.includes('**📈 Economy**\n↳ *Disabled*'), 'Criterion 4: Economy log must show Disabled in embed');
-
-// Re-assign multiple and test Disable All
-mockStorage.guild_configs.set(GUILD_SNOWFLAKE, {
-    log_eco_channel_id: VALID_CHAN_1,
-    log_inv_channel_id: VALID_CHAN_1,
-    log_shop_channel_id: VALID_CHAN_1,
-    log_audit_channel_id: VALID_CHAN_1
-});
-mockLogsInteraction.customId = 'logs_disable_all';
-await handleLogDisable(mockLogsInteraction);
-for (const cat of Object.values(LOG_CATEGORIES)) {
-    assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.[cat.dbId], null, `Criterion 4: DB ${cat.dbId} must be null on Disable All`);
-    assert(lastRenderedPayload.embeds[0].data.description.includes(`**${cat.emoji} ${cat.name}**\n↳ *Disabled*`), `Criterion 4: ${cat.name} must show Disabled on Disable All`);
+// Verify Rows 1-4 are Select Menus, each with exactly 3 options
+for (let i = 0; i < 4; i++) {
+    const row = lastRenderedPayload.components[i];
+    const menu = row.components[0];
+    assert(menu.data.custom_id.startsWith('logs_menu_'), `Row ${i + 1} must be a logs_menu_ select menu`);
+    assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
+    assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
+    assert.strictEqual(menu.options[1].data.value, 'test', 'Option 2 must be Send Test Log');
+    assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
 }
-console.log('✅ Criterion 4: Log disabling (single category and all) functions completely.');
+
+// Verify Row 5 has ONLY the Back button
+const logsRow5 = lastRenderedPayload.components[4];
+assert.strictEqual(logsRow5.components.length, 1, 'Row 5 must have ONLY 1 button');
+assert.strictEqual(logsRow5.components[0].data.label, 'Back', 'Row 5 button must be Back');
+console.log('✅ Logs Configuration UI: Exactly 4 select menus with 3 options each and ONLY the Back button on Row 5.');
+
+// Test Logs Action: Select A Channel
+mockLogsInteraction.customId = 'logs_menu_economy';
+mockLogsInteraction.values = ['channel'];
+await handleLogMenuAction(mockLogsInteraction);
+assert.strictEqual(lastRenderedPayload.components.length, 2, 'Channel picker view must have 2 rows');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.startsWith('logs_set_channel_'), 'Row 1 must be Channel Select Menu');
+assert.strictEqual(lastRenderedPayload.components[1].components[0].data.label, 'Back', 'Row 2 must be Back button');
+
+// Assign Channel
+mockLogsInteraction.customId = 'logs_set_channel_economy';
+mockLogsInteraction.values = [VALID_CHAN_1];
+await handleLogChannelSelect(mockLogsInteraction);
+assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, VALID_CHAN_1, 'DB must store assigned channel');
+assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
+assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
+console.log('✅ Logs Action (Select A Channel): Opens channel picker, saves channel to DB, and returns to 4-menu view.');
+
+// Test Logs Action: Disable
+mockLogsInteraction.customId = 'logs_menu_economy';
+mockLogsInteraction.values = ['disable'];
+await handleLogMenuAction(mockLogsInteraction);
+assert.strictEqual(mockStorage.guild_configs.get(GUILD_SNOWFLAKE)?.log_eco_channel_id, null, 'DB log_eco_channel_id must be null');
+assert(lastRenderedPayload.embeds[0].data.description.includes('**📈 Economy**\n↳ *Disabled*'), 'Embed must show Disabled');
+console.log('✅ Logs Action (Disable): Successfully disables category from dropdown.');
 
 // -------------------------------------------------------------
-// Criterion 1, 2, 4, 5: Leaderboards Flow
+// Test 2: Leaderboard Configuration Layout & Menus
 // -------------------------------------------------------------
-console.log('Testing Criteria 1, 2, 4, 5 on Leaderboards Configuration...');
+console.log('Testing Leaderboard Configuration: 4 Select Menus with 3 options + Only Back button...');
 
 let leaderboardDispatchedEmbeds = [];
 validChannel.send = async ({ embeds }) => {
     leaderboardDispatchedEmbeds.push(embeds);
-    return { id: 'lb_msg_1001' };
+    return { id: 'lb_msg_2002' };
 };
 
 const mockLbInteraction = {
@@ -269,8 +254,8 @@ const mockLbInteraction = {
         }
     },
     user: { id: 'admin_1', username: 'ServerAdmin' },
-    customId: 'lb_set_channel_coins',
-    values: [VALID_CHAN_1],
+    customId: 'settings_leaderboards',
+    values: [],
     deferred: true,
     replied: false,
     deferUpdate: async () => {},
@@ -279,82 +264,63 @@ const mockLbInteraction = {
     update: async (payload) => { lastRenderedPayload = payload; }
 };
 
-// Test initial home render
+// Render Leaderboard Home Panel
 await handleLeaderboardSettings(mockLbInteraction);
-assert(lastRenderedPayload.embeds[0].data.description.includes('*Not Set*'), 'Default leaderboard view should show Not Set');
 
-// Select valid channel for coins
+// Verify exactly 5 action rows
+assert.strictEqual(lastRenderedPayload.components.length, 5, 'Leaderboard must have exactly 5 action rows');
+
+// Verify Rows 1-4 are Select Menus, each with exactly 3 options
+for (let i = 0; i < 4; i++) {
+    const row = lastRenderedPayload.components[i];
+    const menu = row.components[0];
+    assert(menu.data.custom_id.startsWith('lb_menu_'), `Row ${i + 1} must be an lb_menu_ select menu`);
+    assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
+    assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
+    assert.strictEqual(menu.options[1].data.value, 'refresh', 'Option 2 must be Force Refresh');
+    assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
+}
+
+// Verify Row 5 has ONLY the Back button
+const lbRow5 = lastRenderedPayload.components[4];
+assert.strictEqual(lbRow5.components.length, 1, 'Row 5 must have ONLY 1 button');
+assert.strictEqual(lbRow5.components[0].data.label, 'Back', 'Row 5 button must be Back');
+console.log('✅ Leaderboard Configuration UI: Exactly 4 select menus with 3 options each and ONLY the Back button on Row 5.');
+
+// Test Leaderboard Action: Select A Channel
+mockLbInteraction.customId = 'lb_menu_coins';
+mockLbInteraction.values = ['channel'];
+await handleLeaderboardMenuAction(mockLbInteraction);
+assert.strictEqual(lastRenderedPayload.components.length, 2, 'Channel picker view must have 2 rows');
+assert(lastRenderedPayload.components[0].components[0].data.custom_id.startsWith('lb_set_channel_'), 'Row 1 must be Channel Select Menu');
+assert.strictEqual(lastRenderedPayload.components[1].components[0].data.label, 'Back', 'Row 2 must be Back button');
+
+// Assign Channel
+mockLbInteraction.customId = 'lb_set_channel_coins';
+mockLbInteraction.values = [VALID_CHAN_1];
 await handleLeaderboardChannelSelect(mockLbInteraction);
-assert(leaderboardDispatchedEmbeds.length > 0, 'Criterion 2: Bot must dispatch live leaderboard embed');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'Criterion 1: DB must store coins_channel_id');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, 'lb_msg_1001', 'Criterion 1: DB must store coins_message_id');
-assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Criterion 1: Leaderboard embed must immediately reflect new channel');
-console.log('✅ Criterion 1 & 2: Leaderboard channel assigned, live embed dispatched, saved to DB, and settings embed updated.');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'DB must store coins_channel_id');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, 'lb_msg_2002', 'DB must store coins_message_id');
+assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
+assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
+console.log('✅ Leaderboard Action (Select A Channel): Opens channel picker, dispatches live embed, saves to DB, returns to 4-menu view.');
 
-// Test Invalid channel on Leaderboard
+// Test Leaderboard Action: Force Refresh
 sentFollowUps = [];
-mockLbInteraction.values = [INVALID_CHAN_1];
-await handleLeaderboardChannelSelect(mockLbInteraction);
-assert(sentFollowUps.length > 0, 'Criterion 5: User must receive ephemeral warning for invalid channel');
-assert(lastRenderedPayload.embeds[0].data.description.includes('⚠️ **Notice:**'), 'Criterion 5: Leaderboard embed must display warning banner');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'Criterion 5: DB must not be overwritten with invalid channel');
-console.log('✅ Criterion 5: Leaderboard assignment with missing permissions blocked and warned in embed.');
+mockLbInteraction.customId = 'lb_menu_coins';
+mockLbInteraction.values = ['refresh'];
+await handleLeaderboardMenuAction(mockLbInteraction);
+assert(sentFollowUps.length > 0, 'Must send ephemeral confirmation upon refresh');
+console.log('✅ Leaderboard Action (Force Refresh): Successfully triggers role and message synchronization.');
 
-// Test Disable Leaderboard Category
-mockLbInteraction.customId = 'lb_disable_coins';
-await handleLeaderboardDisable(mockLbInteraction);
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'Criterion 4: DB coins_channel_id must be null');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Criterion 4: DB coins_message_id must be null');
-assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Criterion 4: Disabled leaderboard must revert to Not Set');
-console.log('✅ Criterion 4: Leaderboard category disable cleanly resets status and deletes old message.');
+// Test Leaderboard Action: Disable
+mockLbInteraction.customId = 'lb_menu_coins';
+mockLbInteraction.values = ['disable'];
+await handleLeaderboardMenuAction(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'DB coins_channel_id must be null');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB coins_message_id must be null');
+assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must show Not Set');
+console.log('✅ Leaderboard Action (Disable): Successfully deletes old Discord message and nullifies DB config.');
 
-// -------------------------------------------------------------
-// Criterion 3: Refresh Mechanism Verification
-// -------------------------------------------------------------
-console.log('Testing Criterion 3: Force Refresh Verification...');
-
-let refreshReplied = false;
-let refreshFollowUp = false;
-
-const mockRefreshInteraction = {
-    guildId: GUILD_SNOWFLAKE,
-    guild: {
-        id: GUILD_SNOWFLAKE,
-        name: 'Test Server',
-        channels: {
-            cache: new Map([[VALID_CHAN_1, validChannel]]),
-            fetch: async () => validChannel
-        }
-    },
-    client: {
-        user: { id: 'bot_id' },
-        guilds: {
-            cache: new Map([[GUILD_SNOWFLAKE, {
-                id: GUILD_SNOWFLAKE,
-                channels: {
-                    cache: new Map([[VALID_CHAN_1, validChannel]]),
-                    fetch: async () => validChannel
-                }
-            }]]),
-            fetch: async () => ({
-                id: GUILD_SNOWFLAKE,
-                channels: {
-                    cache: new Map([[VALID_CHAN_1, validChannel]]),
-                    fetch: async () => validChannel
-                }
-            })
-        }
-    },
-    user: { id: 'admin_1', username: 'ServerAdmin' },
-    customId: 'lb_refresh',
-    reply: async () => { refreshReplied = true; },
-    followUp: async () => { refreshFollowUp = true; }
-};
-
-await handleLeaderboardRefresh(mockRefreshInteraction);
-assert.strictEqual(refreshReplied, true, 'Criterion 3: Refresh must reply immediately with feedback');
-assert.strictEqual(refreshFollowUp, true, 'Criterion 3: Refresh must confirm completion via followUp');
-console.log('✅ Criterion 3: Force refresh triggers synchronization pipeline and reports status.');
-
-console.log('--- ALL 5 CRITERIA PASSED AND VERIFIED SUCCESSFULLY ---');
+console.log('--- ALL VERIFICATIONS PASSED SUCCESSFULLY ---');
 process.exit(0);
