@@ -6,8 +6,7 @@ import {
     StringSelectMenuBuilder,
     ChannelSelectMenuBuilder,
     ChannelType,
-    MessageFlags,
-    PermissionFlagsBits
+    MessageFlags
 } from 'discord.js';
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
 import { sendLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
@@ -30,7 +29,7 @@ export async function getCategories(guildId) {
 
 /**
  * Main Leaderboard Settings Panel
- * Mirroring Logs UI style exactly, but preserving Leaderboard logic
+ * 4 category select menus with 3 options each + single Back button
  */
 export async function handleLeaderboardSettings(interaction, selectedId = null, configOverride = null, warningMessage = null) {
     try {
@@ -69,68 +68,76 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
 
         const components = [];
 
-        // Row 1: The Dropdown (Categorized selection)
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('lb_type_select')
-            .setPlaceholder('1. Select a Leaderboard to configure...')
-            .addOptions(Object.values(categories).map(cat => ({
-                label: cat.name,
-                description: cat.desc,
-                value: cat.id,
-                emoji: cat.emoji,
-                default: selectedId === cat.id
-            })));
-        components.push(new ActionRowBuilder().addComponents(selectMenu));
-
-        // Logic for Category-Specific Controls
+        // If a specific category was clicked to "Select A Channel", show channel picker + Back
         if (selectedId && categories[selectedId]) {
             const active = categories[selectedId];
-            const chan = config[active.dbId];
 
-            // Row 2: Channel Selection
+            // Row 1: Channel selection dropdown
             const channelSelect = new ChannelSelectMenuBuilder()
                 .setCustomId(`lb_set_channel_${active.id}`)
-                .setPlaceholder(`2. Select a channel for ${active.name}...`)
+                .setPlaceholder(`Select a channel for ${active.name}...`)
                 .setChannelTypes(ChannelType.GuildText);
             components.push(new ActionRowBuilder().addComponents(channelSelect));
 
-            // Row 3: Navigation & Disable
-            const disableButton = new ButtonBuilder()
-                .setCustomId(`lb_disable_${active.id}`)
-                .setLabel('Disable')
-                .setEmoji('✖️')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(!chan);
-
+            // Row 2: Single Back button returning to 4-menu view
             const backButton = new ButtonBuilder()
                 .setCustomId('settings_leaderboards')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary);
-
-            components.push(new ActionRowBuilder().addComponents(backButton, disableButton));
+            components.push(new ActionRowBuilder().addComponents(backButton));
         } else {
-            // Home Panel Navigation
+            // Main View: 4 Select Menus (Rows 1-4) with 3 options each
+            for (const cat of Object.values(categories)) {
+                const chanId = config[cat.dbId];
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`lb_menu_${cat.id}`)
+                    .setPlaceholder(`${cat.emoji} ${cat.name}...`)
+                    .addOptions([
+                        {
+                            label: 'Select A Channel',
+                            value: 'channel',
+                            emoji: '📌',
+                            description: chanId ? `Currently: <#${chanId}>` : 'Assign a text channel for this leaderboard'
+                        },
+                        {
+                            label: 'Force Refresh',
+                            value: 'refresh',
+                            emoji: '🔄',
+                            description: 'Update live rankings immediately'
+                        },
+                        {
+                            label: 'Disable',
+                            value: 'disable',
+                            emoji: '✖️',
+                            description: 'Turn off this leaderboard'
+                        }
+                    ]);
+                components.push(new ActionRowBuilder().addComponents(menu));
+            }
+
+            // Row 5: Single Back button only
             const backButton = new ButtonBuilder()
                 .setCustomId('settings_home')
                 .setLabel('Back')
                 .setEmoji('⬅️')
                 .setStyle(ButtonStyle.Secondary);
-
-            const refreshButton = new ButtonBuilder()
-                .setCustomId('lb_refresh')
-                .setLabel('Force Refresh Now')
-                .setEmoji('🔄')
-                .setStyle(ButtonStyle.Primary);
-
-            components.push(new ActionRowBuilder().addComponents(backButton, refreshButton));
+            components.push(new ActionRowBuilder().addComponents(backButton));
         }
 
-        const method = (interaction.deferred || interaction.replied) ? 'editReply' : (interaction.isButton?.() || interaction.isAnySelectMenu?.() ? 'update' : 'reply');
-        if (method === 'reply') {
-            await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
+        const msgData = {
+            embeds: [embed],
+            components,
+            flags: MessageFlags.Ephemeral,
+            content: ''
+        };
+
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(msgData);
+        } else if (interaction.isButton?.() || interaction.isAnySelectMenu?.()) {
+            await interaction.update(msgData);
         } else {
-            await interaction[method]({ embeds: [embed], components, flags: MessageFlags.Ephemeral, content: '' });
+            await interaction.reply(msgData);
         }
     } catch (error) {
         sysError('Leaderboard settings panel failed', error, { user: interaction.user.id, guild: interaction.guildId });
@@ -141,15 +148,75 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
 }
 
 /**
- * Listener: Category Select
+ * Handle 3-Option Select Menu actions (Select A Channel, Force Refresh, Disable)
  */
-export async function handleLeaderboardCategorySelect(interaction) {
+export async function handleLeaderboardMenuAction(interaction) {
     try {
-        const selectedId = interaction.values[0];
-        return handleLeaderboardSettings(interaction, selectedId);
+        const customId = interaction.customId; // lb_menu_CATEGORY
+        const categoryId = customId.replace('lb_menu_', '');
+        const action = interaction.values[0]; // channel | refresh | disable
+        const guildId = interaction.guildId;
+
+        const categories = await getCategories(guildId);
+        const cat = categories[categoryId];
+        if (!cat) return;
+
+        if (action === 'channel') {
+            // Open Channel Selection view
+            return handleLeaderboardSettings(interaction, cat.id);
+        }
+
+        if (action === 'refresh') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            await handleLeaderboardRefresh(interaction, cat.id);
+            return handleLeaderboardSettings(interaction);
+        }
+
+        if (action === 'disable') {
+            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+            let config = await getLeaderboardConfig(guildId) || {};
+            const oldChan = config[cat.dbId];
+            const oldMsg = config[cat.msgId];
+
+            if (!oldChan) {
+                await interaction.followUp({
+                    content: `ℹ️ The **${cat.name}** leaderboard is already disabled.`,
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+                return handleLeaderboardSettings(interaction);
+            }
+
+            // Cleanup old message from Discord channel
+            if (oldMsg && oldChan) {
+                try {
+                    const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
+                    if (chan) {
+                        const msg = await chan.messages.fetch(oldMsg).catch(() => null);
+                        if (msg) await msg.delete().catch(() => {});
+                    }
+                } catch {}
+            }
+
+            config[cat.dbId] = null;
+            config[cat.msgId] = null;
+            await setLeaderboardConfig(guildId, config);
+
+            const logName = getUserLogName(interaction);
+            sendLog(interaction.guild, 'audit', 'red', '📊 Leaderboard Disabled', 
+                `**Admin:** \`${logName}\`\n` +
+                `**Action:** Disabled the **${cat.name}** leaderboard.`
+            );
+
+            await interaction.followUp({
+                content: `✖️ The **${cat.name}** leaderboard has been disabled.`,
+                flags: MessageFlags.Ephemeral
+            }).catch(() => {});
+
+            return handleLeaderboardSettings(interaction, null, config);
+        }
     } catch (error) {
-        sysError('Leaderboard category select failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Leaderboard Category Select');
+        sysError('Leaderboard menu action failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Leaderboard Menu Action');
     }
 }
 
@@ -196,7 +263,8 @@ export async function handleLeaderboardChannelSelect(interaction) {
             `**Action:** Set channel to ${channel}`
         );
 
-        return handleLeaderboardSettings(interaction, cat.id, config);
+        // Return back to the main 4-menu view
+        return handleLeaderboardSettings(interaction, null, config);
     } catch (error) {
         sysError('Leaderboard channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Channel Select');
@@ -204,13 +272,60 @@ export async function handleLeaderboardChannelSelect(interaction) {
 }
 
 /**
+ * Listener: Refresh All or Specific Category
+ */
+export async function handleLeaderboardRefresh(interaction, targetCategory = null) {
+    try {
+        // 1. Synchronize MVP roles in Discord immediately without paying extra coins
+        const { runKingOfHillCycle } = await import('../../mvp/kingOfHill.js');
+        await runKingOfHillCycle(interaction.client, interaction.guildId, { payCoins: false }).catch(err => {
+            sysError('KotH Role Sync Error on Refresh', err, { guild: interaction.guildId });
+        });
+
+        // 2. Synchronize Richest & Streak roles in Discord
+        const { applyRichestRole, applyStreakRole } = await import('../../mvp/role-assignment.js');
+        await applyRichestRole(interaction.client, interaction.guildId).catch(() => {});
+        await applyStreakRole(interaction.client, interaction.guildId).catch(() => {});
+
+        // 3. Update leaderboard channel embeds
+        const { updateLeaderboards } = await import('../leaderboard.js');
+        await updateLeaderboards(interaction.client, interaction.guildId, null, []);
+        
+        // Audit Log
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'blue', '🔄 Leaderboards Refreshed', 
+            `**Admin:** \`${logName}\`\n` +
+            `**Action:** Manually triggered refresh of leaderboard channels and synchronized roles.`
+        );
+
+        // Feedback
+        await interaction.followUp({ 
+            content: '✅ Leaderboard channels and live roles have been synchronized.', 
+            flags: MessageFlags.Ephemeral 
+        }).catch(() => {});
+    } catch (error) {
+        sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Leaderboard Refresh');
+    }
+}
+
+
+/**
+ * Listener: Category Select (Legacy compatibility)
+ */
+export async function handleLeaderboardCategorySelect(interaction) {
+    const selectedId = interaction.values[0];
+    return handleLeaderboardSettings(interaction, selectedId);
+}
+
+/**
  * Listener: Per-Category Disable
  */
-export async function handleLeaderboardDisable(interaction) {
+export async function handleLeaderboardDisable(interaction, targetCategoryId = null) {
     try {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
-        const categoryId = interaction.customId.replace('lb_disable_', '');
+        const categoryId = targetCategoryId || interaction.customId.replace('lb_disable_', '');
         const categories = await getCategories(guildId);
         if (!categories[categoryId]) return;
         const cat = categories[categoryId];
@@ -219,7 +334,6 @@ export async function handleLeaderboardDisable(interaction) {
         const oldChan = config[cat.dbId];
         const oldMsg = config[cat.msgId];
 
-        // Cleanup msg upon disable
         if (oldMsg && oldChan) {
             try {
                 const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
@@ -242,73 +356,9 @@ export async function handleLeaderboardDisable(interaction) {
             );
         }
 
-        return handleLeaderboardSettings(interaction, cat.id, config);
+        return handleLeaderboardSettings(interaction, null, config);
     } catch (error) {
         sysError('Leaderboard disable failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Disable');
     }
-}
-
-/**
- * Listener: Refresh All
- */
-export async function handleLeaderboardRefresh(interaction) {
-    try {
-        // Send immediate ephemeral feedback so admin knows it's happening
-        await interaction.reply({ 
-            content: '🔄 **Force Refresh Triggered.** Updating all leaderboard channels and synchronizing live roles...', 
-            flags: MessageFlags.Ephemeral 
-        });
-
-        // 1. Synchronize MVP roles in Discord immediately without paying extra coins
-        const { runKingOfHillCycle } = await import('../../mvp/kingOfHill.js');
-        await runKingOfHillCycle(interaction.client, interaction.guildId, { payCoins: false }).catch(err => {
-            sysError('KotH Role Sync Error on Refresh', err, { guild: interaction.guildId });
-        });
-
-        // 2. Synchronize Richest & Streak roles in Discord
-        const { applyRichestRole, applyStreakRole } = await import('../../mvp/role-assignment.js');
-        await applyRichestRole(interaction.client, interaction.guildId).catch(() => {});
-        await applyStreakRole(interaction.client, interaction.guildId).catch(() => {});
-
-        // 3. Update all leaderboard channel embeds
-        const { updateLeaderboards } = await import('../leaderboard.js');
-        await updateLeaderboards(interaction.client, interaction.guildId, null, []);
-        
-        // Audit Log
-        const logName = getUserLogName(interaction);
-        sendLog(interaction.guild, 'audit', 'blue', '🔄 Leaderboards Refreshed', 
-            `**Admin:** \`${logName}\`\n` +
-            `**Action:** Manually forced a refresh of all leaderboard channels and synchronized roles.`
-        );
-
-        // Final notification
-        return interaction.followUp({ 
-            content: '✅ All leaderboard channels and live roles have been successfully updated.', 
-            flags: MessageFlags.Ephemeral 
-        });
-    } catch (error) {
-        sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Leaderboard Refresh');
-    }
-}
-
-/**
- * Helper: Cairo Next Midnight
- */
-function getNextMidnightCairoTimestamp() {
-    const now = new Date();
-    const cairoFormatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Africa/Cairo',
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false
-    });
-    const parts = cairoFormatter.formatToParts(now);
-    const v = {};
-    for (const p of parts) v[p.type] = p.value;
-    const offset = 2 * 60 * 60 * 1000;
-    const midUTCTested = new Date(Date.UTC(parseInt(v.year), parseInt(v.month) - 1, parseInt(v.day), 0, 0, 0, 0));
-    let midUTC = new Date(midUTCTested.getTime() - offset);
-    if (now >= midUTC) midUTC = new Date(midUTC.getTime() + 24 * 60 * 60 * 1000);
-    return Math.floor(midUTC.getTime() / 1000);
 }
