@@ -57,13 +57,11 @@ export function getTodayCairo() {
 }
 
 /**
- * Get yesterday's date string in Cairo timezone
- * Hardened: Uses component-based subtraction to handle DST transitions
+ * Get date string (YYYY-MM-DD) for Cairo timezone with a day offset
+ * @param {number} daysOffset Negative for past days (-1 = yesterday), positive for future
  */
-export function getYesterdayCairo() {
+export function getCairoDateOffset(daysOffset = 0) {
   const now = new Date();
-  
-  // Get Cairo components for "now"
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Cairo',
     year: 'numeric', month: 'numeric', day: 'numeric'
@@ -71,33 +69,71 @@ export function getYesterdayCairo() {
   const parts = formatter.formatToParts(now);
   const getPart = (type) => parseInt(parts.find(p => p.type === type).value, 10);
   
-  // Create a UTC date that HAS the same Y/M/D as Cairo Today
   const year = getPart('year');
   const month = getPart('month');
   const day = getPart('day');
   
   const cairoTodayAsUtc = new Date(Date.UTC(year, month - 1, day));
-  // Subtract 1 day from the UTC instance
-  const cairoYesterdayAsUtc = new Date(cairoTodayAsUtc.getTime() - 24 * 60 * 60 * 1000);
+  const targetUtc = new Date(cairoTodayAsUtc.getTime() + daysOffset * 24 * 60 * 60 * 1000);
   
-  // Format that UTC date (which now has Cairo's yesterday Y/M/D)
-  return `${cairoYesterdayAsUtc.getUTCFullYear()}-${String(cairoYesterdayAsUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(cairoYesterdayAsUtc.getUTCDate()).padStart(2, '0')}`;
+  return `${targetUtc.getUTCFullYear()}-${String(targetUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(targetUtc.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Get yesterday's date string in Cairo timezone
+ * Hardened: Uses component-based subtraction to handle DST transitions
+ */
+export function getYesterdayCairo() {
+  return getCairoDateOffset(-1);
+}
+
+// Downtime recovery grace window tracker (Cairo/UTC timestamp in ms)
+let downtimeGraceExpiry = 0;
+
+/**
+ * Configure global post-downtime streak grace window
+ * @param {number|Date|string} expiry Timestamp or Date when grace window ends
+ */
+export function setDowntimeGraceWindow(expiry) {
+  if (!expiry) {
+    downtimeGraceExpiry = 0;
+    return;
+  }
+  const ts = expiry instanceof Date ? expiry.getTime() : (typeof expiry === 'number' ? expiry : new Date(expiry).getTime());
+  downtimeGraceExpiry = isNaN(ts) ? 0 : ts;
+}
+
+/**
+ * Check if the post-downtime grace window is actively protecting streaks
+ * @returns {boolean}
+ */
+export function isDowntimeGraceWindowActive() {
+  return downtimeGraceExpiry > 0 && Date.now() < downtimeGraceExpiry;
 }
 
 /**
  * Check if a streak is valid (last claim was today or yesterday in Cairo time)
  * Returns true if streak should continue, false if it should reset to 0
+ * @param {Date|string} lastClaimDate
+ * @param {number|null} extraGraceDays Optional extra days allowed (defaults to 2 if grace window is active)
  */
-export function isStreakValid(lastClaimDate) {
+export function isStreakValid(lastClaimDate, extraGraceDays = null) {
   if (!lastClaimDate) return false;
 
   const claimDateStr = getCairoDateString(lastClaimDate);
   if (!claimDateStr) return false;
 
-  const yesterday = getYesterdayCairo();
+  const effectiveGrace = extraGraceDays !== null
+    ? Math.max(0, extraGraceDays)
+    : (isDowntimeGraceWindowActive() ? 2 : 0);
 
-  // Streak is valid if last claim date is yesterday, today, or in the future (handles clock drift)
-  return claimDateStr >= yesterday;
+  if (effectiveGrace <= 0) {
+    const yesterday = getYesterdayCairo();
+    return claimDateStr >= yesterday;
+  }
+
+  const thresholdDate = getCairoDateOffset(-(1 + effectiveGrace));
+  return claimDateStr >= thresholdDate;
 }
 
 /**
