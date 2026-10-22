@@ -398,7 +398,7 @@ export async function sendTestImagesForGuild(client, guild) {
 }
 
 /**
- * Startup hook: Automatically verify and seed test threads if not already present.
+ * Startup hook: Ensure image host table exists without dispatching test images.
  *
  * @param {import('discord.js').Client} client
  */
@@ -419,19 +419,9 @@ export async function initializeImageHostStartupTest(client) {
       return;
     }
 
-    // Run test cycle across all 4 host forum channels to verify environment variables
-    const targetGuild = Array.from(client.guilds.cache.values()).find(g => g.id !== IMAGE_HOST_GUILD_ID) || hostGuild;
-    sysLog('Verifying Image Host Environment Variables', {
-      guild: targetGuild.id,
-      detail: `Testing host server (${IMAGE_HOST_GUILD_ID}) and all 4 channel variables`
-    });
-
-    const testResults = await sendTestImagesForGuild(client, targetGuild);
-    const passed = testResults.filter(r => r.success).length;
-
-    sysLog('Image Host Verification Complete', {
-      guild: targetGuild.id,
-      detail: `${passed}/${testResults.length} channel pipelines verified successfully via environment variables`
+    sysLog('Image Host Table & Configuration Verified', {
+      hostGuild: IMAGE_HOST_GUILD_ID,
+      configuredChannels: Object.keys(IMAGE_HOST_CHANNELS).filter(k => !!IMAGE_HOST_CHANNELS[k]).length
     });
   } catch (startupErr) {
     sysError('Image Host Startup Check Error', startupErr);
