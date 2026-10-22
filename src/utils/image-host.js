@@ -398,32 +398,19 @@ export async function sendTestImagesForGuild(client, guild) {
 }
 
 /**
- * Startup hook: Ensure image host table exists without dispatching test images.
+ * Startup hook: Ensure image host database table exists.
+ * Test images are strictly disabled to prevent synthetic spam on restarts.
+ * Real images are only uploaded when requested by real users.
  *
  * @param {import('discord.js').Client} client
  */
 export async function initializeImageHostStartupTest(client) {
   try {
     await ensureImageHostTable();
-
-    if (!IMAGE_HOST_GUILD_ID) {
-      sysWarn('Image host guild ID is not configured in environment variables (IMAGE_HOST_GUILD_ID)');
-      return;
-    }
-
-    const hostGuild = client.guilds.cache.get(IMAGE_HOST_GUILD_ID) ||
-      await client.guilds.fetch(IMAGE_HOST_GUILD_ID).catch(() => null);
-
-    if (!hostGuild) {
-      sysWarn('Image host guild not found during startup check', { hostGuildId: IMAGE_HOST_GUILD_ID });
-      return;
-    }
-
-    sysLog('Image Host Table & Configuration Verified', {
-      hostGuild: IMAGE_HOST_GUILD_ID,
-      configuredChannels: Object.keys(IMAGE_HOST_CHANNELS).filter(k => !!IMAGE_HOST_CHANNELS[k]).length
-    });
+    sysLog('Image Host Table Ready', { detail: 'Startup verification completed without synthetic test posts' });
   } catch (startupErr) {
     sysError('Image Host Startup Check Error', startupErr);
   }
 }
+
+export const initializeImageHost = initializeImageHostStartupTest;

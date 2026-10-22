@@ -397,9 +397,9 @@ client.once(Events.ClientReady, async () => {
       auditAndPruneDepartedAdmins(client).catch(err => sysError('Startup Admin Audit Failed', err));
     }).catch(() => {});
 
-    // Verify and seed image host forum threads for connected guilds on startup
+    // Ensure image host database table exists on startup (test images disabled)
     import('./utils/image-host.js').then(({ initializeImageHostStartupTest }) => {
-      initializeImageHostStartupTest(client).catch(err => sysError('Image Host Startup Test Failed', err));
+      initializeImageHostStartupTest(client).catch(err => sysError('Image Host Startup Init Failed', err));
     }).catch(() => {});
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
