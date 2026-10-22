@@ -153,7 +153,18 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     // If last claim is older than yesterday -> reset streak to 0
     let currentStreak = parseInt(userData.daily_streak, 10) || 0;
 
-    if (!isStreakValid(userData.last_daily)) {
+    let validStreak = isStreakValid(userData.last_daily);
+    if (!validStreak) {
+      try {
+        const { isDowntimeGracePeriodActive } = await import('../storage/postgres.js');
+        const isGrace = await isDowntimeGracePeriodActive().catch(() => false);
+        if (isGrace && isStreakValid(userData.last_daily, 2)) {
+          validStreak = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!validStreak) {
       // Streak is broken - reset to 0
       currentStreak = 0;
     }
