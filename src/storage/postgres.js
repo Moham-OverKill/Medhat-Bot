@@ -1538,6 +1538,63 @@ async function createTables() {
       sysError('Startup BP Reconciliation Migration Error', e);
     }
 
+    // Self-healing migration: Protect and restore daily streaks after platform downtime
+    try {
+      const checkStreakMig = await pool.query(
+        "SELECT 1 FROM bot_migrations WHERE migration_name = 'downtime_streak_protection_oct_2026'"
+      );
+      if (checkStreakMig.rows.length === 0) {
+        // 1. Restore streaks broken during outage window (last 4 days)
+        const restoreRes = await pool.query(`
+          UPDATE user_balances
+          SET daily_streak = last_lost_streak,
+              last_daily = ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo' - INTERVAL '1 day')::date + TIME '12:00:00') AT TIME ZONE 'Africa/Cairo',
+              last_lost_streak = 0
+          WHERE daily_streak = 0
+            AND last_lost_streak > 0
+            AND last_daily >= NOW() - INTERVAL '4 days'
+          RETURNING user_id
+        `);
+
+        // 2. Protect all active streaks so they remain claimable today and don't break
+        const protectRes = await pool.query(`
+          UPDATE user_balances
+          SET last_daily = ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo' - INTERVAL '1 day')::date + TIME '12:00:00') AT TIME ZONE 'Africa/Cairo'
+          WHERE daily_streak > 0
+            AND (last_daily IS NULL OR (last_daily AT TIME ZONE 'Africa/Cairo')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date)
+          RETURNING user_id
+        `);
+
+        // 3. Record migration with 48h active grace window
+        const graceUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+        await pool.query(
+          `INSERT INTO bot_migrations (migration_name, details)
+           VALUES ('downtime_streak_protection_oct_2026', jsonb_build_object(
+             'restored_count', $1::int,
+             'protected_count', $2::int,
+             'grace_until', $3::text
+           ))
+           ON CONFLICT DO NOTHING`,
+          [restoreRes.rowCount || 0, protectRes.rowCount || 0, graceUntil]
+        );
+
+        sysLog('Downtime Streak Protection Applied', {
+          detail: `Protected: ${protectRes.rowCount || 0} active | Restored: ${restoreRes.rowCount || 0} lost | Grace until: ${graceUntil}`
+        });
+      }
+
+      // Initialize in-memory downtime grace window from migration state
+      const migState = await pool.query(
+        "SELECT details->>'grace_until' as grace_until FROM bot_migrations WHERE migration_name = 'downtime_streak_protection_oct_2026'"
+      ).catch(() => ({ rows: [] }));
+      if (migState.rows.length > 0 && migState.rows[0].grace_until) {
+        const { setDowntimeGraceWindow } = await import('../utils/time.js');
+        setDowntimeGraceWindow(migState.rows[0].grace_until);
+      }
+    } catch (e) {
+      sysError('Downtime Streak Protection Migration Error', e);
+    }
+
     sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
 
     // Run cleanup on startup (non-blocking)
@@ -1732,3 +1789,29 @@ export async function setUserInventorySortPreference(userId, sortPreference) {
     return 'date';
   }
 }
+
+let cachedGraceUntil = null;
+let lastGraceCheck = 0;
+
+/**
+ * Check if the post-downtime streak grace period is currently active
+ * @returns {Promise<boolean>}
+ */
+export async function isDowntimeGracePeriodActive() {
+  const now = Date.now();
+  if (cachedGraceUntil !== null && (now - lastGraceCheck < 60000)) {
+    return now < cachedGraceUntil;
+  }
+  try {
+    const res = await query(
+      "SELECT details->>'grace_until' as grace_until FROM bot_migrations WHERE migration_name = 'downtime_streak_protection_oct_2026'"
+    );
+    if (res.rows.length > 0 && res.rows[0].grace_until) {
+      cachedGraceUntil = new Date(res.rows[0].grace_until).getTime();
+      lastGraceCheck = now;
+      return now < cachedGraceUntil;
+    }
+  } catch (_) {}
+  return false;
+}
+

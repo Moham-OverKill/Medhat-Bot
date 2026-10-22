@@ -1184,6 +1184,17 @@ export async function scheduleCairoMidnightReset(client) {
  * @param {string} [guildId] - Optional guild ID to reset for a specific guild only
  */
 export async function resetCairoStaleStreaks(guildId = null) {
+  try {
+    const { isDowntimeGracePeriodActive } = await import('../storage/postgres.js');
+    const isGrace = await isDowntimeGracePeriodActive().catch(() => false);
+    if (isGrace) {
+      sysLog('Streak Reset Skipped (Grace Period)', {
+        guild: guildId,
+        detail: 'Midnight streak wipe bypassed to protect users during post-outage recovery window'
+      });
+      return;
+    }
+  } catch (_) {}
   const { getYesterdayCairo } = await import('../utils/time.js');
   const pool = getPool();
   const yesterday = getYesterdayCairo();
