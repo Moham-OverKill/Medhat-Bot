@@ -4083,7 +4083,7 @@ export async function handleRevokeItemStart(interaction) {
         `You are about to revoke all owned copies of **${item.name}**.\n\n` +
         `This will:\n` +
         `- Remove it from every user's inventory\n` +
-        `- Strip the item's role from all members who currently have it\n\n` +
+        `- Strip the item's role from all members\n\n` +
         `This action cannot be undone.`
       )
       .setColor('#E74C3C');
@@ -4095,7 +4095,7 @@ export async function handleRevokeItemStart(interaction) {
       .setStyle(ButtonStyle.Danger);
 
     const cancelBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_edit_select_${itemId}`)
+      .setCustomId(`shop_item_tab_users_${itemId}`)
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
@@ -4169,7 +4169,7 @@ export async function handleRevokeItemConfirm(interaction) {
       .setColor('#2ECC71');
 
     const backBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_edit_select_${itemId}`)
+      .setCustomId(`shop_item_tab_users_${itemId}`)
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
