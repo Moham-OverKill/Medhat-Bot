@@ -825,7 +825,7 @@ export async function handleRequirementsSelect(interaction) {
       member: interaction.member,
       memberPermissions: interaction.memberPermissions
     };
-    await handleEditItemSelect(mock, '✅ Requirements updated.');
+    await handleEditItemSelect(mock, null);
   } catch (error) {
     await handleInteractionError(interaction, error, 'requirements select');
   }
@@ -4403,7 +4403,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
       const itemImg = getItemImage(item);
       if (itemImg) embed.setThumbnail(itemImg);
-      if (successHeader) embed.setAuthor({ name: successHeader });
 
       // Row 2: Role select
       const roleRow = new ActionRowBuilder().addComponents(
@@ -4467,7 +4466,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
       const itemImg = getItemImage(item);
       if (itemImg) embed.setThumbnail(itemImg);
-      if (successHeader) embed.setAuthor({ name: successHeader });
 
       // Row 2: Rarity select
       const itemRarity = item.rarity || 'common';
@@ -4613,7 +4611,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
       const itemImg = getItemImage(item);
       if (itemImg) embed.setThumbnail(itemImg);
-      if (successHeader) embed.setAuthor({ name: successHeader });
 
       // Row 2: Revoke button + user list pagination arrows (left & right)
       const hasPagination = memberRows.length > PAGE_SIZE;
