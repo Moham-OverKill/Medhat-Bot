@@ -92,7 +92,6 @@ export async function showMainMenu(interaction) {
             {
                 label: 'Market',
                 value: 'market_market',
-                description: 'Coming soon',
                 emoji: '🛒'
             },
             {
@@ -232,36 +231,6 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
- * Show the Market Panel (Coming Soon)
- */
-export async function showMarketPanel(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle('Market')
-        .setDescription('Coming soon.')
-        .setColor(0x2F3136);
-
-    const backRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('settings_home')
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(isBackDisabled(interaction))
-    );
-
-    const responseMethod = (interaction.deferred || interaction.replied)
-        ? 'editReply'
-        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
-    await interaction[responseMethod]({
-        content: '',
-        embeds: [embed],
-        components: [backRow],
-        files: [],
-        attachments: []
-    });
-}
-
-/**
  * Open the Bot Customization modal directly (modal cannot be deferred)
  * @param {import('discord.js').Interaction} interaction 
  */
@@ -389,8 +358,13 @@ export async function handleSettingsComponent(interaction) {
                 case 'market_items':
                     return showShopPanel(interaction);
                 case 'market_market':
-                case 'market_coming_soon':
-                    return showMarketPanel(interaction);
+                case 'market_coming_soon': {
+                    await showMainMenu(interaction);
+                    return interaction.followUp({
+                        content: 'Coming soon.',
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
                 case 'market_economy':
                     return handleEconomySettings(interaction);
 
