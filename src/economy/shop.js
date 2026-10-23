@@ -365,7 +365,7 @@ export async function getItemUsageCount(itemId, guildId = null) {
 /**
  * Add a new item to the shop
  */
-export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null, rarity = 'common', isTradable = true, isActive = true) {
+export async function addShopItem(guildId, categoryId, roleId, name, description, price, durationSeconds = null, stock = null, itemType = 'role', contents = [], requiredItems = [], defaultImageUrl = null, rarity = 'common', isTradable = true, isActive = true, color = null) {
   try {
     // Map itemType to is_pack
     const isPack = itemType === 'pack';
@@ -373,10 +373,10 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
     const contentsJson = JSON.stringify(contents || []);
 
     const result = await query(
-      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url, rarity, is_tradable)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      `INSERT INTO shop_items (guild_id, category_id, role_id, name, description, price, duration_seconds, stock, item_type, is_pack, contents, required_items, is_active, default_image_url, rarity, is_tradable, color)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
-      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), isActive, defaultImageUrl || null, rarity, isTradable]
+      [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), isActive, defaultImageUrl || null, rarity, isTradable, color || null]
     );
 
     return result.rows[0];
@@ -394,7 +394,7 @@ export async function updateShopItem(itemId, updates, guildId = null) {
     const numId = parseInt(itemId, 10);
     if (isNaN(numId)) throw new Error(`Invalid item ID: ${itemId}`);
 
-    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url', 'rarity', 'is_tradable'];
+    const allowedFields = ['name', 'description', 'price', 'duration_seconds', 'stock', 'is_active', 'role_id', 'category_id', 'item_type', 'is_pack', 'contents', 'required_items', 'default_image_url', 'rarity', 'is_tradable', 'color'];
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
@@ -491,7 +491,19 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
   let missingMvp = false;
 
   for (const req of requiredItems) {
-    // 1. Booster Role Check (Live Status)
+    // 1. Canonical REQUIRE_BOOSTER sentinel (new format)
+    if (req === 'REQUIRE_BOOSTER') {
+      // Check premiumSince (native booster status) or the guild booster role
+      const boosterRoleId = member.guild?.roles?.premiumSubscriberRole?.id;
+      const isBooster = (member.premiumSince !== null && member.premiumSince !== undefined) ||
+        (boosterRoleId && member.roles.cache.has(boosterRoleId));
+      if (!isBooster) {
+        missingBooster = true;
+      }
+      continue;
+    }
+
+    // 1a. Legacy booster format: "booster:<roleId>"
     if (typeof req === 'string' && req.startsWith('booster:')) {
       const roleId = req.split(':')[1];
       if (!member.roles.cache.has(roleId)) {
@@ -500,7 +512,21 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       continue;
     }
 
-    // 1.5. MVP Role Exemption Check (In-Memory Cache — Single Source of Truth)
+    // 2. Canonical REQUIRE_MVP sentinel (new format)
+    if (req === 'REQUIRE_MVP') {
+      try {
+        const { isUserMvp } = await import('../mvp/mvpCache.js');
+        if (!isUserMvp(guildId, member.user.id)) {
+          missingMvp = true;
+        }
+      } catch (error) {
+        sysError('MVP Prereq Check Failed', error, { user: member.user.id, guild: guildId });
+        missingMvp = true;
+      }
+      continue;
+    }
+
+    // 2a. Legacy MVP format: "mvp:<roleId>"
     if (typeof req === 'string' && req.startsWith('mvp:')) {
       const reqRoleId = req.split(':')[1];
       
@@ -526,7 +552,7 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
       continue;
     }
 
-  // 2. Standard Item Check (Active for Timed Items, Inventory Ownership for Permanent)
+  // 3. Standard Item Check (Active for Timed Items, Inventory Ownership for Permanent)
   if (Number.isInteger(req)) {
     // SELF-HEALING: Verify item still exists in shop_items and check its duration configuration
     const reqItemRes = await pool.query(

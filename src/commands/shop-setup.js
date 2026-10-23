@@ -11,6 +11,7 @@ import {
   FileUploadBuilder,
   LabelBuilder,
   StringSelectMenuBuilder,
+  RoleSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   UserSelectMenuBuilder,
   ChannelType,
@@ -19,7 +20,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled, getItemEmbedColor } from '../shared.js';
 import { uploadHostAsset } from '../utils/image-host.js';
 
 import { query } from '../storage/postgres.js';
@@ -171,17 +172,7 @@ setInterval(() => {
 // (Guild ID : User ID -> action: 'edit_item' | 'edit_pack' | 'delete_item' | 'delete_pack')
 export const pendingAdminBrowser = new Map();
 
-// Temporary in-memory draft storage for new item creation (Guild ID : User ID -> draft item object)
-// No DB records are created until Save is clicked.
-const pendingNewItems = new Map();
-
 function getAdminBrowserKey(interaction) {
-  const gId = interaction?.guildId || interaction?.guild?.id || 'global';
-  const uId = interaction?.user?.id || 'unknown';
-  return `${gId}:${uId}`;
-}
-
-function getNewItemKey(interaction) {
   const gId = interaction?.guildId || interaction?.guild?.id || 'global';
   const uId = interaction?.user?.id || 'unknown';
   return `${gId}:${uId}`;
@@ -480,18 +471,538 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
   }
 }
 
+/**
+ * Handles "Create Item" selection from the Shop Setup menu.
+ * Renders Tab 1 (Details) in an uninitialized state (item = null).
+ * The role picker is shown immediately; selecting a role commits the item to the DB.
+ */
 export async function handleCreateItemStart(interaction) {
-  return openCreateItemModal(interaction, 'item');
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const embed = new EmbedBuilder()
+      .setTitle('Create Item')
+      .setColor('#95A5A6')
+      .setDescription(
+        'Role: None (Required)\n' +
+        'Category: None\n\n' +
+        '*Select a role below to create the item. All other options will become available after a role is selected.*'
+      );
+
+    // Tab row — all tabs except Details are disabled until role is selected
+    const tabRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_item_tab_details_new')
+        .setLabel('Details')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId('shop_item_appearance_btn_new')
+        .setLabel('Appearance')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId('shop_item_tab_config_new')
+        .setLabel('Config')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId('shop_item_tab_users_new')
+        .setLabel('Users')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
+    );
+
+    // Role select menu — triggers creation on selection
+    const roleRow = new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId('shop_create_role_select')
+        .setPlaceholder('Select a role to create the item')
+    );
+
+    // Category select disabled until role selected
+    const catOptions = [{ label: 'No Category', value: 'null', emoji: '🏷️' }];
+    const catRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('shop_assign_cat_select_create')
+        .setPlaceholder('Category (Select role first)')
+        .setDisabled(true)
+        .addOptions(catOptions)
+    );
+
+    // Nav row — only Back is available
+    const navRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_admin_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: null,
+      embeds: [embed],
+      files: [],
+      attachments: [],
+      components: [tabRow, roleRow, catRow, navRow]
+    });
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'create item start');
+  }
+}
+
+/**
+ * Handles role selection during item creation flow (shop_create_role_select).
+ * Runs full validation, then commits the item to DB and re-renders Tab 1 fully initialized.
+ */
+export async function handleCreateRoleSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const role = interaction.roles?.first?.() || interaction.guild.roles.cache.get(interaction.values?.[0]);
+    if (!role) {
+      return interaction.followUp({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Block @everyone
+    if (role.id === interaction.guild.id) {
+      return interaction.followUp({ content: '❌ @everyone cannot be a shop item.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Block Booster Role
+    const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
+    if (boosterRoleId && role.id === boosterRoleId) {
+      return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Use the Requirements select to gate items behind Server Booster status.", flags: MessageFlags.Ephemeral });
+    }
+
+    // Block MVP Role
+    const { getGuildConfig: _getGuildConfig } = await import('../storage/config.js');
+    const guildConfig = await _getGuildConfig(interaction.guildId);
+    if (guildConfig?.mvpRoleId && role.id === guildConfig.mvpRoleId) {
+      return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Use the Requirements select to gate items behind MVP status.", flags: MessageFlags.Ephemeral });
+    }
+
+    // Block dangerous permissions
+    if (hasAnyDangerousPermission(role)) {
+      return interaction.followUp({
+        content: '❌ **Security Violation**: This role holds administrative or moderation permissions and cannot be added to the shop.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Block duplicate roles
+    const uniqueCheck = await validateRoleUniqueness(interaction.guildId, role.id);
+    if (!uniqueCheck.valid) {
+      return interaction.followUp({
+        content: `❌ Role is already linked to **${uniqueCheck.existingItem?.name || role.id}**.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Commit to DB: locked, common, no category, no duration
+    const newItem = await addShopItem(
+      interaction.guildId,
+      null,       // category_id
+      role.id,
+      role.name,
+      '',         // description
+      null,       // price (set at post time)
+      null,       // duration_seconds
+      null,       // stock
+      'role',
+      [],         // contents
+      [],         // required_items
+      null,       // default_image_url
+      'common',
+      false,      // is_tradable = Locked
+      true,       // is_active
+      null        // color
+    );
+
+    sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created',
+      `Admin <@${interaction.user.id}> created item **${newItem.name}** (ID: ${newItem.id}) — Rarity: Common, Status: Locked`);
+
+    // Re-render Tab 1 fully initialized for the new item
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_details_${newItem.id}`,
+      values: [String(newItem.id)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, `✅ Item **${newItem.name}** created!`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'create role select');
+  }
+}
+
+/**
+ * Handles role swap for an existing item (shop_item_role_swap_<id>).
+ * Runs full validation, then updates the role and re-renders Tab 1.
+ */
+export async function handleRoleSwapSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const itemId = interaction.customId.slice('shop_item_role_swap_'.length);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const role = interaction.roles?.first?.() || interaction.guild.roles.cache.get(interaction.values?.[0]);
+    if (!role) return interaction.followUp({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral });
+
+    // Block @everyone
+    if (role.id === interaction.guild.id) {
+      return interaction.followUp({ content: '❌ @everyone cannot be a shop item.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Block Booster Role
+    const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
+    if (boosterRoleId && role.id === boosterRoleId) {
+      return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item.", flags: MessageFlags.Ephemeral });
+    }
+
+    // Block MVP Role
+    const { getGuildConfig: _getGuildConfigSwap } = await import('../storage/config.js');
+    const guildConfigSwap = await _getGuildConfigSwap(interaction.guildId);
+    if (guildConfigSwap?.mvpRoleId && role.id === guildConfigSwap.mvpRoleId) {
+      return interaction.followUp({ content: "❌ MVP Role can't be a shop item.", flags: MessageFlags.Ephemeral });
+    }
+
+    // Block dangerous permissions
+    if (hasAnyDangerousPermission(role)) {
+      return interaction.followUp({
+        content: '❌ **Security Violation**: This role holds administrative or moderation permissions and cannot be linked to a shop item.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Block duplicate — exclude current item's role
+    const uniqueCheck = await validateRoleUniqueness(interaction.guildId, role.id, item.id);
+    if (!uniqueCheck.valid) {
+      return interaction.followUp({
+        content: `❌ Role is already linked to **${uniqueCheck.existingItem?.name || role.id}**.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const oldRoleId = item.role_id;
+    await updateShopItem(itemId, { role_id: role.id }, interaction.guildId);
+    sendLog(interaction.guild, 'shop', 'blue', '🔄 Item Role Swapped',
+      `Admin <@${interaction.user.id}> swapped role for **${item.name}** (ID: ${itemId}).\n**Role:** <@&${oldRoleId}> ➡️ <@&${role.id}>`);
+
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_details_${itemId}`,
+      values: [String(itemId)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, `✅ Role updated to **${role.name}**.`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'role swap select');
+  }
+}
+
+/**
+ * Handles requirements multi-select submission (shop_item_reqs_select_<id>).
+ * Accepts REQUIRE_BOOSTER, REQUIRE_MVP, and integer catalog item IDs.
+ */
+export async function handleRequirementsSelect(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const itemId = interaction.customId.slice('shop_item_reqs_select_'.length);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const values = interaction.values || [];
+    const requiredItems = values.map(v => {
+      if (v === 'REQUIRE_BOOSTER' || v === 'REQUIRE_MVP') return v;
+      const num = parseInt(v, 10);
+      return isNaN(num) ? null : num;
+    }).filter(v => v !== null);
+
+    const oldItem = { ...item };
+    await updateShopItem(itemId, { required_items: requiredItems }, interaction.guildId);
+
+    const diff = formatDiff(oldItem, { ...oldItem, required_items: requiredItems }, ['id', 'guild_id', 'created_at', 'updated_at']);
+    if (diff) {
+      sendLog(interaction.guild, 'shop', 'blue', '⚙️ Item Requirements Updated',
+        `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
+    }
+
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_config_${itemId}`,
+      values: [String(itemId)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, '✅ Requirements updated.');
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'requirements select');
+  }
+}
+
+/**
+ * Opens the Appearance modal (shop_item_appearance_btn_<id>).
+ * Fields: Name, Image (file upload), Color hex.
+ */
+export async function handleOpenAppearanceModal(interaction) {
+  try {
+    const itemId = interaction.customId.slice('shop_item_appearance_btn_'.length);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`shop_item_modal_appearance_${itemId}_${Date.now()}`)
+      .setTitle('Item Appearance');
+
+    const nameInput = new TextInputBuilder()
+      .setCustomId('item_name')
+      .setStyle(TextInputStyle.Short)
+      .setValue(item.name || '')
+      .setRequired(true);
+    const nameLabel = new LabelBuilder().setLabel('Name').setTextInputComponent(nameInput);
+
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId('item_image_file')
+      .setRequired(false);
+    const imageLabel = new LabelBuilder()
+      .setLabel('Image')
+      .setDescription(formatCurrentImageDescription(item.default_image_url || item.image_url))
+      .setFileUploadComponent(imageUpload);
+
+    const colorInput = new TextInputBuilder()
+      .setCustomId('item_color')
+      .setStyle(TextInputStyle.Short)
+      .setValue(item.color || '')
+      .setPlaceholder('#FFD700')
+      .setRequired(false);
+    const colorLabel = new LabelBuilder().setLabel('Embed Color (Hex)').setTextInputComponent(colorInput);
+
+    modal.addLabelComponents(nameLabel, imageLabel, colorLabel);
+    await interaction.showModal(modal);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'open appearance modal');
+  }
+}
+
+/**
+ * Handles Appearance modal submission (shop_item_modal_appearance_<id>_<ts>).
+ */
+export async function handleAppearanceModalSubmit(interaction) {
+  try {
+    await interaction.deferUpdate();
+    // customId: shop_item_modal_appearance_<id>_<timestamp>
+    const parts = interaction.customId.split('_');
+    // parts: ['shop','item','modal','appearance','<id>','<ts>']
+    const itemId = parts[4];
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const updates = {};
+    const oldItem = { ...item };
+
+    // Name
+    const name = interaction.fields.getTextInputValue('item_name')?.trim();
+    if (name) updates.name = name;
+
+    // Image upload
+    try {
+      const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
+      const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+      if (uploadedFile) {
+        const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+          filename: uploadedFile.name,
+          label: `🖼️ Item Asset: **${name || item.name}**`
+        });
+        updates.default_image_url = uploadRes.url;
+      }
+    } catch (_) { /* field may be absent */ }
+
+    // Color hex
+    const rawColor = interaction.fields.getTextInputValue('item_color')?.trim() ?? '';
+    if (rawColor === '' || rawColor.toLowerCase() === 'none' || rawColor.toLowerCase() === 'clear') {
+      updates.color = null;
+    } else if (/^#?[0-9A-Fa-f]{6}$/.test(rawColor)) {
+      updates.color = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+    } else if (rawColor !== '') {
+      return interaction.followUp({ content: '❌ Invalid color. Enter a valid hex like `#FF5733` or leave empty to use rarity color.', flags: MessageFlags.Ephemeral });
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return interaction.followUp({ content: '⚠️ No changes detected.', flags: MessageFlags.Ephemeral });
+    }
+
+    await updateShopItem(itemId, updates, interaction.guildId);
+    const updatedItem = await getShopItem(itemId, interaction.guildId);
+    const diff = formatDiff(oldItem, updatedItem, ['id', 'guild_id', 'created_at', 'updated_at']);
+    if (diff) {
+      sendLog(interaction.guild, 'shop', 'blue', '🎨 Item Appearance Updated',
+        `Admin <@${interaction.user.id}> updated appearance of **${updatedItem.name}** (ID: ${itemId})\n${diff}`);
+    }
+
+    // Re-render Details tab
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_details_${itemId}`,
+      values: [String(itemId)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, `✅ Appearance updated for **${updatedItem.name}**.`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'appearance modal submit');
+  }
+}
+
+/**
+ * Opens the Duration modal (shop_item_duration_btn_<id>).
+ */
+export async function handleOpenDurationModal(interaction) {
+  try {
+    const itemId = interaction.customId.slice('shop_item_duration_btn_'.length);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const currentDays = item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '';
+
+    const modal = new ModalBuilder()
+      .setCustomId(`shop_item_modal_duration_${itemId}_${Date.now()}`)
+      .setTitle('Item Duration');
+
+    const durInput = new TextInputBuilder()
+      .setCustomId('item_duration')
+      .setStyle(TextInputStyle.Short)
+      .setValue(currentDays)
+      .setPlaceholder('Leave empty for permanent')
+      .setRequired(false);
+    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setDescription('Leave empty for permanent').setTextInputComponent(durInput);
+
+    modal.addLabelComponents(durLabel);
+    await interaction.showModal(modal);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'open duration modal');
+  }
+}
+
+/**
+ * Handles Duration modal submission (shop_item_modal_duration_<id>_<ts>).
+ */
+export async function handleDurationModalSubmit(interaction) {
+  try {
+    await interaction.deferUpdate();
+    // customId: shop_item_modal_duration_<id>_<timestamp>
+    const parts = interaction.customId.split('_');
+    const itemId = parts[4];
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const rawDays = interaction.fields.getTextInputValue('item_duration')?.trim() ?? '';
+    let durationSeconds = null;
+    if (rawDays !== '') {
+      const days = parseInt(rawDays, 10);
+      if (isNaN(days) || days < 0) {
+        return interaction.followUp({ content: '❌ Invalid duration. Enter a positive number of days or leave empty for permanent.', flags: MessageFlags.Ephemeral });
+      }
+      if (days > 0) durationSeconds = days * 86400;
+    }
+
+    await updateShopItem(itemId, { duration_seconds: durationSeconds }, interaction.guildId);
+    const durationLabel = durationSeconds ? `${Math.floor(durationSeconds / 86400)} Days` : 'Permanent';
+    sendLog(interaction.guild, 'shop', 'blue', '⏱️ Item Duration Updated',
+      `Admin <@${interaction.user.id}> set duration of **${item.name}** to **${durationLabel}**`);
+
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_config_${itemId}`,
+      values: [String(itemId)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, `✅ Duration set to **${durationLabel}**.`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'duration modal submit');
+  }
+}
+
+/**
+ * Toggles is_tradable for an item (shop_item_toggle_lock_<id>).
+ */
+export async function handleToggleItemLock(interaction) {
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  try {
+    const itemId = interaction.customId.slice('shop_item_toggle_lock_'.length);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
+
+    const newTradable = !item.is_tradable;
+    await updateShopItem(itemId, { is_tradable: newTradable }, interaction.guildId);
+    const label = newTradable ? '🔓 Unlocked' : '🔒 Locked';
+    sendLog(interaction.guild, 'shop', 'blue', '🔐 Item Lock Toggled',
+      `Admin <@${interaction.user.id}> set **${item.name}** to **${label}**`);
+
+    const mock = {
+      deferred: true, replied: false,
+      deferUpdate: async () => {},
+      editReply: interaction.editReply.bind(interaction),
+      followUp: interaction.followUp.bind(interaction),
+      customId: `shop_item_tab_config_${itemId}`,
+      values: [String(itemId)],
+      isAnySelectMenu: () => false,
+      guildId: interaction.guildId,
+      user: interaction.user,
+      guild: interaction.guild,
+      member: interaction.member,
+      memberPermissions: interaction.memberPermissions
+    };
+    await handleEditItemSelect(mock, `✅ Status set to **${label}**.`);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'toggle item lock');
+  }
 }
 
 export async function handleCreatePackStart(interaction) {
-  return openCreateItemModal(interaction, 'pack');
+  return openCreatePackModal(interaction);
 }
 
-export async function openCreateItemModal(interaction, type) {
+export async function openCreatePackModal(interaction) {
   const modal = new ModalBuilder()
-    .setCustomId(`shop_item_modal_add_new_${type}_${Date.now()}`)
-    .setTitle(type === 'pack' ? 'Create Item Pack' : 'Create Item');
+    .setCustomId(`shop_item_modal_add_new_pack_${Date.now()}`)
+    .setTitle('Create Item Pack');
 
   const nameInput = new TextInputBuilder()
     .setCustomId('item_name')
@@ -502,52 +1013,18 @@ export async function openCreateItemModal(interaction, type) {
     .setLabel('Name')
     .setTextInputComponent(nameInput);
 
-  if (type === 'item') {
-    const roleInput = new TextInputBuilder()
-      .setCustomId('item_role')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('123456789012345678')
-      .setRequired(true);
-
-    const roleLabel = new LabelBuilder()
-      .setLabel('Role ID')
-      .setTextInputComponent(roleInput);
-
-    const imageUpload = new FileUploadBuilder()
-      .setCustomId('item_image_file')
-      .setRequired(false);
-
-    const imageLabel = new LabelBuilder()
-      .setLabel('Image')
-      .setFileUploadComponent(imageUpload);
-
-    const durInput = new TextInputBuilder()
-      .setCustomId('item_duration')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Leave empty for permanent')
-      .setRequired(false);
-
-    const durLabel = new LabelBuilder()
-      .setLabel('Duration (Days)')
-      .setTextInputComponent(durInput);
-
-    const reqInput = new TextInputBuilder()
-      .setCustomId('item_required')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('separate IDs by "-" or "," or space')
-      .setRequired(false);
-
-    const reqLabel = new LabelBuilder()
-      .setLabel('Required Roles (Role IDs)')
-      .setTextInputComponent(reqInput);
-
-    modal.addLabelComponents(nameLabel, roleLabel, imageLabel, durLabel, reqLabel);
-  } else {
-    modal.addLabelComponents(nameLabel);
-  }
-
+  modal.addLabelComponents(nameLabel);
   await interaction.showModal(modal);
   await refreshShopSetupMessage(interaction);
+}
+
+// Backwards-compat alias — only for packs now
+export async function openCreateItemModal(interaction, type) {
+  if (type === 'pack') {
+    return openCreatePackModal(interaction);
+  }
+  // Item creation goes through the new tab-based flow — redirect to start
+  return handleCreateItemStart(interaction);
 }
 
 export async function handleAddTypeSelect(interaction) {
@@ -690,202 +1167,10 @@ export async function handleItemModalSubmit(interaction) {
     if (action === 'add') {
       // ========== ADD FLOW ==========
       if (type === 'item') {
-        const roleId = interaction.fields.getTextInputValue('item_role').trim();
-        const durationRaw = interaction.fields.getTextInputValue('item_duration');
-        // Read image from upload field or URL fallback
-        let itemImageUrl = null;
-        try {
-          const uploadedFiles = interaction.fields.getUploadedFiles?.('item_image_file');
-          const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
-          if (uploadedFile) {
-            const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
-              filename: uploadedFile.name,
-              label: `🖼️ Item Asset: **${name}**`
-            });
-            itemImageUrl = uploadRes.url;
-          } else {
-            const rawImg = interaction.fields.getTextInputValue?.('item_image_url')?.trim?.();
-            if (rawImg && rawImg.toLowerCase() !== 'none') {
-              if (/^https?:\/\/.+\..+/i.test(rawImg)) {
-                itemImageUrl = rawImg;
-              } else {
-                return interaction.followUp({ content: '❌ Invalid Image URL. Please provide a valid http/https link or leave it empty.', flags: MessageFlags.Ephemeral });
-              }
-            }
-          }
-        } catch (e) { /* field may be absent */ }
-
-        if (!/^\d{17,20}$/.test(roleId)) {
-          return interaction.editReply({ files: [], attachments: [], content: '❌ Invalid Role ID.', 
-            embeds: [],
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
-              )
-            ] });
-        }
-        
-        // Block Booster Role as main Item Role
-        const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
-        if (boosterRoleId && roleId === boosterRoleId) {
-          return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Enter it in the Requirements field instead to make Boosters only items.", flags: MessageFlags.Ephemeral });
-        }
-
-        // Block MVP Role as main Item Role
-        const { getGuildConfig } = await import('../storage/config.js');
-        const guildConfig = await getGuildConfig(interaction.guildId);
-        if (guildConfig && guildConfig.mvpRoleId === roleId) {
-          return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });
-        }
-
-        const targetItemRole = interaction.guild.roles.cache.get(roleId);
-        if (!targetItemRole) {
-          return interaction.editReply({ files: [], attachments: [], content: '❌ Role not found in server.', 
-            embeds: [],
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
-              )
-            ] });
-        }
-
-        if (hasAnyDangerousPermission(targetItemRole)) {
-          return interaction.editReply({
-            files: [], attachments: [],
-            content: '❌ **Security Violation**: This role holds administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members) and cannot be added to the shop.',
-            embeds: [],
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
-              )
-            ]
-          });
-        }
-
-        const uniqueCheck = await validateRoleUniqueness(interaction.guildId, roleId);
-        if (!uniqueCheck.valid) {
-          return interaction.editReply({ 
-            content: `❌ Role already linked to **${uniqueCheck.existingItem?.name || roleId}**.`, 
-            embeds: [], 
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('shop_admin_add').setLabel('Back').setStyle(ButtonStyle.Secondary)
-              )
-            ]
-          });
-        }
-
-        let durationSeconds = null;
-        if (durationRaw && durationRaw.trim() !== '') {
-          const days = parseInt(durationRaw.trim(), 10);
-          if (days > 0) durationSeconds = days * 86400;
-        }
-
-        let requiredItems = [];
-        let reqValidation = { resolved: [], errors: [], hasBooster: false, hasMvp: false };
-        try {
-          const reqRaw = interaction.fields.getTextInputValue('item_required');
-          reqValidation = await resolvePrerequisiteIds(interaction.guild, reqRaw);
-          
-          if (reqValidation.errors.length > 0) {
-            return interaction.followUp({ 
-              content: `❌ Role(s) **${reqValidation.errors.join(', ')}** are not connected to any item in the shop.\nItems must be created in the shop first before they can be used as a requirement.`, 
-              flags: MessageFlags.Ephemeral 
-            });
-          }
-          requiredItems = reqValidation.resolved;
-        } catch (e) {
-          sysError('Shop Admin Failure', e, { guild: interaction.guildId, detail: 'Resolving prerequisites during add' });
-        }
-
-        // Store in-memory draft (No DB write until Save is clicked)
-        pendingNewItems.set(getNewItemKey(interaction), {
-          name,
-          roleId,
-          itemImageUrl,
-          durationSeconds,
-          requiredItems,
-          reqValidation,
-          categoryId: null,
-          rarity: 'common',
-          is_tradable: true
-        });
-
-        // Format Item Created embed description
-        const roleMention = roleId ? `<@&${roleId}>` : '_None_';
-        const descLines = [
-          `**Name:** ${name}`,
-          `**Role:** ${roleMention}`
-        ];
-        
-        if (reqValidation.hasBooster) {
-          descLines.push(`🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`);
-        }
-        if (reqValidation.hasMvp) {
-          descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
-        }
-
-        const categories = await getShopCategories(interaction.guildId);
-        const catOptions = [
-          { label: 'No Category', value: 'null', emoji: '🏷️', default: true },
-          ...categories.slice(0, 24).map(c => ({
-            label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
-            value: c.id.toString(),
-            emoji: '📂'
-          }))
-        ];
-
-        const confirmEmbed = new EmbedBuilder()
-          .setColor('#2ECC71')
-          .setTitle('Item Created')
-          .setDescription(descLines.join('\n'));
-
-        if (itemImageUrl) confirmEmbed.setThumbnail(itemImageUrl);
-
-        const rowCat = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_cat_select`)
-            .setPlaceholder('Category')
-            .addOptions(catOptions)
-        );
-
-        const rowRarity = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_rarity_select`)
-            .setPlaceholder('Rarity')
-            .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === 'common' })))
-        );
-
-        const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-        const tradableOpts = getTradableOptions(lootBoxCatName);
-        const rowTradable = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`shop_new_tradable_select`)
-            .setPlaceholder('Status')
-            .addOptions(tradableOpts.map(o => ({ ...o, default: o.value === 'tradable' })))
-        );
-
-        const rowActions = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`shop_new_cancel`)
-            .setLabel('Cancel')
-            .setEmoji('✖️')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId(`shop_new_save`)
-            .setLabel('Save')
-            .setEmoji('💾')
-            .setStyle(ButtonStyle.Success)
-        );
-
-        await interaction.editReply({
-          content: null,
-          embeds: [confirmEmbed],
-          files: [], attachments: [],
-          components: [rowCat, rowRarity, rowTradable, rowActions]
-        });
-        return;
-
+        // Item creation now goes through the new unified role-picker flow.
+        // This branch is only reached if somehow the old modal is submitted — redirect to shop setup.
+        await interaction.followUp({ content: '❌ Item creation via text modal is no longer supported. Please use "Create Item" from the Shop menu.', flags: MessageFlags.Ephemeral });
+        return handleShopSetup(interaction);
       } else if (type === 'pack') {
         // Packs price is set at post time (default to 0 if not provided)
         await addShopItem(interaction.guildId, null, '', name, '', 0, null, null, 'pack');
@@ -1082,163 +1367,28 @@ export function getTradableOptions(lootBoxName = 'loot boxes') {
 }
 
 /**
- * Handles select menu changes on the Item Created panel.
- * Updates the in-memory pendingNewItems state and re-renders the panel.
- * Nothing is written to the DB here.
+ * @deprecated Legacy draft panel handler — item creation now goes through the role picker directly.
+ * Kept as a no-op export so existing handler routes don't throw import errors.
  */
 export async function handleNewItemAttrSelect(interaction) {
-  await interaction.deferUpdate();
-  const cid = interaction.customId;
-  const value = interaction.values[0];
-
-  const draft = pendingNewItems.get(getNewItemKey(interaction));
-  if (!draft) {
-    return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
-  }
-
-  if (cid === 'shop_new_cat_select') {
-    draft.categoryId = value === 'null' ? null : value;
-  } else if (cid === 'shop_new_rarity_select') {
-    draft.rarity = value;
-  } else if (cid === 'shop_new_tradable_select') {
-    draft.is_tradable = value === 'tradable';
-  }
-  pendingNewItems.set(getNewItemKey(interaction), draft);
-
-  // Re-render the panel with updated default selections
-  const categories = await getShopCategories(interaction.guildId);
-  const catOptions = [
-    { label: 'No Category', value: 'null', emoji: '🏷️', default: draft.categoryId === null },
-    ...categories.slice(0, 24).map(c => ({
-      label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
-      value: c.id.toString(),
-      emoji: '📂',
-      default: String(c.id) === String(draft.categoryId)
-    }))
-  ];
-
-  const roleMention = draft.roleId ? `<@&${draft.roleId}>` : '_None_';
-  const descLines = [
-    `**Name:** ${draft.name}`,
-    `**Role:** ${roleMention}`
-  ];
-  if (draft.reqValidation?.hasBooster) {
-    descLines.push(`🚀 **Booster Requirement Linked:** This item will now require an active Server Boost to buy/equip.`);
-  }
-  if (draft.reqValidation?.hasMvp) {
-    descLines.push(`🏆 **MVP Requirement Linked:** This item will now require the user to be the active Server MVP.`);
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor('#2ECC71')
-    .setTitle('Item Created')
-    .setDescription(descLines.join('\n'));
-  if (draft.itemImageUrl) embed.setThumbnail(draft.itemImageUrl);
-
-  const rowCat = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_cat_select`)
-      .setPlaceholder('Category')
-      .addOptions(catOptions)
-  );
-
-  const rowRarity = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_rarity_select`)
-      .setPlaceholder('Rarity')
-      .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === draft.rarity })))
-  );
-
-  const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-  const tradableOpts = getTradableOptions(lootBoxCatName);
-  const rowTradable = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`shop_new_tradable_select`)
-      .setPlaceholder('Status')
-      .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === draft.is_tradable })))
-  );
-
-  const rowActions = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`shop_new_cancel`)
-      .setLabel('Cancel')
-      .setEmoji('✖️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`shop_new_save`)
-      .setLabel('Save')
-      .setEmoji('💾')
-      .setStyle(ButtonStyle.Success)
-  );
-
-  await interaction.editReply({
-    content: null,
-    embeds: [embed],
-    files: [], attachments: [],
-    components: [rowCat, rowRarity, rowTradable, rowActions]
-  });
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  return interaction.followUp({ content: '❌ This panel is no longer in use. Please create a new item from the Shop menu.', flags: MessageFlags.Ephemeral });
 }
 
 /**
- * Handles Cancel button on Item Created panel.
- * Discards in-memory draft.
+ * @deprecated Legacy cancel handler — kept for compatibility.
  */
 export async function handleNewItemCancel(interaction) {
-  await interaction.deferUpdate();
-  pendingNewItems.delete(getNewItemKey(interaction));
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   await handleShopSetup(interaction);
 }
 
 /**
- * Handles the Save button on the Item Created panel.
- * Inserts the finalized item into DB and triggers logging.
+ * @deprecated Legacy save handler — kept for compatibility.
  */
 export async function handleNewItemSave(interaction) {
-  await interaction.deferUpdate();
-  const draft = pendingNewItems.get(getNewItemKey(interaction));
-  if (!draft) {
-    return interaction.followUp({ content: '❌ Session expired. Please create the item again.', flags: MessageFlags.Ephemeral });
-  }
-  pendingNewItems.delete(getNewItemKey(interaction));
-
-  const uniqueCheck = await validateRoleUniqueness(interaction.guildId, draft.roleId);
-  if (!uniqueCheck.valid) {
-    return interaction.followUp({ 
-      content: `❌ Role already linked to **${uniqueCheck.existingItem?.name || draft.roleId}**.`, 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
-
-  const catId = (draft.categoryId !== null && draft.categoryId !== 'null') ? parseInt(draft.categoryId) : null;
-
-  const item = await addShopItem(
-    interaction.guildId,
-    catId,
-    draft.roleId,
-    draft.name,
-    '',
-    null,
-    draft.durationSeconds,
-    null,
-    'role',
-    [],
-    draft.requiredItems,
-    draft.itemImageUrl,
-    draft.rarity,
-    draft.is_tradable,
-    true
-  );
-
-  const singularTradable = draft.is_tradable ? 'Unlocked' : 'Locked';
-  const singularRarity = (draft.rarity || 'common').charAt(0).toUpperCase() + (draft.rarity || 'common').slice(1);
-  sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created', `Admin <@${interaction.user.id}> created item **${item.name}** (Rarity: ${singularRarity}, Status: ${singularTradable})`);
-
-  if (catId) {
-    const catName = (await query('SELECT name FROM shop_categories WHERE id = $1 AND guild_id = $2', [catId, interaction.guildId])).rows[0]?.name ?? catId;
-    sendLog(interaction.guild, 'shop', 'blue', '📂 Category Assigned', `Admin <@${interaction.user.id}> assigned item **${item.name}** to category **${catName}**.`);
-  }
-
-  await handleShopSetup(interaction);
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  return interaction.followUp({ content: '❌ This action is no longer available. Please create a new item from the Shop menu.', flags: MessageFlags.Ephemeral });
 }
 
 
@@ -3966,26 +4116,51 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => { });
   
   let itemId;
-  if (interaction.isAnySelectMenu()) {
+  let view = 'details';
+  let page = 1;
+
+  if (interaction.isAnySelectMenu && interaction.isAnySelectMenu()) {
     itemId = interaction.values[0];
+    // Strip 'item_' prefix if present
+    if (typeof itemId === 'string' && itemId.startsWith('item_')) {
+      itemId = itemId.replace('item_', '');
+    }
   } else {
-    const cid = interaction.customId;
-    // Strip known prefixes so the remaining value is always the full itemId (UUID-safe)
-    const prefixes = [
-      'shop_item_view_details_',
-      'shop_item_view_users_',
-      'shop_item_page_prev_',
-      'shop_item_page_next_',
-      'shop_item_edit_select_',
-      'shop_item_edit_',
-    ];
-    const matched = prefixes.find(p => cid.startsWith(p));
-    if (matched) {
-      // For pagination buttons the format is: prefix{itemId}_p{page} — strip the page suffix
-      const raw = cid.slice(matched.length);
-      itemId = raw.includes('_p') ? raw.slice(0, raw.lastIndexOf('_p')) : raw;
+    const cid = interaction.customId || '';
+
+    // Determine view from customId prefix
+    if (cid.startsWith('shop_item_tab_details_')) {
+      view = 'details';
+      itemId = cid.slice('shop_item_tab_details_'.length);
+    } else if (cid.startsWith('shop_item_tab_config_')) {
+      view = 'config';
+      itemId = cid.slice('shop_item_tab_config_'.length);
+    } else if (cid.startsWith('shop_item_tab_users_') || cid.startsWith('shop_item_view_users_')) {
+      view = 'users';
+      const raw = cid.startsWith('shop_item_tab_users_') ? cid.slice('shop_item_tab_users_'.length) : cid.slice('shop_item_view_users_'.length);
+      const pageMatch = raw.match(/_p(\d+)$/);
+      if (pageMatch) { page = parseInt(pageMatch[1], 10); itemId = raw.slice(0, raw.lastIndexOf('_p')); }
+      else { itemId = raw; }
+    } else if (cid.startsWith('shop_item_page_prev_') || cid.startsWith('shop_item_page_next_')) {
+      view = 'users';
+      const raw = cid.startsWith('shop_item_page_prev_') ? cid.slice('shop_item_page_prev_'.length) : cid.slice('shop_item_page_next_'.length);
+      const pageMatch = raw.match(/_p(\d+)$/);
+      if (pageMatch) { page = parseInt(pageMatch[1], 10); itemId = raw.slice(0, raw.lastIndexOf('_p')); }
+      else { itemId = raw; }
     } else {
-      itemId = cid.split('_').pop();
+      // Fallback for legacy customIds (shop_item_view_details_, shop_item_edit_select_, shop_item_edit_)
+      const prefixes = [
+        'shop_item_view_details_',
+        'shop_item_edit_select_',
+        'shop_item_edit_',
+      ];
+      const matched = prefixes.find(p => cid.startsWith(p));
+      if (matched) {
+        const raw = cid.slice(matched.length);
+        itemId = raw.includes('_p') ? raw.slice(0, raw.lastIndexOf('_p')) : raw;
+      } else {
+        itemId = cid.split('_').pop();
+      }
     }
   }
 
@@ -4003,26 +4178,15 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       return interaction.followUp({ content: '❌ This is a pack. Please use "Edit Pack" instead.', flags: MessageFlags.Ephemeral });
     }
 
+    // Embed color: custom hex > rarity fallback
+    const embedColor = getItemEmbedColor(item);
+
     const packCount = await getItemUsageCount(item.id, interaction.guildId);
     const roleMention = item.role_id ? `<@&${item.role_id}>` : 'None';
 
-    let prereqDisplay = '``None``';
     let reqItems = item.required_items;
     if (typeof reqItems === 'string') {
       try { reqItems = JSON.parse(reqItems); } catch (e) { reqItems = []; }
-    }
-    if (reqItems && Array.isArray(reqItems) && reqItems.length > 0) {
-      const allItems = await getShopItems(interaction.guildId, null, 'name', true);
-      const reqDisplays = reqItems
-        .map(id => {
-            if (typeof id === 'string' && id.startsWith('booster:')) return '🚀 **Server Booster**';
-            if (typeof id === 'string' && id.startsWith('mvp:')) return '🏆 **Active Server MVP**';
-            const match = allItems.find(i => i.id === id);
-            if (!match || !match.role_id) return null;
-            return `<@&${match.role_id}>`;
-        })
-        .filter(Boolean);
-      prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : '``None``';
     }
 
     const categories = await getShopCategories(interaction.guildId);
@@ -4044,16 +4208,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       }
     }
 
-    const customId = interaction.customId || '';
-    let view = 'details';
-    let page = 1;
-
-    if (customId.startsWith('shop_item_view_users_') || customId.startsWith('shop_item_page_')) {
-      view = 'users';
-      const pageMatch = customId.match(/_p(\d+)$/);
-      if (pageMatch) page = parseInt(pageMatch[1], 10);
-    }
-
     const PAGE_SIZE = 50;
     const dbUsers = await query(
       `SELECT user_id, 
@@ -4071,7 +4225,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       qty: parseInt(r.total_qty) || 1
     }));
 
-    // Owned = unique users with this item in their inventory (DB is source of truth)
     const ownedCount = dbUserMap.size;
 
     const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
@@ -4079,26 +4232,16 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
     let equippedCount = 0;
 
     if (roleIds.length > 0) {
-      // Full guild member fetch populates cache via WebSocket gateway chunks (not per-user HTTP).
-      // For a 1500-member server this is ~2 gateway events — fast and accurate.
-      try {
-        await interaction.guild.members.fetch();
-      } catch (err) { /* proceed with whatever is cached */ }
-
-      // After cache is populated, role.members is accurate
+      try { await interaction.guild.members.fetch(); } catch (err) { /* proceed with cache */ }
       for (const rid of roleIds) {
         const role = interaction.guild.roles.cache.get(rid);
-        if (role) {
-          for (const uid of role.members.keys()) roleMembersSet.add(uid);
-        }
+        if (role) { for (const uid of role.members.keys()) roleMembersSet.add(uid); }
       }
       equippedCount = roleMembersSet.size;
     } else {
-      // No role linked — use DB is_active as equipped proxy
       equippedCount = Array.from(dbUserMap.values()).filter(v => v.isActive === 1).length;
     }
 
-    // User list: DB owners, equipped (role holders) sorted first
     const memberRows = Array.from(dbUserMap.entries()).map(([uid, info]) => ({
       user_id: uid,
       qty: info.qty,
@@ -4109,15 +4252,207 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
     const totalPages = Math.max(1, Math.ceil(memberRows.length / PAGE_SIZE));
     if (page > totalPages) page = totalPages;
 
+    // ── Build Tab Row (Row 1 — always shown on all tabs) ──────────────────────
+    const tabRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_item_tab_details_${itemId}`)
+        .setLabel('Details')
+        .setStyle(view === 'details' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(view === 'details'),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_appearance_btn_${itemId}`)
+        .setLabel('Appearance')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_tab_config_${itemId}`)
+        .setLabel('Config')
+        .setStyle(view === 'config' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(view === 'config'),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_tab_users_${itemId}`)
+        .setLabel('Users')
+        .setStyle(view === 'users' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(view === 'users')
+    );
+
+    const backFolderId = item.category_id ? `cat_${item.category_id}` : 'cat_null';
+    const backBtn = new ButtonBuilder()
+      .setCustomId(`shop_edit_item_back_${backFolderId}`)
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary);
+
     let embed;
+    let components;
+
     if (view === 'details') {
+      // ── Tab 1: Details ────────────────────────────────────────────────────
+      // Prereq display
+      let prereqDisplay = '``None``';
+      if (reqItems && Array.isArray(reqItems) && reqItems.length > 0) {
+        const allItems = await getShopItems(interaction.guildId, null, 'name', true);
+        const reqDisplays = reqItems.map(id => {
+          if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 **Server Booster**';
+          if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 **Active Server MVP**';
+          const match = allItems.find(i => i.id === id);
+          if (!match || !match.role_id) return null;
+          return `<@&${match.role_id}>`;
+        }).filter(Boolean);
+        prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : '``None``';
+      }
+
       embed = new EmbedBuilder()
-        .setTitle(`Edit Item: ${item.name}`)
+        .setTitle(`${item.name}`)
         .setDescription(
-          `Role: ${roleMention}\nDuration: \`\`${durationDisplay}\`\`\nIn Packs: \`\`${packCount}\`\`\nRequirements: ${prereqDisplay}`
+          `Role: ${roleMention}\n` +
+          `Category: ${categoryDisplay}\n` +
+          `In Packs: \`\`${packCount}\`\``
         )
-        .setColor('#3498DB');
+        .setColor(embedColor);
+
+      const itemImg = getItemImage(item);
+      if (itemImg) embed.setThumbnail(itemImg);
+      if (successHeader) embed.setAuthor({ name: successHeader });
+
+      // Row 2: Role select
+      const roleRow = new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`shop_item_role_swap_${itemId}`)
+          .setPlaceholder('Swap role…')
+      );
+
+      // Row 3: Category select
+      const catOptions = [
+        { label: 'No Category', value: 'null', emoji: '🏷️', default: !item.category_id },
+        ...categories.slice(0, 24).map(c => ({
+          label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
+          value: c.id.toString(),
+          emoji: '📂',
+          default: c.id == item.category_id
+        }))
+      ];
+      if (catOptions.length > 25) catOptions.length = 25;
+      const catRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`shop_assign_cat_select_manage_${itemId}`)
+          .setPlaceholder('Assign to category…')
+          .addOptions(catOptions)
+      );
+
+      // Siblings for arrow navigation
+      let prevSibling = null, nextSibling = null;
+      const siblingItems = await getShopItems(interaction.guildId, item.category_id ? item.category_id : 'null', 'name', true);
+      let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+      siblingShopItems = await sortItemsByRarity(siblingShopItems, interaction.guild);
+      if (siblingShopItems.length > 1) {
+        const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
+        prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
+        nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
+      }
+      const prevBtn = new ButtonBuilder()
+        .setCustomId(prevSibling ? `shop_item_view_details_${prevSibling.id}` : 'shop_item_nav_noop_prev')
+        .setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(!prevSibling);
+      const nextBtn = new ButtonBuilder()
+        .setCustomId(nextSibling ? `shop_item_view_details_${nextSibling.id}` : 'shop_item_nav_noop_next')
+        .setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(!nextSibling);
+
+      const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn, nextBtn);
+      components = [tabRow, roleRow, catRow, navRow];
+
+    } else if (view === 'config') {
+      // ── Tab 2: Config ─────────────────────────────────────────────────────
+      let prereqDisplay = 'None';
+      if (reqItems && Array.isArray(reqItems) && reqItems.length > 0) {
+        const allCatalogItems = await getShopItems(interaction.guildId, null, 'name', true);
+        const reqDisplays = reqItems.map(id => {
+          if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 Server Booster';
+          if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 Active Server MVP';
+          const match = allCatalogItems.find(i => i.id === id);
+          return match ? match.name : null;
+        }).filter(Boolean);
+        prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
+      }
+
+      const typeLockLabel = item.is_tradable !== false ? 'Unlocked 🔓' : 'Locked 🔒';
+      embed = new EmbedBuilder()
+        .setTitle(`${item.name} — Config`)
+        .setDescription(
+          `Rarity: ${(item.rarity || 'common').charAt(0).toUpperCase() + (item.rarity || 'common').slice(1)}\n` +
+          `Requirements: ${prereqDisplay}\n` +
+          `Duration: ${durationDisplay}\n` +
+          `Type: ${typeLockLabel}`
+        )
+        .setColor(embedColor);
+
+      const itemImg = getItemImage(item);
+      if (itemImg) embed.setThumbnail(itemImg);
+      if (successHeader) embed.setAuthor({ name: successHeader });
+
+      // Row 2: Rarity select
+      const itemRarity = item.rarity || 'common';
+      const rarityRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`shop_edit_rarity_select_${itemId}`)
+          .setPlaceholder('Rarity…')
+          .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === itemRarity })))
+      );
+
+      // Row 3: Requirements multi-select
+      const allCatalogForReqs = await getShopItems(interaction.guildId, null, 'name', true);
+      const catalogItemsForReqs = allCatalogForReqs
+        .filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box' && String(i.id) !== String(item.id))
+        .slice(0, 23); // Reserve 2 slots for REQUIRE_BOOSTER and REQUIRE_MVP
+
+      // Map legacy formats to canonical sentinels for pre-selection
+      const normalizedReqs = (reqItems || []).map(r => {
+        if (r === 'REQUIRE_BOOSTER' || (typeof r === 'string' && r.startsWith('booster:'))) return 'REQUIRE_BOOSTER';
+        if (r === 'REQUIRE_MVP' || (typeof r === 'string' && r.startsWith('mvp:'))) return 'REQUIRE_MVP';
+        return typeof r === 'number' ? r : parseInt(r, 10);
+      }).filter(r => r !== null && !isNaN(r));
+
+      const reqOptions = [
+        { label: '🚀 Server Booster', value: 'REQUIRE_BOOSTER', description: 'Requires active Server Boost', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
+        { label: '🏆 Server MVP', value: 'REQUIRE_MVP', description: 'Requires active Server MVP status', default: normalizedReqs.includes('REQUIRE_MVP') },
+        ...catalogItemsForReqs.map(i => ({
+          label: (i.name || `Item #${i.id}`).slice(0, 100),
+          value: String(i.id),
+          description: `ID: ${i.id}`,
+          default: normalizedReqs.includes(i.id)
+        }))
+      ];
+
+      const reqRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`shop_item_reqs_select_${itemId}`)
+          .setPlaceholder('Requirements…')
+          .setMinValues(0)
+          .setMaxValues(reqOptions.length)
+          .addOptions(reqOptions)
+      );
+
+      // Row 4: Duration button + Lock toggle
+      const lockLabel = item.is_tradable !== false ? '🔒 Lock' : '🔓 Unlock';
+      const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`shop_item_duration_btn_${itemId}`)
+          .setLabel('Duration')
+          .setEmoji('⏱️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`shop_item_toggle_lock_${itemId}`)
+          .setLabel(lockLabel)
+          .setStyle(item.is_tradable !== false ? ButtonStyle.Danger : ButtonStyle.Success)
+      );
+
+      // Row 5: Nav
+      const prevBtn2 = new ButtonBuilder().setCustomId('shop_item_nav_noop_prev').setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(true);
+      const nextBtn2 = new ButtonBuilder().setCustomId('shop_item_nav_noop_next').setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(true);
+      const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn2, nextBtn2);
+
+      components = [tabRow, rarityRow, reqRow, actionRow, navRow];
+
     } else {
+      // ── Tab 3: Users ──────────────────────────────────────────────────────
       const pageSlice = memberRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
       const userLines = pageSlice.length > 0
         ? pageSlice.map(r => `- ${r.isEquipped ? '✅' : '⬜'} <@${r.user_id}> (x${r.qty})`).join('\n')
@@ -4127,143 +4462,34 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         .setTitle(`Users: ${item.name}`)
         .setDescription(`Owned: \`\`${ownedCount}\`\`  •  Equipped: \`\`${equippedCount}\`\`\n\n${userLines}`)
         .setFooter({ text: `Page ${page} / ${totalPages}` })
-        .setColor('#3498DB');
-    }
+        .setColor(embedColor);
 
-    const itemImg = getItemImage(item);
-    if (itemImg) embed.setThumbnail(itemImg);
+      if (successHeader) embed.setAuthor({ name: successHeader });
 
-    const catOptions = [
-      { label: 'No Category', value: 'null', emoji: '🏷️', default: !item.category_id },
-      ...categories.slice(0, 24).map(c => ({
-        label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
-        value: c.id.toString(),
-        emoji: '📂',
-        default: c.id == item.category_id
-      }))
-    ];
-    if (catOptions.length > 25) {
-      catOptions.length = 25;
-    }
-    const catSelect = new StringSelectMenuBuilder()
-      .setCustomId(`shop_assign_cat_select_manage_${itemId}`)
-      .setPlaceholder('Select')
-      .addOptions(catOptions);
-    const rowCat = new ActionRowBuilder().addComponents(catSelect);
-
-    // Rarity select (auto-saves on change)
-    const itemRarity = item.rarity || 'common';
-    const rowRarity = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_rarity_select_${itemId}`)
-        .setPlaceholder('Rarity')
-        .addOptions(RARITY_OPTIONS.map(o => ({ ...o, default: o.value === itemRarity })))
-    );
-
-    // Tradability select (auto-saves on change)
-    const itemTradable = item.is_tradable !== false; // default true for existing items
-    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-    const tradableOpts = getTradableOptions(lootBoxCatName);
-    const rowTradable = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`shop_edit_tradable_select_${itemId}`)
-        .setPlaceholder('Status')
-        .addOptions(tradableOpts.map(o => ({ ...o, default: (o.value === 'tradable') === itemTradable })))
-    );
-
-    const isOnUsers = view === 'users';
-    const hasPagination = memberRows.length > PAGE_SIZE;
-
-    let prevBtn, nextBtn;
-
-    if (view === 'details') {
-      // On Details view: ◀️ and ▶️ navigate between sibling items in the same category or uncategorized folder.
-      let prevSibling = null;
-      let nextSibling = null;
-
-      const siblingItems = await getShopItems(
-        interaction.guildId, 
-        item.category_id ? item.category_id : 'null', 
-        'name', 
-        true
+      // Row 2: Revoke button
+      const revokeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`shop_item_revoke_${itemId}`)
+          .setLabel('Revoke')
+          .setEmoji('🗑️')
+          .setStyle(ButtonStyle.Danger)
       );
-      let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
-      siblingShopItems = await sortItemsByRarity(siblingShopItems, interaction.guild);
 
-      if (siblingShopItems.length > 1) {
-        const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
-        prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
-        nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
-      }
-
-      prevBtn = new ButtonBuilder()
-        .setCustomId(prevSibling ? `shop_item_view_details_${prevSibling.id}` : `shop_item_nav_noop_prev`)
-        .setEmoji('◀️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!prevSibling);
-
-      nextBtn = new ButtonBuilder()
-        .setCustomId(nextSibling ? `shop_item_view_details_${nextSibling.id}` : `shop_item_nav_noop_next`)
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!nextSibling);
-    } else {
-      // On Users view: ◀️ and ▶️ navigate between pages of users
-      prevBtn = new ButtonBuilder()
+      // Row 3: Nav with user pagination
+      const hasPagination = memberRows.length > PAGE_SIZE;
+      const prevBtn3 = new ButtonBuilder()
         .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-        .setEmoji('◀️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page <= 1);
-
-      nextBtn = new ButtonBuilder()
+        .setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1);
+      const nextBtn3 = new ButtonBuilder()
         .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page >= totalPages || !hasPagination);
+        .setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages || !hasPagination);
+      const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn3, nextBtn3);
+
+      components = [tabRow, revokeRow, navRow];
     }
-
-    const detailsBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_view_details_${itemId}`)
-      .setLabel('Details')
-      .setStyle(view === 'details' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(view === 'details');
-
-    const usersBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_view_users_${itemId}_p${page}`)
-      .setLabel('Users')
-      .setStyle(view === 'users' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(view === 'users');
-
-    const revokeBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_revoke_${itemId}`)
-      .setLabel('Revoke')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Danger);
-
-    const backFolderId = item.category_id ? `cat_${item.category_id}` : 'cat_null';
-    const backBtn = new ButtonBuilder()
-      .setCustomId(`shop_edit_item_back_${backFolderId}`)
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary);
-
-    const editDetailsBtn = new ButtonBuilder()
-      .setCustomId(`shop_item_edit_details_${itemId}`)
-      .setLabel('Edit')
-      .setEmoji('✏️')
-      .setStyle(ButtonStyle.Secondary);
-
-    const actionBtn = view === 'users' ? revokeBtn : editDetailsBtn;
-    const rowTabsAction = new ActionRowBuilder().addComponents(detailsBtn, usersBtn, actionBtn);
-    const rowNav = new ActionRowBuilder().addComponents(backBtn, prevBtn, nextBtn);
-
-    // Only show the 3 attribute dropdowns on Details view — hide them on Users page.
-    const components = view === 'details'
-      ? [rowCat, rowRarity, rowTradable, rowTabsAction, rowNav]
-      : [rowTabsAction, rowNav];
 
     await interaction.editReply({
-      content: successHeader || null,
+      content: null,
       embeds: [embed],
       files: [], attachments: [],
       components
@@ -4295,9 +4521,9 @@ export async function handleEditItemRaritySelect(interaction) {
     deferUpdate: async () => {},
     editReply: interaction.editReply.bind(interaction),
     followUp: interaction.followUp.bind(interaction),
-    customId: `shop_item_edit_select_${itemId}`,
+    customId: `shop_item_tab_config_${itemId}`,
     values: [String(itemId)],
-    isAnySelectMenu: () => true,
+    isAnySelectMenu: () => false,
     guildId: interaction.guildId,
     user: interaction.user,
     guild: interaction.guild,
@@ -4326,9 +4552,9 @@ export async function handleEditItemTradableSelect(interaction) {
     deferUpdate: async () => {},
     editReply: interaction.editReply.bind(interaction),
     followUp: interaction.followUp.bind(interaction),
-    customId: `shop_item_edit_select_${itemId}`,
+    customId: `shop_item_tab_config_${itemId}`,
     values: [String(itemId)],
-    isAnySelectMenu: () => true,
+    isAnySelectMenu: () => false,
     guildId: interaction.guildId,
     user: interaction.user,
     guild: interaction.guild,

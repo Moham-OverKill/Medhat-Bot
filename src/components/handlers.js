@@ -115,7 +115,16 @@ import {
   handleShopPostImageActionSelect,
   handleLootBoxImagesButton,
   handleLootBoxImageActionSelect,
-  handleLootBoxImagesSubmit
+  handleLootBoxImagesSubmit,
+  // New unified item editor handlers
+  handleCreateRoleSelect,
+  handleRoleSwapSelect,
+  handleRequirementsSelect,
+  handleOpenAppearanceModal,
+  handleAppearanceModalSubmit,
+  handleOpenDurationModal,
+  handleDurationModalSubmit,
+  handleToggleItemLock
 } from '../commands/shop-setup.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
 import { handleQuestsComponent, handleQuestsModal } from '../commands/quests-dashboard.js';
@@ -212,6 +221,10 @@ export function setupComponentHandlers(client) {
           await handleCategoryModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_pack_modal_edit_')) {
           await handleItemModalSubmit(interaction);
+        } else if (interaction.customId.startsWith('shop_item_modal_appearance_')) {
+          await handleAppearanceModalSubmit(interaction);
+        } else if (interaction.customId.startsWith('shop_item_modal_duration_')) {
+          await handleDurationModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_item_modal_')) {
           await handleItemModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_cat_modal_edit_')) {
@@ -666,6 +679,24 @@ export function setupComponentHandlers(client) {
         } else if (customId.startsWith('trade_accept_') || customId.startsWith('trade_decline_')) {
           await handleTradeExecution(interaction);
         }
+      } else if (customId === 'shop_create_role_select') {
+        await handleCreateRoleSelect(interaction);
+      } else if (customId.startsWith('shop_item_role_swap_')) {
+        await handleRoleSwapSelect(interaction);
+      } else if (customId.startsWith('shop_item_reqs_select_')) {
+        await handleRequirementsSelect(interaction);
+      } else if (customId.startsWith('shop_item_appearance_btn_')) {
+        await handleOpenAppearanceModal(interaction);
+      } else if (customId.startsWith('shop_item_duration_btn_')) {
+        await handleOpenDurationModal(interaction);
+      } else if (customId.startsWith('shop_item_toggle_lock_')) {
+        await handleToggleItemLock(interaction);
+      } else if (
+        customId.startsWith('shop_item_tab_details_') ||
+        customId.startsWith('shop_item_tab_config_') ||
+        customId.startsWith('shop_item_tab_users_')
+      ) {
+        await handleEditItemSelect(interaction);
       } else if (
         customId.startsWith('shop_item_nav_noop_') ||
         customId === 'shop_lb_select_box_empty' ||
