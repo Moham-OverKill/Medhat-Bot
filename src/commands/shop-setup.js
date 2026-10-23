@@ -4299,6 +4299,17 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary);
 
+    // Siblings for arrow navigation across items
+    let prevSibling = null, nextSibling = null;
+    const siblingItems = await getShopItems(interaction.guildId, item.category_id ? item.category_id : 'null', 'name', true);
+    let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
+    siblingShopItems = await sortItemsByRarity(siblingShopItems, interaction.guild);
+    if (siblingShopItems.length > 1) {
+      const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
+      prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
+      nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
+    }
+
     let embed;
     let components;
 
@@ -4356,16 +4367,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
           .addOptions(catOptions)
       );
 
-      // Siblings for arrow navigation
-      let prevSibling = null, nextSibling = null;
-      const siblingItems = await getShopItems(interaction.guildId, item.category_id ? item.category_id : 'null', 'name', true);
-      let siblingShopItems = siblingItems.filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box');
-      siblingShopItems = await sortItemsByRarity(siblingShopItems, interaction.guild);
-      if (siblingShopItems.length > 1) {
-        const currIndex = siblingShopItems.findIndex(i => String(i.id) === String(item.id));
-        prevSibling = currIndex > 0 ? siblingShopItems[currIndex - 1] : null;
-        nextSibling = (currIndex >= 0 && currIndex < siblingShopItems.length - 1) ? siblingShopItems[currIndex + 1] : null;
-      }
       const prevBtn = new ButtonBuilder()
         .setCustomId(prevSibling ? `shop_item_view_details_${prevSibling.id}` : 'shop_item_nav_noop_prev')
         .setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(!prevSibling);
@@ -4527,15 +4528,40 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
           .setStyle(ButtonStyle.Danger)
       );
 
-      // Row 3: Nav with user pagination
+      // Row 3: Nav with item navigation and user list pagination
       const hasPagination = memberRows.length > PAGE_SIZE;
-      const prevBtn3 = new ButtonBuilder()
+
+      // Current arrows (◀️ / ▶️) navigate between shop items
+      const prevItemBtn = new ButtonBuilder()
+        .setCustomId(prevSibling ? `shop_item_tab_users_${prevSibling.id}` : 'shop_item_nav_noop_prev')
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!prevSibling);
+      const nextItemBtn = new ButtonBuilder()
+        .setCustomId(nextSibling ? `shop_item_tab_users_${nextSibling.id}` : 'shop_item_nav_noop_next')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!nextSibling);
+
+      // Distinct arrows (⬆️ / ⬇️) navigate through the user list pages
+      const prevUserPageBtn = new ButtonBuilder()
         .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-        .setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1);
-      const nextBtn3 = new ButtonBuilder()
+        .setEmoji('⬆️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page <= 1);
+      const nextUserPageBtn = new ButtonBuilder()
         .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-        .setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages || !hasPagination);
-      const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn3, nextBtn3);
+        .setEmoji('⬇️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages || !hasPagination);
+
+      const navRow = new ActionRowBuilder().addComponents(
+        backBtn,
+        prevItemBtn,
+        nextItemBtn,
+        prevUserPageBtn,
+        nextUserPageBtn
+      );
 
       components = [tabRow, revokeRow, navRow];
     }
