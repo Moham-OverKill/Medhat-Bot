@@ -721,7 +721,14 @@ export async function handleRoleSwapSelect(interaction) {
 export async function handleRequirementsSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const itemId = interaction.customId.slice('shop_item_reqs_select_'.length);
+    const raw = interaction.customId.slice('shop_item_reqs_select_'.length);
+    let itemId = raw;
+    let reqPage = 1;
+    const pageMatch = raw.match(/_p(\d+)$/);
+    if (pageMatch) {
+      reqPage = parseInt(pageMatch[1], 10);
+      itemId = raw.slice(0, raw.lastIndexOf('_p'));
+    }
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
@@ -746,7 +753,7 @@ export async function handleRequirementsSelect(interaction) {
       deferUpdate: async () => {},
       editReply: interaction.editReply.bind(interaction),
       followUp: interaction.followUp.bind(interaction),
-      customId: `shop_item_tab_config_${itemId}`,
+      customId: `shop_item_reqpage_${itemId}_p${reqPage}`,
       values: [String(itemId)],
       isAnySelectMenu: () => false,
       guildId: interaction.guildId,
@@ -4117,6 +4124,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
   let itemId;
   let view = 'details';
   let page = 1;
+  let reqPage = 1;
 
   if (interaction.isAnySelectMenu && interaction.isAnySelectMenu()) {
     itemId = interaction.values[0];
@@ -4134,6 +4142,16 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
     } else if (cid.startsWith('shop_item_tab_config_')) {
       view = 'config';
       itemId = cid.slice('shop_item_tab_config_'.length);
+    } else if (cid.startsWith('shop_item_reqpage_')) {
+      view = 'config';
+      const raw = cid.slice('shop_item_reqpage_'.length);
+      const pageMatch = raw.match(/_p(\d+)$/);
+      if (pageMatch) {
+        reqPage = parseInt(pageMatch[1], 10);
+        itemId = raw.slice(0, raw.lastIndexOf('_p'));
+      } else {
+        itemId = raw;
+      }
     } else if (cid.startsWith('shop_item_tab_users_') || cid.startsWith('shop_item_view_users_')) {
       view = 'users';
       const raw = cid.startsWith('shop_item_tab_users_') ? cid.slice('shop_item_tab_users_'.length) : cid.slice('shop_item_view_users_'.length);
@@ -4367,7 +4385,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
           if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 Server Booster';
           if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 Active Server MVP';
           const match = allCatalogItems.find(i => String(i.id) === String(id));
-          return match ? match.name : null;
+          return match ? `${getItemRarityEmoji(match)} ${match.name}` : null;
         }).filter(Boolean);
         prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
       }
@@ -4398,9 +4416,11 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
       // Row 3: Requirements multi-select
       const allCatalogForReqs = await getShopItems(interaction.guildId, null, 'name', true);
-      const catalogItemsForReqs = allCatalogForReqs
-        .filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box' && String(i.id) !== String(item.id))
-        .slice(0, 23); // Reserve 2 slots for REQUIRE_BOOSTER and REQUIRE_MVP
+      let catalogItemsForReqs = allCatalogForReqs
+        .filter(i => !i.is_pack && i.item_type !== 'pack' && i.item_type !== 'loot_box' && String(i.id) !== String(item.id));
+
+      // Sort catalog items by rarity
+      catalogItemsForReqs = await sortItemsByRarity(catalogItemsForReqs, interaction.guild);
 
       // Map legacy formats to canonical sentinels for pre-selection
       const normalizedReqs = (reqItems || []).map(r => {
@@ -4410,21 +4430,45 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         return isNaN(parsed) ? null : parsed;
       }).filter(r => r !== null);
 
+      // Partition catalog into selected (pinned at top) and unselected (paginated)
+      const selectedCatalog = catalogItemsForReqs.filter(i => normalizedReqs.some(r => String(r) === String(i.id)));
+      const unselectedCatalog = catalogItemsForReqs.filter(i => !normalizedReqs.some(r => String(r) === String(i.id)));
+
+      // Fixed slots: 2 (Booster + MVP) + selectedCatalog items (max 25 total)
+      const fixedSlotsCount = 2 + selectedCatalog.length;
+      const availableSlots = Math.max(0, 25 - fixedSlotsCount);
+      const pageSize = Math.max(1, availableSlots);
+      const totalReqPages = availableSlots > 0 ? Math.max(1, Math.ceil(unselectedCatalog.length / pageSize)) : 1;
+      const currentReqPage = Math.min(Math.max(1, reqPage || 1), totalReqPages);
+
+      const startIndex = (currentReqPage - 1) * pageSize;
+      const unselectedSlice = availableSlots > 0 ? unselectedCatalog.slice(startIndex, startIndex + pageSize) : [];
+
       const reqOptions = [
-        { label: 'Server Booster', value: 'REQUIRE_BOOSTER', description: 'Requires active Server Boost', emoji: '🚀', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
-        { label: 'Server MVP', value: 'REQUIRE_MVP', description: 'Requires active Server MVP status', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') },
-        ...catalogItemsForReqs.map(i => ({
+        { label: 'Server Booster', value: 'REQUIRE_BOOSTER', emoji: '🚀', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
+        { label: 'Server MVP', value: 'REQUIRE_MVP', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') },
+        ...selectedCatalog.map(i => ({
           label: (i.name || `Item #${i.id}`).slice(0, 100),
           value: String(i.id),
-          description: `ID: ${i.id}`,
-          default: normalizedReqs.some(r => String(r) === String(i.id))
+          emoji: getItemRarityEmoji(i),
+          default: true
+        })),
+        ...unselectedSlice.map(i => ({
+          label: (i.name || `Item #${i.id}`).slice(0, 100),
+          value: String(i.id),
+          emoji: getItemRarityEmoji(i),
+          default: false
         }))
       ];
 
+      const placeholderText = totalReqPages > 1
+        ? `⚙️ Requirements (Page ${currentReqPage}/${totalReqPages})…`
+        : '⚙️ Requirements…';
+
       const reqRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`shop_item_reqs_select_${itemId}`)
-          .setPlaceholder('Requirements…')
+          .setCustomId(`shop_item_reqs_select_${itemId}_p${currentReqPage}`)
+          .setPlaceholder(placeholderText)
           .setMinValues(0)
           .setMaxValues(reqOptions.length)
           .addOptions(reqOptions)
@@ -4445,8 +4489,16 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       );
 
       // Row 5: Nav
-      const prevBtn2 = new ButtonBuilder().setCustomId('shop_item_nav_noop_prev').setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(true);
-      const nextBtn2 = new ButtonBuilder().setCustomId('shop_item_nav_noop_next').setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(true);
+      const prevBtn2 = new ButtonBuilder()
+        .setCustomId(totalReqPages > 1 && currentReqPage > 1 ? `shop_item_reqpage_${itemId}_p${currentReqPage - 1}` : 'shop_item_nav_noop_prev')
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(totalReqPages <= 1 || currentReqPage <= 1);
+      const nextBtn2 = new ButtonBuilder()
+        .setCustomId(totalReqPages > 1 && currentReqPage < totalReqPages ? `shop_item_reqpage_${itemId}_p${currentReqPage + 1}` : 'shop_item_nav_noop_next')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(totalReqPages <= 1 || currentReqPage >= totalReqPages);
       const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn2, nextBtn2);
 
       components = [tabRow, rarityRow, reqRow, actionRow, navRow];
