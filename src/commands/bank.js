@@ -1708,6 +1708,11 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
       page: targetPage,
       customId: `bank_inv_item_select_${isLootBox ? 'lootboxes' : (isOther ? 'null' : categoryId)}`,
       placeholder: isLootBox ? 'Select a Loot Box to Open' : 'Select an Item to Manage',
+      backOption: {
+        label: 'Back',
+        value: 'back_to_inventory',
+        emoji: '⬅️'
+      },
       pageNavPrefix: 'inv_page_',
       pageSize: 20,
       mapOption: (i, idx) => {
@@ -1876,6 +1881,12 @@ export async function handleInventoryItemSelect(interaction) {
     if (interaction.values) {
       const selectedVal = interaction.values[0];
 
+      // Handle "Back to Category" dropdown option selection
+      if (selectedVal === 'back_to_category') {
+        const catPart = interaction.customId.replace('bank_inv_item_select_', '');
+        return handleInventoryCategorySelect(interaction, 1, catPart);
+      }
+
       // Handle "Back to Inventory" dropdown option selection
       if (selectedVal === 'back_to_inventory') {
         return handleInventoryButton(interaction);
@@ -1900,6 +1911,13 @@ export async function handleInventoryItemSelect(interaction) {
 
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
       categoryId = (catPart === 'null' || catPart === 'lootboxes') ? catPart : parseInt(catPart);
+    } else if (interaction.customId.startsWith('inv_nav_')) {
+      // From carousel nav: inv_nav_categoryId_index_direction
+      const parts = interaction.customId.split('_');
+      // [0]inv [1]nav [2]categoryId [3]currentIndex [4]direction
+      const catPart = parts[2];
+      categoryId = (catPart === 'null' || catPart === 'lootboxes' || !catPart) ? (catPart || 'null') : parseInt(catPart);
+      currentIndex = parseInt(parts[3]) || 0;
     } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
       // From drop modal submit: bank_inv_drop_qty_[invId]_[catIdStr]_[currentIndex]
       const parts = interaction.customId.split('_');
@@ -2055,6 +2073,12 @@ export async function handleInventoryItemSelect(interaction) {
         };
       });
 
+      selectOptions.unshift({
+        label: 'Back',
+        value: 'back_to_category',
+        emoji: '⬅️'
+      });
+
       const itemSelect = new StringSelectMenuBuilder()
         .setCustomId('bank_inv_item_select_lootboxes')
         .setPlaceholder('Select a Loot Box to Manage')
@@ -2078,13 +2102,24 @@ export async function handleInventoryItemSelect(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-      // ROW 3: Dedicated Back Button
+      // ROW 3: Dedicated Back Button + Carousel Nav
+      const hasMultipleBoxes = items.length > 1;
       const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('bank_inventory')
+          .setCustomId('bank_inv_cat_lootboxes')
           .setLabel('Back')
           .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_lootboxes_${currentIndex}_prev`)
+          .setEmoji('◀️')
           .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!hasMultipleBoxes),
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_lootboxes_${currentIndex}_next`)
+          .setEmoji('▶️')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!hasMultipleBoxes)
       );
 
       return await interaction.editReply({
@@ -2222,6 +2257,12 @@ export async function handleInventoryItemSelect(interaction) {
       };
     });
 
+    selectOptions.unshift({
+      label: 'Back',
+      value: 'back_to_category',
+      emoji: '⬅️'
+    });
+
     const itemSelect = new StringSelectMenuBuilder()
       .setCustomId(`bank_inv_item_select_${catIdStr}`)
       .setPlaceholder('Select an Item to Manage')
@@ -2262,13 +2303,23 @@ export async function handleInventoryItemSelect(interaction) {
         .setDisabled(cannotToggle)
     );
 
-    // ROW 3: Dedicated Back Button
+    // ROW 3: Dedicated Back Button + Carousel Nav
     const row3 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('bank_inventory')
+        .setCustomId(`bank_inv_cat_${catIdStr}`)
         .setLabel('Back')
         .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
+        .setEmoji('◀️')
         .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!hasMultipleItems),
+      new ButtonBuilder()
+        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!hasMultipleItems)
     );
 
     await interaction.editReply({
