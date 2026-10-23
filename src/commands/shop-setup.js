@@ -4519,19 +4519,30 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
       if (successHeader) embed.setAuthor({ name: successHeader });
 
-      // Row 2: Revoke button
+      // Row 2: Revoke button + user list pagination arrows (left & right)
+      const hasPagination = memberRows.length > PAGE_SIZE;
+      const prevUserPageBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
+        .setEmoji('⏪')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page <= 1);
+      const nextUserPageBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
+        .setEmoji('⏩')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages || !hasPagination);
+
       const revokeRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`shop_item_revoke_${itemId}`)
           .setLabel('Revoke')
           .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger)
+          .setStyle(ButtonStyle.Danger),
+        prevUserPageBtn,
+        nextUserPageBtn
       );
 
-      // Row 3: Nav with item navigation and user list pagination
-      const hasPagination = memberRows.length > PAGE_SIZE;
-
-      // Current arrows (◀️ / ▶️) navigate between shop items
+      // Row 3: Item navigation (Back + Prev/Next item)
       const prevItemBtn = new ButtonBuilder()
         .setCustomId(prevSibling ? `shop_item_tab_users_${prevSibling.id}` : 'shop_item_nav_noop_prev')
         .setEmoji('◀️')
@@ -4543,24 +4554,10 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!nextSibling);
 
-      // Distinct arrows (⬆️ / ⬇️) navigate through the user list pages
-      const prevUserPageBtn = new ButtonBuilder()
-        .setCustomId(`shop_item_page_prev_${itemId}_p${Math.max(1, page - 1)}`)
-        .setEmoji('⬆️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page <= 1);
-      const nextUserPageBtn = new ButtonBuilder()
-        .setCustomId(`shop_item_page_next_${itemId}_p${Math.min(totalPages, page + 1)}`)
-        .setEmoji('⬇️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(page >= totalPages || !hasPagination);
-
       const navRow = new ActionRowBuilder().addComponents(
         backBtn,
         prevItemBtn,
-        nextItemBtn,
-        prevUserPageBtn,
-        nextUserPageBtn
+        nextItemBtn
       );
 
       components = [tabRow, revokeRow, navRow];
