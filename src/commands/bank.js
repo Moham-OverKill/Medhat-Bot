@@ -305,7 +305,7 @@ export async function handleShopButton(interaction) {
     const select = new StringSelectMenuBuilder()
       .setCustomId('bank_shop_category')
       .setPlaceholder('Select a Category')
-      .addOptions(categories.map(c => ({
+      .addOptions(categories.slice(0, 25).map(c => ({
         label: (c.name && c.name.trim().length > 0) ? c.name.slice(0, 100) : `Unnamed Category #${c.id}`,
         value: c.id.toString(),
         emoji: '📂',
@@ -2051,9 +2051,10 @@ export async function handleInventoryItemSelect(interaction) {
 
       let windowItems = items;
       let startIdx = 0;
-      if (items.length > 25) {
-        startIdx = Math.max(0, Math.min(currentIndex - 12, items.length - 25));
-        windowItems = items.slice(startIdx, startIdx + 25);
+      const maxWindow = 24; // 24 items + 1 Back option = 25 total (Discord limit)
+      if (items.length > maxWindow) {
+        startIdx = Math.max(0, Math.min(currentIndex - 11, items.length - maxWindow));
+        windowItems = items.slice(startIdx, startIdx + maxWindow);
       }
 
       const selectOptions = windowItems.map((i, idx) => {
@@ -2072,6 +2073,10 @@ export async function handleInventoryItemSelect(interaction) {
         value: 'back_to_category',
         emoji: '⬅️'
       });
+
+      if (selectOptions.length > 25) {
+        selectOptions.length = 25;
+      }
 
       const itemSelect = new StringSelectMenuBuilder()
         .setCustomId('bank_inv_item_select_lootboxes')
@@ -2207,12 +2212,13 @@ export async function handleInventoryItemSelect(interaction) {
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
-    // ROW 1: Item Selection Dropdown List (Pure items, up to 25)
+    // ROW 1: Item Selection Dropdown List (Pure items, up to 24 to leave room for Back option)
     let windowItems = items;
     let startIdx = 0;
-    if (items.length > 25) {
-      startIdx = Math.max(0, Math.min(currentIndex - 12, items.length - 25));
-      windowItems = items.slice(startIdx, startIdx + 25);
+    const maxWindow = 24; // 24 items + 1 Back option = 25 total (Discord limit)
+    if (items.length > maxWindow) {
+      startIdx = Math.max(0, Math.min(currentIndex - 11, items.length - maxWindow));
+      windowItems = items.slice(startIdx, startIdx + maxWindow);
     }
 
     const selectOptions = windowItems.map((i, idx) => {
@@ -2253,6 +2259,10 @@ export async function handleInventoryItemSelect(interaction) {
       value: 'back_to_category',
       emoji: '⬅️'
     });
+
+    if (selectOptions.length > 25) {
+      selectOptions.length = 25;
+    }
 
     const itemSelect = new StringSelectMenuBuilder()
       .setCustomId(`bank_inv_item_select_${catIdStr}`)
@@ -2325,7 +2335,7 @@ export async function handleInventoryItemSelect(interaction) {
     }
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ files: [], content: '❌ Error loading item.', components: [] });
+        await interaction.editReply({ files: [], content: '❌ Error loading item.', embeds: [], components: [] });
       }
     } catch (_) { }
   }
