@@ -4393,11 +4393,11 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       }
 
       embed = new EmbedBuilder()
-        .setTitle(`${item.name}`)
+        .setTitle(`Details — ${item.name}`)
         .setDescription(
           `Role: ${roleMention}\n` +
-          `Category: ${categoryDisplay}\n` +
-          `In Packs: \`\`${packCount}\`\``
+          `Category: \`${categoryDisplay}\`\n` +
+          `In Packs: \`${packCount}\``
         )
         .setColor(embedColor);
 
@@ -4441,26 +4441,29 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
     } else if (view === 'config') {
       // ── Tab 2: Config ─────────────────────────────────────────────────────
-      let prereqDisplay = 'None';
+      let prereqDisplay = '`None`';
       if (reqItems && Array.isArray(reqItems) && reqItems.length > 0) {
         const allCatalogItems = await getShopItems(interaction.guildId, null, 'name', true);
         const reqDisplays = reqItems.map(id => {
-          if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 Server Booster';
-          if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 Active Server MVP';
+          if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 `Server Booster`';
+          if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 `Active Server MVP`';
           const match = allCatalogItems.find(i => String(i.id) === String(id));
-          return match ? `${getItemRarityEmoji(match)} ${match.name}` : null;
+          return match ? `${getItemRarityEmoji(match)} \`${match.name}\`` : null;
         }).filter(Boolean);
-        prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
+        prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : '`None`';
       }
 
-      const typeLockLabel = item.is_tradable !== false ? 'Tradable 🔓' : 'UnTradable 🔒';
+      const formattedRarity = (item.rarity || 'common').charAt(0).toUpperCase() + (item.rarity || 'common').slice(1);
+      const isTradable = item.is_tradable !== false;
+      const typeLockLabel = isTradable ? '`Tradable` 🔓' : '`UnTradable` 🔒';
+
       embed = new EmbedBuilder()
-        .setTitle(`${item.name} — Config`)
+        .setTitle(`Config — ${item.name}`)
         .setDescription(
-          `Rarity: ${(item.rarity || 'common').charAt(0).toUpperCase() + (item.rarity || 'common').slice(1)}\n` +
+          `Rarity: \`${formattedRarity}\`\n` +
           `Requirements: ${prereqDisplay}\n` +
-          `Duration: ${durationDisplay}\n` +
-          `Type: ${typeLockLabel}`
+          `Type: ${typeLockLabel}\n` +
+          `Duration: \`${durationDisplay}\``
         )
         .setColor(embedColor);
 
@@ -4568,7 +4571,6 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       );
 
       // Row 4: Tradable/UnTradable toggle + Duration button
-      const isTradable = item.is_tradable !== false;
       const tradableBtn = new ButtonBuilder()
         .setCustomId(`shop_item_toggle_lock_${itemId}`)
         .setLabel(isTradable ? 'Tradable' : 'UnTradable')
@@ -4606,8 +4608,8 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         : '*No users on this page.*';
 
       embed = new EmbedBuilder()
-        .setTitle(`Users: ${item.name}`)
-        .setDescription(`Owned: \`\`${ownedCount}\`\`  •  Equipped: \`\`${equippedCount}\`\`\n\n${userLines}`)
+        .setTitle(`Users — ${item.name}`)
+        .setDescription(`Owned: \`${ownedCount}\`  •  Equipped: \`${equippedCount}\`\n\n${userLines}`)
         .setFooter({ text: `Page ${page} / ${totalPages}` })
         .setColor(embedColor);
 
