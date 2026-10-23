@@ -4293,7 +4293,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         const reqDisplays = reqItems.map(id => {
           if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 **Server Booster**';
           if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 **Active Server MVP**';
-          const match = allItems.find(i => i.id === id);
+          const match = allItems.find(i => String(i.id) === String(id));
           if (!match || !match.role_id) return null;
           return `<@&${match.role_id}>`;
         }).filter(Boolean);
@@ -4366,7 +4366,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         const reqDisplays = reqItems.map(id => {
           if (id === 'REQUIRE_BOOSTER' || (typeof id === 'string' && id.startsWith('booster:'))) return '🚀 Server Booster';
           if (id === 'REQUIRE_MVP' || (typeof id === 'string' && id.startsWith('mvp:'))) return '🏆 Active Server MVP';
-          const match = allCatalogItems.find(i => i.id === id);
+          const match = allCatalogItems.find(i => String(i.id) === String(id));
           return match ? match.name : null;
         }).filter(Boolean);
         prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
@@ -4406,17 +4406,18 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       const normalizedReqs = (reqItems || []).map(r => {
         if (r === 'REQUIRE_BOOSTER' || (typeof r === 'string' && r.startsWith('booster:'))) return 'REQUIRE_BOOSTER';
         if (r === 'REQUIRE_MVP' || (typeof r === 'string' && r.startsWith('mvp:'))) return 'REQUIRE_MVP';
-        return typeof r === 'number' ? r : parseInt(r, 10);
-      }).filter(r => r !== null && !isNaN(r));
+        const parsed = parseInt(r, 10);
+        return isNaN(parsed) ? null : parsed;
+      }).filter(r => r !== null);
 
       const reqOptions = [
-        { label: '🚀 Server Booster', value: 'REQUIRE_BOOSTER', description: 'Requires active Server Boost', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
-        { label: '🏆 Server MVP', value: 'REQUIRE_MVP', description: 'Requires active Server MVP status', default: normalizedReqs.includes('REQUIRE_MVP') },
+        { label: 'Server Booster', value: 'REQUIRE_BOOSTER', description: 'Requires active Server Boost', emoji: '🚀', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
+        { label: 'Server MVP', value: 'REQUIRE_MVP', description: 'Requires active Server MVP status', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') },
         ...catalogItemsForReqs.map(i => ({
           label: (i.name || `Item #${i.id}`).slice(0, 100),
           value: String(i.id),
           description: `ID: ${i.id}`,
-          default: normalizedReqs.includes(i.id)
+          default: normalizedReqs.some(r => String(r) === String(i.id))
         }))
       ];
 
