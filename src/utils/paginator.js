@@ -25,12 +25,15 @@ export function buildPaginatedSelectMenu({
   pageNavPrefix = 'nav_page_',
   pageSize = 20
 }) {
+  const maxAllowedPageSize = backOption ? 22 : 23;
+  const effectivePageSize = Math.min(pageSize, maxAllowedPageSize);
+
   const totalItems = items.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalItems / effectivePageSize));
   const currentPage = Math.min(Math.max(1, page), totalPages);
 
-  const startIndex = (currentPage - 1) * pageSize;
-  const pageSlice = items.slice(startIndex, startIndex + pageSize);
+  const startIndex = (currentPage - 1) * effectivePageSize;
+  const pageSlice = items.slice(startIndex, startIndex + effectivePageSize);
 
   const options = [];
 
@@ -67,6 +70,10 @@ export function buildPaginatedSelectMenu({
       value: `${pageNavPrefix}${currentPage + 1}`,
       emoji: '▶️'
     });
+  }
+
+  if (options.length > 25) {
+    options.length = 25;
   }
 
   const selectMenu = new StringSelectMenuBuilder()

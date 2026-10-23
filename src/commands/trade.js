@@ -1128,12 +1128,15 @@ async function renderTradeItemMenu(interaction, setup, aspect, page = 1) {
             return renderTradeItemMenu(interaction, setup, aspect);
         }
 
-        const options = availableCats.map(c => ({
+        const options = availableCats.slice(0, 24).map(c => ({
             label: c.name.slice(0, 50),
             value: `trade_cat_${isGive ? 'give' : 'req'}_${c.id}`,
             emoji: '📂'
         }));
         options.unshift({ label: 'Back', value: `trade_folder_back_${isGive ? 'give' : 'req'}_root`, emoji: '⬅️' });
+        if (options.length > 25) {
+            options.length = 25;
+        }
 
         const catSelect = new StringSelectMenuBuilder()
             .setCustomId(`trade_cat_${isGive ? 'give' : 'req'}_select`)

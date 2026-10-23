@@ -194,7 +194,7 @@ export async function handleRewardsComponent(interaction) {
       }
 
       const coinName = await getCurrencyName(guildId);
-      const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle(`Give ${coinName}`);
+      const modal = new ModalBuilder().setCustomId(`rewards_give_modal_${targetUserId}`).setTitle((`Give ${coinName}`).slice(0, 45));
       const input = new TextInputBuilder()
         .setCustomId('amount')
         .setLabel(`${coinName} Amount`)
