@@ -733,7 +733,18 @@ export async function handleRequirementsSelect(interaction) {
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
     const values = interaction.values || [];
-    const requiredItems = values.map(v => {
+
+    // Check if user selected Next or Previous page navigation
+    const navVal = values.find(v => typeof v === 'string' && v.startsWith('nav_req_page_'));
+    let targetPage = reqPage;
+    if (navVal) {
+      const match = navVal.match(/^nav_req_page_(\d+)$/);
+      if (match) targetPage = parseInt(match[1], 10);
+    }
+
+    // Filter out nav sentinels from real item requirements
+    const realValues = values.filter(v => typeof v !== 'string' || !v.startsWith('nav_req_page_'));
+    const requiredItems = realValues.map(v => {
       if (v === 'REQUIRE_BOOSTER' || v === 'REQUIRE_MVP') return v;
       const num = parseInt(v, 10);
       return isNaN(num) ? null : num;
@@ -742,10 +753,12 @@ export async function handleRequirementsSelect(interaction) {
     const oldItem = { ...item };
     await updateShopItem(itemId, { required_items: requiredItems }, interaction.guildId);
 
-    const diff = formatDiff(oldItem, { ...oldItem, required_items: requiredItems }, ['id', 'guild_id', 'created_at', 'updated_at']);
-    if (diff) {
-      sendLog(interaction.guild, 'shop', 'blue', '⚙️ Item Requirements Updated',
-        `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
+    if (!navVal) {
+      const diff = formatDiff(oldItem, { ...oldItem, required_items: requiredItems }, ['id', 'guild_id', 'created_at', 'updated_at']);
+      if (diff) {
+        sendLog(interaction.guild, 'shop', 'blue', '⚙️ Item Requirements Updated',
+          `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
+      }
     }
 
     const mock = {
@@ -753,7 +766,7 @@ export async function handleRequirementsSelect(interaction) {
       deferUpdate: async () => {},
       editReply: interaction.editReply.bind(interaction),
       followUp: interaction.followUp.bind(interaction),
-      customId: `shop_item_reqpage_${itemId}_p${reqPage}`,
+      customId: `shop_item_reqpage_${itemId}_p${targetPage}`,
       values: [String(itemId)],
       isAnySelectMenu: () => false,
       guildId: interaction.guildId,
@@ -762,7 +775,7 @@ export async function handleRequirementsSelect(interaction) {
       member: interaction.member,
       memberPermissions: interaction.memberPermissions
     };
-    await handleEditItemSelect(mock, '✅ Requirements updated.');
+    await handleEditItemSelect(mock, navVal ? null : '✅ Requirements updated.');
   } catch (error) {
     await handleInteractionError(interaction, error, 'requirements select');
   }
@@ -4435,32 +4448,59 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       const selectedCatalog = catalogItemsForReqs.filter(i => normalizedReqs.some(r => String(r) === String(i.id)));
       const unselectedCatalog = catalogItemsForReqs.filter(i => !normalizedReqs.some(r => String(r) === String(i.id)));
 
-      // Fixed slots: 2 (Booster + MVP) + selectedCatalog items (max 25 total)
+      // Fixed slots: 2 (Booster + MVP) + selectedCatalog items + potential nav arrows (max 25 total)
       const fixedSlotsCount = 2 + selectedCatalog.length;
-      const availableSlots = Math.max(0, 25 - fixedSlotsCount);
-      const pageSize = Math.max(1, availableSlots);
-      const totalReqPages = availableSlots > 0 ? Math.max(1, Math.ceil(unselectedCatalog.length / pageSize)) : 1;
+      const maxNavSlots = 2;
+      const availableSlots = Math.max(1, 25 - fixedSlotsCount - maxNavSlots);
+      const pageSize = availableSlots;
+      const totalReqPages = Math.max(1, Math.ceil(unselectedCatalog.length / pageSize));
       const currentReqPage = Math.min(Math.max(1, reqPage || 1), totalReqPages);
 
-      const startIndex = (currentReqPage - 1) * pageSize;
-      const unselectedSlice = availableSlots > 0 ? unselectedCatalog.slice(startIndex, startIndex + pageSize) : [];
+      const hasPrev = currentReqPage > 1;
+      const hasNext = currentReqPage < totalReqPages;
 
-      const reqOptions = [
+      const startIndex = (currentReqPage - 1) * pageSize;
+      const unselectedSlice = unselectedCatalog.slice(startIndex, startIndex + pageSize);
+
+      const reqOptions = [];
+      if (hasPrev) {
+        reqOptions.push({
+          label: 'Previous',
+          value: `nav_req_page_${currentReqPage - 1}`,
+          emoji: '◀️'
+        });
+      }
+
+      reqOptions.push(
         { label: 'Server Booster', value: 'REQUIRE_BOOSTER', emoji: '🚀', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
-        { label: 'Server MVP', value: 'REQUIRE_MVP', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') },
-        ...selectedCatalog.map(i => ({
+        { label: 'Server MVP', value: 'REQUIRE_MVP', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') }
+      );
+
+      for (const i of selectedCatalog) {
+        reqOptions.push({
           label: (i.name || `Item #${i.id}`).slice(0, 100),
           value: String(i.id),
           emoji: getItemRarityEmoji(i),
           default: true
-        })),
-        ...unselectedSlice.map(i => ({
+        });
+      }
+
+      for (const i of unselectedSlice) {
+        reqOptions.push({
           label: (i.name || `Item #${i.id}`).slice(0, 100),
           value: String(i.id),
           emoji: getItemRarityEmoji(i),
           default: false
-        }))
-      ];
+        });
+      }
+
+      if (hasNext) {
+        reqOptions.push({
+          label: 'Next',
+          value: `nav_req_page_${currentReqPage + 1}`,
+          emoji: '▶️'
+        });
+      }
 
       const placeholderText = totalReqPages > 1
         ? `⚙️ Requirements (Page ${currentReqPage}/${totalReqPages})…`
@@ -4489,17 +4529,17 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
           .setStyle(item.is_tradable !== false ? ButtonStyle.Danger : ButtonStyle.Success)
       );
 
-      // Row 5: Nav
+      // Row 5: Nav (Back + Prev/Next item)
       const prevBtn2 = new ButtonBuilder()
-        .setCustomId(totalReqPages > 1 && currentReqPage > 1 ? `shop_item_reqpage_${itemId}_p${currentReqPage - 1}` : 'shop_item_nav_noop_prev')
+        .setCustomId(prevSibling ? `shop_item_tab_config_${prevSibling.id}` : 'shop_item_nav_noop_prev')
         .setEmoji('◀️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(totalReqPages <= 1 || currentReqPage <= 1);
+        .setDisabled(!prevSibling);
       const nextBtn2 = new ButtonBuilder()
-        .setCustomId(totalReqPages > 1 && currentReqPage < totalReqPages ? `shop_item_reqpage_${itemId}_p${currentReqPage + 1}` : 'shop_item_nav_noop_next')
+        .setCustomId(nextSibling ? `shop_item_tab_config_${nextSibling.id}` : 'shop_item_nav_noop_next')
         .setEmoji('▶️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(totalReqPages <= 1 || currentReqPage >= totalReqPages);
+        .setDisabled(!nextSibling);
       const navRow = new ActionRowBuilder().addComponents(backBtn, prevBtn2, nextBtn2);
 
       components = [tabRow, rarityRow, reqRow, actionRow, navRow];
