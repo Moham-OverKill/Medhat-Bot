@@ -939,7 +939,7 @@ export async function handlePassComponent(interaction) {
         const coinName = await getCurrencyName(guildId);
         const modal = new ModalBuilder()
           .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
-          .setTitle(`Set Custom ${coinName} — Level ` + level);
+          .setTitle(`Set Custom ${coinName} — Level ${level}`.slice(0, 45));
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(
