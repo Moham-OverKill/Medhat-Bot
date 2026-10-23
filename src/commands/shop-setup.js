@@ -732,33 +732,83 @@ export async function handleRequirementsSelect(interaction) {
     const item = await getShopItem(itemId, interaction.guildId);
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
-    const values = interaction.values || [];
+    const selectedValue = interaction.values?.[0];
+    if (!selectedValue) return;
 
-    // Check if user selected Next or Previous page navigation
-    const navVal = values.find(v => typeof v === 'string' && v.startsWith('nav_req_page_'));
-    let targetPage = reqPage;
-    if (navVal) {
-      const match = navVal.match(/^nav_req_page_(\d+)$/);
-      if (match) targetPage = parseInt(match[1], 10);
+    // 1. Navigation handling (flips page immediately on click)
+    if (selectedValue.startsWith('nav_req_page_')) {
+      const targetPage = parseInt(selectedValue.slice('nav_req_page_'.length), 10) || 1;
+      const mock = {
+        deferred: true, replied: false,
+        deferUpdate: async () => {},
+        editReply: interaction.editReply.bind(interaction),
+        followUp: interaction.followUp.bind(interaction),
+        customId: `shop_item_reqpage_${itemId}_p${targetPage}`,
+        values: [String(itemId)],
+        isAnySelectMenu: () => false,
+        guildId: interaction.guildId,
+        user: interaction.user,
+        guild: interaction.guild,
+        member: interaction.member,
+        memberPermissions: interaction.memberPermissions
+      };
+      return await handleEditItemSelect(mock, null);
     }
 
-    // Filter out nav sentinels from real item requirements
-    const realValues = values.filter(v => typeof v !== 'string' || !v.startsWith('nav_req_page_'));
-    const requiredItems = realValues.map(v => {
-      if (v === 'REQUIRE_BOOSTER' || v === 'REQUIRE_MVP') return v;
-      const num = parseInt(v, 10);
-      return isNaN(num) ? null : num;
-    }).filter(v => v !== null);
+    // 2. Existing requirements normalization
+    let reqItems = item.required_items;
+    if (typeof reqItems === 'string') {
+      try { reqItems = JSON.parse(reqItems); } catch (e) { reqItems = []; }
+    }
+    const normalizedReqs = (reqItems || []).map(r => {
+      if (r === 'REQUIRE_BOOSTER' || (typeof r === 'string' && r.startsWith('booster:'))) return 'REQUIRE_BOOSTER';
+      if (r === 'REQUIRE_MVP' || (typeof r === 'string' && r.startsWith('mvp:'))) return 'REQUIRE_MVP';
+      const parsed = parseInt(r, 10);
+      return isNaN(parsed) ? null : parsed;
+    }).filter(r => r !== null);
+
+    let newReqs = [...normalizedReqs];
+
+    // 3. Clear All
+    if (selectedValue === 'clear_all_reqs') {
+      newReqs = [];
+    }
+    // 4. Toggle Booster
+    else if (selectedValue === 'toggle_booster' || selectedValue === 'REQUIRE_BOOSTER') {
+      if (newReqs.includes('REQUIRE_BOOSTER')) {
+        newReqs = newReqs.filter(r => r !== 'REQUIRE_BOOSTER');
+      } else {
+        newReqs.push('REQUIRE_BOOSTER');
+      }
+    }
+    // 5. Toggle MVP
+    else if (selectedValue === 'toggle_mvp' || selectedValue === 'REQUIRE_MVP') {
+      if (newReqs.includes('REQUIRE_MVP')) {
+        newReqs = newReqs.filter(r => r !== 'REQUIRE_MVP');
+      } else {
+        newReqs.push('REQUIRE_MVP');
+      }
+    }
+    // 6. Toggle Catalog Item
+    else {
+      const cleanVal = selectedValue.startsWith('item_') ? selectedValue.slice('item_'.length) : selectedValue;
+      const numId = parseInt(cleanVal, 10);
+      if (!isNaN(numId)) {
+        if (newReqs.some(r => String(r) === String(numId))) {
+          newReqs = newReqs.filter(r => String(r) !== String(numId));
+        } else {
+          newReqs.push(numId);
+        }
+      }
+    }
 
     const oldItem = { ...item };
-    await updateShopItem(itemId, { required_items: requiredItems }, interaction.guildId);
+    await updateShopItem(itemId, { required_items: newReqs }, interaction.guildId);
 
-    if (!navVal) {
-      const diff = formatDiff(oldItem, { ...oldItem, required_items: requiredItems }, ['id', 'guild_id', 'created_at', 'updated_at']);
-      if (diff) {
-        sendLog(interaction.guild, 'shop', 'blue', '❗ Item Requirements Updated',
-          `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
-      }
+    const diff = formatDiff(oldItem, { ...oldItem, required_items: newReqs }, ['id', 'guild_id', 'created_at', 'updated_at']);
+    if (diff) {
+      sendLog(interaction.guild, 'shop', 'blue', '❗ Item Requirements Updated',
+        `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
     }
 
     const mock = {
@@ -766,7 +816,7 @@ export async function handleRequirementsSelect(interaction) {
       deferUpdate: async () => {},
       editReply: interaction.editReply.bind(interaction),
       followUp: interaction.followUp.bind(interaction),
-      customId: `shop_item_reqpage_${itemId}_p${targetPage}`,
+      customId: `shop_item_reqpage_${itemId}_p${reqPage}`,
       values: [String(itemId)],
       isAnySelectMenu: () => false,
       guildId: interaction.guildId,
@@ -775,7 +825,7 @@ export async function handleRequirementsSelect(interaction) {
       member: interaction.member,
       memberPermissions: interaction.memberPermissions
     };
-    await handleEditItemSelect(mock, navVal ? null : '✅ Requirements updated.');
+    await handleEditItemSelect(mock, '✅ Requirements updated.');
   } catch (error) {
     await handleInteractionError(interaction, error, 'requirements select');
   }
@@ -4448,8 +4498,9 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       const selectedCatalog = catalogItemsForReqs.filter(i => normalizedReqs.some(r => String(r) === String(i.id)));
       const unselectedCatalog = catalogItemsForReqs.filter(i => !normalizedReqs.some(r => String(r) === String(i.id)));
 
-      // Fixed slots: 2 (Booster + MVP) + selectedCatalog items + potential nav arrows (max 25 total)
-      const fixedSlotsCount = 2 + selectedCatalog.length;
+      const hasClearAll = normalizedReqs.length > 0;
+      const pinnedSelected = selectedCatalog.slice(0, 18);
+      const fixedSlotsCount = (hasClearAll ? 1 : 0) + 2 + pinnedSelected.length;
       const maxNavSlots = 2;
       const availableSlots = Math.max(1, 25 - fixedSlotsCount - maxNavSlots);
       const pageSize = availableSlots;
@@ -4462,57 +4513,60 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       const startIndex = (currentReqPage - 1) * pageSize;
       const unselectedSlice = unselectedCatalog.slice(startIndex, startIndex + pageSize);
 
+      const isBoosterActive = normalizedReqs.includes('REQUIRE_BOOSTER');
+      const isMvpActive = normalizedReqs.includes('REQUIRE_MVP');
+
       const reqOptions = [];
       if (hasPrev) {
         reqOptions.push({
-          label: 'Previous',
+          label: 'Previous Page',
           value: `nav_req_page_${currentReqPage - 1}`,
           emoji: '◀️'
         });
       }
 
+      if (hasClearAll) {
+        reqOptions.push({
+          label: 'Clear All Requirements',
+          value: 'clear_all_reqs',
+          emoji: '❌'
+        });
+      }
+
       reqOptions.push(
-        { label: 'Server Booster', value: 'REQUIRE_BOOSTER', emoji: '🚀', default: normalizedReqs.includes('REQUIRE_BOOSTER') },
-        { label: 'Server MVP', value: 'REQUIRE_MVP', emoji: '🏆', default: normalizedReqs.includes('REQUIRE_MVP') }
+        { label: `${isBoosterActive ? '✅ ' : ''}Server Booster`, value: 'toggle_booster', emoji: '🚀' },
+        { label: `${isMvpActive ? '✅ ' : ''}Server MVP`, value: 'toggle_mvp', emoji: '🏆' }
       );
 
-      for (const i of selectedCatalog) {
+      for (const i of pinnedSelected) {
         reqOptions.push({
-          label: (i.name || `Item #${i.id}`).slice(0, 100),
-          value: String(i.id),
-          emoji: getItemRarityEmoji(i),
-          default: true
+          label: `✅ ${(i.name || `Item #${i.id}`).slice(0, 96)}`,
+          value: `item_${i.id}`,
+          emoji: getItemRarityEmoji(i)
         });
       }
 
       for (const i of unselectedSlice) {
         reqOptions.push({
           label: (i.name || `Item #${i.id}`).slice(0, 100),
-          value: String(i.id),
-          emoji: getItemRarityEmoji(i),
-          default: false
+          value: `item_${i.id}`,
+          emoji: getItemRarityEmoji(i)
         });
       }
 
       if (hasNext) {
         reqOptions.push({
-          label: 'Next',
+          label: 'Next Page',
           value: `nav_req_page_${currentReqPage + 1}`,
           emoji: '▶️'
         });
       }
 
-      const placeholderText = totalReqPages > 1
-        ? `❗ Requirements (Page ${currentReqPage}/${totalReqPages})…`
-        : '❗ Requirements…';
-
       const reqRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`shop_item_reqs_select_${itemId}_p${currentReqPage}`)
-          .setPlaceholder(placeholderText)
-          .setMinValues(0)
-          .setMaxValues(reqOptions.length)
-          .addOptions(reqOptions)
+          .setPlaceholder('❗ Requirements…')
+          .addOptions(reqOptions.slice(0, 25))
       );
 
       // Row 4: Duration button + Lock toggle
