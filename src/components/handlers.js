@@ -694,7 +694,8 @@ export function setupComponentHandlers(client) {
       } else if (
         customId.startsWith('shop_item_tab_details_') ||
         customId.startsWith('shop_item_tab_config_') ||
-        customId.startsWith('shop_item_tab_users_')
+        customId.startsWith('shop_item_tab_users_') ||
+        customId.startsWith('shop_item_reqpage_')
       ) {
         await handleEditItemSelect(interaction);
       } else if (
