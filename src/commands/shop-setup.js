@@ -1508,8 +1508,9 @@ export async function handleShopPostStart(interaction) {
       }
 
       if (filtered.length === 0) {
+        const backBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
         const emptyRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`shop_post_back_folder:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`${backBase}:${sessionId}`).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
         );
         const emptyEmbed = new EmbedBuilder().setColor('#95A5A6').setDescription('No items found.');
         return interaction.editReply({ files: [], attachments: [], content: null, embeds: [emptyEmbed], components: [emptyRow] });
@@ -1623,13 +1624,9 @@ export async function handleShopPostStart(interaction) {
       .setDisabled(!isItemSelected)
   );
 
-  let postBackCustomId;
-  if (state.postStep > 0) {
-    postBackCustomId = `shop_post_back_folder:${sessionId}`;
-  } else {
-    const backBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
-    postBackCustomId = `${backBase}:${sessionId}`;
-  }
+  // External Back button always returns directly to the parent screen (Shop Post list or Shop Admin Home)
+  const backBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
+  const postBackCustomId = `${backBase}:${sessionId}`;
 
   const confirmBtn = new ButtonBuilder()
     .setCustomId(`${state.isEditing ? 'shop_post_update' : 'shop_post_publish'}:${sessionId}`)
@@ -3497,16 +3494,8 @@ export async function renderAdminBrowser(interaction, contextMap) {
     const isItem = action.endsWith('item');
     const isLootBox = action.endsWith('lootbox');
     
-    // Smart hierarchical Back button routing:
-    let backRoute;
-    if (folder === 'root') {
-      backRoute = isLootBox ? 'shop_lb_home' : 'shop_admin_home';
-    } else if (folder === 'browse_categories' || folder === 'cat_null') {
-      backRoute = 'shop_admin_browser_back_root';
-    } else {
-      // inside a specific category (e.g. cat_5)
-      backRoute = 'shop_admin_browser_back_cat';
-    }
+    // External Back button always returns directly to the parent screen (Shop Admin Home or Loot Boxes Home)
+    const backRoute = isLootBox ? 'shop_lb_home' : 'shop_admin_home';
     
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(backRoute).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
@@ -3616,6 +3605,11 @@ export async function renderAdminBrowser(interaction, contextMap) {
           page,
           customId: 'shop_admin_browser_select',
           placeholder: 'Select',
+          backOption: {
+            label: 'Back',
+            value: 'action_back_root',
+            emoji: '⬅️'
+          },
           pageNavPrefix: 'admin_browser_page_',
           pageSize: 20,
           mapOption: cat => ({
@@ -3642,11 +3636,17 @@ export async function renderAdminBrowser(interaction, contextMap) {
 
       const page = contextMap.page || 1;
 
+      const isCatNull = folder === 'cat_null';
       const { selectMenu } = buildPaginatedSelectMenu({
         items: folderItems,
         page,
         customId: 'shop_admin_browser_select',
         placeholder: 'Select',
+        backOption: {
+          label: 'Back',
+          value: isCatNull ? 'action_back_root' : 'action_back_categories',
+          emoji: '⬅️'
+        },
         pageNavPrefix: 'admin_browser_page_',
         pageSize: 20,
         mapOption: i => ({
@@ -3751,6 +3751,15 @@ export async function handleAdminBrowserSelect(interaction) {
     // Handle navigating back up to the root layer
     if (selection === 'action_back_root') {
       context.folder = 'root';
+      context.page = 1;
+      context.message = null;
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
+      return renderAdminBrowser(interaction, context);
+    }
+
+    // Handle navigating back up to the categories list
+    if (selection === 'action_back_categories') {
+      context.folder = 'browse_categories';
       context.page = 1;
       context.message = null;
       pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
@@ -4589,6 +4598,11 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
+        backOption: {
+          label: 'Back',
+          value: 'action_back_root',
+          emoji: '⬅️'
+        },
         pageNavPrefix: `pack_add_cat_nav_${packId}_`,
         pageSize: 20,
         mapOption: cat => ({
@@ -4609,6 +4623,11 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
+        backOption: {
+          label: 'Back',
+          value: 'action_back_root',
+          emoji: '⬅️'
+        },
         pageNavPrefix: `pack_add_item_nav_${packId}_uncat_`,
         pageSize: 20,
         mapOption: i => ({
@@ -4630,6 +4649,11 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         page: pageNum,
         customId: `shop_pack_add_content_select_${packId}`,
         placeholder: 'Select',
+        backOption: {
+          label: 'Back',
+          value: 'layer_browse_categorized',
+          emoji: '⬅️'
+        },
         pageNavPrefix: `pack_add_item_nav_${packId}_${categoryId}_`,
         pageSize: 20,
         mapOption: i => ({ 
@@ -4641,14 +4665,8 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
       selectMenuToRender = selectMenu;
     }
 
-    let packBackCustomId;
-    if (layer === 'root') {
-      packBackCustomId = `shop_pack_manage_${packId}`;
-    } else if (layer === 'browse_categorized' || layer === 'browse_uncategorized') {
-      packBackCustomId = `shop_pack_add_back_root_${packId}`;
-    } else {
-      packBackCustomId = `shop_pack_add_back_cat_${packId}`;
-    }
+    // External Back button always returns directly to the Pack Manage dashboard
+    const packBackCustomId = `shop_pack_manage_${packId}`;
 
     const rowBack = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(packBackCustomId)
