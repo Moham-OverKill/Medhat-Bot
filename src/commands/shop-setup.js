@@ -756,7 +756,7 @@ export async function handleRequirementsSelect(interaction) {
     if (!navVal) {
       const diff = formatDiff(oldItem, { ...oldItem, required_items: requiredItems }, ['id', 'guild_id', 'created_at', 'updated_at']);
       if (diff) {
-        sendLog(interaction.guild, 'shop', 'blue', '⚙️ Item Requirements Updated',
+        sendLog(interaction.guild, 'shop', 'blue', '❗ Item Requirements Updated',
           `Admin <@${interaction.user.id}> updated requirements for **${item.name}** (ID: ${itemId})\n${diff}`);
       }
     }
@@ -4503,8 +4503,8 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       }
 
       const placeholderText = totalReqPages > 1
-        ? `⚙️ Requirements (Page ${currentReqPage}/${totalReqPages})…`
-        : '⚙️ Requirements…';
+        ? `❗ Requirements (Page ${currentReqPage}/${totalReqPages})…`
+        : '❗ Requirements…';
 
       const reqRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
