@@ -484,8 +484,7 @@ export async function handleCreateItemStart(interaction) {
       .setColor('#95A5A6')
       .setDescription(
         'Role: None (Required)\n' +
-        'Category: None\n\n' +
-        '*Select a role below to create the item. All other options will become available after a role is selected.*'
+        'Category: None'
       );
 
     // Tab row — all tabs except Details are disabled until role is selected
