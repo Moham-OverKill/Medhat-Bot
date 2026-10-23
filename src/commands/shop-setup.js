@@ -970,9 +970,9 @@ export async function handleOpenDurationModal(interaction) {
       .setCustomId('item_duration')
       .setStyle(TextInputStyle.Short)
       .setValue(currentDays)
-      .setPlaceholder('Leave empty for permanent')
+      .setPlaceholder('Permanent')
       .setRequired(false);
-    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setDescription('Leave empty for permanent').setTextInputComponent(durInput);
+    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setTextInputComponent(durInput);
 
     modal.addLabelComponents(durLabel);
     await interaction.showModal(modal);
@@ -995,7 +995,7 @@ export async function handleDurationModalSubmit(interaction) {
 
     const rawDays = interaction.fields.getTextInputValue('item_duration')?.trim() ?? '';
     let durationSeconds = null;
-    if (rawDays !== '') {
+    if (rawDays !== '' && rawDays.toLowerCase() !== 'permanent' && rawDays.toLowerCase() !== 'perm') {
       const days = parseInt(rawDays, 10);
       if (isNaN(days) || days < 0) {
         return interaction.followUp({ content: '❌ Invalid duration. Enter a positive number of days or leave empty for permanent.', flags: MessageFlags.Ephemeral });
@@ -4768,8 +4768,8 @@ export async function handleEditItemDetails(interaction) {
       .setDescription(formatCurrentImageDescription(item.default_image_url || item.image_url))
       .setFileUploadComponent(imageUpload);
 
-    const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Leave empty for permanent').setRequired(false);
-    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setDescription('Leave empty for permanent').setTextInputComponent(durInput);
+    const durInput = new TextInputBuilder().setCustomId('item_duration').setStyle(TextInputStyle.Short).setValue(item.duration_seconds ? String(Math.floor(item.duration_seconds / 86400)) : '').setPlaceholder('Permanent').setRequired(false);
+    const durLabel = new LabelBuilder().setLabel('Duration (Days)').setTextInputComponent(durInput);
 
     // Source of Truth: Pre-fill with Database IDs for consistency
     let reqPreFill = '';
