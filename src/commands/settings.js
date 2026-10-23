@@ -74,10 +74,10 @@ export async function showMainMenu(interaction) {
 
     const nonce = Date.now();
 
-    // Row 1: MARKET Select Menu (Coins, Shop, Economy)
-    const marketSelect = new StringSelectMenuBuilder()
+    // Row 1: SHOP Select Menu (Coins, Items, Market, Economy)
+    const shopSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_market_${nonce}`)
-        .setPlaceholder('🛒 Market')
+        .setPlaceholder('🛒 Shop')
         .addOptions([
             {
                 label: coinName,
@@ -85,8 +85,14 @@ export async function showMainMenu(interaction) {
                 emoji: resolveComponentEmoji(COIN_EMOJI.forGuild(interaction.guildId), interaction.guild, '🪙')
             },
             {
-                label: 'Shop',
+                label: 'Items',
                 value: 'market_shop',
+                emoji: '🏷️'
+            },
+            {
+                label: 'Market',
+                value: 'market_market',
+                description: 'Coming soon',
                 emoji: '🛒'
             },
             {
@@ -95,7 +101,7 @@ export async function showMainMenu(interaction) {
                 emoji: '📈'
             }
         ]);
-    const row1 = new ActionRowBuilder().addComponents(marketSelect);
+    const row1 = new ActionRowBuilder().addComponents(shopSelect);
 
     // Row 2: FUN Select Menu (Colors, Levels, Roles, Leaderboard)
     const funSelect = new StringSelectMenuBuilder()
@@ -226,6 +232,36 @@ export async function showCoinsSubMenu(interaction) {
 }
 
 /**
+ * Show the Market Panel (Coming Soon)
+ */
+export async function showMarketPanel(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('Market')
+        .setDescription('Coming soon.')
+        .setColor(0x2F3136);
+
+    const backRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction))
+    );
+
+    const responseMethod = (interaction.deferred || interaction.replied)
+        ? 'editReply'
+        : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
+    await interaction[responseMethod]({
+        content: '',
+        embeds: [embed],
+        components: [backRow],
+        files: [],
+        attachments: []
+    });
+}
+
+/**
  * Open the Bot Customization modal directly (modal cannot be deferred)
  * @param {import('discord.js').Interaction} interaction 
  */
@@ -346,11 +382,15 @@ export async function handleSettingsComponent(interaction) {
             if (!selected) return;
 
             switch (selected) {
-                // 1. MARKET
+                // 1. SHOP / MARKET
                 case 'market_coins':
                     return showCoinsSubMenu(interaction);
                 case 'market_shop':
+                case 'market_items':
                     return showShopPanel(interaction);
+                case 'market_market':
+                case 'market_coming_soon':
+                    return showMarketPanel(interaction);
                 case 'market_economy':
                     return handleEconomySettings(interaction);
 
