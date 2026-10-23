@@ -1040,8 +1040,8 @@ export async function handleToggleItemLock(interaction) {
 
     const newTradable = !item.is_tradable;
     await updateShopItem(itemId, { is_tradable: newTradable }, interaction.guildId);
-    const label = newTradable ? '🔓 Unlocked' : '🔒 Locked';
-    sendLog(interaction.guild, 'shop', 'blue', '🔐 Item Lock Toggled',
+    const label = newTradable ? 'Tradable' : 'UnTradable';
+    sendLog(interaction.guild, 'shop', 'blue', '🔄 Item Trade Status Toggled',
       `Admin <@${interaction.user.id}> set **${item.name}** to **${label}**`);
 
     const mock = {
@@ -1058,7 +1058,7 @@ export async function handleToggleItemLock(interaction) {
       member: interaction.member,
       memberPermissions: interaction.memberPermissions
     };
-    await handleEditItemSelect(mock, `✅ Status set to **${label}**.`);
+    await handleEditItemSelect(mock, null);
   } catch (error) {
     await handleInteractionError(interaction, error, 'toggle item lock');
   }
@@ -4453,7 +4453,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         prereqDisplay = reqDisplays.length > 0 ? reqDisplays.join(', ') : 'None';
       }
 
-      const typeLockLabel = item.is_tradable !== false ? 'Unlocked 🔓' : 'Locked 🔒';
+      const typeLockLabel = item.is_tradable !== false ? 'Tradable 🔓' : 'UnTradable 🔒';
       embed = new EmbedBuilder()
         .setTitle(`${item.name} — Config`)
         .setDescription(
@@ -4567,19 +4567,21 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
           .addOptions(reqOptions.slice(0, 25))
       );
 
-      // Row 4: Duration button + Lock toggle
-      const lockLabel = item.is_tradable !== false ? '🔒 Lock' : '🔓 Unlock';
-      const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_item_duration_btn_${itemId}`)
-          .setLabel('Duration')
-          .setEmoji('⏱️')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`shop_item_toggle_lock_${itemId}`)
-          .setLabel(lockLabel)
-          .setStyle(item.is_tradable !== false ? ButtonStyle.Danger : ButtonStyle.Success)
-      );
+      // Row 4: Tradable/UnTradable toggle + Duration button
+      const isTradable = item.is_tradable !== false;
+      const tradableBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_toggle_lock_${itemId}`)
+        .setLabel(isTradable ? 'Tradable' : 'UnTradable')
+        .setEmoji(isTradable ? '🔓' : '🔒')
+        .setStyle(isTradable ? ButtonStyle.Success : ButtonStyle.Danger);
+
+      const durationBtn = new ButtonBuilder()
+        .setCustomId(`shop_item_duration_btn_${itemId}`)
+        .setLabel('Duration')
+        .setEmoji('⏱️')
+        .setStyle(ButtonStyle.Secondary);
+
+      const actionRow = new ActionRowBuilder().addComponents(tradableBtn, durationBtn);
 
       // Row 5: Nav (Back + Prev/Next item)
       const prevBtn2 = new ButtonBuilder()
