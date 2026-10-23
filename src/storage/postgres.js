@@ -535,6 +535,9 @@ async function createTables() {
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS rarity TEXT DEFAULT 'common'`);
       await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS is_tradable BOOLEAN DEFAULT TRUE`);
 
+      // Unified Item Editor: Custom embed hex color with rarity fallback
+      await pool.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS color VARCHAR(16)`);
+
       // Null-Price System: Price is now set at post-time, not creation-time
       // This drops the NOT NULL constraint so new items can be created without a price.
       // Existing items keep their prices untouched.

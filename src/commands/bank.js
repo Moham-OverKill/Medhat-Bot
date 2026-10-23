@@ -17,7 +17,7 @@ import { handleInteractionError, diagnoseChannelPermissions } from '../utils/err
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
-import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply, getCurrencyName } from '../shared.js';
+import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply, getCurrencyName, getItemEmbedColor } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed, cleanImageUrl } from '../utils/embed-sanitizer.js';
@@ -2138,13 +2138,16 @@ export async function handleInventoryItemSelect(interaction) {
       });
     }
 
-    // Get role color for embed
-    let embedColor = '#3498DB';
-    if (item.role_id) {
-      const firstRoleId = item.role_id.split(/[,\s]+/)[0];
-      const role = interaction.guild.roles.cache.get(firstRoleId);
-      if (role && role.color) {
-        embedColor = role.hexColor;
+    // Get item embed color: custom hex > rarity color > role color
+    let embedColor = getItemEmbedColor(item);
+    // If no custom color and no rarity, fall back to role color for backwards compatibility
+    if (!item.color) {
+      if (item.role_id) {
+        const firstRoleId = item.role_id.split(/[,\s]+/)[0];
+        const role = interaction.guild.roles.cache.get(firstRoleId);
+        if (role && role.color) {
+          embedColor = role.hexColor;
+        }
       }
     }
 

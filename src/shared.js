@@ -688,6 +688,24 @@ export const RARITY_COLORS = {
   legendary: '#F1C40F'
 };
 
+/**
+ * Resolves the correct embed color for a shop item.
+ * Priority:
+ *   1. item.color (custom hex set in Appearance modal)
+ *   2. RARITY_COLORS[item.rarity] (rarity-based fallback)
+ *   3. RARITY_COLORS.common (default)
+ * @param {Object|null} item - A shop_items row
+ * @returns {string} A hex color string (with leading #)
+ */
+export function getItemEmbedColor(item) {
+  if (item && item.color && /^#?[0-9A-Fa-f]{6}$/.test(item.color.trim())) {
+    const hex = item.color.trim();
+    return hex.startsWith('#') ? hex : `#${hex}`;
+  }
+  const rarity = normalizeRarity(item?.rarity);
+  return RARITY_COLORS[rarity] || RARITY_COLORS.common;
+}
+
 export const RARITY_OPTIONS = [
   { label: 'Common',    value: 'common',    emoji: RARITY_EMOJIS.common },
   { label: 'Uncommon',  value: 'uncommon',  emoji: RARITY_EMOJIS.uncommon },
