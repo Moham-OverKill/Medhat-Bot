@@ -748,7 +748,7 @@ export async function handleShopBuyButton(interaction) {
           // Show quantity modal
           const modal = new ModalBuilder()
             .setCustomId(`shop_buy_qty_modal_${itemId}_${sellerId}_${payoutStr}_${overridePriceStr || ''}`)
-            .setTitle(`Buy: ${item.name}`);
+            .setTitle(`Buy: ${item.name}`.slice(0, 45));
 
           const maxLen = maxAllowed !== null ? Math.max(3, String(maxAllowed).length) : 6;
           const qtyInput = new TextInputBuilder()
@@ -2541,7 +2541,7 @@ export async function handleInventoryAction(interaction) {
       // Show the quantity modal directly on the original interaction (no defer!)
       const modal = new ModalBuilder()
         .setCustomId(`bank_inv_drop_qty_${targetDropInvId}_${catIdStr}_${currentIndex}`)
-        .setTitle(`Drop: ${item.name}`);
+        .setTitle(`Drop: ${item.name}`.slice(0, 45));
 
       const qtyInput = new TextInputBuilder()
         .setCustomId('drop_quantity')

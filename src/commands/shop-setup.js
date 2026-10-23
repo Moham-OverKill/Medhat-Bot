@@ -4135,13 +4135,16 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
 
     const catOptions = [
       { label: 'No Category', value: 'null', emoji: '🏷️', default: !item.category_id },
-      ...categories.map(c => ({
+      ...categories.slice(0, 24).map(c => ({
         label: ((c.name && c.name.trim().length > 0) ? c.name : `Unnamed Category #${c.id}`).slice(0, 100),
         value: c.id.toString(),
         emoji: '📂',
         default: c.id == item.category_id
       }))
     ];
+    if (catOptions.length > 25) {
+      catOptions.length = 25;
+    }
     const catSelect = new StringSelectMenuBuilder()
       .setCustomId(`shop_assign_cat_select_manage_${itemId}`)
       .setPlaceholder('Select')
@@ -6316,11 +6319,11 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
   const coinName = await getCurrencyName(interaction.guildId);
   const modal = new ModalBuilder()
     .setCustomId(`shop_lb_coins_modal_${boxId}`)
-    .setTitle(`Configure ${coinName} Reward`);
+    .setTitle(`Configure ${coinName} Reward`.slice(0, 45));
 
   const chanceInput = new TextInputBuilder()
     .setCustomId('chance_coins')
-    .setLabel(`${coinName} Drop Weight / Chance (%)`)
+    .setLabel(`${coinName} Drop Weight / Chance (%)`.slice(0, 45))
     .setStyle(TextInputStyle.Short)
     .setValue(box.chance_coins.toString())
     .setPlaceholder('e.g. 25')
@@ -6328,7 +6331,7 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 
   const minCoinsInput = new TextInputBuilder()
     .setCustomId('min_coins')
-    .setLabel(`Minimum ${coinName} Won`)
+    .setLabel(`Minimum ${coinName} Won`.slice(0, 45))
     .setStyle(TextInputStyle.Short)
     .setValue(box.min_coins.toString())
     .setPlaceholder('e.g. 100')
@@ -6336,7 +6339,7 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 
   const maxCoinsInput = new TextInputBuilder()
     .setCustomId('max_coins')
-    .setLabel(`Maximum ${coinName} Won`)
+    .setLabel(`Maximum ${coinName} Won`.slice(0, 45))
     .setStyle(TextInputStyle.Short)
     .setValue(box.max_coins.toString())
     .setPlaceholder('e.g. 500')
