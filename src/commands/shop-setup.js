@@ -4611,6 +4611,8 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
         .setFooter({ text: `Page ${page} / ${totalPages}` })
         .setColor(embedColor);
 
+      const itemImg = getItemImage(item);
+      if (itemImg) embed.setThumbnail(itemImg);
       if (successHeader) embed.setAuthor({ name: successHeader });
 
       // Row 2: Revoke button + user list pagination arrows (left & right)
