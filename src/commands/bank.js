@@ -1799,15 +1799,9 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
       components.push(sortButtonsRow);
     }
 
-    // Row: Item Select Menu
+    // Row: Item Select Menu (Back is handled inside the dropdown)
     const rowSelect = new ActionRowBuilder().addComponents(selectMenu);
     components.push(rowSelect);
-
-    // Row: Action Row (Back button)
-    const rowBack = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('bank_inventory').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-    );
-    components.push(rowBack);
 
     await interaction.editReply({
       files: [],
@@ -2102,31 +2096,28 @@ export async function handleInventoryItemSelect(interaction) {
           .setStyle(ButtonStyle.Success)
       );
 
-      // ROW 3: Dedicated Back Button + Carousel Nav
+      // ROW 3: Carousel Nav (Back is handled inside the dropdown)
       const hasMultipleBoxes = items.length > 1;
-      const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('bank_inv_cat_lootboxes')
-          .setLabel('Back')
-          .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`inv_nav_lootboxes_${currentIndex}_prev`)
-          .setEmoji('◀️')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!hasMultipleBoxes),
-        new ButtonBuilder()
-          .setCustomId(`inv_nav_lootboxes_${currentIndex}_next`)
-          .setEmoji('▶️')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!hasMultipleBoxes)
-      );
+      const components = [row1, row2];
+      if (hasMultipleBoxes) {
+        const row3 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`inv_nav_lootboxes_${currentIndex}_prev`)
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`inv_nav_lootboxes_${currentIndex}_next`)
+            .setEmoji('▶️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+        components.push(row3);
+      }
 
       return await interaction.editReply({
         content: null,
         embeds: [embed],
         files: [],
-        components: [row1, row2, row3]
+        components
       });
     }
 
@@ -2303,30 +2294,27 @@ export async function handleInventoryItemSelect(interaction) {
         .setDisabled(cannotToggle)
     );
 
-    // ROW 3: Dedicated Back Button + Carousel Nav
-    const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`bank_inv_cat_${catIdStr}`)
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
-        .setEmoji('◀️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!hasMultipleItems),
-      new ButtonBuilder()
-        .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
-        .setEmoji('▶️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!hasMultipleItems)
-    );
+    // ROW 3: Carousel Nav (Back is handled inside the dropdown)
+    const components = [row1, row2];
+    if (hasMultipleItems) {
+      const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
+          .setEmoji('◀️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
+          .setEmoji('▶️')
+          .setStyle(ButtonStyle.Secondary)
+      );
+      components.push(row3);
+    }
 
     await interaction.editReply({
       content: null,
       embeds: [embed],
       files: [],
-      components: [row1, row2, row3]
+      components
     });
 
   } catch (error) {
