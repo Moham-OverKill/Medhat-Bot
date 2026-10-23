@@ -1870,15 +1870,17 @@ export async function handleInventoryItemSelect(interaction) {
     // From select menu: value = "invId_index", customId = "bank_inv_item_select_categoryId"
     // From carousel nav: customId = "inv_nav_categoryId_index_prev/next"
 
-    let categoryId, currentIndex, invId;
+    let categoryId, currentIndex, invId, menuPage;
 
     if (interaction.values) {
       const selectedVal = interaction.values[0];
 
       // Handle "Back to Category" dropdown option selection
-      if (selectedVal === 'back_to_category') {
+      if (selectedVal.startsWith('back_to_category')) {
+        const parts = selectedVal.split('_');
+        const targetPage = parseInt(parts[3], 10) || 1;
         const catPart = interaction.customId.replace('bank_inv_item_select_', '');
-        return handleInventoryCategorySelect(interaction, 1, catPart);
+        return handleInventoryCategorySelect(interaction, targetPage, catPart);
       }
 
       // Handle "Back to Inventory" dropdown option selection
@@ -1886,21 +1888,29 @@ export async function handleInventoryItemSelect(interaction) {
         return handleInventoryButton(interaction);
       }
 
-      // Handle Page Navigation dropdown option selection (inv_page_N)
+      // Handle Page Navigation dropdown option selection in Category View (inv_page_N)
       if (selectedVal.startsWith('inv_page_')) {
         const targetPage = parseInt(selectedVal.replace('inv_page_', ''), 10) || 1;
         return handleInventoryCategorySelect(interaction, targetPage);
       }
 
-      // From select menu: value = "invId_index"
-      // Use lastIndexOf('_') because invId for Admin-Granted items can contain underscores (e.g. admin_299)
-      const lastUnderscore = selectedVal.lastIndexOf('_');
-      if (lastUnderscore !== -1) {
-        invId = selectedVal.slice(0, lastUnderscore);
-        currentIndex = parseInt(selectedVal.slice(lastUnderscore + 1)) || 0;
+      // Handle Page Navigation dropdown option selection in Item View (item_menu_page_itemId_targetPage)
+      // Only updates the select menu, not the whole embed!
+      if (selectedVal.startsWith('item_menu_page_')) {
+        const lastUnderscore = selectedVal.lastIndexOf('_');
+        menuPage = parseInt(selectedVal.slice(lastUnderscore + 1), 10) || 1;
+        invId = selectedVal.slice('item_menu_page_'.length, lastUnderscore);
       } else {
-        invId = selectedVal;
-        currentIndex = 0;
+        // From select menu: value = "invId_index"
+        // Use lastIndexOf('_') because invId for Admin-Granted items can contain underscores (e.g. admin_299)
+        const lastUnderscore = selectedVal.lastIndexOf('_');
+        if (lastUnderscore !== -1) {
+          invId = selectedVal.slice(0, lastUnderscore);
+          currentIndex = parseInt(selectedVal.slice(lastUnderscore + 1)) || 0;
+        } else {
+          invId = selectedVal;
+          currentIndex = 0;
+        }
       }
 
       const catPart = interaction.customId.replace('bank_inv_item_select_', '');
@@ -2049,45 +2059,63 @@ export async function handleInventoryItemSelect(interaction) {
         embed.setThumbnail(boxImg);
       }
 
-      let windowItems = items;
-      let startIdx = 0;
-      const maxWindow = 24; // 24 items + 1 Back option = 25 total (Discord limit)
-      if (items.length > maxWindow) {
-        startIdx = Math.max(0, Math.min(currentIndex - 11, items.length - maxWindow));
-        windowItems = items.slice(startIdx, startIdx + maxWindow);
-      }
+      // Select Menu via buildPaginatedSelectMenu
+      const activeMenuPage = (typeof menuPage === 'number' && menuPage > 0)
+        ? menuPage
+        : Math.floor(currentIndex / 20) + 1;
+      const totalMenuPages = Math.max(1, Math.ceil(items.length / 20));
+      const placeholder = totalMenuPages > 1
+        ? `Select a Loot Box to Manage (Page ${activeMenuPage}/${totalMenuPages})`
+        : 'Select a Loot Box to Manage';
 
-      const selectOptions = windowItems.map((i, idx) => {
-        const itemQty = parseInt(i.quantity) || 1;
-        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
-        return {
-          label: `${baseName} (x${itemQty})`,
-          value: `${i.id}_${startIdx + idx}`,
-          emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁'),
-          default: String(i.id) === String(item.id)
-        };
+      const { selectMenu } = buildPaginatedSelectMenu({
+        items,
+        page: activeMenuPage,
+        customId: 'bank_inv_item_select_lootboxes',
+        placeholder,
+        backOption: {
+          label: 'Back',
+          value: `back_to_category_${activeMenuPage}`,
+          emoji: '⬅️'
+        },
+        pageNavPrefix: `item_menu_page_${item.id}_`,
+        pageSize: 20,
+        mapOption: (i, idx) => {
+          const itemQty = parseInt(i.quantity) || 1;
+          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+          return {
+            label: `${baseName} (x${itemQty})`,
+            value: `${i.id}_${idx}`,
+            emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁'),
+            default: String(i.id) === String(item.id)
+          };
+        }
       });
 
-      selectOptions.unshift({
-        label: 'Back',
-        value: 'back_to_category',
-        emoji: '⬅️'
-      });
+      const components = [];
 
-      if (selectOptions.length > 25) {
-        selectOptions.length = 25;
+      // ROW 1: Carousel Nav (Above Select Menu)
+      const hasMultipleBoxes = items.length > 1;
+      if (hasMultipleBoxes) {
+        const rowNav = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`inv_nav_lootboxes_${currentIndex}_prev`)
+            .setEmoji('◀️')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`inv_nav_lootboxes_${currentIndex}_next`)
+            .setEmoji('▶️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+        components.push(rowNav);
       }
 
-      const itemSelect = new StringSelectMenuBuilder()
-        .setCustomId('bank_inv_item_select_lootboxes')
-        .setPlaceholder('Select a Loot Box to Manage')
-        .addOptions(selectOptions);
+      // ROW 2: Select Menu
+      const rowSelect = new ActionRowBuilder().addComponents(selectMenu);
+      components.push(rowSelect);
 
-      // ROW 1: Select Menu
-      const row1 = new ActionRowBuilder().addComponents(itemSelect);
-
-      // ROW 2: Actions [🗑️ Drop] [🔓 Open]
-      const row2 = new ActionRowBuilder().addComponents(
+      // ROW 3: Actions [🗑️ Drop] [🔓 Open]
+      const rowActions = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`bank_inv_drop_${item.id}_lootboxes_${currentIndex}`)
           .setLabel('Drop')
@@ -2100,23 +2128,7 @@ export async function handleInventoryItemSelect(interaction) {
           .setEmoji('🔓')
           .setStyle(ButtonStyle.Success)
       );
-
-      // ROW 3: Carousel Nav (Back is handled inside the dropdown)
-      const hasMultipleBoxes = items.length > 1;
-      const components = [row1, row2];
-      if (hasMultipleBoxes) {
-        const row3 = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`inv_nav_lootboxes_${currentIndex}_prev`)
-            .setEmoji('◀️')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId(`inv_nav_lootboxes_${currentIndex}_next`)
-            .setEmoji('▶️')
-            .setStyle(ButtonStyle.Secondary)
-        );
-        components.push(row3);
-      }
+      components.push(rowActions);
 
       return await interaction.editReply({
         content: null,
@@ -2212,64 +2224,81 @@ export async function handleInventoryItemSelect(interaction) {
     const catIdStr = isOther ? 'null' : categoryId;
     const hasMultipleItems = items.length > 1;
 
-    // ROW 1: Item Selection Dropdown List (Pure items, up to 24 to leave room for Back option)
-    let windowItems = items;
-    let startIdx = 0;
-    const maxWindow = 24; // 24 items + 1 Back option = 25 total (Discord limit)
-    if (items.length > maxWindow) {
-      startIdx = Math.max(0, Math.min(currentIndex - 11, items.length - maxWindow));
-      windowItems = items.slice(startIdx, startIdx + maxWindow);
-    }
+    // Select Menu via buildPaginatedSelectMenu
+    const activeMenuPage = (typeof menuPage === 'number' && menuPage > 0)
+      ? menuPage
+      : Math.floor(currentIndex / 20) + 1;
+    const totalMenuPages = Math.max(1, Math.ceil(items.length / 20));
+    const placeholder = totalMenuPages > 1
+      ? `Select an Item to Manage (Page ${activeMenuPage}/${totalMenuPages})`
+      : 'Select an Item to Manage';
 
-    const selectOptions = windowItems.map((i, idx) => {
-      const isItemTemp = !!(i.expires_at ||
-        (i.duration_seconds && i.duration_seconds > 0) ||
-        (i.duration_hours && i.duration_hours > 0));
-      const isAdminIdentified = i.source === 'SYNC';
+    const { selectMenu } = buildPaginatedSelectMenu({
+      items,
+      page: activeMenuPage,
+      customId: `bank_inv_item_select_${catIdStr}`,
+      placeholder,
+      backOption: {
+        label: 'Back',
+        value: `back_to_category_${activeMenuPage}`,
+        emoji: '⬅️'
+      },
+      pageNavPrefix: `item_menu_page_${item.id}_`,
+      pageSize: 20,
+      mapOption: (i, idx) => {
+        const isItemTemp = !!(i.expires_at ||
+          (i.duration_seconds && i.duration_seconds > 0) ||
+          (i.duration_hours && i.duration_hours > 0));
+        const isAdminIdentified = i.source === 'SYNC';
 
-      let statusEmoji = '⬜';
-      let statusText = 'Unknown';
+        let statusEmoji = '⬜';
+        let statusText = 'Unknown';
 
-      if (isAdminIdentified) {
-        statusEmoji = '🛡️';
-        statusText = 'Admin Granted';
-      } else if (isItemTemp) {
-        statusEmoji = i.is_active ? '✅' : '⬜';
-        statusText = i.is_active ? 'Active' : 'Inactive';
-      } else {
-        statusEmoji = i.is_active ? '✅' : '⬜';
-        statusText = i.is_active ? 'Equipped' : 'Unequipped';
+        if (isAdminIdentified) {
+          statusEmoji = '🛡️';
+          statusText = 'Admin Granted';
+        } else if (isItemTemp) {
+          statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Active' : 'Inactive';
+        } else {
+          statusEmoji = i.is_active ? '✅' : '⬜';
+          statusText = i.is_active ? 'Equipped' : 'Unequipped';
+        }
+
+        const itemQty = parseInt(i.quantity) || 1;
+        const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
+        const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
+
+        return {
+          label: `${baseName}${qtyBadge}`,
+          value: `${i.id}_${idx}`,
+          description: statusText,
+          emoji: statusEmoji,
+          default: String(i.id) === String(item.id)
+        };
       }
-
-      const itemQty = parseInt(i.quantity) || 1;
-      const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
-      const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Item #${i.id}`;
-
-      return {
-        label: `${baseName}${qtyBadge}`,
-        value: `${i.id}_${startIdx + idx}`,
-        description: statusText,
-        emoji: statusEmoji,
-        default: String(i.id) === String(item.id)
-      };
     });
 
-    selectOptions.unshift({
-      label: 'Back',
-      value: 'back_to_category',
-      emoji: '⬅️'
-    });
+    const components = [];
 
-    if (selectOptions.length > 25) {
-      selectOptions.length = 25;
+    // ROW 1: Carousel Nav (Above Select Menu)
+    if (hasMultipleItems) {
+      const rowNav = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
+          .setEmoji('◀️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
+          .setEmoji('▶️')
+          .setStyle(ButtonStyle.Secondary)
+      );
+      components.push(rowNav);
     }
 
-    const itemSelect = new StringSelectMenuBuilder()
-      .setCustomId(`bank_inv_item_select_${catIdStr}`)
-      .setPlaceholder('Select an Item to Manage')
-      .addOptions(selectOptions);
-
-    const row1 = new ActionRowBuilder().addComponents(itemSelect);
+    // ROW 2: Select Menu
+    const rowSelect = new ActionRowBuilder().addComponents(selectMenu);
+    components.push(rowSelect);
 
     // Dynamic button based on item type and state
     let toggleLabel = 'Equip';
@@ -2288,8 +2317,8 @@ export async function handleInventoryItemSelect(interaction) {
       toggleEmoji = item.is_active ? '⏸️' : '✅';
     }
 
-    // ROW 2: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate/Deactivate]
-    const row2 = new ActionRowBuilder().addComponents(
+    // ROW 3: Actions [🗑️ Drop] [✅ Equip/Unequip/Activate/Deactivate]
+    const rowActions = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`bank_inv_drop_${item.id}_${catIdStr}_${currentIndex}`)
         .setLabel('Drop')
@@ -2303,22 +2332,7 @@ export async function handleInventoryItemSelect(interaction) {
         .setStyle(item.is_active ? ButtonStyle.Secondary : ButtonStyle.Success)
         .setDisabled(cannotToggle)
     );
-
-    // ROW 3: Carousel Nav (Back is handled inside the dropdown)
-    const components = [row1, row2];
-    if (hasMultipleItems) {
-      const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_prev`)
-          .setEmoji('◀️')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`inv_nav_${catIdStr}_${currentIndex}_next`)
-          .setEmoji('▶️')
-          .setStyle(ButtonStyle.Secondary)
-      );
-      components.push(row3);
-    }
+    components.push(rowActions);
 
     await interaction.editReply({
       content: null,
