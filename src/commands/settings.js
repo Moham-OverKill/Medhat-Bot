@@ -330,16 +330,29 @@ export async function showCoinsCustomizeModal(interaction) {
  */
 export async function handleSettingsComponent(interaction) {
     try {
-        const { verifyAdminAccess } = await import('../storage/admins.js');
-        if (!(await verifyAdminAccess(interaction))) return;
+        // Skip re-running the DB permission check if handlers.js already verified this interaction
+        if (!interaction._adminVerified) {
+            const { verifyAdminAccess } = await import('../storage/admins.js');
+            if (!(await verifyAdminAccess(interaction))) return;
+        }
+
+        // Modals must call showModal() directly and cannot be deferred with deferUpdate().
+        // For all non-modal component interactions, defer immediately before any async work
+        // to prevent Discord's 3-second acknowledgment timeout from triggering.
+        const isModal = interaction.isModalSubmit();
+        const needsModal =
+            interaction.customId === 'settings_vote_reward' ||
+            interaction.customId === 'settings_tag_reward' ||
+            interaction.customId === 'settings_customize' ||
+            interaction.customId === 'settings_coins_customize';
+        if (!isModal && !needsModal && !interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate().catch(() => {});
+        }
 
         const customId = interaction.customId;
 
         // Handle back button from any module
         if (customId === 'settings_back' || customId === 'settings_home') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferUpdate().catch(() => {});
-            }
             await showMainMenu(interaction);
             return;
         }
@@ -429,9 +442,6 @@ export async function handleSettingsComponent(interaction) {
 
 
         if (customId === 'settings_other') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferUpdate().catch(() => {});
-            }
             await showMainMenu(interaction);
             return;
         }
