@@ -6,10 +6,27 @@
  * 3. Discord Administrator permissions or roles grant ZERO access.
  * 4. Real-time revocation check on every interaction.
  */
-import { MessageFlags, PermissionFlagsBits } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { getPool, isDatabaseReady } from './postgres.js';
 import { sysError, sysLog } from '../utils/logger.js';
 import { hasAnyDangerousPermission } from '../shared.js';
+
+// Fast in-memory cache for admin permission checks (TTL: 20 seconds)
+// Prevents spamming PostgreSQL queries on every consecutive button click in the dashboard
+const adminAccessCache = new Map();
+const ADMIN_CACHE_TTL_MS = 20_000;
+
+export function invalidateAdminCache(guildId) {
+  if (!guildId) {
+    adminAccessCache.clear();
+    return;
+  }
+  for (const key of adminAccessCache.keys()) {
+    if (key.startsWith(`${guildId}:`)) {
+      adminAccessCache.delete(key);
+    }
+  }
+}
 
 /**
  * Fetch all authorized bot admin roles for a specific guild.
@@ -101,12 +118,14 @@ export async function toggleServerAdminRole(guildId, roleId) {
       'DELETE FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2',
       [guildId, roleId]
     );
+    invalidateAdminCache(guildId);
     return { action: 'removed', roleId };
   } else {
     await pool.query(
       'INSERT INTO server_admin_roles (guild_id, role_id) VALUES ($1, $2) ON CONFLICT (guild_id, role_id) DO NOTHING',
       [guildId, roleId]
     );
+    invalidateAdminCache(guildId);
     return { action: 'added', roleId };
   }
 }
@@ -127,6 +146,7 @@ export async function removeServerAdminRole(guildId, roleId) {
       [guildId, roleId]
     );
     if (res.rowCount > 0) {
+      invalidateAdminCache(guildId);
       sysLog('Bot Admin Role Purged', { guild: guildId, role: roleId });
       return true;
     }
@@ -398,12 +418,14 @@ export async function toggleServerAdmin(guildId, userId) {
       'DELETE FROM server_admins WHERE guild_id = $1 AND user_id = $2',
       [guildId, userId]
     );
+    invalidateAdminCache(guildId);
     return { action: 'removed', userId };
   } else {
     await pool.query(
       'INSERT INTO server_admins (guild_id, user_id) VALUES ($1, $2) ON CONFLICT (guild_id, user_id) DO NOTHING',
       [guildId, userId]
     );
+    invalidateAdminCache(guildId);
     return { action: 'added', userId };
   }
 }
@@ -424,6 +446,7 @@ export async function removeServerAdmin(guildId, userId) {
       [guildId, userId]
     );
     if (res.rowCount > 0) {
+      invalidateAdminCache(guildId);
       sysLog('Bot Admin Purged on Leave', { guild: guildId, user: userId });
       return true;
     }
@@ -504,47 +527,52 @@ export async function verifyAdminAccess(interaction) {
     return false;
   }
 
-  // 1. Owner Bypass: Check ownerId from guild cache or fetch if missing
-  let ownerId = interaction.guild?.ownerId;
-  if (!ownerId && interaction.guild?.fetch) {
-    try {
-      const g = await interaction.guild.fetch();
-      ownerId = g.ownerId;
-    } catch {}
-  }
-  if (!ownerId && interaction.client) {
-    try {
-      const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
-      ownerId = g?.ownerId;
-    } catch {}
+  // 0. Cache check for rapid clicks (memory lookup, 0ms, no DB/REST calls)
+  const cacheKey = `${guildId}:${userId}`;
+  const cached = adminAccessCache.get(cacheKey);
+  if (cached && Date.now() < cached.expires) {
+    if (cached.allowed) return true;
   }
 
+  // 1. Owner Bypass: Check ownerId from guild cache only (zero HTTP fetches)
+  const guild = interaction.guild || interaction.client?.guilds?.cache?.get(guildId);
+  const ownerId = guild?.ownerId;
+
   if (ownerId && userId === ownerId) {
+    adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
     return true;
   }
 
   // 2. Discord Administrator Permission Bypass
-  // Fast path: gateway permission bitfield on interaction payload
+  // Fast path A: gateway permission bitfield on interaction payload
   if (interaction.memberPermissions?.has?.(PermissionFlagsBits.Administrator)) {
+    adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
     return true;
   }
 
-  // Fallback: check cached member or fetch from guild
-  let member = interaction.member;
-  if (!member || typeof member.permissions?.has !== 'function') {
-    let guild = interaction.guild;
-    if (!guild && interaction.client) {
-      guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+  // Fast path B: parse raw permissions string directly without calling guild.members.fetch()
+  const rawPerms = interaction.member?.permissions;
+  if (rawPerms) {
+    const perms = typeof rawPerms === 'string'
+      ? new PermissionsBitField(BigInt(rawPerms))
+      : rawPerms;
+    if (perms?.has?.(PermissionFlagsBits.Administrator)) {
+      adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
+      return true;
     }
-    member = await guild?.members?.fetch(userId).catch(() => null);
   }
-  if (member?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
+
+  // Fast path C: check already-cached member in memory
+  const cachedMember = guild?.members?.cache?.get(userId);
+  if (cachedMember?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
+    adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
     return true;
   }
 
   // 3. Database Whitelist Check: strictly scoped to guild_id and user_id
   const isWhitelisted = await isServerAdmin(guildId, userId);
   if (isWhitelisted) {
+    adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
     return true;
   }
 
@@ -557,17 +585,14 @@ export async function verifyAdminAccess(interaction) {
       roleIds = Array.from(interaction.member.roles.cache.keys());
     }
   }
-  if (roleIds.length === 0 && (interaction.guild || interaction.client)) {
-    const guild = interaction.guild || await interaction.client.guilds.fetch(guildId).catch(() => null);
-    const m = await guild?.members?.fetch(userId).catch(() => null);
-    if (m?.roles?.cache) {
-      roleIds = Array.from(m.roles.cache.keys());
-    }
+  if (roleIds.length === 0 && cachedMember?.roles?.cache) {
+    roleIds = Array.from(cachedMember.roles.cache.keys());
   }
 
   if (roleIds.length > 0) {
     const hasRole = await hasAdminRole(guildId, roleIds);
     if (hasRole) {
+      adminAccessCache.set(cacheKey, { allowed: true, expires: Date.now() + ADMIN_CACHE_TTL_MS });
       return true;
     }
   }
@@ -609,43 +634,33 @@ export async function hasAdminManagerAccess(interaction) {
   const guildId = interaction.guildId;
   if (!userId || !guildId || guildId === 'null' || guildId === 'undefined' || userId === 'null' || userId === 'undefined') return false;
 
-  let guild = interaction.guild;
-  if (!guild && interaction.client) {
-    guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
-  }
-
-  // 1. Owner check
-  let ownerId = guild?.ownerId;
-  if (!ownerId && guild?.fetch) {
-    try {
-      const g = await guild.fetch();
-      ownerId = g.ownerId;
-    } catch {}
-  }
-  if (!ownerId && interaction.client) {
-    try {
-      const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
-      ownerId = g?.ownerId;
-    } catch {}
-  }
+  const guild = interaction.guild || interaction.client?.guilds?.cache?.get(guildId);
+  const ownerId = guild?.ownerId;
 
   if (ownerId && userId === ownerId) {
     return true;
   }
 
   // 2. Discord Administrator permission check
-  // Fast path: gateway permission bitfield on interaction payload
+  // Fast path A: gateway permission bitfield on interaction payload
   if (interaction.memberPermissions?.has?.(PermissionFlagsBits.Administrator)) {
     return true;
   }
 
-  // Fallback: check cached member or fetch from guild
-  let member = interaction.member;
-  if (!member || typeof member.permissions?.has !== 'function') {
-    member = await guild?.members?.fetch(userId).catch(() => null);
+  // Fast path B: parse raw permissions string directly without calling guild.members.fetch()
+  const rawPerms = interaction.member?.permissions;
+  if (rawPerms) {
+    const perms = typeof rawPerms === 'string'
+      ? new PermissionsBitField(BigInt(rawPerms))
+      : rawPerms;
+    if (perms?.has?.(PermissionFlagsBits.Administrator)) {
+      return true;
+    }
   }
 
-  if (member?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
+  // Fast path C: check already-cached member in memory
+  const cachedMember = guild?.members?.cache?.get(userId);
+  if (cachedMember?.permissions?.has?.(PermissionFlagsBits.Administrator)) {
     return true;
   }
 
