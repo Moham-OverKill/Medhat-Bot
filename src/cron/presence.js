@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { ActivityType } from 'discord.js';
+import { ActivityType, Events } from 'discord.js';
 import { sysLog, sysError } from '../utils/logger.js';
 
 /**
@@ -34,43 +34,43 @@ const CAT_STATUSES = [
 ];
 
 let lastStatusIndex = -1;
+let presenceDebounceTimeout = null;
 
 /**
- * Updates the bot's rich presence with a random cat status (never repeating the previous hour)
+ * Updates the bot's rich presence with a random cat status or updates the count for the active phrase
  * @param {import('discord.js').Client} client 
+ * @param {boolean} [preservePhrase=false] If true, retains current phrase and updates server count only
  */
-export function updateBotPresence(client) {
+export function updateBotPresence(client, preservePhrase = false) {
+  if (!client?.user) return;
   let statusText = `${client.guilds.cache.size} Servers`;
   try {
-    // Exclude the immediately previous status to guarantee non-repeating rotation
-    const availableIndices = [];
-    for (let i = 0; i < CAT_STATUSES.length; i++) {
-      if (i !== lastStatusIndex) {
-        availableIndices.push(i);
+    let selectedIndex = lastStatusIndex;
+
+    if (!preservePhrase || selectedIndex < 0 || selectedIndex >= CAT_STATUSES.length) {
+      // Exclude the immediately previous status to guarantee non-repeating rotation
+      const availableIndices = [];
+      for (let i = 0; i < CAT_STATUSES.length; i++) {
+        if (i !== lastStatusIndex) {
+          availableIndices.push(i);
+        }
       }
+
+      selectedIndex = availableIndices.length > 0
+        ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
+        : 0;
+
+      lastStatusIndex = selectedIndex;
     }
-
-    const selectedIndex = availableIndices.length > 0
-      ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
-      : 0;
-
-    lastStatusIndex = selectedIndex;
 
     const rawStatus = CAT_STATUSES[selectedIndex];
     statusText = rawStatus.replace('XX', client.guilds.cache.size);
 
-    // Dynamic ActivityType: Prefer Custom, fallback to Playing
-    let type = ActivityType.Custom;
-    
-    // Check if Custom is supported for bots (some versions/API states might vary)
-    // In D.js v14, Custom is 4, but bots often display better with Playing (0) or Watching (3)
-    // User requested Custom specifically.
-    
     client.user.setPresence({
       status: 'online',
       activities: [{
         name: statusText,
-        type: type,
+        type: ActivityType.Custom,
         state: statusText // For Custom status, 'state' is the actual text
       }]
     });
@@ -82,23 +82,41 @@ export function updateBotPresence(client) {
     // Fallback to Playing (0) if Custom fails
     try {
       client.user.setActivity(statusText, { type: ActivityType.Playing });
-    } catch (e) {}
+    } catch (_) {}
   }
 }
 
 /**
- * Starts the hourly presence rotation cron job
+ * Starts the hourly presence rotation cron job and attaches live guild event listeners
  * @param {import('discord.js').Client} client 
  */
 export function startPresenceRotation(client) {
   // Run at minute 0 of every hour (0 * * * *)
   // Timezone: Africa/Cairo
   cron.schedule('0 * * * *', () => {
-    updateBotPresence(client);
+    updateBotPresence(client, false);
   }, {
     scheduled: true,
     timezone: "Africa/Cairo"
   });
 
-  sysLog('Infrastructure Audit', { detail: 'Hourly Presence Rotator initialized (Timezone: Africa/Cairo)' });
+  // Debounced live update handler for guild join/leave events
+  const queueRealtimeSync = () => {
+    if (presenceDebounceTimeout) clearTimeout(presenceDebounceTimeout);
+    presenceDebounceTimeout = setTimeout(() => {
+      updateBotPresence(client, true);
+    }, 2000);
+  };
+
+  client.on(Events.GuildCreate, (guild) => {
+    sysLog('Infrastructure Audit', { detail: `Bot added to server: "${guild.name}" (${guild.id}). Live count: ${client.guilds.cache.size}` });
+    queueRealtimeSync();
+  });
+
+  client.on(Events.GuildDelete, (guild) => {
+    sysLog('Infrastructure Audit', { detail: `Bot removed from server: "${guild.name || 'Unknown'}" (${guild.id}). Live count: ${client.guilds.cache.size}` });
+    queueRealtimeSync();
+  });
+
+  sysLog('Infrastructure Audit', { detail: 'Hourly Presence Rotator & Live Guild Listeners initialized (Timezone: Africa/Cairo)' });
 }
