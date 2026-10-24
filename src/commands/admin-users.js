@@ -1840,11 +1840,6 @@ export async function handleAdminUserComponent(interaction) {
             if (!(await verifyAdminAccess(interaction))) return;
         }
 
-        // Defer immediately for all non-modal interactions before any async DB/API work
-        if (!interaction.isModalSubmit() && !interaction.deferred && !interaction.replied) {
-            await interaction.deferUpdate().catch(() => {});
-        }
-
         const { verifyAdminManagerAccess } = await import('../storage/admins.js');
         const customId = interaction.customId;
 
@@ -1872,6 +1867,9 @@ export async function handleAdminUserComponent(interaction) {
         }
 
         if (customId === 'admin_manage_back') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate().catch(() => {});
+            }
             const isFromSettings = Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
             if (isFromSettings) {
                 const { showMainMenu } = await import('./settings.js');
