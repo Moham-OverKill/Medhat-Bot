@@ -1809,39 +1809,34 @@ export async function handleShopPostStart(interaction) {
                      state.restockIntervalSeconds !== null ||
                      state.autoEquip !== false;
 
-  // Row 4: Action Buttons - Row 1 ([Desc] [Image] [Payout] [Price] [Config])
-  const configRow = new ActionRowBuilder().addComponents(
+  // Row 4: Action Buttons - Row 1 ([Appearance] [Config] and conditionally [Payout])
+  const paramComponents = [
     new ButtonBuilder()
-      .setCustomId(`shop_post_desc_btn:${sessionId}`)
-      .setLabel('Desc')
-      .setEmoji('📝')
-      .setStyle(state.description ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected),
-    new ButtonBuilder()
-      .setCustomId(`shop_post_image_btn:${sessionId}`)
-      .setLabel('Image')
+      .setCustomId(`shop_post_appearance_btn:${sessionId}`)
+      .setLabel('Appearance')
       .setEmoji('🖼️')
-      .setStyle(isCustomImage ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle((state.description || isCustomImage) ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected),
     new ButtonBuilder()
-      .setCustomId(`shop_post_payout_btn:${sessionId}`)
-      .setLabel('Payout')
-      .setEmoji('💰')
-      .setStyle(state.payout ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!canSetPayout || !isItemSelected || isServerManaged),
-    new ButtonBuilder()
-      .setCustomId(`shop_post_price_btn:${sessionId}`)
-      .setLabel('Price')
-      .setEmoji('🏷️')
-      .setStyle((state.overridePrice !== null && state.overridePrice !== 0) ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected),
-    new ButtonBuilder()
-      .setCustomId(`shop_post_stock_btn:${sessionId}`)
+      .setCustomId(`shop_post_config_btn:${sessionId}`)
       .setLabel('Config')
       .setEmoji('⚙️')
-      .setStyle(isCustomConfigured ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setStyle((isCustomConfigured || (state.overridePrice !== null && state.overridePrice !== 0)) ? ButtonStyle.Primary : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected)
-  );
+  ];
+
+  // Only show the 💰 Payout button if a seller is selected, otherwise hide it
+  if (canSetPayout && isItemSelected && !isServerManaged) {
+    paramComponents.push(
+      new ButtonBuilder()
+        .setCustomId(`shop_post_payout_btn:${sessionId}`)
+        .setLabel('Payout')
+        .setEmoji('💰')
+        .setStyle(state.payout ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
+  }
+
+  const configRow = new ActionRowBuilder().addComponents(paramComponents);
 
   // External Back button always returns directly to the parent screen (Shop Post list or Shop Admin Home)
   const backBase = (state.isEditing || state.fromGateway) ? 'shop_admin_post' : 'shop_admin_home';
@@ -1850,7 +1845,7 @@ export async function handleShopPostStart(interaction) {
   const confirmBtn = new ButtonBuilder()
     .setCustomId(`${state.isEditing ? 'shop_post_update' : 'shop_post_publish'}:${sessionId}`)
     .setLabel(state.isEditing ? 'Update' : 'Publish')
-    .setEmoji('🚀')
+    .setEmoji('📤')
     .setStyle(ButtonStyle.Success);
 
   let canSubmit = false;
@@ -1861,21 +1856,20 @@ export async function handleShopPostStart(interaction) {
   }
   confirmBtn.setDisabled(!canSubmit);
 
-  const actionComponents = [];
-  actionComponents.push(
+  const actionComponents = [
     new ButtonBuilder()
       .setCustomId(postBackCustomId)
       .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
-  );
+  ];
 
   if (!state.isEditing) {
     actionComponents.push(
       new ButtonBuilder()
         .setCustomId(`shop_post_reset:${sessionId}`)
         .setLabel('Reset')
-        .setEmoji('🔃')
+        .setEmoji('🔄')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!isModified)
     );
@@ -1884,8 +1878,8 @@ export async function handleShopPostStart(interaction) {
   actionComponents.push(
     new ButtonBuilder()
       .setCustomId(`shop_post_auto_equip_toggle:${sessionId}`)
-      .setLabel(`Auto Equip: ${state.autoEquip ? 'ON' : 'OFF'}`)
-      .setEmoji(state.autoEquip ? '⚡' : '⚪')
+      .setLabel('Auto Equip')
+      .setEmoji('⚡')
       .setStyle(state.autoEquip ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setDisabled(!isItemSelected || isServerManaged)
   );
@@ -1899,24 +1893,6 @@ export async function handleShopPostStart(interaction) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
   }
   components.push(new ActionRowBuilder().addComponents(userSelect));
-  if (state.showImageMenu && isCustomImage) {
-    const imageMenu = new StringSelectMenuBuilder()
-      .setCustomId(`shop_post_image_action_menu:${sessionId}`)
-      .setPlaceholder('Edit Item Image...')
-      .addOptions([
-        {
-          label: 'Update Image',
-          value: 'action_modal',
-          emoji: '➕'
-        },
-        {
-          label: 'Item Image',
-          value: 'clear_post_image',
-          emoji: '❌'
-        }
-      ]);
-    components.push(new ActionRowBuilder().addComponents(imageMenu));
-  }
   components.push(configRow);
   components.push(actionRow);
 
@@ -2126,72 +2102,149 @@ export async function handleShopPostSellerSelect(interaction) {
   await handleShopPostStart(interaction);
 }
 
-// Handle Description Button - Show Modal
-export async function handleShopPostDescBtn(interaction) {
-  const sessionId = getPostSessionId(interaction);
-  const state = (await getPendingPostSession(sessionId)) || {};
+// Handle Appearance Button - Show Combined Modal (Description + Image File)
+export async function handleShopPostAppearanceBtn(interaction) {
+  try {
+    const sessionId = getPostSessionId(interaction);
+    const state = (await getPendingPostSession(sessionId)) || {};
 
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_post_desc_modal:${sessionId}`)
-    .setTitle('Item Description');
+    let selectedItem = null;
+    let defaultImg = null;
+    if (state.itemId) {
+      try {
+        selectedItem = await getShopItem(state.itemId, interaction.guildId);
+        defaultImg = await resolveItemDefaultImage(selectedItem, interaction.guildId);
+      } catch (_) {}
+    }
 
-  // state.description holds: the embed-scraped text (edit flow) or user-entered text (create flow)
-  let descValue = (state.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const modal = new ModalBuilder()
+      .setCustomId(`shop_post_appearance_modal:${sessionId}`)
+      .setTitle('Item Appearance');
 
-  // Safety: truncate to 1000 chars to prevent Discord.js validation errors on old posts
-  if (descValue.length > 1000) descValue = descValue.substring(0, 1000);
+    // Description holds: embed-scraped text (edit flow) or user-entered text (create flow)
+    let descValue = (state.description ?? selectedItem?.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (descValue.length > 1000) descValue = descValue.substring(0, 1000);
 
-  const descInput = new TextInputBuilder()
-    .setCustomId('description')
-    .setLabel('Description')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('A very cool item that makes you look even cooler!')
-    .setValue(descValue)
-    .setRequired(false)
-    .setMaxLength(1000);
+    const descInput = new TextInputBuilder()
+      .setCustomId('description')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('A very cool item that makes you look even cooler!')
+      .setValue(descValue)
+      .setRequired(false)
+      .setMaxLength(1000);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(descInput));
-  await interaction.showModal(modal);
+    const descLabel = new LabelBuilder()
+      .setLabel('Description')
+      .setTextInputComponent(descInput);
+
+    const isCustomImage = Boolean(state.imageUrl && !isSameImageUrl(state.imageUrl, defaultImg));
+    const upload = new FileUploadBuilder()
+      .setCustomId('post_image_file')
+      .setRequired(false);
+
+    const imageLabel = new LabelBuilder()
+      .setLabel('Overwrite Default Image')
+      .setDescription(formatCurrentImageDescription(state?.imageUrl || defaultImg))
+      .setFileUploadComponent(upload);
+
+    const labelComponents = [descLabel, imageLabel];
+
+    if (isCustomImage) {
+      const clearInput = new TextInputBuilder()
+        .setCustomId('clear_image')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Type "clear" to remove custom image')
+        .setRequired(false);
+
+      const clearLabel = new LabelBuilder()
+        .setLabel('Revert to Default Image?')
+        .setTextInputComponent(clearInput);
+
+      labelComponents.push(clearLabel);
+    }
+
+    modal.addLabelComponents(...labelComponents);
+    await interaction.showModal(modal);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post appearance btn');
+  }
 }
 
-// Handle Price Button - Show Modal
-export async function handleShopPostPriceBtn(interaction) {
-  const sessionId = getPostSessionId(interaction);
-  const state = await getPendingPostSession(sessionId);
-  if (!state) {
-    return interaction.reply({
-      content: '⚠️ This post session has expired. Please reopen `/settings` > Shop > Edit Post.',
-      flags: MessageFlags.Ephemeral
-    }).catch(() => {});
+// Handle Config Button - Show Combined Modal (Price + Stocks + Max Claims + Restock Timer)
+export async function handleShopPostConfigBtn(interaction) {
+  try {
+    const sessionId = getPostSessionId(interaction);
+    const state = (await getPendingPostSession(sessionId)) || {};
+
+    let selectedItem = null;
+    if (state.itemId) {
+      try {
+        selectedItem = await getShopItem(state.itemId, interaction.guildId);
+      } catch (_) {}
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId(`shop_post_config_modal:${sessionId}`)
+      .setTitle('Post Configuration');
+
+    let currentPriceStr = '';
+    if (state.overridePrice !== null && state.overridePrice !== undefined) {
+      currentPriceStr = state.overridePrice.toString();
+    } else if (selectedItem && selectedItem.price !== null && selectedItem.price !== undefined) {
+      currentPriceStr = selectedItem.price.toString();
+    } else {
+      currentPriceStr = '0';
+    }
+
+    const priceInput = new TextInputBuilder()
+      .setCustomId('price_input')
+      .setLabel('Price')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('0 = Free')
+      .setValue(currentPriceStr)
+      .setRequired(false);
+
+    const stockInput = new TextInputBuilder()
+      .setCustomId('stock')
+      .setLabel('Stocks')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('0 = Unlimited')
+      .setValue((state.stock !== null && state.stock !== undefined && state.stock > 0) ? String(state.stock) : '')
+      .setRequired(false);
+
+    const claimLimitInput = new TextInputBuilder()
+      .setCustomId('claim_limit')
+      .setLabel('Max Claims (Per User)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Unlimited')
+      .setValue((state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0) ? String(state.claimLimit) : '')
+      .setRequired(false);
+
+    const intervalInput = new TextInputBuilder()
+      .setCustomId('restock_interval')
+      .setLabel('Restock Timer')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Disabled')
+      .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(priceInput),
+      new ActionRowBuilder().addComponents(stockInput),
+      new ActionRowBuilder().addComponents(claimLimitInput),
+      new ActionRowBuilder().addComponents(intervalInput)
+    );
+    await interaction.showModal(modal);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop post config btn');
   }
-
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_post_price_modal:${sessionId}`)
-    .setTitle('Item Price');
-
-  let currentPriceStr = '';
-  if (state.overridePrice !== null && state.overridePrice !== undefined) {
-    currentPriceStr = state.overridePrice.toString();
-  } else if (state.itemId) {
-    try {
-      const item = await getShopItem(state.itemId, interaction.guildId);
-      if (item && item.price !== null && item.price !== undefined) {
-        currentPriceStr = item.price.toString();
-      }
-    } catch (_) {}
-  }
-
-  const priceInput = new TextInputBuilder()
-    .setCustomId('price_input')
-    .setLabel('Price')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Free')
-    .setValue(currentPriceStr)
-    .setRequired(false);
-
-  modal.addComponents(new ActionRowBuilder().addComponents(priceInput));
-  await interaction.showModal(modal);
 }
+
+// Aliases for legacy/backward compatibility
+export const handleShopPostStockBtn = handleShopPostConfigBtn;
+export const handleShopPostPriceBtn = handleShopPostConfigBtn;
+export const handleShopPostDescBtn = handleShopPostAppearanceBtn;
+export const handleShopPostImageBtn = handleShopPostAppearanceBtn;
 
 export async function handleShopPostPayoutBtn(interaction) {
   const sessionId = getPostSessionId(interaction);
@@ -2230,51 +2283,6 @@ export async function handleShopPostPayoutBtn(interaction) {
   }
 }
 
-// Handle Stock / Config Button - Show Context-Aware Modal
-export async function handleShopPostStockBtn(interaction) {
-  try {
-    const sessionId = getPostSessionId(interaction);
-    const state = (await getPendingPostSession(sessionId)) || {};
-
-    const modal = new ModalBuilder()
-      .setCustomId(`shop_post_stock_modal:${sessionId}`)
-      .setTitle('Post Configuration');
-
-    const stockInput = new TextInputBuilder()
-      .setCustomId('stock')
-      .setLabel('Stocks')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Unlimited')
-      .setValue((state.stock !== null && state.stock !== undefined && state.stock > 0) ? String(state.stock) : '')
-      .setRequired(false);
-
-    const claimLimitInput = new TextInputBuilder()
-      .setCustomId('claim_limit')
-      .setLabel('Max Claims (Per User)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Unlimited')
-      .setValue((state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0) ? String(state.claimLimit) : '')
-      .setRequired(false);
-
-    const intervalInput = new TextInputBuilder()
-      .setCustomId('restock_interval')
-      .setLabel('Restock Timer')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Disabled')
-      .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
-      .setRequired(false);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(stockInput),
-      new ActionRowBuilder().addComponents(claimLimitInput),
-      new ActionRowBuilder().addComponents(intervalInput)
-    );
-    await interaction.showModal(modal);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'shop post stock btn');
-  }
-}
-
 // Handle Reset Button
 export async function handleShopPostReset(interaction) {
   await interaction.deferUpdate();
@@ -2287,49 +2295,12 @@ export async function handleShopPostReset(interaction) {
   await handleShopPostStart(interaction);
 }
 
-// Show Modal for Shop Post Image
+// Show Modal for Shop Post Image (Legacy / Direct fallback)
 export async function showShopPostImageModal(interaction, sessionId, state) {
-  const modal = new ModalBuilder()
-    .setCustomId(`shop_post_image_modal:${sessionId}`)
-    .setTitle('Item Image');
-
-  const upload = new FileUploadBuilder()
-    .setCustomId('post_image_file')
-    .setRequired(false);
-
-  const imageLabel = new LabelBuilder()
-    .setLabel('Overwrite Default Image')
-    .setDescription(formatCurrentImageDescription(state?.imageUrl))
-    .setFileUploadComponent(upload);
-
-  modal.addLabelComponents(imageLabel);
-  await interaction.showModal(modal);
+  return handleShopPostAppearanceBtn(interaction);
 }
 
-// Handle Image URL Button - Direct Modal (if no custom image) or Toggle Select Menu (if custom image)
-export async function handleShopPostImageBtn(interaction) {
-  const sessionId = getPostSessionId(interaction);
-  const state = (await getPendingPostSession(sessionId)) || {};
-
-  let defaultImg = null;
-  if (state.itemId) {
-    try {
-      const item = await getShopItem(state.itemId, interaction.guildId);
-      defaultImg = await resolveItemDefaultImage(item, interaction.guildId);
-    } catch (_) {}
-  }
-  const isCustomImage = Boolean(state.imageUrl && !isSameImageUrl(state.imageUrl, defaultImg));
-
-  if (!isCustomImage) {
-    return showShopPostImageModal(interaction, sessionId, state);
-  }
-
-  state.showImageMenu = !state.showImageMenu;
-  await setPendingPostSession(sessionId, state);
-  return handleShopPostStart(interaction);
-}
-
-// Handle Image Action Select Menu (Add / Remove)
+// Handle Image Action Select Menu (Add / Remove - Legacy no-op fallback)
 export async function handleShopPostImageActionSelect(interaction) {
   const sessionId = getPostSessionId(interaction);
   const selectedValue = interaction.values[0];
@@ -2338,7 +2309,7 @@ export async function handleShopPostImageActionSelect(interaction) {
   if (selectedValue === 'action_modal') {
     state.showImageMenu = false;
     await setPendingPostSession(sessionId, state);
-    return showShopPostImageModal(interaction, sessionId, state);
+    return handleShopPostAppearanceBtn(interaction);
   }
 
   if (!interaction.deferred && !interaction.replied) {
@@ -2353,7 +2324,7 @@ export async function handleShopPostImageActionSelect(interaction) {
   }
 }
 
-// Handle All Post Modal Submits (Image, Desc, Payout, Stock, Drop, Auto, Price)
+// Handle All Post Modal Submits (Appearance, Config, Payout, Legacy)
 export async function handleShopPostModalSubmit(interaction) {
   try {
     await interaction.deferUpdate();
@@ -2371,7 +2342,105 @@ export async function handleShopPostModalSubmit(interaction) {
       });
     }
 
-    if (customId === 'shop_post_image_modal') {
+    if (customId === 'shop_post_appearance_modal') {
+      try {
+        const descVal = (interaction.fields.getTextInputValue('description') || '').trim();
+        state.description = descVal === '' ? null : descVal;
+      } catch (_) {}
+
+      let uploadedFile = null;
+      try {
+        const uploadedFiles = interaction.fields.getUploadedFiles?.('post_image_file');
+        uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
+      } catch (_) {}
+
+      if (uploadedFile) {
+        const uploadRes = await uploadHostAsset(interaction.client, 'items', interaction.guild, uploadedFile, {
+          filename: uploadedFile.name,
+          label: `🖼️ Shop Post Image: **${state.itemName || 'Item'}**`
+        });
+        state.imageUrl = uploadRes.url;
+      } else {
+        let clearVal = '';
+        try {
+          clearVal = (interaction.fields.getTextInputValue('clear_image') || '').trim().toLowerCase();
+        } catch (_) {}
+        if (clearVal === 'clear' || clearVal === 'none' || clearVal === 'default') {
+          state.imageUrl = null;
+        }
+      }
+    } else if (
+      customId === 'shop_post_config_modal' ||
+      customId === 'shop_post_stock_modal' ||
+      customId === 'shop_post_drop_modal'
+    ) {
+      // 1. Price
+      try {
+        const rawPrice = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
+        if (rawPrice === '' || rawPrice === '0' || rawPrice === 'free' || rawPrice === 'null' || rawPrice === 'none') {
+          state.overridePrice = 0;
+        } else {
+          const newPrice = /^\d+$/.test(rawPrice) ? parseInt(rawPrice, 10) : -1;
+          if (newPrice < 0) {
+            return interaction.followUp({ content: 'Please enter a valid non-negative whole number for price (or leave empty for Free).', flags: MessageFlags.Ephemeral });
+          }
+          state.overridePrice = newPrice;
+        }
+      } catch (_) {}
+
+      // 2. Stocks
+      let stockVal = '';
+      try {
+        stockVal = (interaction.fields.getTextInputValue('stock') || interaction.fields.getTextInputValue('drop_stock') || '').trim().toLowerCase();
+      } catch (_) {}
+
+      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited' || stockVal === 'null' || stockVal === 'none') {
+        state.stock = null;
+        state.maxStock = null;
+      } else {
+        if (!/^\d+$/.test(stockVal)) {
+          return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
+        }
+        const num = parseInt(stockVal, 10);
+        state.stock = num <= 0 ? null : num;
+        state.maxStock = state.stock;
+      }
+
+      // 3. Max Claims
+      let claimLimitVal = '';
+      try {
+        claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim().toLowerCase();
+      } catch (_) {}
+
+      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited' || claimLimitVal === 'null' || claimLimitVal === 'none') {
+        state.claimLimit = null;
+      } else {
+        if (!/^\d+$/.test(claimLimitVal)) {
+          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
+        }
+        const num = parseInt(claimLimitVal, 10);
+        state.claimLimit = num <= 0 ? null : num;
+      }
+
+      // 4. Restock Timer
+      let timerVal = '';
+      try {
+        timerVal = (interaction.fields.getTextInputValue('restock_interval') || '').trim().toLowerCase();
+      } catch (_) {}
+
+      if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'disabled' || timerVal === 'off' || timerVal === 'null' || timerVal === 'none') {
+        state.restockIntervalSeconds = null;
+      } else {
+        const intervalSeconds = parseIntervalStringToSeconds(timerVal);
+        if (!intervalSeconds) {
+          return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or leave empty to disable.', flags: MessageFlags.Ephemeral });
+        }
+        state.restockIntervalSeconds = intervalSeconds;
+      }
+
+      state.stockConfigured = true;
+      state.stockModified = true;
+    } else if (customId === 'shop_post_image_modal') {
       const uploadedFiles = interaction.fields.getUploadedFiles?.('post_image_file');
       const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
       if (uploadedFile) {
@@ -2401,7 +2470,6 @@ export async function handleShopPostModalSubmit(interaction) {
             state.imageUrl = cleaned;
           }
         }
-        // If left empty, keep existing state.imageUrl untouched
       }
     } else if (customId === 'shop_post_desc_modal') {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
@@ -2417,55 +2485,6 @@ export async function handleShopPostModalSubmit(interaction) {
       }
 
       state.payout = (inputAmount > 0) ? inputAmount : null;
-    } else if (customId === 'shop_post_stock_modal' || customId === 'shop_post_drop_modal') {
-      let stockVal = '';
-      let timerVal = '';
-      let claimLimitVal = '';
-
-      try {
-        stockVal = (interaction.fields.getTextInputValue('stock') || interaction.fields.getTextInputValue('drop_stock') || '').trim().toLowerCase();
-      } catch (_) {}
-      try {
-        timerVal = (interaction.fields.getTextInputValue('restock_interval') || '').trim().toLowerCase();
-      } catch (_) {}
-      try {
-        claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim().toLowerCase();
-      } catch (_) {}
-
-      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited' || stockVal === 'null' || stockVal === 'none') {
-        state.stock = null;
-        state.maxStock = null;
-      } else {
-        if (!/^\d+$/.test(stockVal)) {
-          return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
-        }
-        const num = parseInt(stockVal, 10);
-        state.stock = num <= 0 ? null : num;
-        state.maxStock = state.stock;
-      }
-
-      if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'disabled' || timerVal === 'off' || timerVal === 'null' || timerVal === 'none') {
-        state.restockIntervalSeconds = null;
-      } else {
-        const intervalSeconds = parseIntervalStringToSeconds(timerVal);
-        if (!intervalSeconds) {
-          return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or leave empty to disable.', flags: MessageFlags.Ephemeral });
-        }
-        state.restockIntervalSeconds = intervalSeconds;
-      }
-
-      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited' || claimLimitVal === 'null' || claimLimitVal === 'none') {
-        state.claimLimit = null;
-      } else {
-        if (!/^\d+$/.test(claimLimitVal)) {
-          return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
-        }
-        const num = parseInt(claimLimitVal, 10);
-        state.claimLimit = num <= 0 ? null : num;
-      }
-
-      state.stockConfigured = true;
-      state.stockModified = true;
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
       
