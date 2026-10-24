@@ -20,7 +20,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
-import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled, getItemEmbedColor } from '../shared.js';
+import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled, getItemEmbedColor, safeDeferUpdate } from '../shared.js';
 import { uploadHostAsset } from '../utils/image-host.js';
 
 import { query } from '../storage/postgres.js';
@@ -2767,12 +2767,13 @@ export async function handleShopPostPublish(interaction) {
 
     try {
       const pool = (await import('../storage/postgres.js')).getPool();
+      const customDesc = (description && description.trim().length > 0) ? description.trim() : null;
       await pool.query(
         `INSERT INTO shop_posts (
           message_id, guild_id, channel_id, item_id, custom_image_url,
           post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds,
-          max_stock, current_stock, override_price, last_restocked_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+          max_stock, current_stock, override_price, last_restocked_at, custom_description, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
         ON CONFLICT (message_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           item_id = EXCLUDED.item_id,
@@ -2785,11 +2786,12 @@ export async function handleShopPostPublish(interaction) {
           current_stock = EXCLUDED.current_stock,
           override_price = EXCLUDED.override_price,
           last_restocked_at = EXCLUDED.last_restocked_at,
+          custom_description = EXCLUDED.custom_description,
           updated_at = NOW()`,
         [
           postMsg.id, interaction.guildId, channelId, itemId, isCustom ? imageUrl : null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
-          maxStock, postStock, effectivePrice, lastRestockedAt
+          maxStock, postStock, effectivePrice, lastRestockedAt, customDesc
         ]
       );
     } catch (_) {}
@@ -5482,8 +5484,8 @@ export async function handleShopPostEditLayout(interaction) {
 
 export async function handleShopEditPostUrlSubmit(interaction) {
   try {
-    // Defer update to target the original choice panel message
-    await interaction.deferUpdate();
+    // Defer update safely to target the original choice panel message
+    if (!await safeDeferUpdate(interaction)) return;
 
     const url = (interaction.fields.getTextInputValue('message_url') || '').trim();
 
@@ -5503,65 +5505,77 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // Fetch Channel & Message
     const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
     if (!channel) {
-      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL: Channel not found or bot lacks permissions.', flags: MessageFlags.Ephemeral });
     }
 
     const message = await channel.messages.fetch(messageId).catch(() => null);
     if (!message) {
-      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL: Message could not be found.', flags: MessageFlags.Ephemeral });
     }
 
     // Author verification
     if (message.author.id !== interaction.client.user.id) {
-      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
+      return interaction.followUp({ content: '❌ Invalid Message URL: Message was not posted by this bot.', flags: MessageFlags.Ephemeral });
     }
 
-    // Signature verification (Find Buy Button)
-    let buyButton = null;
-    for (const row of message.components) {
-      for (const component of row.components) {
-        if (component.type === 2 && component.customId && component.customId.startsWith('bank_shop_buy_')) {
-          buyButton = component;
-          break;
-        }
-      }
-      if (buyButton) break;
-    }
-
-    if (!buyButton) {
-      return interaction.followUp({ content: '❌ Invalid Message URL', flags: MessageFlags.Ephemeral });
-    }
-
-    // Parse customId parts: bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
-    const parts = buyButton.customId.split('_');
-    const itemId = parseInt(parts[3], 10);
-    const sellerId = parts[4] === '0' ? null : parts[4];
-    const payout = parts[5] === '0' ? null : parseInt(parts[5], 10);
-    const overridePrice = (parts[6] !== undefined && parts[6] !== '' && !isNaN(parseInt(parts[6], 10))) ? parseInt(parts[6], 10) : null;
-
-    const firstEmbed = message.embeds[0];
-    let embedDescription = firstEmbed?.description || null;
-    let embedImageUrl = firstEmbed?.image?.url || null;
-
-    // Check shop_posts tracking
+    // Check shop_posts tracking first to ensure resilience even if message components are stripped
     let postRow = null;
     if (messageId) {
       try {
         const spRes = await query(
-          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at, item_id
+          `SELECT custom_image_url, post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds, max_stock, current_stock, override_price, last_restocked_at, created_at, item_id, custom_description
            FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [messageId]
         );
         if (spRes.rows.length > 0) {
           postRow = spRes.rows[0];
-          if (!embedImageUrl && postRow.custom_image_url) {
-            embedImageUrl = postRow.custom_image_url;
-          }
         }
       } catch (_) {}
     }
 
-    const resolvedItemId = (postRow && postRow.item_id) ? postRow.item_id : itemId;
+    // Signature verification (Find Buy Button: bank_shop_buy_ or force_buy_)
+    let buyButton = null;
+    if (Array.isArray(message.components)) {
+      for (const row of message.components) {
+        if (Array.isArray(row.components)) {
+          for (const component of row.components) {
+            if (component.type === 2 && component.customId && (component.customId.startsWith('bank_shop_buy_') || component.customId.startsWith('force_buy_'))) {
+              buyButton = component;
+              break;
+            }
+          }
+        }
+        if (buyButton) break;
+      }
+    }
+
+    if (!buyButton && !postRow) {
+      return interaction.followUp({ content: '❌ Invalid Message URL: Not a valid shop post message.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Parse customId parts if buyButton is available: bank_shop_buy_[itemId]_[sellerId]_[payout]_[overridePrice]
+    let parsedItemId = null;
+    let sellerId = null;
+    let payout = null;
+    let overridePrice = null;
+
+    if (buyButton && buyButton.customId) {
+      const parts = buyButton.customId.split('_');
+      // bank(0) shop(1) buy(2) [itemId](3) [sellerId](4) [payout](5) [overridePrice](6)
+      // OR force(0) buy(1) [itemId](2) [sellerId](3) [payout](4) [overridePrice](5)
+      const isForce = buyButton.customId.startsWith('force_buy_');
+      const itemIdx = isForce ? 2 : 3;
+      const sellerIdx = isForce ? 3 : 4;
+      const payoutIdx = isForce ? 4 : 5;
+      const priceIdx = isForce ? 5 : 6;
+
+      parsedItemId = parseInt(parts[itemIdx], 10);
+      sellerId = parts[sellerIdx] === '0' ? null : parts[sellerIdx];
+      payout = parts[payoutIdx] === '0' ? null : parseInt(parts[payoutIdx], 10);
+      overridePrice = (parts[priceIdx] !== undefined && parts[priceIdx] !== '' && !isNaN(parseInt(parts[priceIdx], 10))) ? parseInt(parts[priceIdx], 10) : null;
+    }
+
+    const resolvedItemId = (postRow && postRow.item_id) ? postRow.item_id : parsedItemId;
 
     // Verify item exists in DB using resolvedItemId
     const item = await getShopItem(resolvedItemId, guildId);
@@ -5569,15 +5583,26 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       return interaction.followUp({ content: '❌ Invalid Message URL: Target item no longer exists in shop catalog.', flags: MessageFlags.Ephemeral });
     }
 
-    // The message embed is the source of truth for description — always use what's visible on the post
-    // No database comparison needed; the user wants to edit what they see
+    const firstEmbed = message.embeds[0];
+    let embedDescription = firstEmbed?.description || null;
+    let embedImageUrl = firstEmbed?.image?.url || postRow?.custom_image_url || null;
+
     const defaultImage = await resolveItemDefaultImage(item, guildId);
     const imageUrl = (embedImageUrl && !isSameImageUrl(embedImageUrl, defaultImage)) ? embedImageUrl : null;
 
-    // Clean the embed description: strip carriage returns and trim
-    const description = embedDescription
+    // Preserve description priority:
+    // 1. Existing embed description (if genuine and not an error message)
+    // 2. postRow.custom_description
+    // 3. item.description
+    const isCorruptedDesc = embedDescription && (
+      embedDescription.includes('Action Execution Failed') ||
+      embedDescription.includes('❌') ||
+      embedDescription.includes('Missing Permissions')
+    );
+    const cleanEmbedDesc = (embedDescription && !isCorruptedDesc)
       ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() || null
       : null;
+    const description = cleanEmbedDesc || postRow?.custom_description || item.description || null;
 
     // Stock priority: postRow.max_stock if tracked in shop_posts (original stock before anyone bought it),
     // then embed scraped stock / max stock, then catalog stock
@@ -5935,12 +5960,13 @@ export async function handleShopPostUpdate(interaction) {
     verifyAndHealMessageImages(message, { expectedImageUrl: finalImage || null });
 
     try {
+      const customDesc = (description && description.trim().length > 0) ? description.trim() : null;
       await pool.query(
         `INSERT INTO shop_posts (
           message_id, guild_id, channel_id, item_id, custom_image_url,
           post_mode, auto_equip, claim_limit_per_user, restock_interval_seconds,
-          max_stock, current_stock, override_price, last_restocked_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+          max_stock, current_stock, override_price, last_restocked_at, custom_description, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
         ON CONFLICT (message_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           item_id = EXCLUDED.item_id,
@@ -5953,11 +5979,12 @@ export async function handleShopPostUpdate(interaction) {
           current_stock = EXCLUDED.current_stock,
           override_price = EXCLUDED.override_price,
           last_restocked_at = EXCLUDED.last_restocked_at,
+          custom_description = EXCLUDED.custom_description,
           updated_at = NOW()`,
         [
           message.id, interaction.guildId, message.channelId || channel.id, itemId, isCustom ? imageUrl : null,
           effectivePostMode, autoEquip, claimLimit, restockIntervalSeconds,
-          maxStock, postStock, effectivePrice, lastRestockedAt
+          maxStock, postStock, effectivePrice, lastRestockedAt, customDesc
         ]
       );
 
