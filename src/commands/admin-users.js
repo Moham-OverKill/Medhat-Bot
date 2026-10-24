@@ -2469,44 +2469,31 @@ export async function showAdminManagement(interaction, fromSettings = false) {
     const admins = await getServerAdmins(guildId);
     const adminRoles = await getServerAdminRoles(guildId);
 
-    // Fetch members with Discord Administrator permission
-    const discordAdminIds = new Set();
+    // 1. Fetch and sort Discord Administrator members by highest role descending
+    const discordAdminMembers = [];
     if (guild) {
         try {
             await guild.members.fetch().catch(() => {});
             for (const member of (guild.members?.cache?.values?.() || [])) {
                 if (!member.user?.bot && member.id !== ownerId && member.permissions?.has(PermissionFlagsBits.Administrator)) {
-                    discordAdminIds.add(member.id);
+                    discordAdminMembers.push({
+                        id: member.id,
+                        position: member.roles?.highest?.position ?? 0,
+                        name: member.displayName || member.user?.username || member.id
+                    });
                 }
             }
+            discordAdminMembers.sort((a, b) => b.position - a.position || a.name.localeCompare(b.name));
         } catch (err) {
             sysError('Failed to fetch Discord administrators for admin panel', err, { guildId });
         }
     }
 
-    // Role Lines: Prune ghost roles and format with (role) tag
-    const roleLines = [];
-    for (const r of adminRoles) {
-        const role = guild?.roles?.cache?.get(r.role_id) || await guild?.roles?.fetch(r.role_id).catch(() => null);
-        if (!role) {
-            await removeServerAdminRole(guildId, r.role_id).catch(() => {});
-            continue;
-        }
-        roleLines.push(`• <@&${r.role_id}> (role)`);
-    }
-
-    const userLines = [];
-    if (ownerId) {
-        userLines.push(`• <@${ownerId}> (Owner)`);
-    }
-    for (const adminId of discordAdminIds) {
-        userLines.push(`• <@${adminId}> (Admin)`);
-    }
-    for (const roleLine of roleLines) {
-        userLines.push(roleLine);
-    }
+    // 2. Fetch and sort Whitelisted Bot Admin members by highest role descending
+    const whitelistedMembers = [];
+    const discordAdminIdSet = new Set(discordAdminMembers.map(m => m.id));
     for (const a of admins) {
-        if (!discordAdminIds.has(a.user_id) && a.user_id !== ownerId) {
+        if (!discordAdminIdSet.has(a.user_id) && a.user_id !== ownerId) {
             let member = guild?.members?.cache?.get(a.user_id);
             if (!member && guild) {
                 member = await guild.members.fetch(a.user_id).catch(() => null);
@@ -2515,8 +2502,44 @@ export async function showAdminManagement(interaction, fromSettings = false) {
                 await removeServerAdmin(guildId, a.user_id).catch(() => {});
                 continue;
             }
-            userLines.push(`• <@${a.user_id}>`);
+            whitelistedMembers.push({
+                id: a.user_id,
+                position: member.roles?.highest?.position ?? 0,
+                name: member.displayName || member.user?.username || a.user_id
+            });
         }
+    }
+    whitelistedMembers.sort((a, b) => b.position - a.position || a.name.localeCompare(b.name));
+
+    // 3. Fetch Admin Roles, prune ghost roles, and sort by role position descending
+    const validAdminRoles = [];
+    for (const r of adminRoles) {
+        const role = guild?.roles?.cache?.get(r.role_id) || await guild?.roles?.fetch(r.role_id).catch(() => null);
+        if (!role) {
+            await removeServerAdminRole(guildId, r.role_id).catch(() => {});
+            continue;
+        }
+        validAdminRoles.push({
+            id: r.role_id,
+            position: role.position ?? 0,
+            name: role.name
+        });
+    }
+    validAdminRoles.sort((a, b) => b.position - a.position || a.name.localeCompare(b.name));
+
+    // 4. Construct userLines: Owner -> Discord Admins -> Whitelisted Users -> Roles at the bottom
+    const userLines = [];
+    if (ownerId) {
+        userLines.push(`• <@${ownerId}> (Owner)`);
+    }
+    for (const admin of discordAdminMembers) {
+        userLines.push(`• <@${admin.id}> (Admin)`);
+    }
+    for (const user of whitelistedMembers) {
+        userLines.push(`• <@${user.id}>`);
+    }
+    for (const role of validAdminRoles) {
+        userLines.push(`• <@&${role.id}> (role)`);
     }
 
     const desc = userLines.join('\n') + '\n\n' +
