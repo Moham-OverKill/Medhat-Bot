@@ -114,8 +114,12 @@ function getPostSessionId(interaction) {
 export async function getPendingPostSession(sessionId) {
   if (!sessionId) return null;
   if (pendingPosts.has(sessionId)) {
-    const memState = pendingPosts.get(sessionId);
-    if (memState) return memState;
+    let memState = pendingPosts.get(sessionId);
+    if (typeof memState === 'string') {
+      try { memState = JSON.parse(memState); } catch (_) {}
+      pendingPosts.set(sessionId, memState);
+    }
+    if (memState && typeof memState === 'object') return memState;
   }
   try {
     const res = await query(
@@ -123,9 +127,18 @@ export async function getPendingPostSession(sessionId) {
       [sessionId]
     );
     if (res.rows.length > 0 && res.rows[0].state) {
-      const dbState = res.rows[0].state;
-      pendingPosts.set(sessionId, dbState);
-      return dbState;
+      let dbState = res.rows[0].state;
+      while (typeof dbState === 'string') {
+        try {
+          dbState = JSON.parse(dbState);
+        } catch (_) {
+          break;
+        }
+      }
+      if (dbState && typeof dbState === 'object') {
+        pendingPosts.set(sessionId, dbState);
+        return dbState;
+      }
     }
   } catch (_) {}
   return null;
@@ -138,13 +151,14 @@ export async function setPendingPostSession(sessionId, state) {
   pendingPosts.set(sessionId, state);
 
   try {
+    const jsonState = typeof state === 'string' ? state : JSON.stringify(state);
     await query(
       `INSERT INTO shop_post_sessions (session_id, state, updated_at)
-       VALUES ($1, $2, NOW())
+       VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (session_id) DO UPDATE SET
          state = EXCLUDED.state,
          updated_at = NOW()`,
-      [sessionId, JSON.stringify(state)]
+      [sessionId, jsonState]
     );
   } catch (_) {}
 }
@@ -2171,7 +2185,51 @@ export async function handleShopPostAppearanceBtn(interaction) {
 export async function handleShopPostConfigBtn(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
-    const state = (await getPendingPostSession(sessionId)) || {};
+    let state = (await getPendingPostSession(sessionId)) || {};
+    if (typeof state === 'string') {
+      try { state = JSON.parse(state); } catch (_) {}
+    }
+
+    // Hydration Fallback: If session state was lost across restart, reconstruct from interaction.message embed!
+    const embed = interaction.message?.embeds?.[0];
+    const embedTitle = embed?.title || '';
+    const embedDesc = embed?.description || '';
+
+    if (embedTitle && (state.isEditing === undefined || state.isEditing === null)) {
+      state.isEditing = embedTitle.toLowerCase().startsWith('editing');
+    }
+
+    if (embedDesc) {
+      if (state.overridePrice === undefined || state.overridePrice === null) {
+        const priceMatch = embedDesc.match(/for\s*`([\d,]+)`/i);
+        if (priceMatch) {
+          state.overridePrice = parseInt(priceMatch[1].replace(/,/g, ''), 10);
+        } else if (/for\s*`Free`/i.test(embedDesc)) {
+          state.overridePrice = 0;
+        }
+      }
+
+      if (state.stock === undefined || state.stock === null) {
+        const stockMatch = embedDesc.match(/•\s*`([\d,]+)`\s*Stocks?/i);
+        if (stockMatch) {
+          state.stock = parseInt(stockMatch[1].replace(/,/g, ''), 10);
+        }
+      }
+
+      if (state.restockIntervalSeconds === undefined || state.restockIntervalSeconds === null) {
+        const timerMatch = embedDesc.match(/Every\s*`([^`\n]+)`/i);
+        if (timerMatch) {
+          state.restockIntervalSeconds = parseIntervalStringToSeconds(timerMatch[1]);
+        }
+      }
+
+      if (state.claimLimit === undefined || state.claimLimit === null) {
+        const claimMatch = embedDesc.match(/•\s*`([\d,]+)`\s*Per User/i);
+        if (claimMatch) {
+          state.claimLimit = parseInt(claimMatch[1].replace(/,/g, ''), 10);
+        }
+      }
+    }
 
     let selectedItem = null;
     if (state.itemId) {
@@ -2185,15 +2243,12 @@ export async function handleShopPostConfigBtn(interaction) {
       .setTitle('Post Configuration');
 
     let priceValue = '';
-    if (state.isEditing) {
-      const editPrice = (state.overridePrice !== null && state.overridePrice !== undefined)
-        ? state.overridePrice
-        : (selectedItem?.price ?? 0);
-      if (editPrice && editPrice > 0) {
-        priceValue = String(editPrice);
-      }
-    } else if (state.overridePrice !== null && state.overridePrice !== undefined && state.overridePrice > 0) {
-      priceValue = String(state.overridePrice);
+    const editPrice = (state.overridePrice !== null && state.overridePrice !== undefined)
+      ? Number(state.overridePrice)
+      : (selectedItem?.price !== null && selectedItem?.price !== undefined ? Number(selectedItem.price) : 0);
+
+    if (editPrice > 0) {
+      priceValue = String(editPrice);
     }
 
     const priceInput = new TextInputBuilder()
@@ -2214,8 +2269,12 @@ export async function handleShopPostConfigBtn(interaction) {
       .setPlaceholder('Unlimited')
       .setRequired(false);
 
-    if (state.stock !== null && state.stock !== undefined && state.stock > 0) {
-      stockInput.setValue(String(state.stock));
+    const stockVal = (state.stock !== null && state.stock !== undefined && state.stock > 0)
+      ? Number(state.stock)
+      : ((state.maxStock !== null && state.maxStock !== undefined && state.maxStock > 0) ? Number(state.maxStock) : null);
+
+    if (stockVal !== null && stockVal > 0) {
+      stockInput.setValue(String(stockVal));
     }
 
     const claimLimitInput = new TextInputBuilder()
@@ -5574,37 +5633,51 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       ? embedDescription.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim() || null
       : null;
 
-    // Stock priority: postRow.current_stock if tracked in shop_posts, then embed scraped stock, then catalog stock
+    // Stock priority: postRow.max_stock if tracked in shop_posts (original stock before anyone bought it),
+    // then embed scraped stock / max stock, then catalog stock
     let scrapedStock = item.stock;
-    if (postRow && postRow.current_stock !== undefined) {
-      scrapedStock = postRow.current_stock;
-    } else if (firstEmbed && firstEmbed.fields) {
+    let embedMaxStock = null;
+    let embedCurrentStock = null;
+
+    if (firstEmbed && firstEmbed.fields) {
       const stockField = firstEmbed.fields.find(f => f.name && (f.name.includes('Stock') || f.name.includes('Out Of Stock') || f.name.includes('Unlimited')));
       if (stockField) {
         const val = stockField.value || '';
         const nameVal = stockField.name || '';
         if (val.includes('Unlimited') || nameVal.includes('Unlimited')) {
           scrapedStock = null;
+          embedMaxStock = null;
+          embedCurrentStock = null;
         } else if (nameVal.includes('Out Of Stock') || val.includes('Sold Out') || val.includes('All Claimed')) {
+          embedCurrentStock = 0;
           scrapedStock = 0;
         } else {
-          const nameMatch = nameVal.match(/🟢\s*(\d+)(?:\/\d+)?\s*In Stock/i);
-          if (nameMatch) {
-            scrapedStock = parseInt(nameMatch[1], 10);
+          const slashMatch = nameVal.match(/(\d+)\s*\/\s*(\d+)/) || val.match(/(\d+)\s*\/\s*(\d+)/);
+          if (slashMatch) {
+            embedCurrentStock = parseInt(slashMatch[1], 10);
+            embedMaxStock = parseInt(slashMatch[2], 10);
+            scrapedStock = embedMaxStock;
           } else {
-            const matchNum = val.match(/\*\*(\d+)\*\*/);
-            if (matchNum) {
-              scrapedStock = parseInt(matchNum[1], 10);
+            const nameMatch = nameVal.match(/🟢\s*(\d+)(?:\/\d+)?\s*In Stock/i) || val.match(/\*\*(\d+)\*\*/);
+            if (nameMatch) {
+              embedCurrentStock = parseInt(nameMatch[1], 10);
+              scrapedStock = embedCurrentStock;
             }
           }
         }
       }
     }
 
+    // Original stock before anyone bought the item:
+    const configuredStock = (postRow && postRow.max_stock !== null && postRow.max_stock !== undefined)
+      ? Number(postRow.max_stock)
+      : (embedMaxStock ?? scrapedStock ?? null);
+    const liveRemainingStock = (postRow && postRow.current_stock !== undefined) ? postRow.current_stock : (embedCurrentStock ?? configuredStock);
+
     const autoEquip = postRow?.auto_equip === true;
     const claimLimit = postRow?.claim_limit_per_user || null;
     const restockIntervalSeconds = (postRow?.restock_interval_seconds && postRow.restock_interval_seconds > 0) ? postRow.restock_interval_seconds : null;
-    const maxStock = postRow?.max_stock || null;
+    const maxStock = configuredStock;
     const postMode = (postRow?.post_mode === 'drop') ? 'drop' : 'normal';
 
     // Price Resolution Priority:
@@ -5650,8 +5723,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       imageUrl,
       overridePrice: effectiveEditPrice,
       originalPrice: effectiveEditPrice,
-      stock: scrapedStock,
-      originalStock: scrapedStock,
+      stock: configuredStock,
+      originalStock: configuredStock,
       stockConfigured: true,
       stockModified: false,
       isEditing: true,
@@ -5664,7 +5737,8 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       autoEquip,
       claimLimit,
       restockIntervalSeconds,
-      maxStock,
+      maxStock: configuredStock,
+      liveCurrentStock: liveRemainingStock,
       lastRestockedAt: postRow?.last_restocked_at || null,
       createdAt: postRow?.created_at || null,
       originalRestockIntervalSeconds: restockIntervalSeconds,
