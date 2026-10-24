@@ -125,4 +125,13 @@ console.log('--- Testing Custom Description & Post Editing Logic ---');
   console.log('✓ Test 4: Both standard and force_buy button signatures parsed seamlessly');
 }
 
+// Test 5: resolveItemDefaultImage is defined and exported from shop-setup.js
+{
+  const { resolveItemDefaultImage } = await import('../src/commands/shop-setup.js');
+  assert.strictEqual(typeof resolveItemDefaultImage, 'function');
+  const resolved = await resolveItemDefaultImage({ default_image_url: 'https://example.com/item.png' });
+  assert.strictEqual(resolved, 'https://example.com/item.png');
+  console.log('✓ Test 5: resolveItemDefaultImage is imported and exported correctly in shop-setup.js');
+}
+
 console.log('\n--- All Description & Post Editing Tests Passed! ---');

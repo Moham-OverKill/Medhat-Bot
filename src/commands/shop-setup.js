@@ -62,7 +62,8 @@ import { cleanImageUrl, isSameImageUrl } from '../utils/embed-sanitizer.js';
 const pendingPosts = new Map();
 const PENDING_POST_SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-export { resolveItemDefaultImage, buildShopPostPayload } from '../utils/shop-post-builder.js';
+import { resolveItemDefaultImage, buildShopPostPayload } from '../utils/shop-post-builder.js';
+export { resolveItemDefaultImage, buildShopPostPayload };
 
 /**
  * Resolve the isolated post-staging session key for an interaction.
@@ -5658,7 +5659,7 @@ export async function handleShopEditPostUrlSubmit(interaction) {
     // 4. Catalog item.price fallback
     let effectiveEditPrice = null;
 
-    if (buyButton.label) {
+    if (buyButton && buyButton.label) {
       const lbl = buyButton.label.trim();
       if (lbl === 'CLAIM' || /free/i.test(lbl)) {
         effectiveEditPrice = 0;
