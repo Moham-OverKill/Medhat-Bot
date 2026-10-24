@@ -724,6 +724,19 @@ async function createTables() {
       );
     `);
 
+    // Table for deployed color panel cards tracking
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS color_panels (
+        message_id VARCHAR(64) PRIMARY KEY,
+        guild_id VARCHAR(64) NOT NULL,
+        channel_id VARCHAR(64) NOT NULL,
+        panel_type VARCHAR(16) NOT NULL DEFAULT 'normal',
+        panel_index INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_color_panels_guild ON color_panels(guild_id);
+    `);
+
     // Table for leaderboard channel & message tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS leaderboard_config (
