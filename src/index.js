@@ -24,6 +24,7 @@ import { startQuestScheduler } from './cron/quests.js';
 import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { startExpirationScheduler } from './cron/expirations.js';
 import { startShopRestockScheduler } from './cron/shop-restock.js';
+import { startStartupSelfHealing } from './cron/self-healing.js';
 import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
@@ -391,6 +392,7 @@ client.once(Events.ClientReady, async () => {
     startExpirationScheduler(client);
     startShopRestockScheduler(client);
     startWeeklySummaryScheduler(client);
+    startStartupSelfHealing(client);
 
     // Sweep and purge any departed bot admins across all guilds (runs non-blocking in background)
     import('./storage/admins.js').then(({ auditAndPruneDepartedAdmins, auditAndPruneDepartedAdminRoles }) => {

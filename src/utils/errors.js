@@ -202,12 +202,21 @@ export async function handleInteractionError(interaction, error, context = 'Acti
   }
 
   try {
+    // Determine whether this interaction is attached to a channel message (buttons, select menus)
+    const isMessageComponent = (typeof interaction.isMessageComponent === 'function' && interaction.isMessageComponent()) || Boolean(interaction.message);
+
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ 
         embeds: [embed], 
         flags: MessageFlags.Ephemeral 
-      }).catch(() => {
-        return interaction.editReply({ files: [], embeds: [embed] }).catch(() => {});
+      }).catch(async () => {
+        // CRITICAL GUARD: Never call editReply on a public message component!
+        // Calling editReply on a non-ephemeral message component overwrites the public channel message
+        // (e.g. shop post, hub interface, trade offer) with this error embed.
+        // Only call editReply if the interaction was explicitly deferred as ephemeral or is a slash command.
+        if (interaction.ephemeral || (!isMessageComponent && !interaction.message)) {
+          await interaction.editReply({ files: [], embeds: [embed] }).catch(() => {});
+        }
       });
     } else {
       await interaction.reply({ 
