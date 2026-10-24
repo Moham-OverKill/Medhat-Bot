@@ -72,6 +72,8 @@ import {
   handleShopPostModeSelect,
   handleShopPostAutoEquipToggle,
   handleShopPostSellerSelect,
+  handleShopPostAppearanceBtn,
+  handleShopPostConfigBtn,
   handleShopPostDescBtn,
   handleShopPostPayoutBtn,
   handleShopPostImageBtn,
@@ -249,6 +251,8 @@ export function setupComponentHandlers(client) {
           const boxId = parseInt(interaction.customId.replace('shop_lb_images_modal_', '').split('_')[0], 10);
           await handleLootBoxImagesSubmit(interaction, boxId);
         } else if (
+          interaction.customId.startsWith('shop_post_appearance_modal') ||
+          interaction.customId.startsWith('shop_post_config_modal') ||
           interaction.customId.startsWith('shop_post_image_modal') ||
           interaction.customId.startsWith('shop_post_desc_modal') ||
           interaction.customId.startsWith('shop_post_payout_modal') ||
@@ -530,6 +534,10 @@ export function setupComponentHandlers(client) {
       // Setup Modal Routing
       else if (baseCustomId === 'shop_post_seller_select') {
         await handleShopPostSellerSelect(interaction);
+      } else if (baseCustomId === 'shop_post_appearance_btn') {
+        await handleShopPostAppearanceBtn(interaction);
+      } else if (baseCustomId === 'shop_post_config_btn') {
+        await handleShopPostConfigBtn(interaction);
       } else if (baseCustomId === 'shop_post_desc_btn') {
         await handleShopPostDescBtn(interaction);
       } else if (baseCustomId === 'shop_post_payout_btn') {
