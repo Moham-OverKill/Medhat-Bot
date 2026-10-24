@@ -40,7 +40,7 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
 
   // Filter out ghost roles (items with missing Discord roles)
   const standardItems = nonPackItems.filter(i => {
-    if (i.item_type === 'loot_box') return false;
+    if (i.item_type === 'loot_box' || i.loot_box_id) return false;
     if (i.role_id) {
       const firstRoleId = i.role_id.split(/[,\s]+/)[0];
       if (!guild.roles.cache.has(firstRoleId)) return false;
@@ -48,7 +48,36 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     return true;
   });
 
-  const lootBoxItems = nonPackItems.filter(i => i.item_type === 'loot_box');
+  // Synthesize all configured chests / loot boxes from database
+  const allChests = (lootBoxes || []).map(box => {
+    const paired = nonPackItems.find(i => (i.item_type === 'loot_box' || i.loot_box_id) && (String(i.loot_box_id) === String(box.id) || String(i.id) === String(box.shop_item_id)));
+    return {
+      id: paired ? paired.id : `box_${box.id}`,
+      loot_box_id: box.id,
+      name: box.name,
+      description: box.description || paired?.description || null,
+      price: box.shop_price ?? paired?.price ?? null,
+      stock: box.shop_stock ?? paired?.stock ?? null,
+      item_type: 'loot_box',
+      is_pack: false,
+      role_id: null,
+      rarity: paired?.rarity || 'common',
+      default_image_url: box.image_url || box.opened_image_url || paired?.default_image_url || null
+    };
+  });
+
+  // Include any standalone loot_box items from nonPackItems not already captured
+  for (const item of nonPackItems) {
+    if (item.item_type === 'loot_box' || item.loot_box_id) {
+      const exists = allChests.some(c => String(c.id) === String(item.id) || (item.loot_box_id && String(c.loot_box_id) === String(item.loot_box_id)));
+      if (!exists) {
+        allChests.push({
+          ...item,
+          role_id: null
+        });
+      }
+    }
+  }
 
   // Build available categories list
   const availableCategories = [];
@@ -76,13 +105,13 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     });
   }
 
-  // Loot box items
-  if (lootBoxItems.length > 0) {
+  // Loot box / Chest items
+  if (allChests.length > 0) {
     availableCategories.push({
       id: 'lootboxes',
-      name: lootBoxCatName || 'Loot Boxes',
+      name: lootBoxCatName || 'Chests',
       emoji: lootBoxEmoji || '🎁',
-      items: lootBoxItems,
+      items: allChests,
       isLootBox: true
     });
   }
@@ -100,8 +129,12 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
     currentCategory = availableCategories[0];
   }
 
-  // Sort items strictly by 1- Rarity, 2- Quantity, 3- A-Z
-  currentCategory.items = await sortItemsByRarity(currentCategory.items, guild);
+  // Sort items strictly by 1- Rarity, 2- Quantity, 3- A-Z (or A-Z for chests)
+  if (!currentCategory.isLootBox) {
+    currentCategory.items = await sortItemsByRarity(currentCategory.items, guild);
+  } else {
+    currentCategory.items.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base', numeric: true }));
+  }
 
   // Pagination for items list
   const pageSize = 20;

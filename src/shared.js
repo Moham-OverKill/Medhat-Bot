@@ -283,6 +283,7 @@ export async function sortItemsByRarity(items, guild) {
 
   return sorted.filter(item => {
     if (!item.role_id) return true;
+    if (item.item_type === 'loot_box' || item.loot_box_id || String(item.role_id).startsWith('LOOT_BOX_')) return true;
     const firstRoleId = item.role_id.split(/[,\s]+/)[0];
     return roleCache.get(firstRoleId) !== undefined;
   });
