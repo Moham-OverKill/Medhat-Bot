@@ -1809,7 +1809,7 @@ export async function handleShopPostStart(interaction) {
                      state.restockIntervalSeconds !== null ||
                      state.autoEquip !== false;
 
-  // Row 4: Action Buttons - Row 1 ([Appearance] [Config] and conditionally [Payout])
+  // Row 3: Parameter & Configuration Buttons ([Appearance] [Config] [Auto Equip] [Payout])
   const paramComponents = [
     new ButtonBuilder()
       .setCustomId(`shop_post_appearance_btn:${sessionId}`)
@@ -1822,10 +1822,16 @@ export async function handleShopPostStart(interaction) {
       .setLabel('Config')
       .setEmoji('⚙️')
       .setStyle((isCustomConfigured || (state.overridePrice !== null && state.overridePrice !== 0)) ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected)
+      .setDisabled(!isItemSelected),
+    new ButtonBuilder()
+      .setCustomId(`shop_post_auto_equip_toggle:${sessionId}`)
+      .setLabel('Auto Equip')
+      .setEmoji('⚡')
+      .setStyle(state.autoEquip ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(!isItemSelected || isServerManaged)
   ];
 
-  // Only show the 💰 Payout button if a seller is selected, otherwise hide it
+  // Only show the 💰 Payout button if a seller is selected, otherwise hide it (appears on the right of Auto Equip)
   if (canSetPayout && isItemSelected && !isServerManaged) {
     paramComponents.push(
       new ButtonBuilder()
@@ -1874,15 +1880,6 @@ export async function handleShopPostStart(interaction) {
         .setDisabled(!isModified)
     );
   }
-
-  actionComponents.push(
-    new ButtonBuilder()
-      .setCustomId(`shop_post_auto_equip_toggle:${sessionId}`)
-      .setLabel('Auto Equip')
-      .setEmoji('⚡')
-      .setStyle(state.autoEquip ? ButtonStyle.Success : ButtonStyle.Secondary)
-      .setDisabled(!isItemSelected || isServerManaged)
-  );
 
   actionComponents.push(confirmBtn);
 
@@ -2187,46 +2184,61 @@ export async function handleShopPostConfigBtn(interaction) {
       .setCustomId(`shop_post_config_modal:${sessionId}`)
       .setTitle('Post Configuration');
 
-    let currentPriceStr = '';
-    if (state.overridePrice !== null && state.overridePrice !== undefined) {
-      currentPriceStr = state.overridePrice.toString();
-    } else if (selectedItem && selectedItem.price !== null && selectedItem.price !== undefined) {
-      currentPriceStr = selectedItem.price.toString();
-    } else {
-      currentPriceStr = '0';
+    let priceValue = '';
+    if (state.isEditing) {
+      const editPrice = (state.overridePrice !== null && state.overridePrice !== undefined)
+        ? state.overridePrice
+        : (selectedItem?.price ?? 0);
+      if (editPrice && editPrice > 0) {
+        priceValue = String(editPrice);
+      }
+    } else if (state.overridePrice !== null && state.overridePrice !== undefined && state.overridePrice > 0) {
+      priceValue = String(state.overridePrice);
     }
 
     const priceInput = new TextInputBuilder()
       .setCustomId('price_input')
       .setLabel('Price')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Free')
-      .setValue(currentPriceStr)
+      .setPlaceholder('Free')
       .setRequired(false);
+
+    if (priceValue) {
+      priceInput.setValue(priceValue);
+    }
 
     const stockInput = new TextInputBuilder()
       .setCustomId('stock')
       .setLabel('Stocks')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = Unlimited')
-      .setValue((state.stock !== null && state.stock !== undefined && state.stock > 0) ? String(state.stock) : '')
+      .setPlaceholder('Unlimited')
       .setRequired(false);
+
+    if (state.stock !== null && state.stock !== undefined && state.stock > 0) {
+      stockInput.setValue(String(state.stock));
+    }
 
     const claimLimitInput = new TextInputBuilder()
       .setCustomId('claim_limit')
       .setLabel('Max Claims (Per User)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('Unlimited')
-      .setValue((state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0) ? String(state.claimLimit) : '')
       .setRequired(false);
+
+    if (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0) {
+      claimLimitInput.setValue(String(state.claimLimit));
+    }
 
     const intervalInput = new TextInputBuilder()
       .setCustomId('restock_interval')
       .setLabel('Restock Timer')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('Disabled')
-      .setValue(state.restockIntervalSeconds ? formatSecondsToIntervalString(state.restockIntervalSeconds) : '')
       .setRequired(false);
+
+    if (state.restockIntervalSeconds && state.restockIntervalSeconds > 0) {
+      intervalInput.setValue(formatSecondsToIntervalString(state.restockIntervalSeconds));
+    }
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(priceInput),
@@ -2375,18 +2387,28 @@ export async function handleShopPostModalSubmit(interaction) {
       customId === 'shop_post_drop_modal'
     ) {
       // 1. Price
+      let rawPrice = '';
       try {
-        const rawPrice = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
-        if (rawPrice === '' || rawPrice === '0' || rawPrice === 'free' || rawPrice === 'null' || rawPrice === 'none') {
-          state.overridePrice = 0;
-        } else {
-          const newPrice = /^\d+$/.test(rawPrice) ? parseInt(rawPrice, 10) : -1;
-          if (newPrice < 0) {
-            return interaction.followUp({ content: 'Please enter a valid non-negative whole number for price (or leave empty for Free).', flags: MessageFlags.Ephemeral });
-          }
-          state.overridePrice = newPrice;
-        }
+        rawPrice = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
       } catch (_) {}
+
+      let submittedPrice = 0;
+      if (rawPrice !== '' && rawPrice !== '0' && rawPrice !== 'free' && rawPrice !== 'null' && rawPrice !== 'none') {
+        const newPrice = /^\d+$/.test(rawPrice) ? parseInt(rawPrice, 10) : -1;
+        if (newPrice < 0) {
+          return interaction.followUp({ content: 'Please enter a valid non-negative whole number for price (or leave empty for Free).', flags: MessageFlags.Ephemeral });
+        }
+        submittedPrice = newPrice;
+      }
+
+      if (state.isEditing) {
+        const origPrice = (state.originalPrice !== undefined) ? state.originalPrice : (state.overridePrice ?? 0);
+        if (submittedPrice !== origPrice) {
+          state.overridePrice = submittedPrice;
+        }
+      } else {
+        state.overridePrice = submittedPrice;
+      }
 
       // 2. Stocks
       let stockVal = '';
@@ -2394,16 +2416,28 @@ export async function handleShopPostModalSubmit(interaction) {
         stockVal = (interaction.fields.getTextInputValue('stock') || interaction.fields.getTextInputValue('drop_stock') || '').trim().toLowerCase();
       } catch (_) {}
 
-      if (stockVal === '' || stockVal === '0' || stockVal === 'unlimited' || stockVal === 'null' || stockVal === 'none') {
-        state.stock = null;
-        state.maxStock = null;
-      } else {
+      let submittedStock = null;
+      if (stockVal !== '' && stockVal !== '0' && stockVal !== 'unlimited' && stockVal !== 'null' && stockVal !== 'none') {
         if (!/^\d+$/.test(stockVal)) {
           return interaction.followUp({ content: 'Invalid stock count. Please enter a valid positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
         }
         const num = parseInt(stockVal, 10);
-        state.stock = num <= 0 ? null : num;
-        state.maxStock = state.stock;
+        submittedStock = num <= 0 ? null : num;
+      }
+
+      if (state.isEditing) {
+        const origStock = (state.originalStock !== undefined) ? state.originalStock : state.stock;
+        if (submittedStock !== origStock) {
+          state.stock = submittedStock;
+          state.maxStock = submittedStock;
+          state.stockModified = true;
+          state.stockConfigured = true;
+        }
+      } else {
+        state.stock = submittedStock;
+        state.maxStock = submittedStock;
+        state.stockModified = true;
+        state.stockConfigured = true;
       }
 
       // 3. Max Claims
@@ -2412,14 +2446,22 @@ export async function handleShopPostModalSubmit(interaction) {
         claimLimitVal = (interaction.fields.getTextInputValue('claim_limit') || '').trim().toLowerCase();
       } catch (_) {}
 
-      if (claimLimitVal === '' || claimLimitVal === '0' || claimLimitVal === 'unlimited' || claimLimitVal === 'null' || claimLimitVal === 'none') {
-        state.claimLimit = null;
-      } else {
+      let submittedClaimLimit = null;
+      if (claimLimitVal !== '' && claimLimitVal !== '0' && claimLimitVal !== 'unlimited' && claimLimitVal !== 'null' && claimLimitVal !== 'none') {
         if (!/^\d+$/.test(claimLimitVal)) {
           return interaction.followUp({ content: 'Invalid claim limit. Please enter a positive whole number, or leave empty for unlimited.', flags: MessageFlags.Ephemeral });
         }
         const num = parseInt(claimLimitVal, 10);
-        state.claimLimit = num <= 0 ? null : num;
+        submittedClaimLimit = num <= 0 ? null : num;
+      }
+
+      if (state.isEditing) {
+        const origLimit = (state.originalClaimLimit !== undefined) ? state.originalClaimLimit : null;
+        if (submittedClaimLimit !== origLimit) {
+          state.claimLimit = submittedClaimLimit;
+        }
+      } else {
+        state.claimLimit = submittedClaimLimit;
       }
 
       // 4. Restock Timer
@@ -2428,18 +2470,23 @@ export async function handleShopPostModalSubmit(interaction) {
         timerVal = (interaction.fields.getTextInputValue('restock_interval') || '').trim().toLowerCase();
       } catch (_) {}
 
-      if (timerVal === '' || timerVal === '0' || timerVal === 'disable' || timerVal === 'disabled' || timerVal === 'off' || timerVal === 'null' || timerVal === 'none') {
-        state.restockIntervalSeconds = null;
-      } else {
+      let submittedInterval = null;
+      if (timerVal !== '' && timerVal !== '0' && timerVal !== 'disable' && timerVal !== 'disabled' && timerVal !== 'off' && timerVal !== 'null' && timerVal !== 'none') {
         const intervalSeconds = parseIntervalStringToSeconds(timerVal);
         if (!intervalSeconds) {
           return interaction.followUp({ content: 'Invalid restock interval. Format must be between 5m and 30d (e.g. 30m, 6h, 1d), or leave empty to disable.', flags: MessageFlags.Ephemeral });
         }
-        state.restockIntervalSeconds = intervalSeconds;
+        submittedInterval = intervalSeconds;
       }
 
-      state.stockConfigured = true;
-      state.stockModified = true;
+      if (state.isEditing) {
+        const origInterval = (state.originalRestockIntervalSeconds !== undefined) ? state.originalRestockIntervalSeconds : null;
+        if (submittedInterval !== origInterval) {
+          state.restockIntervalSeconds = submittedInterval;
+        }
+      } else {
+        state.restockIntervalSeconds = submittedInterval;
+      }
     } else if (customId === 'shop_post_image_modal') {
       const uploadedFiles = interaction.fields.getUploadedFiles?.('post_image_file');
       const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
@@ -5602,7 +5649,9 @@ export async function handleShopEditPostUrlSubmit(interaction) {
       description,
       imageUrl,
       overridePrice: effectiveEditPrice,
+      originalPrice: effectiveEditPrice,
       stock: scrapedStock,
+      originalStock: scrapedStock,
       stockConfigured: true,
       stockModified: false,
       isEditing: true,
