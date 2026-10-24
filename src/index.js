@@ -393,8 +393,9 @@ client.once(Events.ClientReady, async () => {
     startWeeklySummaryScheduler(client);
 
     // Sweep and purge any departed bot admins across all guilds (runs non-blocking in background)
-    import('./storage/admins.js').then(({ auditAndPruneDepartedAdmins }) => {
+    import('./storage/admins.js').then(({ auditAndPruneDepartedAdmins, auditAndPruneDepartedAdminRoles }) => {
       auditAndPruneDepartedAdmins(client).catch(err => sysError('Startup Admin Audit Failed', err));
+      auditAndPruneDepartedAdminRoles(client).catch(err => sysError('Startup Admin Role Audit Failed', err));
     }).catch(() => {});
 
     // Ensure image host database table exists on startup (test images disabled)
@@ -665,14 +666,19 @@ client.on(Events.GuildRoleDelete, async (role) => {
       const normalCleanup = await removeColorRole(guild.id, role.id, false);
       const boosterCleanup = await removeColorRole(guild.id, role.id, true);
 
-      // 3. Audit Log
-      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted) {
+      // 3. Cleanup Bot Admin Roles
+      const { removeServerAdminRole } = await import('./storage/admins.js');
+      const adminRoleRemoved = await removeServerAdminRole(guild.id, role.id);
+
+      // 4. Audit Log
+      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted || adminRoleRemoved) {
         sendLog(guild, 'audit', 'crimson', '🛡️ Real-Time Ghost Cleanup', 
           `Role **@${role.name}** was deleted from the server. Maintenance initiated:\n` +
           `• **Shop Items Deactivated:** ${stats.itemsRemoved}\n` +
           `• **History Preserved:** ${stats.inventoryRemoved} inventory entries updated\n` +
           `• **Prerequisites Healed:** YES (Scrubbed deleted item IDs)\n` +
-          `• **Color Roles Removed:** ${(normalCleanup.deleted || boosterCleanup.deleted) ? 'Yes' : 'No'}`
+          `• **Color Roles Removed:** ${(normalCleanup.deleted || boosterCleanup.deleted) ? 'Yes' : 'No'}\n` +
+          `• **Admin Role Purged:** ${adminRoleRemoved ? 'Yes' : 'No'}`
         );
       }
     } catch (error) {

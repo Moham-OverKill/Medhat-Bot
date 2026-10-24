@@ -424,22 +424,12 @@ async function handleRoleSelect(interaction, config) {
       return;
     }
 
-    // Prevent selecting @everyone
-    if (role.id === guild.id) {
+    // Mutual exclusion conflict check: cannot be Admin Role, Item Role, dangerous perms, @everyone, or another reward role
+    const { validateRoleConflict } = await import('../storage/admins.js');
+    const conflictCheck = await validateRoleConflict(guild, role, 'REWARD_ROLE', { currentModule: 'mvp' });
+    if (!conflictCheck.valid) {
       await interaction.reply({
-        content: '❌ Cannot use @everyone as MVP role.',
-        flags: MessageFlags.Ephemeral
-      });
-      return;
-    }
-
-    // Prevent selecting a role already assigned to Richest or Streaks
-    const usedRoles = [];
-    if (config.richest_role_id === selectedRoleId) usedRoles.push('Richest');
-    if (config.streak_role_id === selectedRoleId) usedRoles.push('Streaks');
-    if (usedRoles.length > 0) {
-      await interaction.reply({
-        content: `❌ This role is already assigned to ${usedRoles.join(', ')}.`,
+        content: `❌ `,
         flags: MessageFlags.Ephemeral
       });
       return;

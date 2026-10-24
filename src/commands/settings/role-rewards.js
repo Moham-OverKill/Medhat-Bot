@@ -33,24 +33,14 @@ function checkRateLimit(key) {
 
 // ── Role validation helper ────────────────────────────────────────────────────
 async function validateRoleChoice(interaction, roleId, currentModule) {
-    const config = await getGuildConfig(interaction.guildId) || {};
-
-    const usedRoles = [];
-    if (config.mvpRoleId === roleId) usedRoles.push('MVP');
-    if (currentModule !== 'richest' && config.richest_role_id === roleId) usedRoles.push('Richest');
-    if (currentModule !== 'streaks' && config.streak_role_id === roleId) usedRoles.push('Streaks');
-
-    if (usedRoles.length > 0) {
-        return { ok: false, msg: `❌ This role is already assigned to ${usedRoles.join(', ')}.` };
-    }
-
     const guild = interaction.guild;
     const role  = await guild.roles.fetch(roleId).catch(() => null);
     if (!role) return { ok: false, msg: '❌ Selected role not found.' };
-    if (role.id === guild.id) return { ok: false, msg: '❌ Cannot use @everyone as a reward role.' };
 
-    if (hasAnyDangerousPermission(role)) {
-        return { ok: false, msg: '❌ Reward role must not possess any administrative or moderation permissions (such as Administrator, Manage Server, Manage Roles, or Ban/Kick Members).' };
+    const { validateRoleConflict } = await import('../../storage/admins.js');
+    const conflictCheck = await validateRoleConflict(guild, role, 'REWARD_ROLE', { currentModule });
+    if (!conflictCheck.valid) {
+        return { ok: false, msg: `❌ ` };
     }
 
     const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
