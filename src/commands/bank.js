@@ -21,6 +21,7 @@ import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, san
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
 import { sanitizeEmbed, cleanImageUrl } from '../utils/embed-sanitizer.js';
+import { buildShopPostPayload } from '../utils/shop-post-builder.js';
 import {
   getShopCategories,
   getShopItems,
@@ -944,17 +945,20 @@ export async function handleShopBuyButton(interaction) {
     const errMsg = `\u274C An error occurred. Please try again.`;
     const errEmbed = new EmbedBuilder().setColor('#E74C3C').setDescription(errMsg);
     try {
-      if (interaction.deferred || interaction.replied) {
+      if (interaction.ephemeral) {
         await interaction.editReply({ files: [], embeds: [errEmbed], components: [] });
+      } else if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ embeds: [errEmbed], flags: MessageFlags.Ephemeral }).catch(() => {});
       } else {
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     } catch (_) { }
   }
 }
 
 /**
- * Live-refreshes the posted shop message embed (stock count & button state) after a purchase.
+ * Live-refreshes or self-heals a posted shop message embed and button.
+ * Automatically recovers from message corruption, missing components, or error embeds.
  */
 export async function refreshShopMessageUI(interaction, itemId, guildId, targetMessageId = null) {
   const gId = guildId || interaction?.guildId;
@@ -968,199 +972,72 @@ export async function refreshShopMessageUI(interaction, itemId, guildId, targetM
     const client = interaction.client || msg?.client;
     if (msg.author?.id && client?.user?.id && msg.author.id !== client.user.id) return;
 
-    const { getShopItem, getItemImage } = await import('../economy/shop.js');
+    const { getShopItem } = await import('../economy/shop.js');
     const updatedItem = await getShopItem(itemId, gId);
+    if (!updatedItem) return;
 
-    if (updatedItem && msg.embeds && msg.embeds.length > 0) {
+    let postRow = null;
+    if (msg.id) {
+      try {
+        const pool = getPool();
+        const spRes = await pool.query(
+          `SELECT custom_image_url, post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          [msg.id]
+        );
+        if (spRes.rows.length > 0) {
+          postRow = spRes.rows[0];
+        }
+      } catch (_) {}
+    }
+
+    // Preserve custom description only if the existing embed is genuine and not an error embed
+    let preserveDescription = null;
+    if (msg.embeds && msg.embeds.length > 0) {
       const origEmbed = msg.embeds[0];
-      const embed = sanitizeEmbed(origEmbed);
+      const title = origEmbed.title || '';
+      const isCorruptedTitle = !title ||
+        title.includes('Action Execution Failed') ||
+        title.includes('Error') ||
+        title.includes('❌') ||
+        title.includes('Missing Permissions') ||
+        title !== updatedItem.name;
 
-      let maxStock = null;
-      let restockIntervalSeconds = null;
-      let claimLimit = null;
-      let intvStr = null;
-      let postCurrentStock = undefined;
-      let postOverridePrice = null;
-      let customImageUrl = null;
-      let hasTrackedPost = false;
-
-      if (msg.id) {
-        try {
-          const pool = (await import('../storage/postgres.js')).getPool();
-          const spRes = await pool.query(
-            `SELECT custom_image_url, post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
-            [msg.id]
-          );
-          if (spRes.rows.length > 0) {
-            hasTrackedPost = true;
-            const postRow = spRes.rows[0];
-            customImageUrl = postRow.custom_image_url || null;
-            const rawInterval = postRow.restock_interval_seconds;
-            const lastRestockedAt = postRow.last_restocked_at;
-            const createdAt = postRow.created_at;
-            claimLimit = postRow.claim_limit_per_user || null;
-            maxStock = postRow.max_stock;
-            postCurrentStock = postRow.current_stock;
-            postOverridePrice = postRow.override_price;
-
-            if (rawInterval && rawInterval > 0) {
-              restockIntervalSeconds = rawInterval;
-              const baseTime = lastRestockedAt ? new Date(lastRestockedAt).getTime() : new Date(createdAt || Date.now()).getTime();
-              let nextRestockMs = baseTime + (restockIntervalSeconds * 1000);
-              if (nextRestockMs <= Date.now()) {
-                const elapsed = Date.now() - baseTime;
-                const cycles = Math.floor(elapsed / (restockIntervalSeconds * 1000)) + 1;
-                nextRestockMs = baseTime + (cycles * restockIntervalSeconds * 1000);
-              }
-              intvStr = Math.floor(nextRestockMs / 1000);
-            }
-          }
-        } catch (_) {}
+      if (!isCorruptedTitle && origEmbed.description) {
+        preserveDescription = origEmbed.description;
       }
+    }
 
-      // Resolve image:
-      // 1. Explicit custom override recorded on shop_posts
-      // 2. If tracked post without custom override, dynamically use item's current default image (inheriting catalog updates)
-      // 3. Fallback for untracked legacy posts: existing embed image or item default image
-      let itemImage = null;
-      if (customImageUrl) {
-        itemImage = customImageUrl;
-      } else if (hasTrackedPost) {
-        itemImage = getItemImage(updatedItem);
-        if (!itemImage && (updatedItem.item_type === 'loot_box' || updatedItem.loot_box_id)) {
-          try {
-            const pool = (await import('../storage/postgres.js')).getPool();
-            const lbRes = await pool.query(
-              `SELECT image_url, opened_image_url FROM loot_boxes WHERE (guild_id = $1 OR guild_id IS NULL) AND (id = $2 OR LOWER(name) = LOWER($3)) LIMIT 1`,
-              [gId, updatedItem.loot_box_id || 0, updatedItem.name]
-            );
-            if (lbRes.rows.length > 0) {
-              itemImage = lbRes.rows[0].image_url || lbRes.rows[0].opened_image_url || null;
-            }
-          } catch (_) {}
-        }
-      } else {
-        itemImage = cleanImageUrl(origEmbed.image?.url) || getItemImage(updatedItem);
+    // Preserve customId details from existing button if present
+    let existingCustomId = null;
+    if (msg.components && msg.components.length > 0) {
+      const existingBtn = msg.components[0]?.components?.find(c =>
+        c.customId?.startsWith('bank_shop_buy_') || c.customId?.startsWith('force_buy_')
+      );
+      if (existingBtn?.customId) {
+        existingCustomId = existingBtn.customId;
       }
+    }
 
-      if (itemImage) {
-        embed.setImage(itemImage);
-      } else {
-        delete embed.data.image;
-      }
+    const payload = await buildShopPostPayload({
+      item: updatedItem,
+      postRow,
+      guildId: gId,
+      customDescription: preserveDescription,
+      existingCustomId
+    });
 
-      const itemThumb = origEmbed.thumbnail?.url;
-      if (itemThumb) {
-        embed.setThumbnail(itemThumb);
-      } else {
-        delete embed.data.thumbnail;
-      }
+    const editedMsg = await msg.edit(payload).catch((editErr) => {
+      sysError('Live UI Refresh Edit Failed', editErr, { guild: gId, itemId, messageId: msg.id });
+      return null;
+    });
 
-      const effectiveStock = (postCurrentStock !== undefined) ? postCurrentStock : updatedItem.stock;
-      const hasTimer = Boolean(restockIntervalSeconds && restockIntervalSeconds > 0);
-      const isSoldOut = effectiveStock !== null && effectiveStock !== undefined && effectiveStock <= 0;
-
-      let stockHeader = '♾️ Unlimited';
-      let stockValue = 'Available';
-      if (hasTimer) {
-        if (effectiveStock === null || effectiveStock === undefined) {
-          stockHeader = '♾️ Unlimited';
-          stockValue = `Refreshes <t:${intvStr}:R>`;
-          embed.setColor('#3498DB');
-        } else if (isSoldOut) {
-          stockHeader = '🔴 Out Of Stock';
-          stockValue = `Restocks <t:${intvStr}:R>`;
-          embed.setColor('#808080');
-        } else {
-          stockHeader = `🟢 ${effectiveStock} In Stock`;
-          stockValue = `Restocks <t:${intvStr}:R>`;
-          embed.setColor('#3498DB');
-        }
-      } else {
-        if (effectiveStock === null || effectiveStock === undefined) {
-          stockHeader = '♾️ Unlimited';
-          stockValue = 'Available';
-          embed.setColor('#3498DB');
-        } else if (isSoldOut) {
-          stockHeader = '🔴 Out Of Stock';
-          stockValue = 'Sold Out';
-          embed.setColor('#808080');
-        } else {
-          stockHeader = `🟢 ${effectiveStock} In Stock`;
-          stockValue = 'Available';
-          embed.setColor('#3498DB');
-        }
-      }
-
-      let foundStockField = false;
-      const updatedFields = (embed.data.fields || []).map(f => {
-        if (
-          f.name &&
-          (f.name.includes('Stock') ||
-           f.name.includes('Unlimited') ||
-           f.name.includes('Out Of Stock') ||
-           f.name.includes('Claimed'))
-        ) {
-          foundStockField = true;
-          return { name: stockHeader, value: stockValue, inline: true };
-        }
-        return f;
+    if (editedMsg) {
+      const expectedImg = payload.embeds[0]?.data?.image?.url || null;
+      const expectedThumb = payload.embeds[0]?.data?.thumbnail?.url || null;
+      verifyAndHealMessageImages(editedMsg, {
+        expectedImageUrl: expectedImg,
+        expectedThumbnailUrl: expectedThumb
       });
-      if (!foundStockField) {
-        updatedFields.push({ name: stockHeader, value: stockValue, inline: true });
-      }
-      embed.setFields(updatedFields);
-
-      if (msg.components && msg.components.length > 0) {
-        const row = ActionRowBuilder.from(msg.components[0]);
-        if (row.components && row.components.length > 0) {
-          const buyBtn = ButtonBuilder.from(row.components[0]);
-          buyBtn.setStyle(ButtonStyle.Secondary).setDisabled(isSoldOut);
-          let effectivePrice = (postOverridePrice !== null && postOverridePrice !== undefined)
-            ? Number(postOverridePrice)
-            : (Number(updatedItem.price) || 0);
-          const btnCustomId = buyBtn.data?.custom_id || '';
-          if (btnCustomId) {
-            const btnParts = btnCustomId.split('_');
-            const isForce = btnCustomId.startsWith('force_buy_');
-            const offset = isForce ? 0 : 1;
-            const overridePriceStr = btnParts[5 + offset];
-            if (overridePriceStr !== undefined && overridePriceStr !== null && overridePriceStr !== '') {
-              const parsedOverride = Number(overridePriceStr);
-              if (!isNaN(parsedOverride)) {
-                effectivePrice = parsedOverride;
-              }
-            }
-          }
-
-          const isFree = Number(effectivePrice) === 0;
-          let buttonLabel = '';
-          if (isSoldOut) {
-            buttonLabel = 'SOLD OUT';
-          } else if (isFree) {
-            buttonLabel = 'CLAIM';
-          } else {
-            buttonLabel = `BUY (${Number(effectivePrice).toLocaleString()})`;
-          }
-          buyBtn.setLabel(buttonLabel);
-          row.setComponents(buyBtn);
-
-          const editedMsg = await msg.edit({
-            embeds: [embed],
-            components: [row]
-          }).catch((editErr) => {
-            sysError('Live UI Refresh Edit Failed', editErr, { guild: gId, itemId });
-            return null;
-          });
-
-          if (editedMsg) {
-            verifyAndHealMessageImages(editedMsg, {
-              expectedImageUrl: itemImage || null,
-              expectedThumbnailUrl: itemThumb || null
-            });
-          }
-        }
-      }
     }
   } catch (refreshErr) {
     sysError('Live UI Refresh Failed', refreshErr, { guild: gId, detail: `ItemID: ${itemId}` });
@@ -1420,11 +1297,13 @@ export async function handleShopBuyModalSubmit(interaction) {
       sysError('BuyModalSubmit Error', error, { user: interaction.user.id, guild: interaction.guildId });
     }
     try {
-      if (interaction.deferred || interaction.replied) {
-        const errEmbed = new EmbedBuilder()
-          .setColor('#E74C3C')
-          .setDescription('❌ An error occurred. Please try again.');
+      const errEmbed = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setDescription('❌ An error occurred. Please try again.');
+      if (interaction.ephemeral) {
         await interaction.editReply({ files: [], embeds: [errEmbed], components: [] });
+      } else if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ embeds: [errEmbed], flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     } catch (_) { }
   }

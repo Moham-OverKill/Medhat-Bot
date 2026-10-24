@@ -62,23 +62,7 @@ import { cleanImageUrl, isSameImageUrl } from '../utils/embed-sanitizer.js';
 const pendingPosts = new Map();
 const PENDING_POST_SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-/**
- * Resolve the default image asset configured for an item or loot box in shop settings
- * @param {object|null} item
- * @param {string} guildId
- * @returns {Promise<string|null>}
- */
-export async function resolveItemDefaultImage(item, guildId) {
-  if (!item) return null;
-  let img = getItemImage(item);
-  if (!img && (item.item_type === 'loot_box' || item.loot_box_id)) {
-    try {
-      const box = await getLootBox(item.loot_box_id || item.id, guildId);
-      if (box) img = box.image_url || box.opened_image_url;
-    } catch (_) {}
-  }
-  return cleanImageUrl(img);
-}
+export { resolveItemDefaultImage, buildShopPostPayload } from '../utils/shop-post-builder.js';
 
 /**
  * Resolve the isolated post-staging session key for an interaction.
