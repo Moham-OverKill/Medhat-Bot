@@ -344,7 +344,8 @@ export async function handleSettingsComponent(interaction) {
             interaction.customId === 'settings_vote_reward' ||
             interaction.customId === 'settings_tag_reward' ||
             interaction.customId === 'settings_customize' ||
-            interaction.customId === 'settings_coins_customize';
+            interaction.customId === 'settings_coins_customize' ||
+            (interaction.customId.startsWith('settings_menu_') && interaction.values?.[0] === 'other_customize');
         if (!isModal && !needsModal && !interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate().catch(() => {});
         }
