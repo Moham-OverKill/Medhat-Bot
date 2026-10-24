@@ -1327,6 +1327,7 @@ async function createTables() {
         current_stock INTEGER DEFAULT NULL,
         override_price INTEGER DEFAULT NULL,
         auto_equip BOOLEAN NOT NULL DEFAULT FALSE,
+        custom_description TEXT DEFAULT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
@@ -1363,6 +1364,7 @@ async function createTables() {
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS current_stock INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS override_price INTEGER DEFAULT NULL`).catch(() => {});
     await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS auto_equip BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
+    await pool.query(`ALTER TABLE shop_posts ADD COLUMN IF NOT EXISTS custom_description TEXT DEFAULT NULL`).catch(() => {});
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_shop_posts_auto ON shop_posts(post_mode) WHERE post_mode = 'auto'`).catch(() => {});
     // Ensure posts with active restock intervals are recognized as auto restock, and posts without intervals default to normal
     await pool.query(`UPDATE shop_posts SET post_mode = 'auto' WHERE restock_interval_seconds IS NOT NULL AND restock_interval_seconds > 0 AND post_mode != 'drop'`).catch(() => {});

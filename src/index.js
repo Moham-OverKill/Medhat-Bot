@@ -65,6 +65,10 @@ export const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildEmojisAndStickers
   ],
+  rest: {
+    timeout: 15000,
+    retries: 3
+  },
   partials: [
     Partials.Message,
     Partials.Channel,
@@ -302,6 +306,14 @@ keepAliveServer = createServer((req, res) => {
     };
     res.writeHead(client.isReady() ? 200 : 503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
+    return;
+  }
+
+  if (!client.isReady()) {
+    const wsStatusMap = ['READY', 'CONNECTING', 'RECONNECTING', 'IDLE', 'NEARLY', 'DISCONNECTED', 'WAITING_FOR_GUILDS', 'IDENTIFYING', 'RESUMING'];
+    const wsState = wsStatusMap[client.ws?.status] || `Status(${client.ws?.status})`;
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'starting', ready: false, wsStatus: wsState }));
     return;
   }
 
@@ -1050,7 +1062,28 @@ client.rest.on('rateLimited', (info) => {
   });
 });
 
+client.rest.on('invalidRequestWarning', (info) => {
+  sysWarn('Discord REST Invalid Request Warning', {
+    detail: `Count: ${info.count} | Remaining: ${info.remainingTime}`
+  });
+});
+
+client.on(Events.Error, (err) => {
+  sysError('Discord Client Error', err);
+});
+
+client.on(Events.Warn, (msg) => {
+  sysWarn('Discord Client Warning', { detail: msg });
+});
+
 client.on(Events.Debug, (msg) => {
+  if (!client.isReady()) {
+    // During startup handshake, log all non-sensitive gateway and REST activity
+    if (!msg.includes('Provided token')) {
+      sysLog('Gateway Startup Debug', { detail: msg });
+    }
+    return;
+  }
   if (
     msg.includes('[WS =>') ||
     msg.includes('Heartbeat') ||
@@ -1076,12 +1109,54 @@ let authInterval = setInterval(() => {
 }, 5000);
 if (typeof authInterval.unref === 'function') authInterval.unref();
 
+// 35-Second Gateway Handshake Watchdog:
+// Prevents indefinite hanging in container environments when network sockets stall or Cloudflare edge throttles.
+const GATEWAY_LOGIN_TIMEOUT_MS = 35000;
+const gatewayWatchdog = setTimeout(async () => {
+  if (client.isReady()) return;
+
+  const wsStatusMap = ['READY', 'CONNECTING', 'RECONNECTING', 'IDLE', 'NEARLY', 'DISCONNECTED', 'WAITING_FOR_GUILDS', 'IDENTIFYING', 'RESUMING'];
+  const wsState = wsStatusMap[client.ws?.status] || `Status(${client.ws?.status})`;
+
+  sysWarn('Gateway Connection Watchdog Triggered', {
+    detail: `Handshake stalled at ${wsState} after ${GATEWAY_LOGIN_TIMEOUT_MS / 1000}s. Running emergency network diagnostics.`
+  });
+
+  // Emergency diagnostics
+  let dnsResult = 'unknown';
+  let httpResult = 'unknown';
+  try {
+    const addresses = await dns.promises.lookup('discord.com', { all: true });
+    dnsResult = JSON.stringify(addresses);
+  } catch (dErr) {
+    dnsResult = `DNS Error: ${dErr.message}`;
+  }
+
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway', {
+      signal: AbortSignal.timeout(5000)
+    });
+    httpResult = `HTTP ${res.status} ${res.statusText}`;
+  } catch (hErr) {
+    httpResult = `Fetch Error: ${hErr.message}`;
+  }
+
+  sysError('Discord Gateway Handshake Watchdog Timeout', new Error('Gateway login handshake exceeded 35s limit'), {
+    detail: `WS Status: ${wsState} | DNS: ${dnsResult} | REST: ${httpResult}. Triggering process exit to recycle container.`
+  });
+
+  process.exit(1);
+}, GATEWAY_LOGIN_TIMEOUT_MS);
+if (typeof gatewayWatchdog.unref === 'function') gatewayWatchdog.unref();
+
 sysLog('Client Authenticating', { detail: 'Initiating Discord gateway login' });
 client.login(process.env.DISCORD_TOKEN).then(() => {
   if (authInterval) clearInterval(authInterval);
+  if (gatewayWatchdog) clearTimeout(gatewayWatchdog);
   sysLog('Discord Gateway Login Succeeded');
 }).catch((error) => {
   if (authInterval) clearInterval(authInterval);
+  if (gatewayWatchdog) clearTimeout(gatewayWatchdog);
   sysError('Discord Login Critical Failure', error);
   process.exit(1);
 });

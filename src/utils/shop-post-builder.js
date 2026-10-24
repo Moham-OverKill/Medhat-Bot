@@ -63,7 +63,7 @@ export async function buildShopPostPayload({
   }
 
   // 2. Description
-  const finalDesc = customDescription || item.description || null;
+  const finalDesc = customDescription || postRow?.custom_description || item.description || null;
   if (finalDesc) {
     embed.setDescription(finalDesc);
   }

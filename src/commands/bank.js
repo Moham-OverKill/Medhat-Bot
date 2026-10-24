@@ -981,7 +981,7 @@ export async function refreshShopMessageUI(interaction, itemId, guildId, targetM
       try {
         const pool = getPool();
         const spRes = await pool.query(
-          `SELECT custom_image_url, post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at FROM shop_posts WHERE message_id = $1 LIMIT 1`,
+          `SELECT custom_image_url, post_mode, max_stock, current_stock, override_price, restock_interval_seconds, claim_limit_per_user, last_restocked_at, created_at, custom_description FROM shop_posts WHERE message_id = $1 LIMIT 1`,
           [msg.id]
         );
         if (spRes.rows.length > 0) {
@@ -1004,7 +1004,13 @@ export async function refreshShopMessageUI(interaction, itemId, guildId, targetM
 
       if (!isCorruptedTitle && origEmbed.description) {
         preserveDescription = origEmbed.description;
+        if (!postRow?.custom_description) {
+          getPool().query(`UPDATE shop_posts SET custom_description = $1 WHERE message_id = $2`, [origEmbed.description, msg.id]).catch(() => {});
+        }
       }
+    }
+    if (!preserveDescription && postRow?.custom_description) {
+      preserveDescription = postRow.custom_description;
     }
 
     // Preserve customId details from existing button if present

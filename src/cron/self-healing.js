@@ -22,6 +22,7 @@ export async function healShopPosts(client) {
               sp.custom_image_url, sp.post_mode, sp.claim_limit_per_user,
               sp.restock_interval_seconds, sp.last_restocked_at,
               sp.max_stock, sp.current_stock, sp.override_price, sp.auto_equip,
+              sp.custom_description,
               sp.created_at,
               si.name as item_name
        FROM shop_posts sp
