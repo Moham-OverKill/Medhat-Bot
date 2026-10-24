@@ -153,6 +153,51 @@ import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
 
+const MODAL_TRIGGER_PREFIXES = [
+  'settings_vote_reward',
+  'settings_tag_reward',
+  'settings_customize',
+  'settings_coins_customize',
+  'shop_post_appearance_btn',
+  'shop_post_config_btn',
+  'shop_post_desc_btn',
+  'shop_post_payout_btn',
+  'shop_post_image_btn',
+  'shop_post_price_btn',
+  'shop_post_stock_btn',
+  'shop_edit_post_url_modal',
+  'shop_lb_create_start',
+  'shop_lb_rename_cat',
+  'shop_lb_rates_btn_',
+  'shop_lb_coins_btn_',
+  'shop_lb_prizes_btn_',
+  'shop_lb_rename_box_btn_',
+  'shop_lb_images_btn_',
+  'shop_item_appearance_btn_',
+  'shop_item_duration_btn_',
+  'shop_add_type_',
+  'admin_user_balance',
+  'admin_user_streak',
+  'admin_user_level',
+  'admin_user_give',
+  'admin_user_remove',
+  'rewards_daily_amount',
+  'rewards_streak_bonus',
+  'rewards_streak_freeze',
+  'rewards_streak_shield',
+  'rewards_streak_claim_window',
+  'quests_add_',
+  'quests_edit_',
+  'mass_modal_',
+  'trade_coins_sender',
+  'trade_coins_receiver'
+];
+
+function isModalTrigger(customId) {
+  if (!customId) return false;
+  return MODAL_TRIGGER_PREFIXES.some(prefix => customId.startsWith(prefix));
+}
+
 export function setupComponentHandlers(client) {
   if (handlersSetup) {
     sysLog('Handlers Redundancy', { detail: 'Component handlers already set up' });
@@ -161,9 +206,30 @@ export function setupComponentHandlers(client) {
 
   client.on('interactionCreate', async (interaction) => {
     return runInGuildContext(interaction.guildId, async () => {
+      // Warm up guild config in background without blocking interaction acknowledgment
       if (interaction.guildId) {
-        await getGuildConfig(interaction.guildId).catch(() => {});
+        getGuildConfig(interaction.guildId).catch(() => {});
       }
+
+      // --- IMMEDIATE COMPONENT ACKNOWLEDGMENT ---
+      // Discord enforces a strict 3000ms deadline for the first response.
+      // Acknowledging immediately prevents "This interaction failed" errors completely.
+      // (Modal-triggering buttons are skipped since showModal() cannot be called on a deferred interaction).
+      if ((interaction.isButton() || interaction.isAnySelectMenu()) && !isModalTrigger(interaction.customId)) {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate().catch(() => {});
+
+          // Safety shim: route any downstream interaction.update() calls to interaction.editReply()
+          const originalUpdate = interaction.update.bind(interaction);
+          interaction.update = async (...args) => {
+            if (interaction.deferred || interaction.replied) {
+              return interaction.editReply(...args);
+            }
+            return originalUpdate(...args);
+          };
+        }
+      }
+
       // --- 0. INTERACTION WATCHDOG ---
     // Log a warning if any interaction takes > 2.5s to acknowledge.
     const watchdog = setTimeout(() => {
