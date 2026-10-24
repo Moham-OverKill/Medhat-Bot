@@ -561,6 +561,81 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
 }
 
 /**
+ * Builds the complete payload (image attachment and button grid) for a specific color panel.
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {string} type - 'normal' or 'booster'
+ * @param {number} panelIndex - 0-based panel index
+ * @param {Array} [preloadedSortedColors] - Optional pre-sorted colors list
+ * @returns {Promise<{ content: string, files: AttachmentBuilder[], components: ActionRowBuilder[], embeds: any[] }|null>}
+ */
+export async function buildColorPanelPayload(guild, type = 'normal', panelIndex = 0, preloadedSortedColors = null) {
+  const isBooster = type === 'booster';
+  let sortedColors = preloadedSortedColors;
+
+  if (!sortedColors) {
+    const colors = await getColorRoles(guild.id, isBooster);
+    const allRoles = await guild.roles.fetch().catch(() => guild.roles.cache);
+    sortedColors = colors
+      .map(c => {
+        const role = allRoles.get(c.roleId);
+        return {
+          ...c,
+          role,
+          hexColor: role?.hexColor || '#000000',
+          name: role?.name || `Role ${c.roleId}`,
+          position: role?.position || 0
+        };
+      })
+      .filter(c => c.role)
+      .sort((a, b) => b.position - a.position);
+  }
+
+  const PANEL_CHUNK = 10;
+  const startIdx = panelIndex * PANEL_CHUNK;
+  if (startIdx >= sortedColors.length) return null;
+
+  const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
+  const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
+    ...c,
+    colors: c.role?.colors || null,
+    index: startIdx + i + 1
+  }));
+
+  const imageBuffer = await generateColorPanelImage(panelColors);
+  const panelAttachment = new AttachmentBuilder(imageBuffer, { name: `colors_${type}_${panelIndex + 1}.png` });
+
+  const rows = [];
+  for (let r = 0; r < 2; r++) {
+    const rowStart = r * 5;
+    const rowEnd = Math.min(rowStart + 5, panelColors.length);
+    if (rowStart >= panelColors.length) break;
+
+    const buttons = [];
+    for (let i = rowStart; i < rowEnd; i++) {
+      const colorItem = panelColors[i];
+      const paddedLabel = String(colorItem.index).padStart(2, '0');
+      buttons.push(
+        new ButtonBuilder()
+          .setCustomId(`color_${type}_${colorItem.roleId}`)
+          .setLabel(paddedLabel)
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    if (buttons.length > 0) {
+      rows.push(new ActionRowBuilder().addComponents(buttons));
+    }
+  }
+
+  return {
+    content: '',
+    files: [panelAttachment],
+    components: rows,
+    embeds: []
+  };
+}
+
+/**
  * Deploy generated color panels to the selected target channel
  */
 async function deployColorPanels(interaction, type, channelId) {
@@ -646,46 +721,26 @@ async function deployColorPanels(interaction, type, channelId) {
   const PANELS_COUNT = Math.ceil(sortedColors.length / PANEL_CHUNK);
 
   for (let p = 0; p < PANELS_COUNT; p++) {
-    const startIdx = p * PANEL_CHUNK;
-    const endIdx = Math.min(startIdx + PANEL_CHUNK, sortedColors.length);
-    const panelColors = sortedColors.slice(startIdx, endIdx).map((c, i) => ({
-      ...c,
-      colors: c.role?.colors || null,
-      index: startIdx + i + 1
-    }));
-
-    const imageBuffer = await generateColorPanelImage(panelColors);
-
-    const panelAttachment = new AttachmentBuilder(imageBuffer, { name: `colors_${type}_${p + 1}.png` });
-
-    // Create up to 2 rows of 5 buttons each (matching the 5x2 grid)
-    const rows = [];
-    for (let r = 0; r < 2; r++) {
-      const rowStart = r * 5;
-      const rowEnd = Math.min(rowStart + 5, panelColors.length);
-      if (rowStart >= panelColors.length) break;
-
-      const buttons = [];
-      for (let i = rowStart; i < rowEnd; i++) {
-        const colorItem = panelColors[i];
-        const paddedLabel = String(colorItem.index).padStart(2, '0');
-        buttons.push(
-          new ButtonBuilder()
-            .setCustomId(`color_${type}_${colorItem.roleId}`)
-            .setLabel(paddedLabel)
-            .setStyle(ButtonStyle.Secondary)
-        );
-      }
-      if (buttons.length > 0) {
-        rows.push(new ActionRowBuilder().addComponents(buttons));
-      }
-    }
+    const payload = await buildColorPanelPayload(guild, type, p, sortedColors);
+    if (!payload) continue;
 
     try {
-      await targetChannel.send({
-        files: [panelAttachment],
-        components: rows
-      });
+      const sentMsg = await targetChannel.send(payload);
+
+      // Record deployed color panel in database for self-healing
+      try {
+        const pool = (await import('../storage/postgres.js')).getPool();
+        await pool.query(
+          `INSERT INTO color_panels (message_id, guild_id, channel_id, panel_type, panel_index, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT (message_id) DO UPDATE SET
+             guild_id = EXCLUDED.guild_id,
+             channel_id = EXCLUDED.channel_id,
+             panel_type = EXCLUDED.panel_type,
+             panel_index = EXCLUDED.panel_index`,
+          [sentMsg.id, guildId, targetChannel.id, type, p]
+        );
+      } catch (_) {}
     } catch (sendErr) {
       sysError('Failed to send visual color panel', sendErr, { guild: guildId, channel: channelId });
       return interaction.editReply({
@@ -1068,12 +1123,26 @@ export async function auditAllGuilds(client) {
 }
 
 /**
- * Handle color button click
+ * Handle color button click.
+ * Strictly ephemeral; guarantees the public color panel card is never modified.
  */
 export async function handleColorButton(interaction) {
+  // Safe helper to deliver strictly ephemeral responses without touching public messages
+  const sendPrivateResponse = async (payload) => {
+    try {
+      if (interaction.ephemeral) {
+        return await interaction.editReply(payload);
+      } else if (interaction.deferred || interaction.replied) {
+        return await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
+      } else {
+        return await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+      }
+    } catch (_) {}
+  };
+
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
     }
     const [, type, roleId] = interaction.customId.split('_');
     const isBooster = type === 'booster';
@@ -1082,8 +1151,10 @@ export async function handleColorButton(interaction) {
 
     // Check booster status if it's a booster color
     if (isBooster && !await isMemberBooster(member, guildId)) {
-      await interaction.editReply({ files: [], attachments: [], content: '❌ Boost the server to unlock this color!', });
-      return;
+      const errEmbed = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setDescription('❌ Boost the server to unlock this booster color!');
+      return await sendPrivateResponse({ embeds: [errEmbed] });
     }
 
     // Get all color roles (both normal and booster)
@@ -1098,7 +1169,10 @@ export async function handleColorButton(interaction) {
       const targetRole = interaction.guild.roles.cache.get(roleId);
       
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({ files: [], attachments: [], content: '❌ I cannot remove this role because it is positioned above me in the hierarchy. Move the bot role higher!', });
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription('❌ I cannot remove this role because it is positioned above the bot in the server hierarchy. Move the bot role higher in Server Settings → Roles.');
+        return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
       // Remove the role
@@ -1108,9 +1182,11 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Removed color role <@&${roleId}>.`
       );
-      await interaction.editReply({
-        content: `Color <@&${roleId}> Removed`,
-      });
+
+      const embed = new EmbedBuilder()
+        .setColor('#3498DB')
+        .setDescription(`🗑️ Removed color role <@&${roleId}>.`);
+      await sendPrivateResponse({ embeds: [embed] });
     } else {
       // Remove all other color roles first (ONLY if manageable)
       const botMember = await interaction.guild.members.fetchMe().catch(() => null);
@@ -1129,12 +1205,18 @@ export async function handleColorButton(interaction) {
       // Add the new color role (Check hierarchy and security first)
       const targetRole = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
       if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
-        return interaction.editReply({ files: [], attachments: [], content: '❌ I cannot assign this role because it is positioned above me in the hierarchy. Please move the bot\'s role higher.', });
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription('❌ I cannot assign this role because it is positioned above the bot in the server hierarchy. Please move the bot role higher in Server Settings → Roles.');
+        return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
       if (targetRole && hasAnyDangerousPermission(targetRole)) {
         sysWarn('Dangerous Color Role Assignment Blocked', { user: member.id, guild: interaction.guildId, role: roleId, detail: 'Target color role holds dangerous permissions' });
-        return interaction.editReply({ files: [], attachments: [], content: '❌ This color role holds administrative or moderation permissions and cannot be assigned.', });
+        const errEmbed = new EmbedBuilder()
+          .setColor('#E74C3C')
+          .setDescription('❌ This color role holds administrative or moderation permissions and cannot be assigned.');
+        return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
       await member.roles.add(roleId);
@@ -1143,15 +1225,18 @@ export async function handleColorButton(interaction) {
         `**User:** \`${logName}\`\n` +
         `**Action:** Picked color role <@&${roleId}>.`
       );
-      await interaction.editReply({
-        content: `Color <@&${roleId}> Selected`,
-      });
+
+      const roleColor = (targetRole?.hexColor && targetRole.hexColor !== '#000000') ? targetRole.hexColor : '#2ECC71';
+      const embed = new EmbedBuilder()
+        .setColor(roleColor)
+        .setDescription(`🎨 Picked color role <@&${roleId}>.`);
+      await sendPrivateResponse({ embeds: [embed] });
     }
   } catch (error) {
     if (error.message?.includes('already been sent') || error.message?.includes('Unknown interaction')) {
-        return; // Ignore harmless noise
+      return; // Ignore harmless noise
     }
-    sysError('Error handling color button', error, { user: interaction.user.id, guild: interaction.guildId });
+    sysError('Error handling color button', error, { user: interaction.user?.id || interaction.member?.id, guild: interaction.guildId });
 
     let errorMsg = 'Failed to update your color role.';
 
@@ -1164,10 +1249,9 @@ export async function handleColorButton(interaction) {
       errorMsg = `❌ Failed to update color role: ${error.message || 'Unknown error'}`;
     }
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ files: [], attachments: [], content: errorMsg }).catch(() => { });
-    } else {
-      await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => { });
-    }
+    const errEmbed = new EmbedBuilder()
+      .setColor('#E74C3C')
+      .setDescription(errorMsg);
+    await sendPrivateResponse({ embeds: [errEmbed] });
   }
 }
