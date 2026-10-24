@@ -1485,6 +1485,17 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_server_admins_guild ON server_admins(guild_id);
     `);
 
+    // Server Admin Roles Table — Strict Multi-Tenant Role-Based Bot Administration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_admin_roles (
+        guild_id VARCHAR(32) NOT NULL,
+        role_id VARCHAR(32) NOT NULL,
+        added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (guild_id, role_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_admin_roles_guild ON server_admin_roles(guild_id);
+    `);
+
     // Image Host Threads Table — Centralized Asset Storage Mapping
     await pool.query(`
       CREATE TABLE IF NOT EXISTS image_host_threads (

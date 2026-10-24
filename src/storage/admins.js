@@ -9,6 +9,324 @@
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getPool, isDatabaseReady } from './postgres.js';
 import { sysError, sysLog } from '../utils/logger.js';
+import { hasAnyDangerousPermission } from '../shared.js';
+
+/**
+ * Fetch all authorized bot admin roles for a specific guild.
+ *
+ * @param {string} guildId
+ * @returns {Promise<Array<{ role_id: string, added_at: string }>>}
+ */
+export async function getServerAdminRoles(guildId) {
+  if (!guildId) return [];
+  if (!isDatabaseReady()) return [];
+  try {
+    const pool = getPool();
+    const res = await pool.query(
+      'SELECT role_id, added_at FROM server_admin_roles WHERE guild_id = $1 ORDER BY added_at ASC',
+      [guildId]
+    );
+    return res.rows;
+  } catch (err) {
+    sysError('Database error fetching server_admin_roles', err, { guildId });
+    return [];
+  }
+}
+
+/**
+ * Check if a role is designated as a bot admin role for a guild.
+ *
+ * @param {string} guildId
+ * @param {string} roleId
+ * @returns {Promise<boolean>}
+ */
+export async function isServerAdminRole(guildId, roleId) {
+  if (!guildId || !roleId) return false;
+  if (!isDatabaseReady()) return false;
+  try {
+    const pool = getPool();
+    const res = await pool.query(
+      'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guildId, roleId]
+    );
+    return res.rows.length > 0;
+  } catch (err) {
+    sysError('Database error querying server_admin_roles', err, { guildId, roleId });
+    return false;
+  }
+}
+
+/**
+ * Check if an array of role IDs contains any designated bot admin role for a guild.
+ *
+ * @param {string} guildId
+ * @param {string[]} roleIds
+ * @returns {Promise<boolean>}
+ */
+export async function hasAdminRole(guildId, roleIds) {
+  if (!guildId || !Array.isArray(roleIds) || roleIds.length === 0) return false;
+  if (!isDatabaseReady()) return false;
+  try {
+    const pool = getPool();
+    const res = await pool.query(
+      'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = ANY($2::text[]) LIMIT 1',
+      [guildId, roleIds]
+    );
+    return res.rows.length > 0;
+  } catch (err) {
+    sysError('Database error checking hasAdminRole', err, { guildId });
+    return false;
+  }
+}
+
+/**
+ * Toggle a role's admin status in the server_admin_roles table.
+ * If already an admin role, removes it. If not an admin role, adds it.
+ *
+ * @param {string} guildId
+ * @param {string} roleId
+ * @returns {Promise<{ action: 'added' | 'removed', roleId: string }>}
+ */
+export async function toggleServerAdminRole(guildId, roleId) {
+  if (!guildId || !roleId) throw new Error('Missing guildId or roleId');
+  const pool = getPool();
+
+  const checkRes = await pool.query(
+    'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2',
+    [guildId, roleId]
+  );
+
+  if (checkRes.rows.length > 0) {
+    await pool.query(
+      'DELETE FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2',
+      [guildId, roleId]
+    );
+    return { action: 'removed', roleId };
+  } else {
+    await pool.query(
+      'INSERT INTO server_admin_roles (guild_id, role_id) VALUES ($1, $2) ON CONFLICT (guild_id, role_id) DO NOTHING',
+      [guildId, roleId]
+    );
+    return { action: 'added', roleId };
+  }
+}
+
+/**
+ * Purge a role from the server_admin_roles table (e.g. when deleted from the server).
+ *
+ * @param {string} guildId
+ * @param {string} roleId
+ * @returns {Promise<boolean>}
+ */
+export async function removeServerAdminRole(guildId, roleId) {
+  if (!guildId || !roleId) return false;
+  try {
+    const pool = getPool();
+    const res = await pool.query(
+      'DELETE FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2 RETURNING role_id',
+      [guildId, roleId]
+    );
+    if (res.rowCount > 0) {
+      sysLog('Bot Admin Role Purged', { guild: guildId, role: roleId });
+      return true;
+    }
+    return false;
+  } catch (err) {
+    sysError('Failed to remove server admin role', err, { guildId, roleId });
+    return false;
+  }
+}
+
+/**
+ * Audit sweep to prune any deleted roles from server_admin_roles.
+ *
+ * @param {import('discord.js').Client} client
+ */
+export async function auditAndPruneDepartedAdminRoles(client) {
+  if (!client?.guilds?.cache) return;
+  try {
+    const pool = getPool();
+    const res = await pool.query('SELECT guild_id, role_id FROM server_admin_roles');
+    if (res.rows.length === 0) return;
+
+    let purgedCount = 0;
+    for (const row of res.rows) {
+      const guild = client.guilds.cache.get(row.guild_id) || await client.guilds.fetch(row.guild_id).catch(() => null);
+      if (!guild) continue;
+
+      const role = guild.roles.cache.get(row.role_id) || await guild.roles.fetch(row.role_id).catch(() => null);
+      if (!role) {
+        await removeServerAdminRole(row.guild_id, row.role_id);
+        purgedCount++;
+      }
+    }
+    if (purgedCount > 0) {
+      sysLog('Ghost Admin Roles Purged in Audit', { count: purgedCount });
+    }
+  } catch (err) {
+    sysError('Failed to audit departed admin roles', err);
+  }
+}
+
+/**
+ * Centralized Conflict Validator for Mutual Role Exclusion:
+ * Enforces: Item Role != Top Reward Role != Admin Role
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {string|import('discord.js').Role} roleOrId
+ * @param {'ADMIN_ROLE'|'ITEM_ROLE'|'REWARD_ROLE'} targetCategory
+ * @param {object} [options]
+ * @param {string} [options.excludeItemId] - Item ID to exclude when swapping roles on existing items
+ * @param {string} [options.currentModule] - Module name for reward role checks ('richest', 'streaks', 'mvp')
+ * @returns {Promise<{ valid: boolean, error?: string, role?: import('discord.js').Role }>}
+ */
+export async function validateRoleConflict(guild, roleOrId, targetCategory, options = {}) {
+  if (!guild) return { valid: false, error: 'Guild context missing.' };
+  const roleId = typeof roleOrId === 'object' && roleOrId?.id ? roleOrId.id : String(roleOrId);
+  const role = typeof roleOrId === 'object' && roleOrId?.name
+    ? roleOrId
+    : (guild.roles?.cache?.get(roleId) || await guild.roles?.fetch(roleId).catch(() => null));
+
+  if (!role) {
+    return { valid: false, error: 'Selected role was not found in this server.' };
+  }
+
+  // Common: Block @everyone
+  if (role.id === guild.id) {
+    return { valid: false, error: 'Cannot use @everyone.' };
+  }
+
+  // Common: Block managed/bot integration roles for Admin and Reward roles
+  if ((targetCategory === 'ADMIN_ROLE' || targetCategory === 'REWARD_ROLE') && role.managed) {
+    return { valid: false, error: 'Managed or integration roles cannot be used.' };
+  }
+
+  const pool = getPool();
+  const { getGuildConfig } = await import('./config.js');
+  const config = await getGuildConfig(guild.id) || {};
+
+  if (targetCategory === 'ADMIN_ROLE') {
+    // 1. Check if connected to any active shop item
+    const itemRes = await pool.query(
+      'SELECT name FROM shop_items WHERE guild_id = $1 AND role_id = $2 AND is_active = true LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (itemRes.rows.length > 0) {
+      return { valid: false, error: `This role is linked to the shop item "${itemRes.rows[0].name}" and cannot be an administrator role.` };
+    }
+
+    // 2. Check if connected to color roles
+    const colorRes = await pool.query(
+      'SELECT 1 FROM colors WHERE guild_id = $1 AND role_id = $2 UNION SELECT 1 FROM booster_colors WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (colorRes.rows.length > 0) {
+      return { valid: false, error: 'This role is configured as a color role and cannot be an administrator role.' };
+    }
+
+    // 3. Check if Booster role
+    if (guild.roles.premiumSubscriberRole?.id === role.id) {
+      return { valid: false, error: 'Server Booster role cannot be an administrator role.' };
+    }
+    const boosterRes = await pool.query(
+      'SELECT 1 FROM booster_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (boosterRes.rows.length > 0) {
+      return { valid: false, error: 'This role is configured as a Booster role and cannot be an administrator role.' };
+    }
+
+    // 4. Check if MVP role or Top X role
+    if (config.mvpRoleId === role.id) {
+      return { valid: false, error: 'MVP role cannot be an administrator role.' };
+    }
+    if (config.richest_role_id === role.id) {
+      return { valid: false, error: 'Top Richest reward role cannot be an administrator role.' };
+    }
+    if (config.streak_role_id === role.id) {
+      return { valid: false, error: 'Top Streak reward role cannot be an administrator role.' };
+    }
+  }
+
+  if (targetCategory === 'ITEM_ROLE') {
+    // 1. Check dangerous permissions
+    if (hasAnyDangerousPermission(role)) {
+      return { valid: false, error: 'Security Violation: This role holds administrative or moderation permissions and cannot be added to the shop.' };
+    }
+
+    // 2. Check if Admin Role
+    const adminRoleRes = await pool.query(
+      'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (adminRoleRes.rows.length > 0) {
+      return { valid: false, error: 'Security Violation: This role is an authorized Bot Admin Role and cannot be linked to a shop item.' };
+    }
+
+    // 3. Check if MVP role
+    if (config.mvpRoleId === role.id) {
+      return { valid: false, error: "MVP Role can't be a shop item. Use Requirements to gate items behind MVP status." };
+    }
+
+    // 4. Check if Top X / Leaderboard role
+    if (config.richest_role_id === role.id) {
+      return { valid: false, error: "Top Richest reward role can't be a shop item." };
+    }
+    if (config.streak_role_id === role.id) {
+      return { valid: false, error: "Top Streak reward role can't be a shop item." };
+    }
+
+    // 5. Check if Booster role
+    if (guild.roles.premiumSubscriberRole?.id === role.id) {
+      return { valid: false, error: "Server Booster Role can't be a shop item." };
+    }
+    const boosterRes = await pool.query(
+      'SELECT 1 FROM booster_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (boosterRes.rows.length > 0) {
+      return { valid: false, error: "Booster Role can't be a shop item." };
+    }
+  }
+
+  if (targetCategory === 'REWARD_ROLE') {
+    const currentModule = options.currentModule;
+
+    // 1. Check dangerous permissions
+    if (hasAnyDangerousPermission(role)) {
+      return { valid: false, error: 'Reward role must not possess any administrative or moderation permissions.' };
+    }
+
+    // 2. Check if Admin Role
+    const adminRoleRes = await pool.query(
+      'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (adminRoleRes.rows.length > 0) {
+      return { valid: false, error: 'Security Violation: This role is an authorized Bot Admin Role and cannot be used as a reward role.' };
+    }
+
+    // 3. Check if connected to active shop item
+    const itemRes = await pool.query(
+      'SELECT name FROM shop_items WHERE guild_id = $1 AND role_id = $2 AND is_active = true LIMIT 1',
+      [guild.id, role.id]
+    );
+    if (itemRes.rows.length > 0) {
+      return { valid: false, error: `This role is linked to the shop item "${itemRes.rows[0].name}" and cannot be used as a reward role.` };
+    }
+
+    // 4. Check if already used by another reward module
+    const usedRoles = [];
+    if (currentModule !== 'mvp' && config.mvpRoleId === role.id) usedRoles.push('MVP');
+    if (currentModule !== 'richest' && config.richest_role_id === role.id) usedRoles.push('Richest');
+    if (currentModule !== 'streaks' && config.streak_role_id === role.id) usedRoles.push('Streaks');
+    if (usedRoles.length > 0) {
+      return { valid: false, error: `This role is already assigned to ${usedRoles.join(', ')}.` };
+    }
+  }
+
+  return { valid: true, role };
+}
 
 /**
  * Check if a user is an authorized bot administrator for a guild.
@@ -230,8 +548,32 @@ export async function verifyAdminAccess(interaction) {
     return true;
   }
 
-  // 4. Hard Denial
-  sysError('Security Violation: Unauthorized Admin Action Blocked', new Error('User not on server_admins whitelist and not a Discord administrator'), {
+  // 4. Database Role Whitelist Check: strictly scoped to guild_id and member roles
+  let roleIds = [];
+  if (interaction.member?.roles) {
+    if (Array.isArray(interaction.member.roles)) {
+      roleIds = interaction.member.roles;
+    } else if (typeof interaction.member.roles.cache?.keys === 'function') {
+      roleIds = Array.from(interaction.member.roles.cache.keys());
+    }
+  }
+  if (roleIds.length === 0 && (interaction.guild || interaction.client)) {
+    const guild = interaction.guild || await interaction.client.guilds.fetch(guildId).catch(() => null);
+    const m = await guild?.members?.fetch(userId).catch(() => null);
+    if (m?.roles?.cache) {
+      roleIds = Array.from(m.roles.cache.keys());
+    }
+  }
+
+  if (roleIds.length > 0) {
+    const hasRole = await hasAdminRole(guildId, roleIds);
+    if (hasRole) {
+      return true;
+    }
+  }
+
+  // 5. Hard Denial
+  sysError('Security Violation: Unauthorized Admin Action Blocked', new Error('User not on server_admins/server_admin_roles whitelist and not a Discord administrator'), {
     user: userId,
     guild: guildId,
     detail: interaction.commandName ? `Command: /${interaction.commandName}` : `CustomID: ${interaction.customId}`
@@ -408,6 +750,20 @@ export async function isGuildOwnerOrAdmin(guild, userOrMember) {
     const isDbAdmin = await isServerAdmin(guildId, userId, ownerId);
     if (isDbAdmin) {
       return true;
+    }
+
+    // 5. Database role whitelist check for THIS specific guild
+    let roleIds = [];
+    if (member?.roles?.cache) {
+      roleIds = Array.from(member.roles.cache.keys());
+    } else if (Array.isArray(member?.roles)) {
+      roleIds = member.roles;
+    }
+    if (roleIds.length > 0) {
+      const hasRole = await hasAdminRole(guildId, roleIds);
+      if (hasRole) {
+        return true;
+      }
     }
 
     return false;

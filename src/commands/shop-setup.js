@@ -575,30 +575,11 @@ export async function handleCreateRoleSelect(interaction) {
       return interaction.followUp({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral });
     }
 
-    // Block @everyone
-    if (role.id === interaction.guild.id) {
-      return interaction.followUp({ content: '❌ @everyone cannot be a shop item.', flags: MessageFlags.Ephemeral });
-    }
-
-    // Block Booster Role
-    const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
-    if (boosterRoleId && role.id === boosterRoleId) {
-      return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item. Use the Requirements select to gate items behind Server Booster status.", flags: MessageFlags.Ephemeral });
-    }
-
-    // Block MVP Role
-    const { getGuildConfig: _getGuildConfig } = await import('../storage/config.js');
-    const guildConfig = await _getGuildConfig(interaction.guildId);
-    if (guildConfig?.mvpRoleId && role.id === guildConfig.mvpRoleId) {
-      return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Use the Requirements select to gate items behind MVP status.", flags: MessageFlags.Ephemeral });
-    }
-
-    // Block dangerous permissions
-    if (hasAnyDangerousPermission(role)) {
-      return interaction.followUp({
-        content: '❌ **Security Violation**: This role holds administrative or moderation permissions and cannot be added to the shop.',
-        flags: MessageFlags.Ephemeral
-      });
+    // Mutual exclusion conflict check: cannot be Admin Role, Top Role, MVP Role, Booster Role, dangerous perm, or @everyone
+    const { validateRoleConflict } = await import('../storage/admins.js');
+    const conflictCheck = await validateRoleConflict(interaction.guild, role, 'ITEM_ROLE');
+    if (!conflictCheck.valid) {
+      return interaction.followUp({ content: `❌ ${conflictCheck.error}`, flags: MessageFlags.Ephemeral });
     }
 
     // Block duplicate roles
@@ -668,30 +649,11 @@ export async function handleRoleSwapSelect(interaction) {
     const role = interaction.roles?.first?.() || interaction.guild.roles.cache.get(interaction.values?.[0]);
     if (!role) return interaction.followUp({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral });
 
-    // Block @everyone
-    if (role.id === interaction.guild.id) {
-      return interaction.followUp({ content: '❌ @everyone cannot be a shop item.', flags: MessageFlags.Ephemeral });
-    }
-
-    // Block Booster Role
-    const boosterRoleId = interaction.guild.roles.premiumSubscriberRole?.id;
-    if (boosterRoleId && role.id === boosterRoleId) {
-      return interaction.followUp({ content: "❌ Server Booster Role can't be a shop item.", flags: MessageFlags.Ephemeral });
-    }
-
-    // Block MVP Role
-    const { getGuildConfig: _getGuildConfigSwap } = await import('../storage/config.js');
-    const guildConfigSwap = await _getGuildConfigSwap(interaction.guildId);
-    if (guildConfigSwap?.mvpRoleId && role.id === guildConfigSwap.mvpRoleId) {
-      return interaction.followUp({ content: "❌ MVP Role can't be a shop item.", flags: MessageFlags.Ephemeral });
-    }
-
-    // Block dangerous permissions
-    if (hasAnyDangerousPermission(role)) {
-      return interaction.followUp({
-        content: '❌ **Security Violation**: This role holds administrative or moderation permissions and cannot be linked to a shop item.',
-        flags: MessageFlags.Ephemeral
-      });
+    // Mutual exclusion conflict check: cannot be Admin Role, Top Role, MVP Role, Booster Role, dangerous perm, or @everyone
+    const { validateRoleConflict } = await import('../storage/admins.js');
+    const conflictCheck = await validateRoleConflict(interaction.guild, role, 'ITEM_ROLE');
+    if (!conflictCheck.valid) {
+      return interaction.followUp({ content: `❌ ${conflictCheck.error}`, flags: MessageFlags.Ephemeral });
     }
 
     // Block duplicate — exclude current item's role
