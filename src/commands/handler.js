@@ -28,7 +28,7 @@ export async function handleSlashCommand(interaction) {
   });
 
   // Top-Level Admin Slash Command Security Gate (Zero Trust Multi-Tenant Pre-Check)
-  const adminCommands = ['settings', 'mass', 'shop', 'rewards', 'colors'];
+  const adminCommands = ['settings', 'mass'];
   if (adminCommands.includes(commandName)) {
     const { verifyAdminAccess } = await import('../storage/admins.js');
     const hasAccess = await verifyAdminAccess(interaction);

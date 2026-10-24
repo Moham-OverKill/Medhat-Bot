@@ -4,6 +4,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
     UserSelectMenuBuilder,
+    RoleSelectMenuBuilder,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
@@ -1858,6 +1859,12 @@ export async function handleAdminUserComponent(interaction) {
             return;
         }
 
+        if (customId === 'admin_manage_toggle_role') {
+            if (!(await verifyAdminManagerAccess(interaction))) return;
+            await handleToggleAdminRole(interaction);
+            return;
+        }
+
         if (customId === 'admin_manage_back') {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferUpdate().catch(() => {});
@@ -2458,8 +2465,9 @@ export async function showAdminManagement(interaction, fromSettings = false) {
         } catch {}
     }
 
-    const { getServerAdmins } = await import('../storage/admins.js');
+    const { getServerAdmins, getServerAdminRoles, removeServerAdminRole, removeServerAdmin } = await import('../storage/admins.js');
     const admins = await getServerAdmins(guildId);
+    const adminRoles = await getServerAdminRoles(guildId);
 
     // Fetch members with Discord Administrator permission
     const discordAdminIds = new Set();
@@ -2476,12 +2484,26 @@ export async function showAdminManagement(interaction, fromSettings = false) {
         }
     }
 
+    // Role Lines: Prune ghost roles and format with (role) tag
+    const roleLines = [];
+    for (const r of adminRoles) {
+        const role = guild?.roles?.cache?.get(r.role_id) || await guild?.roles?.fetch(r.role_id).catch(() => null);
+        if (!role) {
+            await removeServerAdminRole(guildId, r.role_id).catch(() => {});
+            continue;
+        }
+        roleLines.push(`• <@&${r.role_id}> (role)`);
+    }
+
     const userLines = [];
     if (ownerId) {
         userLines.push(`• <@${ownerId}> (Owner)`);
     }
     for (const adminId of discordAdminIds) {
         userLines.push(`• <@${adminId}> (Admin)`);
+    }
+    for (const roleLine of roleLines) {
+        userLines.push(roleLine);
     }
     for (const a of admins) {
         if (!discordAdminIds.has(a.user_id) && a.user_id !== ownerId) {
@@ -2490,7 +2512,6 @@ export async function showAdminManagement(interaction, fromSettings = false) {
                 member = await guild.members.fetch(a.user_id).catch(() => null);
             }
             if (!member) {
-                const { removeServerAdmin } = await import('../storage/admins.js');
                 await removeServerAdmin(guildId, a.user_id).catch(() => {});
                 continue;
             }
@@ -2514,6 +2535,12 @@ export async function showAdminManagement(interaction, fromSettings = false) {
         .setMinValues(1)
         .setMaxValues(1);
 
+    const roleSelect = new RoleSelectMenuBuilder()
+        .setCustomId('admin_manage_toggle_role')
+        .setPlaceholder('Select a role to add or remove . . .')
+        .setMinValues(1)
+        .setMaxValues(1);
+
     const isSettingsOrigin = fromSettings || Boolean(interaction.customId?.startsWith('settings_menu_')) ||
         Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
     const backCustomId = isSettingsOrigin ? 'settings_home' : 'admin_manage_back';
@@ -2526,7 +2553,8 @@ export async function showAdminManagement(interaction, fromSettings = false) {
         .setDisabled(isSettingsOrigin ? isBackDisabled(interaction) : false);
 
     const row1 = new ActionRowBuilder().addComponents(userSelect);
-    const row2 = new ActionRowBuilder().addComponents(backButton);
+    const row2 = new ActionRowBuilder().addComponents(roleSelect);
+    const row3 = new ActionRowBuilder().addComponents(backButton);
 
     const responseMethod = (interaction.deferred || interaction.replied)
         ? 'editReply'
@@ -2535,8 +2563,86 @@ export async function showAdminManagement(interaction, fromSettings = false) {
     await interaction[responseMethod]({
         content: '',
         embeds: [embed],
-        components: [row1, row2]
+        components: [row1, row2, row3]
     });
+}
+
+/**
+ * Handle adding or removing a role from server_admin_roles (toggle logic)
+ * @param {import('discord.js').Interaction} interaction
+ */
+export async function handleToggleAdminRole(interaction) {
+    const { verifyAdminManagerAccess, validateRoleConflict, toggleServerAdminRole, removeServerAdminRole, isServerAdminRole } = await import('../storage/admins.js');
+    if (!(await verifyAdminManagerAccess(interaction))) return;
+
+    const guildId = interaction.guildId;
+    const targetRoleId = interaction.values[0];
+    let guild = interaction.guild;
+    if (!guild && interaction.client) {
+        guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+    }
+
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+
+    // Role existence check
+    const role = guild?.roles?.cache?.get(targetRoleId) || await guild?.roles?.fetch(targetRoleId).catch(() => null);
+    if (!role) {
+        const isCurrentAdminRole = await isServerAdminRole(guildId, targetRoleId);
+        if (isCurrentAdminRole) {
+            await removeServerAdminRole(guildId, targetRoleId);
+            return showAdminManagement(interaction);
+        }
+        await interaction.followUp({
+            content: '❌ **Action Prohibited**: Selected role was not found in this server.',
+            flags: MessageFlags.Ephemeral
+        });
+        return showAdminManagement(interaction);
+    }
+
+    // If currently an admin role, toggle action will remove it directly
+    const isCurrentlyAdminRole = await isServerAdminRole(guildId, targetRoleId);
+    if (!isCurrentlyAdminRole) {
+        // When ADDING: enforce all mutual exclusion invariant checks
+        const check = await validateRoleConflict(guild, role, 'ADMIN_ROLE');
+        if (!check.valid) {
+            await interaction.followUp({
+                content: `❌ **Action Prohibited**: ${check.error}`,
+                flags: MessageFlags.Ephemeral
+            });
+            return showAdminManagement(interaction);
+        }
+    }
+
+    const result = await toggleServerAdminRole(guildId, targetRoleId);
+    const logName = getUserLogName(interaction);
+
+    if (result.action === 'added') {
+        sendLog(interaction.guild, 'audit', 'cyan', '🛡️ Bot Admin Role Added',
+            `**Admin:** \`${logName}\`\n` +
+            `**Role:** <@&${targetRoleId}>\n` +
+            `**Action:** Added role to bot administrators`
+        );
+        sysLog('Bot Admin Role Added', { user: interaction.user.id, guild: guildId, role: targetRoleId });
+        await interaction.followUp({
+            content: `✅ Successfully added role <@&${targetRoleId}> as a bot administrator.`,
+            flags: MessageFlags.Ephemeral
+        });
+    } else {
+        sendLog(interaction.guild, 'audit', 'yellow', '🛡️ Bot Admin Role Removed',
+            `**Admin:** \`${logName}\`\n` +
+            `**Role:** <@&${targetRoleId}>\n` +
+            `**Action:** Removed role from bot administrators`
+        );
+        sysLog('Bot Admin Role Removed', { user: interaction.user.id, guild: guildId, role: targetRoleId });
+        await interaction.followUp({
+            content: `🗑️ Successfully removed role <@&${targetRoleId}> from bot administrators.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    return showAdminManagement(interaction);
 }
 
 /**
