@@ -2522,7 +2522,7 @@ export async function showAdminManagement(interaction, fromSettings = false) {
     const desc = userLines.join('\n') + '\n\n' +
         '———————————————————————\n' +
         'Users in this list can use `/settings` or `/mass` commands\n' +
-        'And interact with the **Admin Interface**.';
+        'And interact with the **Admin Interface (dashboard)**.';
 
     const embed = new EmbedBuilder()
         .setTitle('Authorized Users')
