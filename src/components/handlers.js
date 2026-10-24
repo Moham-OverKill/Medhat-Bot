@@ -210,6 +210,8 @@ export function setupComponentHandlers(client) {
           if (!hasAccess) {
             return;
           }
+          // Mark verified so downstream handlers can skip a redundant DB re-check
+          interaction._adminVerified = true;
         }
       }
 

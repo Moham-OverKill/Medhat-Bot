@@ -1834,9 +1834,18 @@ export async function showUserHistory(interaction, targetUserId, page = 0) {
  */
 export async function handleAdminUserComponent(interaction) {
     try {
-        const { verifyAdminAccess, verifyAdminManagerAccess } = await import('../storage/admins.js');
-        if (!(await verifyAdminAccess(interaction))) return;
+        // Skip re-running the DB permission check if handlers.js already verified this interaction
+        if (!interaction._adminVerified) {
+            const { verifyAdminAccess } = await import('../storage/admins.js');
+            if (!(await verifyAdminAccess(interaction))) return;
+        }
 
+        // Defer immediately for all non-modal interactions before any async DB/API work
+        if (!interaction.isModalSubmit() && !interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate().catch(() => {});
+        }
+
+        const { verifyAdminManagerAccess } = await import('../storage/admins.js');
         const customId = interaction.customId;
 
         if (customId === 'admin_user_automod') {
@@ -1846,9 +1855,6 @@ export async function handleAdminUserComponent(interaction) {
 
         if (customId === 'admin_user_admins') {
             if (!(await verifyAdminManagerAccess(interaction))) return;
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferUpdate().catch(() => {});
-            }
             await showAdminManagement(interaction);
             return;
         }
@@ -1866,9 +1872,6 @@ export async function handleAdminUserComponent(interaction) {
         }
 
         if (customId === 'admin_manage_back') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferUpdate().catch(() => {});
-            }
             const isFromSettings = Boolean(interaction.message?.components?.some(row => row.components?.some(c => c.customId === 'settings_home')));
             if (isFromSettings) {
                 const { showMainMenu } = await import('./settings.js');
@@ -2445,35 +2448,29 @@ export async function showAdminManagement(interaction, fromSettings = false) {
     const { verifyAdminManagerAccess } = await import('../storage/admins.js');
     if (!(await verifyAdminManagerAccess(interaction))) return;
 
-    const guildId = interaction.guildId;
-    let guild = interaction.guild;
-    if (!guild && interaction.client) {
-        guild = await interaction.client.guilds.fetch(guildId).catch(() => null);
+    // Defer immediately to prevent timeout while we do DB and API work
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
     }
-    let ownerId = guild?.ownerId;
 
-    if (!ownerId && guild?.fetch) {
-        try {
-            const g = await guild.fetch();
-            ownerId = g.ownerId;
-        } catch {}
-    }
-    if (!ownerId && interaction.client) {
-        try {
-            const g = await interaction.client.guilds.fetch(guildId).catch(() => null);
-            ownerId = g?.ownerId;
-        } catch {}
-    }
+    const guildId = interaction.guildId;
+    // Always prefer the cached guild object — avoid HTTP guild.fetch() for ownerId
+    const guild = interaction.guild ?? interaction.client?.guilds?.cache?.get(guildId) ?? null;
+    // guild.ownerId is populated from the GUILD_CREATE gateway event; no REST call needed
+    const ownerId = guild?.ownerId ?? null;
 
     const { getServerAdmins, getServerAdminRoles, removeServerAdminRole, removeServerAdmin } = await import('../storage/admins.js');
     const admins = await getServerAdmins(guildId);
     const adminRoles = await getServerAdminRoles(guildId);
 
-    // 1. Fetch and sort Discord Administrator members by highest role descending
+    // 1. Detect Discord Administrator members using the already-cached member collection.
+    //    We intentionally do NOT call guild.members.fetch() (no args) here — that triggers
+    //    Gateway Opcode 8 which streams ALL members and can take 2–5 seconds on large servers.
+    //    The member cache is populated by Discord.js from real-time guild events, which is
+    //    sufficient for identifying currently-online/cached administrators.
     const discordAdminMembers = [];
     if (guild) {
         try {
-            await guild.members.fetch().catch(() => {});
             for (const member of (guild.members?.cache?.values?.() || [])) {
                 if (!member.user?.bot && member.id !== ownerId && member.permissions?.has(PermissionFlagsBits.Administrator)) {
                     discordAdminMembers.push({
@@ -2485,7 +2482,7 @@ export async function showAdminManagement(interaction, fromSettings = false) {
             }
             discordAdminMembers.sort((a, b) => b.position - a.position || a.name.localeCompare(b.name));
         } catch (err) {
-            sysError('Failed to fetch Discord administrators for admin panel', err, { guildId });
+            sysError('Failed to enumerate Discord administrators for admin panel', err, { guildId });
         }
     }
 
