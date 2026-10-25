@@ -234,7 +234,6 @@ export async function showCoinsSubMenu(interaction) {
  * @param {import('discord.js').Interaction} interaction 
  */
 export async function showCustomizeModal(interaction, source = 'settings') {
-    const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(interaction.guildId) || {};
 
     const botMember = interaction.guild.members.me || await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
@@ -288,7 +287,6 @@ export async function showCustomizeModal(interaction, source = 'settings') {
  * @param {import('discord.js').Interaction} interaction 
  */
 export async function showCoinsCustomizeModal(interaction) {
-    const { getGuildConfig } = await import('../storage/config.js');
     const config = await getGuildConfig(interaction.guildId) || {};
 
     const currentCoinName = config.coin_name || '';
@@ -389,11 +387,9 @@ export async function handleSettingsComponent(interaction) {
                     return handlePassSetup(interaction);
                 }
                 case 'fun_roles': {
-                    const { showRolesMenu } = await import('./settings/role-rewards.js');
                     return showRolesMenu(interaction);
                 }
                 case 'fun_leaderboards': {
-                    const { handleLeaderboardSettings } = await import('./settings/leaderboards.js');
                     return handleLeaderboardSettings(interaction);
                 }
 
@@ -479,7 +475,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_vote_reward') {
-            const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
             const coinName = await getCurrencyName(interaction.guildId);
             const modal = new ModalBuilder().setCustomId(`settings_vote_modal_${Date.now()}`).setTitle('Vote Reward');
@@ -496,7 +491,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId === 'settings_tag_reward') {
-            const { getGuildConfig } = await import('../storage/config.js');
             const config = await getGuildConfig(interaction.guildId) || {};
             const coinName = await getCurrencyName(interaction.guildId);
             const modal = new ModalBuilder().setCustomId(`settings_tag_modal_${Date.now()}`).setTitle('Tag Reward');
@@ -519,13 +513,11 @@ export async function handleSettingsComponent(interaction) {
             if (amountStr && isNaN(amount)) {
                 return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
             }
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
             config.vote_reward_amount = amount;
             await setGuildConfig(guildId, config);
 
-            const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             const coinName = await getCurrencyName(guildId);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Vote Reward Config Changed',
@@ -545,13 +537,11 @@ export async function handleSettingsComponent(interaction) {
             if (amountStr && isNaN(amount)) {
                 return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
             }
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
             config.tag_reward_amount = amount;
             await setGuildConfig(guildId, config);
 
-            const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             const coinName = await getCurrencyName(guildId);
             sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Tag Reward Config Changed',
@@ -581,7 +571,6 @@ export async function handleSettingsComponent(interaction) {
                 }
             }
             
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
             
@@ -743,7 +732,6 @@ export async function handleSettingsComponent(interaction) {
             };
 
             // --- 5. Audit Logging ---
-            const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             sendLog(interaction.guild, 'audit', 'cyan', 'Bot Customized',
                 `**Admin:** \`${logName}\`\n\n` +
@@ -775,7 +763,6 @@ export async function handleSettingsComponent(interaction) {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
             }
 
-            const { getGuildConfig, setGuildConfig } = await import('../storage/config.js');
             const guildId = interaction.guildId;
             const config = await getGuildConfig(guildId) || {};
 
@@ -901,7 +888,6 @@ export async function handleSettingsComponent(interaction) {
             };
 
             // --- 4. Audit Logging ---
-            const { getUserLogName } = await import('../shared.js');
             const logName = getUserLogName(interaction);
             const finalCoinName = config.coin_name || 'Coins';
             sendLog(interaction.guild, 'audit', 'cyan', `${finalCoinName} Customized`,

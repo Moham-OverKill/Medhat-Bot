@@ -69,7 +69,6 @@ async function checkQuests(client, forceCheck = false) {
     if (!shouldRefresh) continue;
 
     try {
-      const { getPool } = await import('../storage/postgres.js');
       const rotated = await rotateGuildQuests(guildId, config, getPool(), client, { skipNotifications: true });
       
       if (rotated) {

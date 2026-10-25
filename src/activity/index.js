@@ -288,7 +288,6 @@ async function handleMessageDelete(message) {
       );
       if (delPost.rowCount > 0) {
         await pool.query(`DELETE FROM shop_drop_claims WHERE message_id = $1`, [message.id]).catch(() => {});
-        const { sysLog } = await import('../utils/logger.js');
         sysLog('Shop Post Cleaned On Message Delete', {
           messageId: message.id,
           itemId: delPost.rows[0].item_id,
@@ -327,7 +326,6 @@ async function handleMessageDeleteBulk(messages) {
     if (delPosts.rowCount > 0) {
       const delIds = delPosts.rows.map(r => r.message_id);
       await pool.query(`DELETE FROM shop_drop_claims WHERE message_id = ANY($1::varchar[])`, [delIds]).catch(() => {});
-      const { sysLog } = await import('../utils/logger.js');
       sysLog('Shop Posts Cleaned On Bulk Delete', { count: delPosts.rowCount, detail: 'Bulk messages deleted - disabled auto restock' });
     }
 
