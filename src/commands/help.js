@@ -9,6 +9,7 @@ import {
   PermissionFlagsBits 
 } from 'discord.js';
 import { handleInteractionError } from '../utils/errors.js';
+import { getGuildConfig } from '../storage/config.js';
 
 export const helpCommand = new SlashCommandBuilder()
   .setName('help')
@@ -17,10 +18,31 @@ export const helpCommand = new SlashCommandBuilder()
 export async function handleHelpCommand(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.reply({ content: 'Working on it . . .', flags: MessageFlags.Ephemeral });
-    } else {
-      await interaction.editReply({ files: [], content: 'Working on it . . .', embeds: [], components: [] });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
+
+    const guildId = interaction.guildId;
+    const config = guildId ? await getGuildConfig(guildId) : null;
+    const botName = config?.bot_name || interaction.client.user?.username || 'Medhat';
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${botName} Command Directory`)
+      .setColor(0x5865F2)
+      .setDescription('Quick directory of available commands on this server:')
+      .addFields(
+        { name: '🌐 `/interface`', value: 'Interactive community dashboard and server hub', inline: false },
+        { name: '🏦 `/bank`', value: 'Access personal balance and transaction history', inline: false },
+        { name: '🎁 `/daily`', value: 'Claim your daily coin reward and streak bonus', inline: false },
+        { name: '🎒 `/inventory`', value: 'View, equip, and manage your items', inline: false },
+        { name: '📦 `/items`', value: 'Browse server items and available chests', inline: false },
+        { name: '🤝 `/trade`', value: 'Trade coins and items with other server members', inline: false },
+        { name: '👤 `/profile`', value: 'View user profile, card, rank, and stats', inline: false },
+        { name: '🔔 `/notifications`', value: 'Configure DM notifications for this server', inline: false },
+        { name: '🗳️ `/vote`', value: 'Vote for the bot to earn bonus coins', inline: false },
+        { name: '⚙️ `/settings`', value: 'Administrative server configuration (Admin only)', inline: false }
+      );
+
+    await interaction.editReply({ files: [], content: '', embeds: [embed], components: [] });
   } catch (error) {
     await handleInteractionError(interaction, error, 'help command');
   }

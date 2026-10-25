@@ -74,6 +74,11 @@ export async function handleSlashCommand(interaction) {
     case 'profile':
       await handleProfileCommand(interaction);
       break;
+    case 'help': {
+      const { handleHelpCommand } = await import('./help.js');
+      await handleHelpCommand(interaction);
+      break;
+    }
     case 'daily': {
       const { handleDailyCommand } = await import('./daily.js');
       await handleDailyCommand(interaction);
