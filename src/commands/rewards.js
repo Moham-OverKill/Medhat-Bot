@@ -61,15 +61,7 @@ export async function getRewardsPayload(guildId) {
       `♾️ Streak Cap: ${capText}`
     );
 
-    const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('rewards_config_btn')
-      .setLabel('Config')
-      .setEmoji('⚙️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
+  const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('settings_coins')
       .setLabel('Back')
@@ -79,10 +71,15 @@ export async function getRewardsPayload(guildId) {
       .setCustomId('rewards_daily_toggle')
       .setLabel(isEnabled ? 'Disable' : 'Enable')
       .setEmoji(isEnabled ? '✖️' : '▶️')
-      .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('rewards_config_btn')
+      .setLabel('Config')
+      .setEmoji('⚙️')
+      .setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [row1, row2] };
+  return { embeds: [embed], components: [row] };
 }
 
 export async function handleRewardsSetup(interaction) {
