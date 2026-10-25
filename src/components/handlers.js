@@ -182,6 +182,7 @@ function isStateMutatingAction(customId) {
   if (!customId || typeof customId !== 'string') return false;
   return (
     customId === 'bank_daily' ||
+    customId === 'hub_btn_daily' ||
     customId.startsWith('bank_claim_drop_') ||
     customId.startsWith('bank_drop_claim_') ||
     customId.startsWith('bank_shop_confirm_buy_') ||

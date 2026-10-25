@@ -13,7 +13,7 @@ import {
 } from 'discord.js';
 import { getPool, getUserInventorySortPreference, setUserInventorySortPreference } from '../storage/postgres.js';
 import { logServerEvent, sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
-import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
+import { handleInteractionError, diagnoseChannelPermissions, createErrorEmbed } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
 import { hasClaimedToday, isStreakValid, getNextCairoMidnight, getCairoDateString } from '../utils/time.js';
@@ -218,7 +218,6 @@ export async function handleBankDaily(interaction) {
 
     const config = await getGuildConfig(guildId) || {};
     if (config.daily_enabled !== true) {
-      const { createErrorEmbed } = await import('../utils/errors.js');
       const errorEmbed = createErrorEmbed('Daily Rewards', 'Daily rewards are not configured for this server yet.');
       await interaction.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;

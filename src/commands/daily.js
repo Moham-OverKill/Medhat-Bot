@@ -16,20 +16,17 @@ export const dailyCommand = new SlashCommandBuilder()
  * Shared daily claim executor for slash command and interface button
  */
 export async function executeDailyClaim(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
   const config = await getGuildConfig(guildId) || {};
 
   if (config.daily_enabled !== true) {
     const errorEmbed = createErrorEmbed('Daily Rewards', 'Daily rewards are not configured for this server yet.');
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
-    }
-    return interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
-  }
-
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
   }
 
   const member = interaction.member;
