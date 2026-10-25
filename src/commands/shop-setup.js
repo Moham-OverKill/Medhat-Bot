@@ -867,7 +867,9 @@ export async function handleAppearanceModalSubmit(interaction) {
         });
         updates.default_image_url = uploadRes.url;
       }
-    } catch (_) { /* field may be absent */ }
+    } catch (err) {
+      sysError('Failed to upload host asset for item appearance', err);
+    }
 
     // Color hex
     const rawColor = interaction.fields.getTextInputValue('item_color')?.trim() ?? '';
@@ -1238,7 +1240,9 @@ export async function handleItemModalSubmit(interaction) {
               }
             }
           }
-        } catch (e) { /* field may be absent */ }
+        } catch (e) {
+          sysError('Failed to upload host asset for item', e);
+        }
 
         if (roleId && roleId.toLowerCase() !== 'none') {
           // Block Booster Role as main Item Role
