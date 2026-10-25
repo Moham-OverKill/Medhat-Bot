@@ -16,7 +16,7 @@ import { logServerEvent, sendLog, sysLog, sysWarn, sysError } from '../utils/log
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { claimDaily } from '../economy/service.js';
 import { isMemberBooster } from './colors.js';
-import { hasClaimedToday, isStreakValid, getNextCairoMidnight } from '../utils/time.js';
+import { hasClaimedToday, isStreakValid, getNextCairoMidnight, getCairoDateString } from '../utils/time.js';
 import { getUserDisplayName, getUserLogName, COIN_EMOJI, DEFAULT_COIN_EMOJI, sanitizeError, sortItemsByRarity, sortInventoryItems, formatInventoryItemLine, RARITY_EMOJIS, RARITY_DISPLAY, getItemRarityEmoji, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, safeDeferUpdate, safeDeferReply, getCurrencyName, getItemEmbedColor } from '../shared.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { verifyAndHealMessageImages } from '../utils/image-healer.js';
@@ -778,8 +778,7 @@ export async function handleShopBuyButton(interaction) {
     // STEP 1: Calculate Seller Payout & Effective Item Price
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
-    const { getShopItem } = await import('../economy/shop.js');
-    const itemForPrice = await getShopItem(itemId, guildId);
+    const itemForPrice = (typeof item !== 'undefined' && item) ? item : await getShopItem(itemId, guildId);
     const itemPrice = overridePrice !== null && overridePrice !== undefined ? overridePrice : (itemForPrice ? (parseInt(itemForPrice.price, 10) || 0) : 0);
     const customPayout = parseInt(payoutStr) || 0;
     const payoutAmount = hasSeller ? customPayout : 0;
@@ -868,7 +867,6 @@ export async function handleShopBuyButton(interaction) {
     let equipResult = null;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
-        const { toggleEquipItem } = await import('../economy/shop.js');
         equipResult = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         // Silent fallback: Do not display second warning, item remains safely in inventory
@@ -969,7 +967,6 @@ export async function refreshShopMessageUI(interaction, itemId, guildId, targetM
     const client = interaction.client || msg?.client;
     if (msg.author?.id && client?.user?.id && msg.author.id !== client.user.id) return;
 
-    const { getShopItem } = await import('../economy/shop.js');
     const updatedItem = await getShopItem(itemId, gId);
     if (!updatedItem) return;
 
@@ -1155,7 +1152,6 @@ export async function handleShopBuyModalSubmit(interaction) {
     const customPayout = parseInt(payoutStr) || 0;
     const payoutAmount = hasSeller ? customPayout : 0;
 
-    const { purgeUserInventory } = await import('../economy/shop.js');
     await purgeUserInventory(userId, guildId, member);
 
     const result = await purchaseItem(userId, guildId, itemId, member, {
@@ -1168,7 +1164,6 @@ export async function handleShopBuyModalSubmit(interaction) {
 
     if (!result.success) {
       if (result.error === 'Insufficient balance') {
-        const { getShopItem } = await import('../economy/shop.js');
         const itemForPrice = await getShopItem(itemId, guildId);
         const unitPrice = overridePrice !== null && overridePrice !== undefined ? overridePrice : (itemForPrice ? (parseInt(itemForPrice.price, 10) || 0) : 0);
         const totalCost = unitPrice * qty;
@@ -1240,7 +1235,6 @@ export async function handleShopBuyModalSubmit(interaction) {
     let equipResult = null;
     if (shopPost?.auto_equip === true && result.inventoryId && result.item?.role_id) {
       try {
-        const { toggleEquipItem } = await import('../economy/shop.js');
         equipResult = await toggleEquipItem(userId, guildId, result.inventoryId, member, { equipOnly: true });
       } catch (equipErr) {
         sysWarn('Auto-Equip Modal Silent Fallback', { user: userId, guild: guildId, item: result.item?.name, error: equipErr?.message });
@@ -1353,7 +1347,6 @@ export async function handleInventoryButton(interaction) {
 
     // ========== EVENT-DRIVEN PURGE (Lazy Evaluation) ==========
     // We execute the FULL purge here (DB + Discord Roles)
-    const { purgeUserInventory } = await import('../economy/shop.js');
     await purgeUserInventory(userId, guildId, member).catch(() => {});
 
     // Unified Fetch: Includes DB items + Live synthesis of admin roles
@@ -2375,7 +2368,6 @@ export async function handleInventoryAction(interaction) {
     // --- SECURITY LOCK: Trade Concurrency ---
     // Prevent dropping items if the user is in a pending trade (prevents duplication/ghost trades)
     if (action === 'drop' || action === 'dropconfirm') {
-      const { query } = await import('../storage/postgres.js');
       const tradeCheck = await query(
         `SELECT id, message_url FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
         [interaction.user.id, interaction.guildId]
@@ -2693,7 +2685,6 @@ export async function handleItemClaim(interaction) {
     // STEP 0: Interstitial Prerequisite Check
     // ===========================================
     if (!isForce) {
-      const { checkPrerequisites } = await import('../economy/shop.js');
       const dropRes = await query('SELECT shop_item_id FROM dropped_items WHERE id = $1', [dropId]);
 
       if (dropRes.rows.length > 0) {
@@ -2889,7 +2880,6 @@ export async function handleBankHistory(interaction) {
       await interaction.editReply({ files: [], content: null, embeds: [emptyEmbed], components: [navRow, backRow] });
       return;
     }
-    const { getCairoDateString } = await import('../utils/time.js');
     const lines = result.rows.map(tx => {
       const date = getCairoDateString(new Date(tx.created_at)).replace(/-/g, '/');
 
@@ -3047,8 +3037,7 @@ export async function handleInventoryDropModalSubmit(interaction) {
     }
 
     // Trade lock check
-    const { query: dbQuery } = await import('../storage/postgres.js');
-    const tradeCheck = await dbQuery(
+    const tradeCheck = await query(
       `SELECT id FROM trades WHERE (sender_id = $1 OR target_id = $1) AND status = 'pending' AND expires_at > NOW() AND guild_id = $2`,
       [interaction.user.id, interaction.guildId]
     );
