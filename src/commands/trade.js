@@ -359,7 +359,7 @@ function calculateTradeTax(amount, isBooster = false) {
 
 // Memory for active trade SETUPS (ephemeral, pre-posting)
 // Key: GuildId_UserId (Sender)
-const ACTIVE_SETUPS = new Map();
+export const ACTIVE_SETUPS = new Map();
 const POSTING_TRADES = new Set();
 const EXECUTING_TRADES = new Set();
 

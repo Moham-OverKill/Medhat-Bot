@@ -140,6 +140,10 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
       userData = userResult.rows[0];
     }
 
+    if (!userData) {
+      userData = { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
+    }
+
     // ========== STATIC CAIRO MIDNIGHT RESET LOGIC ==========
 
     // Check if already claimed TODAY (Cairo time)
