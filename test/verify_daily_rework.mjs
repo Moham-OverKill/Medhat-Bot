@@ -5,7 +5,7 @@ import { CONFIG_DEFAULTS, applyConfigDefaults, configCache } from '../src/storag
 import { getRewardsPayload, handleRewardsComponent, handleRewardsModal } from '../src/commands/rewards.js';
 import { buildGuildCommands } from '../src/commands/register.js';
 import { executeDailyClaim } from '../src/commands/daily.js';
-import { handleBankCommand } from '../src/commands/bank.js';
+import { handleBankCommand, handleBankDaily } from '../src/commands/bank.js';
 import { claimDaily } from '../src/economy/service.js';
 import { setMockPool } from '../src/storage/postgres.js';
 
@@ -205,8 +205,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(embed.data.description, 'Daily rewards are not configured for this server yet.');
       assert.equal(embed.data.color, 0xFF0000);
     });
-
-    it('handleBankCommand should reply with standardized error embed when disabled', async () => {
+    it('handleBankCommand should open bank UI normally even when daily_enabled is false', async () => {
       configCache.set(guildId, {
         daily_enabled: false
       });
@@ -215,6 +214,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       const fakeInteraction = {
         guildId,
         user: { id: userId },
+        member: { id: userId, displayName: 'TestUser' },
         deferred: true,
         replied: false,
         editReply: async (payload) => {
@@ -223,12 +223,56 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       };
 
       await handleBankCommand(fakeInteraction);
-      assert.notEqual(editReplyPayload, null, 'Must editReply with error');
+      assert.notEqual(editReplyPayload, null, 'Must editReply with bank UI');
       assert.equal(editReplyPayload.embeds.length, 1);
 
       const embed = editReplyPayload.embeds[0];
       assert.equal(embed.data.title, 'Bank');
-      assert.equal(embed.data.description, 'The bank is not configured for this server yet.');
+      assert.match(embed.data.description, /Welcome to your personal bank account/);
+
+      const balanceField = embed.data.fields.find(f => f.name.includes('Balance'));
+      assert.notEqual(balanceField, undefined);
+      assert.match(balanceField.value, /100/);
+
+      const streakField = embed.data.fields.find(f => f.name.includes('Daily Streak'));
+      assert.equal(streakField.value, '`Disabled`');
+
+      const nextField = embed.data.fields.find(f => f.name.includes('Next Daily'));
+      assert.equal(nextField.value, '`Disabled`');
+
+      const buttons = editReplyPayload.components[0].components;
+      assert.equal(buttons.length, 2);
+      assert.equal(buttons[0].data.custom_id, 'bank_history');
+      assert.equal(buttons[1].data.custom_id, 'bank_daily');
+      assert.equal(buttons[1].data.disabled, false, 'Daily button must NOT be disabled so user can click it');
+    });
+
+    it('handleBankDaily should reply with Daily Rewards error embed when daily_enabled is false', async () => {
+      configCache.set(guildId, {
+        daily_enabled: false
+      });
+
+      let followUpPayload = null;
+      const fakeInteraction = {
+        guildId,
+        user: { id: userId },
+        member: { id: userId, displayName: 'TestUser' },
+        deferred: true,
+        replied: false,
+        deferUpdate: async () => {},
+        followUp: async (payload) => {
+          followUpPayload = payload;
+        }
+      };
+
+      await handleBankDaily(fakeInteraction);
+      assert.notEqual(followUpPayload, null, 'Must followUp with error');
+      assert.equal(followUpPayload.flags, MessageFlags.Ephemeral);
+      assert.equal(followUpPayload.embeds.length, 1);
+
+      const embed = followUpPayload.embeds[0];
+      assert.equal(embed.data.title, 'Daily Rewards');
+      assert.equal(embed.data.description, 'Daily rewards are not configured for this server yet.');
       assert.equal(embed.data.color, 0xFF0000);
     });
   });

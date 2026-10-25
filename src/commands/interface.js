@@ -2739,16 +2739,6 @@ export async function handleHubShortcut(interaction) {
 
     // 7. Bank Shortcut (🏦)
     if (customId === 'hub_btn_bank') {
-      const { getGuildConfig } = await import('../storage/config.js');
-      const config = await getGuildConfig(guildId) || {};
-      if (config.daily_enabled !== true) {
-        if (!interaction.deferred && !interaction.replied) {
-          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        }
-        const { createErrorEmbed } = await import('../utils/errors.js');
-        const errorEmbed = createErrorEmbed('Bank', 'The bank is not configured for this server yet.');
-        return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
-      }
       const { handleBankCommand } = await import('./bank.js');
       return handleBankCommand(interaction);
     }
