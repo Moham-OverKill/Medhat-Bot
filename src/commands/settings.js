@@ -142,7 +142,7 @@ export async function showMainMenu(interaction) {
         .setCustomId(`settings_menu_other_${nonce}`)
         .setPlaceholder('⚙️ Other')
         .addOptions([
-            { label: 'Appearance', value: 'other_customize', emoji: '✨' },
+            { label: 'Appearance', value: 'other_customize', emoji: '🖼️' },
             { label: 'Shortcuts', value: 'other_shortcuts', emoji: '⚡' },
             { label: 'Dashboard', value: 'other_dashboard', emoji: '🎛️' },
             { label: 'Embeds', value: 'other_embeds', emoji: '📰' }
@@ -207,8 +207,8 @@ export async function showCoinsSubMenu(interaction) {
             .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
             .setCustomId('settings_coins_customize')
-            .setLabel('Customize')
-            .setEmoji('⚙️')
+            .setLabel('Appearance')
+            .setEmoji('🖼️')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('rewards_give_btn')
@@ -240,7 +240,7 @@ export async function showCustomizeModal(interaction, source = 'settings') {
     const currentNickname = config.bot_nickname !== undefined ? (config.bot_nickname || '') : (botMember ? (botMember.nickname || '') : '');
     const currentServerAvatar = config.bot_avatar || (botMember?.avatar ? botMember.avatarURL() : '');
 
-    const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${source}_${Date.now()}`).setTitle('Customize Bot');
+    const modal = new ModalBuilder().setCustomId(`settings_customize_modal_${source}_${Date.now()}`).setTitle('Appearance');
     
     const nameInput = new TextInputBuilder()
         .setCustomId('bot_name')
@@ -293,7 +293,7 @@ export async function showCoinsCustomizeModal(interaction) {
     const currentCoinEmoji = config.coin_emoji || '';
     const modal = new ModalBuilder()
         .setCustomId(`settings_coins_customize_modal_${Date.now()}`)
-        .setTitle('Coins Name');
+        .setTitle('Appearance');
 
     const nameInput = new TextInputBuilder()
         .setCustomId('coin_name')
