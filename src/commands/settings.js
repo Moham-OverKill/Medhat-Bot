@@ -1003,12 +1003,6 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('admin_hub_')) {
-            const { handleAdminHubComponent } = await import('./interface.js');
-            await handleAdminHubComponent(interaction);
-            return;
-        }
-
         if (customId === 'settings_logs') {
             await handleLogsSettings(interaction);
             return;
@@ -1098,14 +1092,23 @@ export async function handleSettingsComponent(interaction) {
         // Default: Return to main menu if no module matches (or unknown interaction)
         await showMainMenu(interaction);
     } catch (error) {
-        sysError('Settings fatal component error', error, { 
-            user: interaction.user.id, 
-            guild: interaction.guildId,
-            id: interaction.customId,
-            deferred: interaction.deferred,
-            replied: interaction.replied,
-            stack: error.stack 
-        });
+        const isExpectedLifecycle = error?.code === 10008 || error?.message?.includes('Unknown Message');
+        if (isExpectedLifecycle) {
+            sysLog('Settings Lifecycle Notice', {
+                user: interaction.user?.id,
+                guild: interaction.guildId,
+                detail: 'Referenced message was deleted or already unreferenced'
+            });
+        } else {
+            sysError('Settings fatal component error', error, { 
+                user: interaction.user?.id, 
+                guild: interaction.guildId,
+                id: interaction.customId,
+                deferred: interaction.deferred,
+                replied: interaction.replied,
+                stack: error?.stack 
+            });
+        }
 
         // Fallback: If it's not deferred, try to reply to stop the "Interaction Failed" red text
         try {

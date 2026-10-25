@@ -1817,7 +1817,15 @@ export async function showInterfaceSettings(interaction) {
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
-  await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+  try {
+    await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+  } catch (err) {
+    if (err?.code === 10008 || err?.message?.includes('Unknown Message')) {
+      await interaction.followUp({ embeds: [embed], components, content: '', files: [], attachments: [], flags: MessageFlags.Ephemeral }).catch(() => {});
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -1917,7 +1925,15 @@ export async function showAdminInterfaceSettings(interaction) {
     ? 'editReply'
     : (interaction.isButton() || interaction.isAnySelectMenu() ? 'update' : 'editReply');
 
-  await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+  try {
+    await interaction[method]({ embeds: [embed], components, content: '', files: [], attachments: [] });
+  } catch (err) {
+    if (err?.code === 10008 || err?.message?.includes('Unknown Message')) {
+      await interaction.followUp({ embeds: [embed], components, content: '', files: [], attachments: [], flags: MessageFlags.Ephemeral }).catch(() => {});
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -2433,7 +2449,9 @@ export async function handleInterfaceComponent(interaction) {
           await interaction.guild.channels.fetch(config.admin_target_channel_id).catch(() => null);
         if (channel?.isTextBased?.()) {
           const oldMsg = await channel.messages.fetch(config.admin_message_id).catch(() => null);
-          if (oldMsg) await oldMsg.delete().catch(() => {});
+          if (oldMsg && oldMsg.id !== interaction.message?.id) {
+            await oldMsg.delete().catch(() => {});
+          }
         }
         config.admin_message_id = null;
       }
@@ -2607,7 +2625,9 @@ export async function handleInterfaceComponent(interaction) {
           await interaction.guild.channels.fetch(config.target_channel_id).catch(() => null);
         if (channel?.isTextBased?.()) {
           const oldMsg = await channel.messages.fetch(config.message_id).catch(() => null);
-          if (oldMsg) await oldMsg.delete().catch(() => {});
+          if (oldMsg && oldMsg.id !== interaction.message?.id) {
+            await oldMsg.delete().catch(() => {});
+          }
         }
         config.message_id = null;
       }
