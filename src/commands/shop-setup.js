@@ -491,6 +491,7 @@ export async function handleCreateItemStart(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_item_tab_details_new')
         .setLabel('Details')
+        .setEmoji('ℹ️')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(true),
       new ButtonBuilder()
@@ -502,11 +503,13 @@ export async function handleCreateItemStart(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_item_tab_config_new')
         .setLabel('Config')
+        .setEmoji('⚙️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true),
       new ButtonBuilder()
         .setCustomId('shop_item_tab_users_new')
         .setLabel('Users')
+        .setEmoji('👥')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true)
     );
@@ -4414,6 +4417,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       new ButtonBuilder()
         .setCustomId(`shop_item_tab_details_${itemId}`)
         .setLabel('Details')
+        .setEmoji('ℹ️')
         .setStyle(view === 'details' ? ButtonStyle.Primary : ButtonStyle.Secondary)
         .setDisabled(view === 'details'),
       new ButtonBuilder()
@@ -4424,11 +4428,13 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       new ButtonBuilder()
         .setCustomId(`shop_item_tab_config_${itemId}`)
         .setLabel('Config')
+        .setEmoji('⚙️')
         .setStyle(view === 'config' ? ButtonStyle.Primary : ButtonStyle.Secondary)
         .setDisabled(view === 'config'),
       new ButtonBuilder()
         .setCustomId(`shop_item_tab_users_${itemId}`)
         .setLabel('Users')
+        .setEmoji('👥')
         .setStyle(view === 'users' ? ButtonStyle.Primary : ButtonStyle.Secondary)
         .setDisabled(view === 'users')
     );

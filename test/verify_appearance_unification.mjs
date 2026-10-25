@@ -221,10 +221,26 @@ describe('Unified Appearance UI Standardization Suite', () => {
     await handleEditItemSelect(mockInteraction);
     assert.ok(payload && payload.components);
     const tabRow = payload.components[0].components;
+    
+    const detailsBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_details_77');
+    assert.ok(detailsBtn, 'shop_item_tab_details_77 button must exist');
+    assert.equal(detailsBtn.data.label, 'Details');
+    assert.equal(detailsBtn.data.emoji.name, 'ℹ️');
+
     const appBtn = tabRow.find(b => b.data.custom_id === 'shop_item_appearance_btn_77');
     assert.ok(appBtn, 'shop_item_appearance_btn_77 button must exist');
     assert.equal(appBtn.data.label, 'Appearance');
     assert.equal(appBtn.data.emoji.name, '🖼️');
+
+    const configBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_config_77');
+    assert.ok(configBtn, 'shop_item_tab_config_77 button must exist');
+    assert.equal(configBtn.data.label, 'Config');
+    assert.equal(configBtn.data.emoji.name, '⚙️');
+
+    const usersBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_users_77');
+    assert.ok(usersBtn, 'shop_item_tab_users_77 button must exist');
+    assert.equal(usersBtn.data.label, 'Users');
+    assert.equal(usersBtn.data.emoji.name, '👥');
 
     mockInteraction.customId = 'shop_item_appearance_btn_77';
     await handleOpenAppearanceModal(mockInteraction);
@@ -232,7 +248,7 @@ describe('Unified Appearance UI Standardization Suite', () => {
     assert.equal(modalShown.data.title, 'Appearance');
   });
 
-  it('7. Shop Item Creation Wizard: Appearance button disabled placeholder', async () => {
+  it('7. Shop Item Creation Wizard: Tab bar emojis disabled placeholder', async () => {
     let payload = null;
     const mockInteraction = {
       guildId: validGuildId,
@@ -243,10 +259,26 @@ describe('Unified Appearance UI Standardization Suite', () => {
     await handleCreateItemStart(mockInteraction);
     assert.ok(payload && payload.components);
     const tabRow = payload.components[0].components;
+
+    const detailsBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_details_new');
+    assert.ok(detailsBtn);
+    assert.equal(detailsBtn.data.label, 'Details');
+    assert.equal(detailsBtn.data.emoji.name, 'ℹ️');
+
     const appBtn = tabRow.find(b => b.data.custom_id === 'shop_item_appearance_btn_new');
     assert.ok(appBtn, 'shop_item_appearance_btn_new button must exist');
     assert.equal(appBtn.data.label, 'Appearance');
     assert.equal(appBtn.data.emoji.name, '🖼️');
+
+    const configBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_config_new');
+    assert.ok(configBtn);
+    assert.equal(configBtn.data.label, 'Config');
+    assert.equal(configBtn.data.emoji.name, '⚙️');
+
+    const usersBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_users_new');
+    assert.ok(usersBtn);
+    assert.equal(usersBtn.data.label, 'Users');
+    assert.equal(usersBtn.data.emoji.name, '👥');
   });
 
   it('8. Post Item Wizard: Appearance button and Post appearance modal title', async () => {
