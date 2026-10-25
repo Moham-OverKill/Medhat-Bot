@@ -53,15 +53,12 @@ export async function getRewardsPayload(guildId) {
   const embed = new EmbedBuilder()
     .setTitle('Daily Configuration')
     .setColor(isEnabled ? 0x2ECC71 : 0xE74C3C)
-    .setDescription(
-      `**Status:** ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
-      'Configure daily claim rewards, streak bonuses, and booster perks.'
-    )
+    .setDescription(`Status: ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}`)
     .addFields(
-      { name: '💰 Base Daily', value: baseText, inline: true },
-      { name: '🚀 Booster Multiplier', value: boosterText, inline: true },
-      { name: '🔥 Streak Bonus', value: streakText, inline: true },
-      { name: '♾️ Streak Cap', value: capText, inline: true }
+      { name: '💰 Base Daily', value: baseText, inline: false },
+      { name: '🚀 Booster Multiplier', value: boosterText, inline: false },
+      { name: '🔥 Streak Bonus', value: streakText, inline: false },
+      { name: '♾️ Streak Cap', value: capText, inline: false }
     );
 
   const row = new ActionRowBuilder().addComponents(
@@ -133,7 +130,7 @@ export async function handleRewardsComponent(interaction) {
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('25')
         .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
-        .setRequired(true);
+        .setRequired(false);
 
       const boosterInput = new TextInputBuilder()
         .setCustomId('booster_multiplier')
@@ -141,7 +138,7 @@ export async function handleRewardsComponent(interaction) {
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('1.5')
         .setValue(String(config.booster_multiplier !== undefined ? config.booster_multiplier : 1.5))
-        .setRequired(true);
+        .setRequired(false);
 
       const streakInput = new TextInputBuilder()
         .setCustomId('streak_bonus')
@@ -149,7 +146,7 @@ export async function handleRewardsComponent(interaction) {
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('5')
         .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
-        .setRequired(true);
+        .setRequired(false);
 
       const capInput = new TextInputBuilder()
         .setCustomId('streak_cap')
@@ -157,7 +154,7 @@ export async function handleRewardsComponent(interaction) {
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('20')
         .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
-        .setRequired(true);
+        .setRequired(false);
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(baseInput),
@@ -308,15 +305,16 @@ export async function handleRewardsModal(interaction) {
     const config = await getGuildConfig(guildId) || {};
 
     if (customId === 'rewards_config_modal') {
-      const baseStr = interaction.fields.getTextInputValue('base_reward');
-      const boosterStr = interaction.fields.getTextInputValue('booster_multiplier');
-      const streakStr = interaction.fields.getTextInputValue('streak_bonus');
-      const capStr = interaction.fields.getTextInputValue('streak_cap');
+      const baseStr = interaction.fields.getTextInputValue('base_reward')?.trim();
+      const boosterStr = interaction.fields.getTextInputValue('booster_multiplier')?.trim();
+      const streakStr = interaction.fields.getTextInputValue('streak_bonus')?.trim();
+      const capStr = interaction.fields.getTextInputValue('streak_cap')?.trim();
 
-      const base = parseInt(baseStr, 10);
-      const booster = parseFloat(boosterStr);
-      const bonus = parseInt(streakStr, 10);
-      const cap = parseInt(capStr, 10);
+      // Empty = default values = placeholder text
+      const base = baseStr ? parseInt(baseStr, 10) : 25;
+      const booster = boosterStr ? parseFloat(boosterStr) : 1.5;
+      const bonus = streakStr ? parseInt(streakStr, 10) : 5;
+      const cap = capStr ? parseInt(capStr, 10) : 20;
 
       if (isNaN(base) || base < 0) {
         return interaction.followUp({ content: '❌ Invalid Base Daily reward amount.', flags: MessageFlags.Ephemeral });
