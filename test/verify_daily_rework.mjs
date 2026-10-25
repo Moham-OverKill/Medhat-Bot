@@ -80,25 +80,25 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       });
 
       const payload = await getRewardsPayload(guildId);
-      assert.equal(payload.components.length, 1, 'Must have exactly 1 ActionRow');
+      assert.equal(payload.components.length, 2, 'Must have 2 ActionRows');
 
-      const buttons = payload.components[0].components;
-      assert.equal(buttons.length, 3, 'ActionRow must contain exactly 3 buttons');
+      // Row 1: Config button
+      const row1Buttons = payload.components[0].components;
+      assert.equal(row1Buttons.length, 1);
+      assert.equal(row1Buttons[0].data.custom_id, 'rewards_config_btn');
+      assert.equal(row1Buttons[0].data.label, 'Config');
+      assert.equal(row1Buttons[0].data.style, ButtonStyle.Secondary);
 
-      // Button 1: Back
-      assert.equal(buttons[0].data.custom_id, 'settings_coins');
-      assert.equal(buttons[0].data.label, 'Back');
-      assert.equal(buttons[0].data.style, ButtonStyle.Secondary);
+      // Row 2: Bottom row [Back] [Disable]
+      const row2Buttons = payload.components[1].components;
+      assert.equal(row2Buttons.length, 2);
+      assert.equal(row2Buttons[0].data.custom_id, 'settings_coins');
+      assert.equal(row2Buttons[0].data.label, 'Back');
+      assert.equal(row2Buttons[0].data.style, ButtonStyle.Secondary);
 
-      // Button 2: Config
-      assert.equal(buttons[1].data.custom_id, 'rewards_config_btn');
-      assert.equal(buttons[1].data.label, 'Config');
-      assert.equal(buttons[1].data.style, ButtonStyle.Secondary);
-
-      // Button 3: Disable (when enabled)
-      assert.equal(buttons[2].data.custom_id, 'rewards_daily_toggle');
-      assert.equal(buttons[2].data.label, 'Disable');
-      assert.equal(buttons[2].data.style, ButtonStyle.Danger);
+      assert.equal(row2Buttons[1].data.custom_id, 'rewards_daily_toggle');
+      assert.equal(row2Buttons[1].data.label, 'Disable');
+      assert.equal(row2Buttons[1].data.style, ButtonStyle.Danger);
 
       // Embed properties when enabled
       const embed = payload.embeds[0];
@@ -130,11 +130,11 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       });
 
       const payload = await getRewardsPayload(guildId);
-      const buttons = payload.components[0].components;
+      const row2Buttons = payload.components[1].components;
 
-      assert.equal(buttons[2].data.custom_id, 'rewards_daily_toggle');
-      assert.equal(buttons[2].data.label, 'Enable');
-      assert.equal(buttons[2].data.style, ButtonStyle.Success);
+      assert.equal(row2Buttons[1].data.custom_id, 'rewards_daily_toggle');
+      assert.equal(row2Buttons[1].data.label, 'Enable');
+      assert.equal(row2Buttons[1].data.style, ButtonStyle.Success);
 
       const embed = payload.embeds[0];
       assert.equal(embed.data.color, 0xE74C3C, 'Embed color must be red when disabled');
@@ -310,12 +310,41 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(shownModal.data.title, 'Daily Configuration');
       assert.equal(shownModal.components.length, 4, 'Must have 4 action rows for 4 inputs');
 
-      // Verify all 4 inputs are NOT required and match embed labels
+      // Verify all 4 inputs are NOT required, match embed labels, and auto-fill custom values
       const expectedLabels = ['Base Daily', 'Boost Multiplier', 'Streak Bonus', 'Streak Cap'];
+      const expectedValues = ['50', '2.5', '8', '25'];
       for (let i = 0; i < shownModal.components.length; i++) {
         const input = shownModal.components[i].components[0];
         assert.equal(input.data.required, false, `${input.data.custom_id} must not be required`);
         assert.equal(input.data.label, expectedLabels[i], `Input ${i} label must match`);
+        assert.equal(input.data.value, expectedValues[i], `Input ${i} must auto-fill with custom value`);
+      }
+    });
+
+    it('handleRewardsComponent should leave inputs empty (showing placeholder) when config matches default values', async () => {
+      configCache.set(guildId, {
+        daily_enabled: true,
+        daily_base_reward: 25,
+        booster_multiplier: 2,
+        daily_streak_bonus: 5,
+        daily_streak_cap: 20
+      });
+
+      let shownModal = null;
+      const fakeInteraction = {
+        customId: 'rewards_config_btn',
+        guildId,
+        user: { id: userId },
+        showModal: async (modal) => {
+          shownModal = modal;
+        }
+      };
+
+      await handleRewardsComponent(fakeInteraction);
+      assert.notEqual(shownModal, null);
+      for (let i = 0; i < shownModal.components.length; i++) {
+        const input = shownModal.components[i].components[0];
+        assert.equal(input.data.value, undefined, `Input ${input.data.custom_id} must be empty when equal to default`);
       }
     });
 
