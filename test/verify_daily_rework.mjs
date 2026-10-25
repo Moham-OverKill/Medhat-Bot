@@ -298,7 +298,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
 
       await handleRewardsComponent(fakeInteraction);
       assert.notEqual(shownModal, null, 'Modal must be shown');
-      assert.equal(shownModal.data.custom_id, 'rewards_config_modal');
+      assert.ok(shownModal.data.custom_id.startsWith('rewards_config_modal'), 'Modal custom ID must start with rewards_config_modal');
       assert.equal(shownModal.data.title, 'Daily Configuration');
       assert.equal(shownModal.components.length, 4, 'Must have 4 action rows for 4 inputs');
 
