@@ -81,7 +81,6 @@ async function getGuildCustomCoinUrl(guildId) {
     try {
         const { getGuildConfig } = await import('../storage/config.js');
         const config = await getCachedGuildConfig(guildId) || await getGuildConfig(guildId).catch(() => null);
-        const { COIN_EMOJI } = await import('../shared.js');
         const coinEmojiStr = config?.coin_emoji || COIN_EMOJI.forGuild(guildId) || '';
         const customEmojiMatch = String(coinEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
         if (customEmojiMatch && customEmojiMatch[1]) {

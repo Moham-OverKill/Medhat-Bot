@@ -320,7 +320,6 @@ export async function runMvpCycle(client, guildId) {
   let finalSnapshotData = [];
   let potentialWinners = [];
   try {
-    const { getTopActiveUsers } = await import('../activity/tracker.js');
     finalSnapshotData = await getTopActiveUsers(guildId, 15);
     const configuredWinnerCount = currentConfig.winnersCount || 1;
     potentialWinners = finalSnapshotData.slice(0, configuredWinnerCount).map(u => u.userId);
@@ -353,7 +352,6 @@ export async function runMvpCycle(client, guildId) {
 
   // === STEP 5: Activity Reset — Wipe daily points for the new period ===
   try {
-    const { resetGuildActivity } = await import('../activity/tracker.js');
     await resetGuildActivity(guildId);
     sysLog('Step 5/5 Complete: Activity Reset', { guild: guildId });
   } catch (e) {
@@ -1155,7 +1153,6 @@ export async function scheduleCairoMidnightReset(client) {
     // 2. Dispatch Opt-in Daily Claim Reminders (Universal single DM per user)
     try {
       const { getAllUniqueUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
-      const { EmbedBuilder } = await import('discord.js');
 
       const userIds = await getAllUniqueUsersForNotification(NOTIFICATION_KEYS.DAILY_CLAIM);
       if (userIds.length > 0) {

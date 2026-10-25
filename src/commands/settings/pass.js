@@ -1465,7 +1465,6 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
             const assignedRole = guild.roles.cache.get(assignedRoleId)
               || await guild.roles.fetch(assignedRoleId).catch(() => null);
             if (assignedRole) {
-              const { validateRoleForAssignment } = await import('./pass-engine.js');
               const err = validateRoleForAssignment(assignedRole, guild);
               if (!err) await member.roles.add(assignedRole).catch(() => {});
             }

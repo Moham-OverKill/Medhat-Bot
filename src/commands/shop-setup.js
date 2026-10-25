@@ -1079,7 +1079,6 @@ async function resolvePrerequisiteIds(guild, rawInput, currentItemId = null) {
     return { resolved: [], errors: [], hasBooster: false, hasMvp: false };
   }
 
-  const { getGuildConfig } = await import('../storage/config.js');
   const guildConfig = await getGuildConfig(guild.id);
   const mvpRoleId = guildConfig?.mvpRoleId;
 
@@ -1249,7 +1248,6 @@ export async function handleItemModalSubmit(interaction) {
           }
 
           // Block MVP Role as main Item Role
-          const { getGuildConfig } = await import('../storage/config.js');
           const guildConfig = await getGuildConfig(interaction.guildId);
           if (guildConfig && guildConfig.mvpRoleId === roleId) {
             return interaction.followUp({ content: "❌ MVP Role can't be a shop item. Enter it in the Requirements field to make MVP only items.", flags: MessageFlags.Ephemeral });

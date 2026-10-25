@@ -672,7 +672,6 @@ client.on(Events.GuildRoleDelete, async (role) => {
       sysLog('Role Deleted', { guild: guild.id, detail: `RoleID: ${role.id}` });
 
       // 1. Cleanup Shop Items & Inventory (standard logic)
-      const { cleanupDeletedRole } = await import('./economy/shop.js');
       const stats = await cleanupDeletedRole(guild.id, role.id);
 
       // 2. Cleanup Color Roles (regular and booster)
