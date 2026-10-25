@@ -12,6 +12,7 @@ import { notificationsCommand } from './notifications.js';
 import { inviteCommand } from './invite.js';
 import { itemsCommand } from './items.js';
 import { profileCommand } from './profile.js';
+import { dailyCommand } from './daily.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { getQuests } from '../quests/quests.js';
@@ -31,6 +32,7 @@ const BASE_COMMANDS = [
 ];
 const QUEST_COMMAND_JSON = questCommand.toJSON();
 const LEVEL_COMMAND_JSON = levelCommand.toJSON();
+const DAILY_COMMAND_JSON = dailyCommand.toJSON();
 
 /**
  * Build the active list of slash commands for a specific guild based on its configuration.
@@ -62,13 +64,17 @@ export async function buildGuildCommands(guildId) {
     hasLevels = lvlRes.rows.length > 0;
   }
 
-  if (!hasQuests && !hasLevels) {
+  // 3. Daily Check: Must be enabled in guild config
+  const hasDaily = Boolean(config.daily_enabled);
+
+  if (!hasQuests && !hasLevels && !hasDaily) {
     return BASE_COMMANDS;
   }
 
   const commands = [...BASE_COMMANDS];
   if (hasQuests) commands.push(QUEST_COMMAND_JSON);
   if (hasLevels) commands.push(LEVEL_COMMAND_JSON);
+  if (hasDaily) commands.push(DAILY_COMMAND_JSON);
 
   return commands;
 }
@@ -94,15 +100,16 @@ export async function syncGuildSlashCommands(guildId, client, { quiet = false } 
 
     const hasQuests = commands.some(c => c.name === 'quest');
     const hasLevels = commands.some(c => c.name === 'level');
+    const hasDaily = commands.some(c => c.name === 'daily');
 
     if (!quiet) {
       sysLog('Guild Slash Commands Synced', {
         guild: guildId,
-        detail: `Registered ${commands.length} commands (Quests: ${hasQuests}, Levels: ${hasLevels})`
+        detail: `Registered ${commands.length} commands (Quests: ${hasQuests}, Levels: ${hasLevels}, Daily: ${hasDaily})`
       });
     }
 
-    return { success: true, count: commands.length, hasQuests, hasLevels };
+    return { success: true, count: commands.length, hasQuests, hasLevels, hasDaily };
   } catch (error) {
     sysError('Failed to sync guild slash commands', error, { guild: guildId });
     return { success: false, error };

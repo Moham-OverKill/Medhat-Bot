@@ -102,6 +102,14 @@ export async function updateBalance(userId, guildId, amount, type, description =
  * - Streak resets to 0 if last claim is older than yesterday
  */
 export async function claimDaily(userId, guildId, username, isBooster = false) {
+  const config = await getGuildConfig(guildId) || {};
+  if (config.daily_enabled === false) {
+    return {
+      success: false,
+      error: 'daily_disabled'
+    };
+  }
+
   const pool = getPool();
   const client = await pool.connect();
 

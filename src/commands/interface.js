@@ -2712,50 +2712,8 @@ export async function handleHubShortcut(interaction) {
 
     // 3. Daily Shortcut (💰)
     if (customId === 'hub_btn_daily') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      const member = interaction.member;
-      const isBooster = await isMemberBooster(member);
-      const coinEmoji = COIN_EMOJI.forGuild(guildId);
-      const result = await claimDaily(userId, guildId, getUserDisplayName(member), isBooster);
-
-      if (!result.success) {
-        if (result.error === 'daily_claimed') {
-          const nextMidnight = getNextCairoMidnight();
-          const nextMidnightTs = Math.floor(nextMidnight.getTime() / 1000);
-
-          return interaction.editReply({
-            content: `You already claimed your daily! Try again <t:${nextMidnightTs}:R>.`,
-            embeds: []
-          });
-        }
-
-        throw new Error(result.error);
-      }
-
-      const logUsername = getUserLogName(member);
-      const initialBal = result.balance - result.amount;
-      sendLog(interaction.guild, 'economy', 'orange', 'Daily Claimed',
-        `**User:** \`${logUsername}\`\n` +
-        `**Reward:** \`${result.amount.toLocaleString()}\` ${coinEmoji} (Daily)\n` +
-        `**Streak:** \`${result.streak} days\`\n` +
-        `**Balance:** \`${initialBal.toLocaleString()}\` ➡️ \`${result.balance.toLocaleString()}\``
-      );
-
-      const { breakdown } = result;
-      const coinThumbnail = getCoinThumbnailUrl(interaction.guildId);
-      const claimEmbed = new EmbedBuilder()
-        .setColor(0xFFD700)
-        .setTitle(`Total: ${result.amount.toLocaleString()}`)
-        .setThumbnail(coinThumbnail)
-        .setDescription(
-          `────────────────\n` +
-          `💰 Base: **+${breakdown.base.toLocaleString()}**\n` +
-          `🔥 Streak Bonus: **+${breakdown.streakBonus.toLocaleString()}**\n` +
-          `🚀 Boost Bonus: **+${breakdown.boostBonus.toLocaleString()}**`
-        );
-
-      return interaction.editReply({ files: [], content: '', embeds: [claimEmbed] });
+      const { executeDailyClaim } = await import('./daily.js');
+      return executeDailyClaim(interaction);
     }
 
     // 4. Inventory Shortcut (🎒)
@@ -2781,6 +2739,16 @@ export async function handleHubShortcut(interaction) {
 
     // 7. Bank Shortcut (🏦)
     if (customId === 'hub_btn_bank') {
+      const { getGuildConfig } = await import('../storage/config.js');
+      const config = await getGuildConfig(guildId) || {};
+      if (config.daily_enabled !== true) {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        }
+        const { createErrorEmbed } = await import('../utils/errors.js');
+        const errorEmbed = createErrorEmbed('Bank', 'The bank is not configured for this server yet.');
+        return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
+      }
       const { handleBankCommand } = await import('./bank.js');
       return handleBankCommand(interaction);
     }

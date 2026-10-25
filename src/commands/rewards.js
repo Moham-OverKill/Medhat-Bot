@@ -35,50 +35,54 @@ export async function handleRewardsCommand(interaction) {
   }
 }
 
-async function getRewardsPayload(guildId) {
+export async function getRewardsPayload(guildId) {
   const config = await getGuildConfig(guildId) || {};
+  const isEnabled = config.daily_enabled === true;
 
-  const boosterMultiplier = config.booster_multiplier !== undefined ? config.booster_multiplier : 2;
+  const boosterMultiplier = config.booster_multiplier !== undefined ? config.booster_multiplier : 1.5;
   const streakBonus = config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5;
   const baseDaily = config.daily_base_reward !== undefined ? config.daily_base_reward : 25;
   const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
   const coinName = await getCurrencyName(guildId);
   const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x mult\`` : '`Disabled`';
-  const streakText = streakBonus > 0 ? `\`${streakBonus} ${coinName.toLowerCase()}\`` : '`Disabled`';
+  const streakText = streakBonus > 0 ? `\`${streakBonus} ${coinName.toLowerCase()}/day\`` : '`Disabled`';
   const baseText = `\`${baseDaily} ${coinName.toLowerCase()}\``;
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
     .setTitle('Daily Configuration')
-    .setColor('#F1C40F')
+    .setColor(isEnabled ? 0x2ECC71 : 0xE74C3C)
+    .setDescription(
+      `**Status:** ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
+      'Configure daily claim rewards, streak bonuses, and booster perks.'
+    )
     .addFields(
-      { name: 'Base Daily', value: baseText, inline: true },
-      { name: 'Boost Mult', value: boosterText, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true },
-      { name: 'Streak Bonus', value: streakText, inline: true },
-      { name: 'Streak Cap', value: capText, inline: true },
-      { name: '\u200B', value: '\u200B', inline: true }
+      { name: '💰 Base Daily', value: baseText, inline: true },
+      { name: '🚀 Booster Multiplier', value: boosterText, inline: true },
+      { name: '🔥 Streak Bonus', value: streakText, inline: true },
+      { name: '♾️ Streak Cap', value: capText, inline: true }
     );
 
-  // Row 1: Config Buttons (2 Primary)
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rewards_daily_base_btn').setLabel('Base Daily').setStyle(ButtonStyle.Primary).setEmoji('💰'),
-    new ButtonBuilder().setCustomId('rewards_booster_btn').setLabel('Boost Multiplier').setStyle(ButtonStyle.Primary).setEmoji('🚀')
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings_coins')
+      .setLabel('Back')
+      .setEmoji('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('rewards_config_btn')
+      .setLabel('Config')
+      .setEmoji('⚙️')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('rewards_daily_toggle')
+      .setLabel(isEnabled ? 'Disable' : 'Enable')
+      .setEmoji(isEnabled ? '✖️' : '▶️')
+      .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
   );
 
-  // Row 2: Config Buttons (2 Primary)
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rewards_streak_btn').setLabel('Streak Bonus').setStyle(ButtonStyle.Primary).setEmoji('🔥'),
-    new ButtonBuilder().setCustomId('rewards_streak_cap_btn').setLabel('Streak Cap').setStyle(ButtonStyle.Primary).setEmoji('♾️')
-  );
-
-  // Row 3: Navigation
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('settings_coins').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
-  );
-
-  return { embeds: [embed], components: [row1, row2, row3] };
+  return { embeds: [embed], components: [row] };
 }
 
 export async function handleRewardsSetup(interaction) {
@@ -112,6 +116,82 @@ export async function handleRewardsComponent(interaction) {
       await interaction.editReply({ files: [], content: null,
         embeds: payload.embeds,
         components: payload.components });
+      return;
+    }
+
+    // UNIFIED CONFIG MODAL
+    if (customId === 'rewards_config_btn') {
+      const config = await getGuildConfig(guildId) || {};
+      const coinName = await getCurrencyName(guildId);
+      const modal = new ModalBuilder()
+        .setCustomId('rewards_config_modal')
+        .setTitle('Daily Configuration');
+
+      const baseInput = new TextInputBuilder()
+        .setCustomId('base_reward')
+        .setLabel(`Base ${coinName} (Day 1)`.slice(0, 45))
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('25')
+        .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
+        .setRequired(true);
+
+      const boosterInput = new TextInputBuilder()
+        .setCustomId('booster_multiplier')
+        .setLabel('Booster Multiplier')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('1.5')
+        .setValue(String(config.booster_multiplier !== undefined ? config.booster_multiplier : 1.5))
+        .setRequired(true);
+
+      const streakInput = new TextInputBuilder()
+        .setCustomId('streak_bonus')
+        .setLabel(`${coinName} per streak day`.slice(0, 45))
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('5')
+        .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
+        .setRequired(true);
+
+      const capInput = new TextInputBuilder()
+        .setCustomId('streak_cap')
+        .setLabel('Maximum streak days (Cap)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('20')
+        .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(baseInput),
+        new ActionRowBuilder().addComponents(boosterInput),
+        new ActionRowBuilder().addComponents(streakInput),
+        new ActionRowBuilder().addComponents(capInput)
+      );
+
+      await interaction.showModal(modal);
+      return;
+    }
+    else if (customId === 'rewards_daily_toggle') {
+      const config = await getGuildConfig(guildId) || {};
+      const newEnabled = !(config.daily_enabled === true);
+      config.daily_enabled = newEnabled;
+      await setGuildConfig(guildId, config);
+
+      import('./register.js').then(({ syncGuildSlashCommands }) => {
+        syncGuildSlashCommands(guildId, interaction.client).catch(() => {});
+      }).catch(() => {});
+
+      const logName = getUserLogName(interaction);
+      sendLog(interaction.guild, 'audit', newEnabled ? 'cyan' : 'crimson',
+        newEnabled ? '⚙️ Daily Rewards Enabled' : '⚙️ Daily Rewards Disabled',
+        `**Admin:** \`${logName}\`\n` +
+        `**Status:** Daily rewards system is now **${newEnabled ? 'ON' : 'OFF'}**.`
+      );
+
+      const payload = await getRewardsPayload(guildId);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.update(payload);
+      }
       return;
     }
 
@@ -227,7 +307,50 @@ export async function handleRewardsModal(interaction) {
   try {
     const config = await getGuildConfig(guildId) || {};
 
-    if (customId === 'rewards_booster_modal') {
+    if (customId === 'rewards_config_modal') {
+      const baseStr = interaction.fields.getTextInputValue('base_reward');
+      const boosterStr = interaction.fields.getTextInputValue('booster_multiplier');
+      const streakStr = interaction.fields.getTextInputValue('streak_bonus');
+      const capStr = interaction.fields.getTextInputValue('streak_cap');
+
+      const base = parseInt(baseStr, 10);
+      const booster = parseFloat(boosterStr);
+      const bonus = parseInt(streakStr, 10);
+      const cap = parseInt(capStr, 10);
+
+      if (isNaN(base) || base < 0) {
+        return interaction.followUp({ content: '❌ Invalid Base Daily reward amount.', flags: MessageFlags.Ephemeral });
+      }
+      if (isNaN(booster) || booster < 0) {
+        return interaction.followUp({ content: '❌ Invalid Booster Multiplier.', flags: MessageFlags.Ephemeral });
+      }
+      if (isNaN(bonus) || bonus < 0) {
+        return interaction.followUp({ content: '❌ Invalid Streak Bonus amount.', flags: MessageFlags.Ephemeral });
+      }
+      if (isNaN(cap) || cap < 1) {
+        return interaction.followUp({ content: '❌ Invalid Streak Cap. Must be at least 1.', flags: MessageFlags.Ephemeral });
+      }
+
+      config.daily_base_reward = base;
+      config.booster_multiplier = booster;
+      config.daily_streak_bonus = bonus;
+      config.daily_streak_cap = cap;
+      await setGuildConfig(guildId, config);
+
+      const logName = getUserLogName(interaction);
+      const coinName = await getCurrencyName(guildId);
+      sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Daily Rewards Configured',
+        `**Admin:** \`${logName}\`\n` +
+        `**Base Daily:** \`${base.toLocaleString()} ${coinName.toLowerCase()}\`\n` +
+        `**Booster Multiplier:** \`${booster}x\`\n` +
+        `**Streak Bonus:** \`${bonus.toLocaleString()} ${coinName.toLowerCase()}/day\`\n` +
+        `**Streak Cap:** \`${cap} days\``
+      );
+
+      const payload = await getRewardsPayload(guildId);
+      await interaction.editReply(payload);
+    }
+    else if (customId === 'rewards_booster_modal') {
       const inputVal = interaction.fields.getTextInputValue('multiplier');
       const mult = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 2;
 

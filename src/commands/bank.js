@@ -108,14 +108,14 @@ export function getCoinThumbnailUrl(guildId = null) {
   return BANK_THUMBNAIL_URL;
 }
 
-function buildBankUI(userData, member) {
+function buildBankUI(userData, member, isDailyEnabled = true) {
   const balance = Number.isFinite(parseInt(userData?.balance, 10)) ? Math.max(0, parseInt(userData.balance, 10)) : 0;
   const dbStreak = parseInt(userData?.daily_streak, 10) || 0;
   const lastDaily = userData?.last_daily;
 
   // ========== CAIRO TIME LOGIC ==========
   // Check if daily is available (not claimed today)
-  const isDailyAvailable = !hasClaimedToday(lastDaily);
+  const isDailyAvailable = isDailyEnabled && !hasClaimedToday(lastDaily);
 
   // Check if streak is still valid (claimed yesterday or today)
   const streakIsValid = isStreakValid(lastDaily);
@@ -129,15 +129,17 @@ function buildBankUI(userData, member) {
   const isStreakLost = !streakIsValid && dbStreak > 0;
   const wasStreakLostRecently = !streakIsValid && dbStreak === 0 && userData.last_lost_streak > 0;
 
-  let streakText = `${displayStreak} day(s)`;
-  if (isStreakLost) {
-    streakText = `~~${dbStreak} day(s)~~`; // Show old streak crossed out (before reset)
-  } else if (wasStreakLostRecently) {
-    streakText = `~~${userData.last_lost_streak} day(s)~~`; // Show old streak crossed out (after reset)
+  let streakText = isDailyEnabled ? `${displayStreak} day(s)` : '`Disabled`';
+  if (isDailyEnabled) {
+    if (isStreakLost) {
+      streakText = `~~${dbStreak} day(s)~~`; // Show old streak crossed out (before reset)
+    } else if (wasStreakLostRecently) {
+      streakText = `~~${userData.last_lost_streak} day(s)~~`; // Show old streak crossed out (after reset)
+    }
   }
 
-  let nextDailyText = "✅ Available Now!";
-  if (!isDailyAvailable) {
+  let nextDailyText = isDailyEnabled ? "✅ Available Now!" : "`Disabled`";
+  if (isDailyEnabled && !isDailyAvailable) {
     // Show countdown to Cairo midnight
     const nextMidnight = getNextCairoMidnight();
     const nextDailyTime = Math.floor(nextMidnight.getTime() / 1000);
@@ -165,8 +167,8 @@ function buildBankUI(userData, member) {
     .setCustomId('bank_daily')
     .setLabel('Daily')
     .setEmoji('🎁')
-    .setStyle(isDailyAvailable ? ButtonStyle.Success : ButtonStyle.Secondary)
-    .setDisabled(!isDailyAvailable);
+    .setStyle(isDailyEnabled && isDailyAvailable ? ButtonStyle.Success : ButtonStyle.Secondary)
+    .setDisabled(!isDailyEnabled || !isDailyAvailable);
 
   const row = new ActionRowBuilder()
     .addComponents(historyButton, dailyButton);
@@ -175,8 +177,10 @@ function buildBankUI(userData, member) {
 }
 
 async function refreshBankUI(interaction) {
+  const config = await getGuildConfig(interaction.guildId) || {};
+  const isDailyEnabled = config.daily_enabled === true;
   const userData = await getUserBalance(interaction.guildId, interaction.user.id);
-  const { embed, components } = buildBankUI(userData, interaction.member);
+  const { embed, components } = buildBankUI(userData, interaction.member, isDailyEnabled);
   await interaction.editReply({ files: [], content: null, embeds: [embed], components });
 }
 
@@ -186,6 +190,12 @@ export async function handleBankCommand(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    }
+    const config = await getGuildConfig(interaction.guildId) || {};
+    if (config.daily_enabled !== true) {
+      const { createErrorEmbed } = await import('../utils/errors.js');
+      const errorEmbed = createErrorEmbed('Bank', 'The bank is not configured for this server yet.');
+      return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
     }
     await refreshBankUI(interaction);
   } catch (error) {
@@ -219,10 +229,17 @@ export async function handleBankDaily(interaction) {
     const result = await claimDaily(userId, guildId, getUserDisplayName(member), isBooster);
 
     if (!result.success) {
+      if (result.error === 'daily_disabled') {
+        const { createErrorEmbed } = await import('../utils/errors.js');
+        const errorEmbed = createErrorEmbed('Daily Rewards', 'Daily rewards are not configured for this server yet.');
+        await interaction.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
       if (result.error === 'daily_claimed') {
         // Just refresh the UI if already claimed (button will become disabled)
+        const config = await getGuildConfig(guildId) || {};
         const userData = await getUserBalance(guildId, userId);
-        const { embed, components } = buildBankUI(userData, member);
+        const { embed, components } = buildBankUI(userData, member, config.daily_enabled === true);
 
         // Update original message immediately
         await interaction.editReply({ files: [], content: null, embeds: [embed], components });

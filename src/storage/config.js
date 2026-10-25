@@ -20,6 +20,7 @@ const CONFIG_SCHEMA = {
   daily_streak_bonus: { type: 'number', min: 0, required: false },
   daily_base_reward: { type: 'number', min: 0, required: false },
   daily_streak_cap: { type: 'number', min: 1, required: false },
+  daily_enabled: { type: 'boolean', required: false },
   // Quests module (Passive system)
   quests_enabled: { type: 'boolean', required: false },
   quests_channel_id: { type: 'string', validate: isValidSnowflake, required: false },
@@ -101,6 +102,7 @@ export const CONFIG_DEFAULTS = {
   daily_streak_bonus: 5,
   daily_base_reward: 25,
   daily_streak_cap: 20,
+  daily_enabled: false,
   quests_enabled: false,
   quests_refreshes_per_day: 1,
   quests_per_refresh: 3,
