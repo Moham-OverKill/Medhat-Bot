@@ -869,7 +869,7 @@ export async function generateInterfaceBanner(shortcutOrder, options = {}) {
     }
   }
 
-  return canvas.toBuffer('image/png');
+  return await canvas.encode('png');
 }
 
 /**
@@ -1440,7 +1440,7 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
     }
   }
 
-  return canvas.toBuffer('image/png');
+  return await canvas.encode('png');
 }
 
 export function buildAdminHubEmbed() {

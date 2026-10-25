@@ -26,6 +26,56 @@ export const profileCommand = new SlashCommandBuilder()
   )
   .setDMPermission(false);
 
+const rankCache = new Map();
+const RANK_CACHE_TTL_MS = 45 * 1000; // 45 seconds
+
+/**
+ * Fetch user rank and total ranked count with a 45-second in-memory TTL cache
+ * to eliminate expensive ROW_NUMBER() window queries and full table scans.
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {import('pg').Pool} pool
+ * @returns {Promise<{ rank: number, totalRankedCount: number }>}
+ */
+export async function getUserRankWithCache(guildId, userId, pool) {
+  const cacheKey = `${guildId}:${userId}`;
+  const cached = rankCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return { rank: cached.rank, totalRankedCount: cached.totalRankedCount };
+  }
+
+  try {
+    const [rankResult, totalRankedResult] = await Promise.all([
+      pool.query(
+        `WITH ranked AS (
+           SELECT user_id, ROW_NUMBER() OVER (ORDER BY COALESCE(battlepass_xp, 0) DESC, user_id ASC) AS rank
+           FROM user_activity
+           WHERE guild_id = $1 AND battlepass_xp > 0
+         )
+         SELECT rank FROM ranked WHERE user_id = $2`,
+        [guildId, userId]
+      ).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT COUNT(*)::int AS count FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0`,
+        [guildId]
+      ).catch(() => ({ rows: [{ count: 0 }] }))
+    ]);
+
+    const totalRankedCount = parseInt(totalRankedResult.rows[0]?.count || 0, 10);
+    const rank = parseInt(rankResult.rows[0]?.rank || (totalRankedCount + 1), 10);
+
+    rankCache.set(cacheKey, {
+      rank,
+      totalRankedCount,
+      expiresAt: Date.now() + RANK_CACHE_TTL_MS
+    });
+
+    return { rank, totalRankedCount };
+  } catch {
+    return { rank: 1, totalRankedCount: 1 };
+  }
+}
+
 /**
  * Handle /profile Slash Command
  * @param {import('discord.js').ChatInputCommandInteraction} interaction
@@ -61,7 +111,7 @@ export async function handleProfileCommand(interaction) {
     await purgeUserInventory(userId, guildId, targetMember).catch(() => {});
 
     // 1. Fetch Economy stats, Level progress, Inventory, Quests, and Rank in parallel
-    const [balanceData, passData, rankResult, totalRankedResult, inventory, questResult, mvpResult, config] = await Promise.all([
+    const [balanceData, passData, rankData, inventory, questResult, mvpResult, config] = await Promise.all([
       getUserBalance(userId, guildId).catch(() => ({ balance: 0, total_earned: 0, daily_streak: 0, last_daily: null })),
       getUserPassProgress(guildId, userId).catch(() => ({
         currentLevel: 0,
@@ -70,19 +120,7 @@ export async function handleProfileCommand(interaction) {
         xpForNextLevel: 100,
         totalBoostPct: 0
       })),
-      pool.query(
-        `WITH ranked AS (
-           SELECT user_id, ROW_NUMBER() OVER (ORDER BY COALESCE(battlepass_xp, 0) DESC, user_id ASC) AS rank
-           FROM user_activity
-           WHERE guild_id = $1 AND battlepass_xp > 0
-         )
-         SELECT rank FROM ranked WHERE user_id = $2`,
-        [guildId, userId]
-      ).catch(() => ({ rows: [] })),
-      pool.query(
-        `SELECT COUNT(*)::int AS count FROM user_activity WHERE guild_id = $1 AND battlepass_xp > 0`,
-        [guildId]
-      ).catch(() => ({ rows: [{ count: 0 }] })),
+      getUserRankWithCache(guildId, userId, pool),
       getSynthesizedInventory(userId, guildId, targetMember).catch(() => []),
       pool.query(
         `SELECT GREATEST(
@@ -99,8 +137,8 @@ export async function handleProfileCommand(interaction) {
       getGuildConfig(guildId).catch(() => ({}))
     ]);
 
-    const totalRankedCount = parseInt(totalRankedResult.rows[0]?.count || 0, 10);
-    const rank = parseInt(rankResult.rows[0]?.rank || (totalRankedCount + 1), 10);
+    const totalRankedCount = rankData.totalRankedCount;
+    const rank = rankData.rank;
 
     // Exact inventory calculation matching /inventory command (filtering out packs)
     const visibleItems = (inventory || []).filter(i => i.item_type !== 'pack' && !i.is_pack);

@@ -1058,7 +1058,7 @@ export async function renderTradeCard({
     coinName: activeCoinName
   });
 
-  const buffer = canvas.toBuffer('image/png');
+  const buffer = await canvas.encode('png');
   const duration = Math.round(performance.now() - renderStart);
   const detailStr = `Status: ${status} | Direction: ${direction} | H: ${baseHeight}px`;
   if (duration > 500) {

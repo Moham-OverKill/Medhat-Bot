@@ -207,5 +207,5 @@ export async function generateColorPanelImage(panelColors = []) {
     ctx.restore();
   }
 
-  return canvas.toBuffer('image/png');
+  return await canvas.encode('png');
 }
