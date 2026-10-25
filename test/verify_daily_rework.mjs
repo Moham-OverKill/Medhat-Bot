@@ -70,7 +70,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
   });
 
   describe('Rewards UI & Component Structure', () => {
-    it('should build single action row with exactly 3 buttons: Back, Config, Enable/Disable', async () => {
+    it('should build single action row with exactly 3 buttons: Back, Config, Enable/Disable and non-inline fields', async () => {
       configCache.set(guildId, {
         daily_enabled: true,
         daily_base_reward: 30,
@@ -103,7 +103,21 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       // Embed properties when enabled
       const embed = payload.embeds[0];
       assert.equal(embed.data.color, 0x2ECC71, 'Embed color must be green when enabled');
-      assert.match(embed.data.description, /🟢 Enabled/, 'Embed description must reflect enabled status');
+      assert.equal(embed.data.description, 'Status: 🟢 Enabled', 'Embed description must strictly be status only');
+
+      // Check fields are each on their own line (inline: false) and in order
+      assert.equal(embed.data.fields.length, 4, 'Must have 4 fields in embed');
+      assert.equal(embed.data.fields[0].name, '💰 Base Daily');
+      assert.equal(embed.data.fields[0].inline, false);
+
+      assert.equal(embed.data.fields[1].name, '🚀 Booster Multiplier');
+      assert.equal(embed.data.fields[1].inline, false);
+
+      assert.equal(embed.data.fields[2].name, '🔥 Streak Bonus');
+      assert.equal(embed.data.fields[2].inline, false);
+
+      assert.equal(embed.data.fields[3].name, '♾️ Streak Cap');
+      assert.equal(embed.data.fields[3].inline, false);
     });
 
     it('should format toggle button as Enable (Success green) and embed as red when disabled', async () => {
@@ -124,7 +138,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
 
       const embed = payload.embeds[0];
       assert.equal(embed.data.color, 0xE74C3C, 'Embed color must be red when disabled');
-      assert.match(embed.data.description, /🔴 Disabled/, 'Embed description must reflect disabled status');
+      assert.equal(embed.data.description, 'Status: 🔴 Disabled', 'Embed description must strictly be status only');
     });
   });
 
@@ -220,7 +234,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
   });
 
   describe('Unified Configuration Modal & Toggle Components', () => {
-    it('handleRewardsComponent should show unified modal on rewards_config_btn', async () => {
+    it('handleRewardsComponent should show unified modal on rewards_config_btn with non-required fields', async () => {
       configCache.set(guildId, {
         daily_enabled: true,
         daily_base_reward: 50,
@@ -244,6 +258,12 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(shownModal.data.custom_id, 'rewards_config_modal');
       assert.equal(shownModal.data.title, 'Daily Configuration');
       assert.equal(shownModal.components.length, 4, 'Must have 4 action rows for 4 inputs');
+
+      // Verify all 4 inputs are NOT required (empty = default)
+      for (const row of shownModal.components) {
+        const input = row.components[0];
+        assert.equal(input.data.required, false, `${input.data.custom_id} must not be required`);
+      }
     });
 
     it('handleRewardsModal should update all 4 fields simultaneously', async () => {
@@ -287,6 +307,45 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(savedConfig.booster_multiplier, 3.0);
       assert.equal(savedConfig.daily_streak_bonus, 12);
       assert.equal(savedConfig.daily_streak_cap, 30);
+    });
+
+    it('handleRewardsModal should fall back to default values when inputs are left empty', async () => {
+      let savedConfig = null;
+      setMockPool({
+        query: async (sql, params) => {
+          if (sql.includes('INSERT INTO guild_configs')) {
+            savedConfig = JSON.parse(params[1]);
+            return { rows: [{ config: savedConfig }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        }
+      });
+
+      configCache.set(guildId, { daily_enabled: true });
+
+      const fakeInteraction = {
+        customId: 'rewards_config_modal',
+        guildId,
+        guild: { id: guildId, channels: { cache: new Map() } },
+        user: { id: userId, tag: 'Admin#0001' },
+        member: { user: { tag: 'Admin#0001' }, displayName: 'Admin' },
+        fields: {
+          getTextInputValue: (field) => {
+            return ''; // All fields left empty
+          }
+        },
+        deferred: true,
+        replied: false,
+        followUp: async () => {},
+        editReply: async () => {}
+      };
+
+      await handleRewardsModal(fakeInteraction);
+      assert.notEqual(savedConfig, null, 'Config must be saved to DB');
+      assert.equal(savedConfig.daily_base_reward, 25, 'Empty base_reward must default to 25');
+      assert.equal(savedConfig.booster_multiplier, 1.5, 'Empty booster_multiplier must default to 1.5');
+      assert.equal(savedConfig.daily_streak_bonus, 5, 'Empty streak_bonus must default to 5');
+      assert.equal(savedConfig.daily_streak_cap, 20, 'Empty streak_cap must default to 20');
     });
   });
 });
