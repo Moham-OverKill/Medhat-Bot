@@ -1543,6 +1543,21 @@ async function createTables() {
       ).catch(() => {});
     }
 
+    // Self-healing migration: Preserve daily enabled for existing guilds
+    const dailyMigrated = await pool.query(
+      `SELECT 1 FROM bot_migrations WHERE migration_name = 'preserve_existing_daily_enabled_defaults'`
+    ).catch(() => ({ rows: [] }));
+    if (dailyMigrated.rows.length === 0) {
+      await pool.query(`
+        UPDATE guild_configs
+        SET config = jsonb_set(config, '{daily_enabled}', 'true'::jsonb)
+        WHERE NOT (config ? 'daily_enabled');
+      `).catch(() => {});
+      await pool.query(
+        `INSERT INTO bot_migrations (migration_name, details) VALUES ('preserve_existing_daily_enabled_defaults', '{}'::jsonb) ON CONFLICT DO NOTHING`
+      ).catch(() => {});
+    }
+
     // Self-healing migration: Reconcile battlepass reward inventory deficits
     try {
       const checkMig = await pool.query(
