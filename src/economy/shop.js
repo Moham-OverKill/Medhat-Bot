@@ -806,7 +806,7 @@ export async function reconcileGuildInventory(guild) {
  * @param {boolean} options.skipBalanceDeduction - If true, skip balance check/deduction (used when * @param {Object} options - Additional options including seller information and payout
  */
 export async function purchaseItem(userId, guildId, itemId, member, options = {}) {
-  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null, quantity = 1, messageId = null } = options;
+  const { sellerId = '0', payoutAmount = 0, skipBalanceDeduction = false, overridePrice = null, quantity = 1, messageId = null, claimLimit = null } = options;
   // qty is the validated integer quantity the user wants to buy (always >= 1)
   const qty = Math.max(1, Math.floor(Number(quantity) || 1));
   const pool = getPool();
@@ -878,11 +878,35 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
     let postRow = null;
     if (messageId) {
       const postRes = await client.query(
-        `SELECT current_stock, max_stock, post_mode FROM shop_posts WHERE message_id = $1 FOR UPDATE`,
+        `SELECT current_stock, max_stock, post_mode, claim_limit_per_user FROM shop_posts WHERE message_id = $1 FOR UPDATE`,
         [messageId]
       );
       if (postRes.rows.length > 0) {
         postRow = postRes.rows[0];
+      }
+    }
+
+    // ========== ATOMIC DROP / CLAIM LIMIT GUARD ==========
+    const effectiveClaimLimit = claimLimit !== null && claimLimit !== undefined
+      ? parseInt(claimLimit, 10)
+      : (postRow?.claim_limit_per_user !== null && postRow?.claim_limit_per_user !== undefined ? parseInt(postRow.claim_limit_per_user, 10) : null);
+
+    if (effectiveClaimLimit && effectiveClaimLimit > 0 && messageId) {
+      const claimCheckRes = await client.query(
+        `SELECT claim_count FROM shop_drop_claims WHERE message_id = $1 AND user_id = $2 FOR UPDATE`,
+        [messageId, userId]
+      );
+      const currentClaims = parseInt(claimCheckRes.rows[0]?.claim_count || 0, 10);
+      if (currentClaims + qty > effectiveClaimLimit) {
+        await client.query('ROLLBACK');
+        const remaining = Math.max(0, effectiveClaimLimit - currentClaims);
+        sysLog('Purchase Blocked: Claim Limit', { user: userId, guild: guildId, detail: `Message: ${messageId} | Claimed: ${currentClaims} | Limit: ${effectiveClaimLimit}` });
+        return {
+          success: false,
+          error: currentClaims >= effectiveClaimLimit
+            ? `You have reached your claim limit (${effectiveClaimLimit}) for this item.`
+            : `You can only claim up to ${remaining} more of this item (Limit: ${effectiveClaimLimit}).`
+        };
       }
     }
 
@@ -1269,6 +1293,17 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       );
       
       sysLog('Seller Payout Executed', { user: sellerId, guild: guildId, detail: `Amount: ${safePayout} | Item: ${item.name} | From: ${userId}` });
+    }
+
+    // ========== STEP 5.6: Atomic Drop Claim Increment ==========
+    if (effectiveClaimLimit && effectiveClaimLimit > 0 && messageId) {
+      await client.query(
+        `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (message_id, user_id)
+         DO UPDATE SET claim_count = shop_drop_claims.claim_count + $4, last_claimed_at = NOW()`,
+        [messageId, guildId, userId, isLocked ? 1 : qty]
+      );
     }
 
     await client.query('COMMIT');
@@ -2381,16 +2416,67 @@ export async function toggleEquipItem(userId, guildId, inventoryId, member, opti
 
     // === APPLY ACTION ===
     if (newStatus) {
-      // User clicked ACTIVATE -> After wipe, add this item's role
+      // Validate roles and hierarchy defense before state mutation
+      if (roles.length > 0 && member?.guild) {
+        const botMember = member.guild.members?.me || await member.guild.members?.fetch(member.client.user.id).catch(() => null);
+
+        for (const rid of roles) {
+          let roleObj = member.guild.roles?.cache?.get(rid);
+          if (!roleObj) {
+            roleObj = await member.guild.roles?.fetch(rid).catch(() => null);
+          }
+          if (!roleObj) {
+            await client.query('ROLLBACK');
+            sysWarn('Equip Role Missing', { user: userId, guild: guildId, role: rid, item: item.name });
+            return {
+              success: false,
+              error: 'The server role associated with this item no longer exists in Discord.'
+            };
+          }
+
+          if (botMember && roleObj.position >= botMember.roles.highest.position) {
+            await client.query('ROLLBACK');
+            sysWarn('Equip Role Hierarchy Blocked', {
+              user: userId,
+              guild: guildId,
+              role: rid,
+              rolePos: roleObj.position,
+              botPos: botMember.roles.highest.position
+            });
+            return {
+              success: false,
+              error: 'Cannot assign this role: the bot role is positioned lower than this role in Server Settings → Roles.'
+            };
+          }
+
+          if (hasAnyDangerousPermission(roleObj)) {
+            await client.query('ROLLBACK');
+            sysWarn('Dangerous Role Equip Blocked', { user: member.id, guild: member.guild?.id, role: rid, item: item.name, detail: 'Attempted to equip role with dangerous permissions' });
+            return {
+              success: false,
+              error: 'This role contains dangerous permissions (e.g. Administrator) and cannot be equipped.'
+            };
+          }
+        }
+      }
+
+      // User clicked ACTIVATE -> After validation & wipe, add this item's role
       for (const rid of roles) {
         try {
-          const roleObj = member.guild?.roles?.cache?.get(rid);
-          if (roleObj && hasAnyDangerousPermission(roleObj)) {
-            sysWarn('Dangerous Role Equip Blocked', { user: member.id, guild: member.guild?.id, role: rid, item: item.name, detail: 'Attempted to equip role with dangerous permissions' });
-            continue;
-          }
           await member.roles.add(rid, `Equipped item: ${item.name}`);
-        } catch (e) { }
+        } catch (addErr) {
+          if (addErr.code === 50013 || addErr.code === 10011) {
+            await client.query('ROLLBACK');
+            sysError('Equip Role Add Failed', addErr, { user: userId, guild: guildId, role: rid });
+            return {
+              success: false,
+              error: addErr.code === 50013
+                ? 'Bot is missing permissions to assign this role. Please ensure the bot role is placed above this role in Server Settings.'
+                : 'The server role associated with this item no longer exists in Discord.'
+            };
+          }
+          sysWarn('Role Add Notice on Equip', { user: userId, guild: guildId, role: rid, error: addErr.message });
+        }
       }
       await client.query('UPDATE user_inventory SET is_active = true WHERE id = $1', [inventoryId]);
     } else {

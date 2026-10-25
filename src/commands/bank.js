@@ -824,7 +824,8 @@ export async function handleShopBuyButton(interaction) {
       payoutAmount,
       overridePrice,
       quantity: 1,
-      messageId: effectivePostMessageId || null
+      messageId: effectivePostMessageId || null,
+      claimLimit: hasClaimLimit ? claimLimit : null
     });
 
     if (!result.success) {
@@ -881,19 +882,6 @@ export async function handleShopBuyButton(interaction) {
           components: []
         });
       }
-    }
-
-    // STEP 2.5: Drop / Claim Increment
-    if (hasClaimLimit && effectivePostMessageId) {
-      await pool.query(
-        `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
-         VALUES ($1, $2, $3, 1, NOW())
-         ON CONFLICT (message_id, user_id)
-         DO UPDATE SET claim_count = shop_drop_claims.claim_count + 1, last_claimed_at = NOW()`,
-        [effectivePostMessageId, guildId, userId]
-      ).catch(claimErr => {
-        sysError('Drop Claim Increment Error', claimErr, { messageId: effectivePostMessageId, userId });
-      });
     }
 
     // STEP 2.6: Auto-Equip Execution
@@ -1192,7 +1180,8 @@ export async function handleShopBuyModalSubmit(interaction) {
       payoutAmount,
       overridePrice,
       quantity: qty,
-      messageId: postMessageId || null
+      messageId: postMessageId || null,
+      claimLimit: hasClaimLimit ? claimLimit : null
     });
 
     if (!result.success) {
@@ -1241,19 +1230,6 @@ export async function handleShopBuyModalSubmit(interaction) {
       return interaction.editReply({
         embeds: [errEmbed],
         components: []
-      });
-    }
-
-    // STEP 2.5: Drop / Claim Increment
-    if (hasClaimLimit && postMessageId) {
-      await pool.query(
-        `INSERT INTO shop_drop_claims (message_id, guild_id, user_id, claim_count, last_claimed_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (message_id, user_id)
-         DO UPDATE SET claim_count = shop_drop_claims.claim_count + $4, last_claimed_at = NOW()`,
-        [postMessageId, guildId, userId, qty]
-      ).catch(claimErr => {
-        sysError('Drop Claim Increment Error in Modal', claimErr, { messageId: postMessageId, userId });
       });
     }
 
