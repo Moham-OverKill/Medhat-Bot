@@ -81,6 +81,70 @@ export async function ensureWeeklyActivityTable() {
   }
 }
 
+// Registry of guilds that have at least one user opted into weekly summary notifications
+export const weeklySummaryActiveGuilds = new Set();
+
+/**
+ * Seed the registry of guilds with active weekly summary subscribers on startup
+ */
+export async function seedWeeklySummaryActiveGuilds() {
+  try {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT DISTINCT guild_id FROM user_notification_settings WHERE notif_weekly_summary = TRUE`
+    );
+    weeklySummaryActiveGuilds.clear();
+    for (const row of result.rows) {
+      if (row.guild_id) {
+        weeklySummaryActiveGuilds.add(row.guild_id);
+      }
+    }
+    sysLog('Weekly Summary Active Guilds Seeded', { count: weeklySummaryActiveGuilds.size });
+  } catch (err) {
+    sysError('Failed to seed weekly summary active guilds', err);
+  }
+}
+
+/**
+ * Register a guild as having active weekly summary tracking
+ * @param {string} guildId
+ */
+export function registerWeeklySummaryGuild(guildId) {
+  if (guildId) weeklySummaryActiveGuilds.add(guildId);
+}
+
+/**
+ * Refresh active status for a guild when a user toggles weekly summary
+ * @param {string} guildId
+ */
+export async function refreshGuildWeeklySummaryStatus(guildId) {
+  if (!guildId) return;
+  try {
+    const pool = getPool();
+    const res = await pool.query(
+      `SELECT 1 FROM user_notification_settings WHERE guild_id = $1 AND notif_weekly_summary = TRUE LIMIT 1`,
+      [guildId]
+    );
+    if (res.rows.length > 0) {
+      weeklySummaryActiveGuilds.add(guildId);
+    } else {
+      weeklySummaryActiveGuilds.delete(guildId);
+    }
+  } catch (err) {
+    sysError('Failed to refresh guild weekly summary status', err, { guild: guildId });
+  }
+}
+
+/**
+ * Check if weekly summary is active for a guild
+ * @param {string} guildId
+ * @returns {boolean}
+ */
+export function isWeeklySummaryActiveForGuild(guildId) {
+  if (!guildId) return false;
+  return weeklySummaryActiveGuilds.has(guildId);
+}
+
 // In-memory buffer for weekly activity metrics to prevent excessive database I/O
 // Key: `${guildId}:${userId}`, Value: { guildId, userId, username, messages: 0, voiceMinutes: 0, voiceCalls: 0, media: 0, reactions: 0, reactionsReceived: 0, xp: 0 }
 const pendingWeeklyBatch = new Map();

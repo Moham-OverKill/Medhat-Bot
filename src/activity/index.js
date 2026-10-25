@@ -6,7 +6,8 @@ import {
   invalidateConfigCache as invalidateTrackerCache,
   handleVoiceStateChange,
   voicePointsTick,
-  clearStaleVoiceTracking
+  clearStaleVoiceTracking,
+  isTrackingRequiredForGuild
 } from './tracker.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
@@ -214,6 +215,13 @@ async function handleMessage(message) {
       sysError('Content Filter Check Failed', error, { guild: message.guild?.id, channel: message.channel?.id });
     }
 
+    // === CONDITIONAL ACTIVITY TRACKING SHIELD ===
+    // If guild has 0 active features requiring activity points (MVP, Quests, Levels, Daily Leaderboard, Weekly Summary),
+    // bypass point scoring, media metrics, and quest checks completely to save event-loop cycles and DB writes.
+    if (!isTrackingRequiredForGuild(message.guild.id)) {
+      return;
+    }
+
     const hasAttachments = Boolean(message.attachments && message.attachments.size > 0);
     if (hasAttachments) {
       import('../cron/weeklySummary.js')
@@ -387,6 +395,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
     import('../middleware/emoji-filter.js')
       .then(({ processMemberNicknameEmojiFilter }) => processMemberNicknameEmojiFilter(member))
       .catch(() => {});
+
+    // Fast-path exit if guild has no active activity tracking consumers
+    if (!isTrackingRequiredForGuild(member.guild.id)) {
+      return;
+    }
 
     await handleVoiceStateChange(member.guild, oldState, newState);
   });

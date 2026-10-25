@@ -1,7 +1,9 @@
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
 import { sysLog, sysError } from '../utils/logger.js';
-import { recordWeeklyMessages } from '../cron/weeklySummary.js';
+import { recordWeeklyMessages, isWeeklySummaryActiveForGuild } from '../cron/weeklySummary.js';
+import { configCache as masterConfigCache } from '../storage/config.js';
+import { isDailyLeaderboardActive } from '../commands/leaderboard.js';
 
 // ============================================
 // TEXT CHAT: ANTI-SPAM & LENGTH SCALING CONFIGURATION
@@ -35,7 +37,7 @@ const CONTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours retention
 const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // Periodic cleanup to prevent memory leaks
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamp] of userMessageCooldownCache.entries()) {
     if (now - timestamp > MESSAGE_COOLDOWN_MS * 10) {
@@ -48,6 +50,7 @@ setInterval(() => {
     }
   }
 }, CACHE_CLEANUP_INTERVAL);
+if (cleanupTimer.unref) cleanupTimer.unref();
 
 // In-memory set of actively tracking voice keys (`${guildId}:${userId}`) to bypass redundant DB checks
 const activeVoiceTrackingUsers = new Set();
@@ -113,9 +116,10 @@ export async function flushMessageBatch() {
 }
 
 // Auto flush every 15 seconds
-setInterval(() => {
+const autoFlushTimer = setInterval(() => {
   flushMessageBatch().catch(err => sysError('Periodic Batch Flush Error', err));
 }, BATCH_FLUSH_INTERVAL);
+if (autoFlushTimer.unref) autoFlushTimer.unref();
 
 // ============================================
 // VOICE CHAT: STOPWATCH CONFIGURATION
@@ -154,6 +158,36 @@ export function invalidateConfigCache(guildId) {
   } else {
     configCache.clear();
   }
+}
+
+/**
+ * Synchronous in-memory check to evaluate whether activity tracking
+ * (text messages and voice minutes) is required for a specific guild.
+ *
+ * Tracking is active IF AND ONLY IF at least one of the following is true:
+ * 1. MVP auto-awards are enabled (config.enabled === true)
+ * 2. Quests are enabled (config.quests_enabled === true || config.missions_enabled === true)
+ * 3. Levels / Battle Pass is enabled (config.battlepass_enabled === true)
+ * 4. Daily Activity Leaderboard is active (leaderboard_config.daily_channel_id != null)
+ * 5. Weekly summary has active subscribers (weeklySummaryActiveGuilds.has(guildId))
+ *
+ * @param {string} guildId
+ * @returns {boolean}
+ */
+export function isTrackingRequiredForGuild(guildId) {
+  if (!guildId) return false;
+
+  const config = masterConfigCache.get(guildId) || configCache.get(guildId)?.config;
+  if (config) {
+    if (config.enabled === true) return true;
+    if (config.quests_enabled === true || config.missions_enabled === true) return true;
+    if (config.battlepass_enabled === true) return true;
+  }
+
+  if (isDailyLeaderboardActive(guildId)) return true;
+  if (isWeeklySummaryActiveForGuild(guildId)) return true;
+
+  return false;
 }
 
 /**
@@ -244,6 +278,7 @@ export async function resetGuildActivity(guildId) {
  */
 export async function addMessagePoint(guild, userId, username, messageContent = '', hasAttachments = false, channelId = null) {
   if (!guild || !userId) return false;
+  if (!isTrackingRequiredForGuild(guild.id)) return false;
   const guildId = guild.id;
   const now = Date.now();
   const userKey = `${guildId}:${userId}`;
@@ -476,6 +511,7 @@ export function isVoiceStateValid(voiceState, config = null) {
 
 export async function handleVoiceStateChange(guild, oldState, newState) {
   if (!guild) return;
+  if (!isTrackingRequiredForGuild(guild.id)) return;
   const member = newState?.member || oldState?.member;
   if (!member || member.user.bot) return;
 
@@ -683,6 +719,7 @@ export async function voicePointsTick(client) {
 
     // 1. SELF-HEALING SWEEP: Scan voice channels to resume valid users who were paused
     for (const [guildId, guild] of client.guilds.cache) {
+      if (!isTrackingRequiredForGuild(guildId)) continue;
       const config = await getCachedGuildConfig(guildId);
       const minHumans = config?.anti_cheat_voice_min_humans ?? false;
       const voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased?.() || c.type === 2 || c.type === 13);
@@ -716,6 +753,10 @@ export async function voicePointsTick(client) {
 
     for (const row of result.rows) {
       await runInGuildContext(row.guild_id, async () => {
+        if (!isTrackingRequiredForGuild(row.guild_id)) {
+          await stopTrackingUser(pool, row.guild_id, row.user_id, null, 'tracking disabled');
+          return;
+        }
         const validStart = parseInt(row.voice_valid_start);
         if (!validStart || validStart <= 0) return;
 

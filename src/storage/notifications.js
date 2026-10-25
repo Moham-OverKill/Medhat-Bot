@@ -40,7 +40,7 @@ export async function getUserNotificationSettings(guildId, userId) {
     }
 
     const row = result.rows[0];
-    return {
+    const updatedSettings = {
       notif_level_up: Boolean(row.notif_level_up),
       notif_daily_claim: Boolean(row.notif_daily_claim),
       notif_trades: Boolean(row.notif_trades),
@@ -48,6 +48,15 @@ export async function getUserNotificationSettings(guildId, userId) {
       notif_quests_refresh: Boolean(row.notif_quests_refresh),
       notif_weekly_summary: Boolean(row.notif_weekly_summary)
     };
+
+    if (key === NOTIFICATION_KEYS.WEEKLY_SUMMARY) {
+      try {
+        const { refreshGuildWeeklySummaryStatus } = await import('../cron/weeklySummary.js');
+        refreshGuildWeeklySummaryStatus(guildId).catch(() => {});
+      } catch (_) {}
+    }
+
+    return updatedSettings;
   } catch (error) {
     sysError('Get Notification Settings Failed', error, { guild: guildId, user: userId });
     return { ...DEFAULT_SETTINGS };

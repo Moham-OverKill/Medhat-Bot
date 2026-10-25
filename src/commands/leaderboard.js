@@ -53,20 +53,60 @@ export const data = new SlashCommandBuilder()
             .setDescription('View current leaderboard configuration')
     );
 
+// In-memory cache for leaderboard configurations to prevent redundant DB reads during activity tracking
+export const leaderboardConfigCache = new Map();
+
 /**
- * Get leaderboard config from database
+ * Preload all leaderboard configurations into memory on startup
+ */
+export async function loadAllLeaderboardConfigs() {
+    try {
+        const pool = getPool();
+        const result = await pool.query('SELECT * FROM leaderboard_config');
+        for (const row of result.rows) {
+            if (row.guild_id) {
+                leaderboardConfigCache.set(row.guild_id, row);
+            }
+        }
+        sysLog('Leaderboard Configs Preloaded', { count: leaderboardConfigCache.size });
+    } catch (err) {
+        sysError('Failed to preload leaderboard configs', err);
+    }
+}
+
+/**
+ * Synchronous in-memory check to see if the daily activity leaderboard is active
+ * @param {string} guildId
+ * @returns {boolean}
+ */
+export function isDailyLeaderboardActive(guildId) {
+    if (!guildId) return false;
+    const cfg = leaderboardConfigCache.get(guildId);
+    return Boolean(cfg?.daily_channel_id);
+}
+
+/**
+ * Get leaderboard config from memory cache or database
  */
 export async function getLeaderboardConfig(guildId) {
+    if (!guildId) return null;
+    if (leaderboardConfigCache.has(guildId)) {
+        return leaderboardConfigCache.get(guildId);
+    }
     const pool = getPool();
     const result = await pool.query(
         'SELECT * FROM leaderboard_config WHERE guild_id = $1',
         [guildId]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0] || null;
+    if (row) {
+        leaderboardConfigCache.set(guildId, row);
+    }
+    return row;
 }
 
 /**
- * Save leaderboard config to database
+ * Save leaderboard config to database and update in-memory cache
  */
 export async function setLeaderboardConfig(guildId, config) {
     const pool = getPool();
@@ -107,6 +147,8 @@ export async function setLeaderboardConfig(guildId, config) {
         merged.streak_channel_id, merged.streak_message_id,
         merged.level_channel_id, merged.level_message_id
     ]);
+
+    leaderboardConfigCache.set(guildId, { guild_id: guildId, ...merged });
 }
 
 /**
