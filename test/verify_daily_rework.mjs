@@ -110,7 +110,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(embed.data.fields[0].name, '💰 Base Daily');
       assert.equal(embed.data.fields[0].inline, false);
 
-      assert.equal(embed.data.fields[1].name, '🚀 Booster Multiplier');
+      assert.equal(embed.data.fields[1].name, '🚀 Boosters');
       assert.equal(embed.data.fields[1].inline, false);
 
       assert.equal(embed.data.fields[2].name, '🔥 Streak Bonus');
@@ -259,10 +259,12 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       assert.equal(shownModal.data.title, 'Daily Configuration');
       assert.equal(shownModal.components.length, 4, 'Must have 4 action rows for 4 inputs');
 
-      // Verify all 4 inputs are NOT required (empty = default)
-      for (const row of shownModal.components) {
-        const input = row.components[0];
+      // Verify all 4 inputs are NOT required and match embed labels
+      const expectedLabels = ['Base Daily', 'Boost Multiplier', 'Streak Bonus', 'Streak Cap'];
+      for (let i = 0; i < shownModal.components.length; i++) {
+        const input = shownModal.components[i].components[0];
         assert.equal(input.data.required, false, `${input.data.custom_id} must not be required`);
+        assert.equal(input.data.label, expectedLabels[i], `Input ${i} label must match`);
       }
     });
 
@@ -343,7 +345,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       await handleRewardsModal(fakeInteraction);
       assert.notEqual(savedConfig, null, 'Config must be saved to DB');
       assert.equal(savedConfig.daily_base_reward, 25, 'Empty base_reward must default to 25');
-      assert.equal(savedConfig.booster_multiplier, 1.5, 'Empty booster_multiplier must default to 1.5');
+      assert.equal(savedConfig.booster_multiplier, 2, 'Empty booster_multiplier must default to 2');
       assert.equal(savedConfig.daily_streak_bonus, 5, 'Empty streak_bonus must default to 5');
       assert.equal(savedConfig.daily_streak_cap, 20, 'Empty streak_cap must default to 20');
     });

@@ -39,15 +39,15 @@ export async function getRewardsPayload(guildId) {
   const config = await getGuildConfig(guildId) || {};
   const isEnabled = config.daily_enabled === true;
 
-  const boosterMultiplier = config.booster_multiplier !== undefined ? config.booster_multiplier : 1.5;
+  const boosterMultiplier = config.booster_multiplier !== undefined ? config.booster_multiplier : 2;
   const streakBonus = config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5;
   const baseDaily = config.daily_base_reward !== undefined ? config.daily_base_reward : 25;
   const streakCap = config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20;
 
   const coinName = await getCurrencyName(guildId);
   const boosterText = boosterMultiplier > 1 ? `\`${boosterMultiplier}x mult\`` : '`Disabled`';
-  const streakText = streakBonus > 0 ? `\`${streakBonus} ${coinName.toLowerCase()}/day\`` : '`Disabled`';
-  const baseText = `\`${baseDaily} ${coinName.toLowerCase()}\``;
+  const streakText = streakBonus > 0 ? `\`+${streakBonus} each day\`` : '`Disabled`';
+  const baseText = `\`${baseDaily} ${coinName}\``;
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
@@ -56,7 +56,7 @@ export async function getRewardsPayload(guildId) {
     .setDescription(`Status: ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}`)
     .addFields(
       { name: '💰 Base Daily', value: baseText, inline: false },
-      { name: '🚀 Booster Multiplier', value: boosterText, inline: false },
+      { name: '🚀 Boosters', value: boosterText, inline: false },
       { name: '🔥 Streak Bonus', value: streakText, inline: false },
       { name: '♾️ Streak Cap', value: capText, inline: false }
     );
@@ -126,7 +126,7 @@ export async function handleRewardsComponent(interaction) {
 
       const baseInput = new TextInputBuilder()
         .setCustomId('base_reward')
-        .setLabel(`Base ${coinName} (Day 1)`.slice(0, 45))
+        .setLabel('Base Daily')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('25')
         .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
@@ -134,15 +134,15 @@ export async function handleRewardsComponent(interaction) {
 
       const boosterInput = new TextInputBuilder()
         .setCustomId('booster_multiplier')
-        .setLabel('Booster Multiplier')
+        .setLabel('Boost Multiplier')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1.5')
-        .setValue(String(config.booster_multiplier !== undefined ? config.booster_multiplier : 1.5))
+        .setPlaceholder('2')
+        .setValue(String(config.booster_multiplier !== undefined ? config.booster_multiplier : 2))
         .setRequired(false);
 
       const streakInput = new TextInputBuilder()
         .setCustomId('streak_bonus')
-        .setLabel(`${coinName} per streak day`.slice(0, 45))
+        .setLabel('Streak Bonus')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('5')
         .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
@@ -150,7 +150,7 @@ export async function handleRewardsComponent(interaction) {
 
       const capInput = new TextInputBuilder()
         .setCustomId('streak_cap')
-        .setLabel('Maximum streak days (Cap)')
+        .setLabel('Streak Cap')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('20')
         .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
@@ -312,7 +312,7 @@ export async function handleRewardsModal(interaction) {
 
       // Empty = default values = placeholder text
       const base = baseStr ? parseInt(baseStr, 10) : 25;
-      const booster = boosterStr ? parseFloat(boosterStr) : 1.5;
+      const booster = boosterStr ? parseFloat(boosterStr) : 2;
       const bonus = streakStr ? parseInt(streakStr, 10) : 5;
       const cap = capStr ? parseInt(capStr, 10) : 20;
 
@@ -339,9 +339,9 @@ export async function handleRewardsModal(interaction) {
       const coinName = await getCurrencyName(guildId);
       sendLog(interaction.guild, 'audit', 'cyan', '⚙️ Daily Rewards Configured',
         `**Admin:** \`${logName}\`\n` +
-        `**Base Daily:** \`${base.toLocaleString()} ${coinName.toLowerCase()}\`\n` +
-        `**Booster Multiplier:** \`${booster}x\`\n` +
-        `**Streak Bonus:** \`${bonus.toLocaleString()} ${coinName.toLowerCase()}/day\`\n` +
+        `**Base Daily:** \`${base.toLocaleString()} ${coinName}\`\n` +
+        `**Boost Multiplier:** \`${booster}x\`\n` +
+        `**Streak Bonus:** \`+${bonus.toLocaleString()} each day\`\n` +
         `**Streak Cap:** \`${cap} days\``
       );
 

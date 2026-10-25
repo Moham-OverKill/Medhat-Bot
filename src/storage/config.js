@@ -98,7 +98,7 @@ export const CONFIG_DEFAULTS = {
   intervalUnit: 'hours',
   winnersCount: 1,
   mvpRewardAmount: 100,
-  booster_multiplier: 1.5,
+  booster_multiplier: 2,
   daily_streak_bonus: 5,
   daily_base_reward: 25,
   daily_streak_cap: 20,
