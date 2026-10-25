@@ -25,7 +25,8 @@ import { startLeaderboardScheduler } from './cron/leaderboards.js';
 import { startExpirationScheduler } from './cron/expirations.js';
 import { startShopRestockScheduler } from './cron/shop-restock.js';
 import { startStartupSelfHealing } from './cron/self-healing.js';
-import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
+import { startWeeklySummaryScheduler, seedWeeklySummaryActiveGuilds } from './cron/weeklySummary.js';
+import { loadAllLeaderboardConfigs } from './commands/leaderboard.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext, wrapInteractionSafety, safeDeferReply } from './shared.js';
 import { handleInteractionError } from './utils/errors.js';
@@ -354,6 +355,10 @@ client.once(Events.ClientReady, async () => {
 
     const configs = await loadGuildConfigs();
     const configCount = Object.keys(configs).length;
+
+    // Prime in-memory activity tracking dependency caches (0-overhead fast-path)
+    await loadAllLeaderboardConfigs();
+    await seedWeeklySummaryActiveGuilds();
 
     emitPhase('config', 'Configs loaded', {
       guilds: configCount
