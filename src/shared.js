@@ -1,5 +1,5 @@
 // Shared utility helpers for the MVP bot
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, MessageFlags } from 'discord.js';
 
 export const DANGEROUS_PERMISSIONS = [
   PermissionFlagsBits.Administrator,
@@ -905,4 +905,102 @@ export function isBackDisabled(interaction) {
     }
   }
   return false;
+}
+
+/**
+ * Wraps interaction acknowledgment methods with defensive safety guards.
+ * Prevents DiscordAPIError 40060 (already acknowledged) and 10062 (unknown interaction).
+ * Seamlessly routes reply() to editReply() or followUp() if the interaction was already acknowledged
+ * by an emergency timeout watchdog or prior deferral.
+ * @param {import('discord.js').Interaction} interaction
+ */
+export function wrapInteractionSafety(interaction) {
+  if (!interaction || interaction._resilienceWrapped) return;
+  interaction._resilienceWrapped = true;
+
+  if (typeof interaction.reply === 'function') {
+    const originalReply = interaction.reply.bind(interaction);
+    interaction.reply = async function(options) {
+      if (interaction.deferred || interaction.replied) {
+        try {
+          if (interaction.ephemeral) {
+            return await interaction.editReply(options);
+          }
+          return await interaction.followUp(options);
+        } catch (err) {
+          if (err?.code === 10062 || err?.code === 40060) return null;
+          throw err;
+        }
+      }
+      try {
+        return await originalReply(options);
+      } catch (err) {
+        if (err?.code === 40060) {
+          if (interaction.ephemeral) {
+            return await interaction.editReply(options).catch(() => null);
+          }
+          return await interaction.followUp(options).catch(() => null);
+        }
+        if (err?.code === 10062) return null;
+        throw err;
+      }
+    };
+  }
+
+  if (typeof interaction.deferReply === 'function') {
+    const originalDeferReply = interaction.deferReply.bind(interaction);
+    interaction.deferReply = async function(options) {
+      if (interaction.deferred || interaction.replied) return;
+      try {
+        return await originalDeferReply(options);
+      } catch (err) {
+        if (err?.code === 40060) {
+          interaction.deferred = true;
+          return;
+        }
+        if (err?.code === 10062) return;
+        throw err;
+      }
+    };
+  }
+
+  if (typeof interaction.deferUpdate === 'function') {
+    const originalDeferUpdate = interaction.deferUpdate.bind(interaction);
+    interaction.deferUpdate = async function(options) {
+      if (interaction.deferred || interaction.replied) return;
+      try {
+        return await originalDeferUpdate(options);
+      } catch (err) {
+        if (err?.code === 40060) {
+          interaction.deferred = true;
+          return;
+        }
+        if (err?.code === 10062) return;
+        throw err;
+      }
+    };
+  }
+
+  if (typeof interaction.update === 'function') {
+    const originalUpdate = interaction.update.bind(interaction);
+    interaction.update = async function(options) {
+      if (interaction.deferred || interaction.replied) {
+        try {
+          return await interaction.editReply(options);
+        } catch (err) {
+          if (err?.code === 10062 || err?.code === 40060) return null;
+          throw err;
+        }
+      }
+      try {
+        return await originalUpdate(options);
+      } catch (err) {
+        if (err?.code === 40060) {
+          return await interaction.editReply(options).catch(() => null);
+        }
+        if (err?.code === 10062) return null;
+        throw err;
+      }
+    };
+  }
 }

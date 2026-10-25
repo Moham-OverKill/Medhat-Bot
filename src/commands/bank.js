@@ -538,21 +538,47 @@ export async function handleShopBuyButton(interaction) {
       });
     }
 
-    // STEP 0: Pre-Purchase & Quantity Modal Checks
-    if (!isForce) {
-      const item = await getShopItem(itemId, guildId);
+    // STEP 0: Pre-Purchase Item Existence & Quantity Modal Checks
+    const item = await getShopItem(itemId, guildId);
+    if (!item) {
+      const deletedEmbed = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setDescription('This item is no longer available in the shop catalog.');
 
+      // Self-heal: asynchronously prune orphan post from database
+      pool.query('DELETE FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [itemId, guildId]).catch(() => {});
+
+      // Self-heal: disable buttons on the message if editable
+      if (interaction.message && interaction.message.editable) {
+        try {
+          const disabledRows = interaction.message.components.map(row => {
+            const builder = ActionRowBuilder.from(row);
+            builder.components.forEach(comp => {
+              if (typeof comp.setDisabled === 'function') comp.setDisabled(true);
+            });
+            return builder;
+          });
+          interaction.message.edit({ components: disabledRows }).catch(() => {});
+        } catch (_) {}
+      }
+
+      return interaction.reply({
+        embeds: [deletedEmbed],
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (!isForce) {
       // ========== QUANTITY MODAL & PRE-PURCHASE CHECKS ==========
       // Skip the quantity modal and buy directly (1 copy) if:
       // 1. Item is Locked (is_tradable === false) or a pack
       // 2. Admin set claim limit per user to 1 (or only 1 claim remaining)
       // 3. There is only 1 left in stock (stock <= 1)
       // 4. Max allowed copies user can acquire/afford is 1 (maxAllowed <= 1)
-      if (item) {
-        const hasTrackedPost = Boolean(shopPost);
-        const effectiveStock = (hasTrackedPost && shopPost.current_stock !== undefined)
-          ? shopPost.current_stock
-          : item.stock;
+      const hasTrackedPost = Boolean(shopPost);
+      const effectiveStock = (hasTrackedPost && shopPost.current_stock !== undefined)
+        ? shopPost.current_stock
+        : item.stock;
 
         // Immediate check: out of stock
         if (effectiveStock !== null && effectiveStock <= 0) {
@@ -759,9 +785,16 @@ export async function handleShopBuyButton(interaction) {
             .setRequired(true);
 
           modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
-          return await interaction.showModal(modal);
+          try {
+            return await interaction.showModal(modal);
+          } catch (modalErr) {
+            if (interaction.deferred) {
+              sysLog('Modal Deferral Fallback', { detail: 'Interaction was deferred before modal could open; proceeding to single-unit purchase' });
+            } else {
+              throw modalErr;
+            }
+          }
         }
-      }
     }
 
     // 1. Defer Update/Reply (for locked / force-buy flow — goes straight to purchase)
