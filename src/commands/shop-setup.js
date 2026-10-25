@@ -5473,7 +5473,7 @@ export async function handleShopPostEditLayout(interaction) {
       .setCustomId('message_url')
       .setLabel('Discord Message URL')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('https://discord.com/channels/...')
+      .setPlaceholder('https://discord.com/channels/123456789012345678/123456789012345678/123456789012345678')
       .setRequired(true);
 
     modal.addComponents(new ActionRowBuilder().addComponents(urlInput));

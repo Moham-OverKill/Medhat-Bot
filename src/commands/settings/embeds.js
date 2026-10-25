@@ -1162,8 +1162,8 @@ export async function handleEmbedComponent(interaction) {
     const urlInput = new TextInputBuilder()
       .setCustomId('embed_msg_url')
       .setLabel('Message URL')
-      .setPlaceholder('Paste message link here...')
-      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('https://discord.com/channels/123456789012345678/123456789012345678/123456789012345678')
+      .setStyle(TextInputStyle.Paragraph)
       .setRequired(true);
 
     modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
@@ -1456,8 +1456,8 @@ export async function handleEmbedComponent(interaction) {
     const urlInput = new TextInputBuilder()
       .setCustomId('embed_group_msg_url')
       .setLabel('Message URL')
-      .setPlaceholder('Paste message link here...')
-      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('https://discord.com/channels/123456789012345678/123456789012345678/123456789012345678')
+      .setStyle(TextInputStyle.Paragraph)
       .setRequired(true);
 
     modal.addComponents(new ActionRowBuilder().addComponents(urlInput));
