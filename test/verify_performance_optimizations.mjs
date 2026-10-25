@@ -278,6 +278,7 @@ describe('Performance & Latency Optimization Verification Suite', () => {
       const middleRow = components[2].components;
       assert.equal(middleRow.length, 2);
       assert.equal(middleRow[0].data.label, 'Appearance', 'Customize must be renamed to Appearance');
+      assert.equal(middleRow[0].data.emoji.name, '🖼️', 'Appearance button must use unified emoji');
       assert.equal(middleRow[1].data.label, 'Edit Images');
 
       const bottomRow = components[3].components;
@@ -327,6 +328,7 @@ describe('Performance & Latency Optimization Verification Suite', () => {
       const appearanceOption = otherOptions.find(o => o.data.value === 'other_customize');
       assert.ok(appearanceOption, 'other_customize option must exist');
       assert.equal(appearanceOption.data.label, 'Appearance', 'Option label must be Appearance');
+      assert.equal(appearanceOption.data.emoji.name, '🖼️', 'Appearance option must use unified emoji');
     });
   });
 });

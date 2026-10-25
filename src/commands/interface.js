@@ -286,10 +286,10 @@ export const ADMIN_SHORTCUT_REGISTRY = {
   },
   customize: {
     id: 'customize',
-    name: 'Customize',
-    label: 'CUSTOMIZE',
+    name: 'Appearance',
+    label: 'APPEARANCE',
     description: 'Configure custom bot status, presence, and visuals',
-    emoji: '✨',
+    emoji: '🖼️',
     buttonCustomId: 'admin_hub_customize'
   }
 };

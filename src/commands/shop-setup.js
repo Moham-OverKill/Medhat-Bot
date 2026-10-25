@@ -447,8 +447,8 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
-        .setLabel('Customize')
-        .setEmoji('⚙️')
+        .setLabel('Appearance')
+        .setEmoji('🖼️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_create_start')
@@ -496,6 +496,7 @@ export async function handleCreateItemStart(interaction) {
       new ButtonBuilder()
         .setCustomId('shop_item_appearance_btn_new')
         .setLabel('Appearance')
+        .setEmoji('🖼️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true),
       new ButtonBuilder()
@@ -804,7 +805,7 @@ export async function handleOpenAppearanceModal(interaction) {
 
     const modal = new ModalBuilder()
       .setCustomId(`shop_item_modal_appearance_${itemId}_${Date.now()}`)
-      .setTitle('Item Appearance');
+      .setTitle('Appearance');
 
     const nameInput = new TextInputBuilder()
       .setCustomId('item_name')
@@ -2079,7 +2080,7 @@ export async function handleShopPostAppearanceBtn(interaction) {
 
     const modal = new ModalBuilder()
       .setCustomId(`shop_post_appearance_modal:${sessionId}`)
-      .setTitle('Item Appearance');
+      .setTitle('Appearance');
 
     // Description holds: embed-scraped text (edit flow) or user-entered text (create flow)
     let descValue = (state.description ?? selectedItem?.description ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -4418,6 +4419,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       new ButtonBuilder()
         .setCustomId(`shop_item_appearance_btn_${itemId}`)
         .setLabel('Appearance')
+        .setEmoji('🖼️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_item_tab_config_${itemId}`)
@@ -6187,7 +6189,7 @@ export async function handleLootBoxRenameCatStart(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('shop_lb_rename_cat_modal')
-    .setTitle('Configure Category');
+    .setTitle('Appearance');
 
   const catInput = new TextInputBuilder()
     .setCustomId('cat_name')
@@ -6486,7 +6488,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
       new ButtonBuilder()
         .setCustomId(`shop_lb_rename_box_btn_${boxId}`)
         .setLabel('Appearance')
-        .setEmoji('✏️')
+        .setEmoji('🖼️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_images_btn_${boxId}`)
@@ -7065,7 +7067,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_lb_rename_modal_${boxId}`)
-    .setTitle(`Appearance: ${box.name.slice(0, 30)}`);
+    .setTitle('Appearance');
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
