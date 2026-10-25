@@ -158,7 +158,7 @@ import {
   handleAdminRemoveModal
 } from '../commands/admin-users.js';
 import { handleOrganizeComponent } from '../commands/settings/organize.js';
-import { handleInterfaceModal, handleHubShortcut } from '../commands/interface.js';
+import { handleInterfaceModal, handleHubShortcut, handleAdminHubComponent } from '../commands/interface.js';
 import { handlePassModal } from '../commands/settings/pass.js';
 import { handleEmbedModal, handleEmbedComponent } from '../commands/settings/embeds.js';
 import { handleLevelTabButton } from '../commands/pass.js';
@@ -437,6 +437,12 @@ export function setupComponentHandlers(client) {
         return;
       }
 
+      // ADMIN DASHBOARD / STAFF SHORTCUTS (strictly ephemeral, never mutates channel message)
+      if (customId.startsWith('admin_hub_')) {
+        await handleAdminHubComponent(interaction);
+        return;
+      }
+
       // LEVEL PROGRESS USER TABS
       if (customId.startsWith('level_tab_')) {
         await handleLevelTabButton(interaction);
@@ -461,8 +467,7 @@ export function setupComponentHandlers(client) {
         customId.startsWith('role_rewards_') ||
         customId.startsWith('pass_') ||
         customId.startsWith('interface_') ||
-        customId.startsWith('admin_interface_') ||
-        customId.startsWith('admin_hub_')
+        customId.startsWith('admin_interface_')
       ) {
         await handleSettingsComponent(interaction);
         return;
