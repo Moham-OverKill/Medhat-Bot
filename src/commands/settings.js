@@ -137,12 +137,12 @@ export async function showMainMenu(interaction) {
         .addOptions(moderateOptions);
     const row3 = new ActionRowBuilder().addComponents(moderateSelect);
 
-    // Row 4: OTHER Select Menu (Customize, Shortcuts, Dashboard, Embeds)
+    // Row 4: OTHER Select Menu (Appearance, Shortcuts, Dashboard, Embeds)
     const otherSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_other_${nonce}`)
         .setPlaceholder('⚙️ Other')
         .addOptions([
-            { label: 'Customize', value: 'other_customize', emoji: '✨' },
+            { label: 'Appearance', value: 'other_customize', emoji: '✨' },
             { label: 'Shortcuts', value: 'other_shortcuts', emoji: '⚡' },
             { label: 'Dashboard', value: 'other_dashboard', emoji: '🎛️' },
             { label: 'Embeds', value: 'other_embeds', emoji: '📰' }

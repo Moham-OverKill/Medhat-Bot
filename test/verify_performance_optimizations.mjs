@@ -212,4 +212,121 @@ describe('Performance & Latency Optimization Verification Suite', () => {
       assert.equal(editReplyOptions.content, 'Your private purchase confirmation');
     });
   });
+
+  describe('UI Layout & Label Renaming Verification', () => {
+    it('should configure Chest Editor panel with Appearance button and Back/Delete on their own bottom row', async () => {
+      const { showLootBoxEditorPanel } = await import('../src/commands/shop-setup.js');
+      let editedPayload = null;
+      const validGuildId = '123456789012345678';
+
+      const mockInteraction = {
+        guildId: validGuildId,
+        guild: {
+          id: validGuildId,
+          roles: { cache: new Map() }
+        },
+        deferred: true,
+        replied: false,
+        editReply: async (payload) => {
+          editedPayload = payload;
+          return payload;
+        }
+      };
+
+      setMockPool({
+        query: async (sql) => {
+          if (sql.includes('FROM loot_boxes')) {
+            return {
+              rows: [{
+                id: 1,
+                guild_id: validGuildId,
+                name: 'Magical Chest',
+                chance_common: 0,
+                chance_uncommon: 10,
+                chance_rare: 25,
+                chance_epic: 55,
+                chance_legendary: 10,
+                min_prizes: 2,
+                max_prizes: 3,
+                chance_coins: 100,
+                min_coins: 500,
+                max_coins: 1000,
+                items_enabled: true,
+                coins_enabled: true,
+                image_url: 'https://example.com/chest.png'
+              }]
+            };
+          }
+          if (sql.includes('FROM guild_configs')) {
+            return { rows: [{ config: {} }] };
+          }
+          return { rows: [] };
+        }
+      });
+
+      await showLootBoxEditorPanel(mockInteraction, 1, { showImageMenu: false });
+      assert.ok(editedPayload, 'Payload must be returned');
+
+      const components = editedPayload.components;
+      // Expect 4 rows when showImageMenu is false:
+      // Row 0: Configure select menu
+      // Row 1: Rarity/Prizes/Coins toggle buttons
+      // Row 2: Appearance & Edit Images
+      // Row 3: Back & Delete (on their own row at the bottom)
+      assert.equal(components.length, 4, 'Must have exactly 4 component rows without image menu');
+
+      const middleRow = components[2].components;
+      assert.equal(middleRow.length, 2);
+      assert.equal(middleRow[0].data.label, 'Appearance', 'Customize must be renamed to Appearance');
+      assert.equal(middleRow[1].data.label, 'Edit Images');
+
+      const bottomRow = components[3].components;
+      assert.equal(bottomRow.length, 2);
+      assert.equal(bottomRow[0].data.label, 'Back', 'Back button must be on bottom row');
+      assert.equal(bottomRow[1].data.label, 'Delete', 'Delete button must be on bottom row');
+
+      // Test with showImageMenu: true (should have 5 rows with Back & Delete on Row 4)
+      await showLootBoxEditorPanel(mockInteraction, 1, { showImageMenu: true });
+      assert.equal(editedPayload.components.length, 5, 'Must have exactly 5 component rows with image menu');
+      const bottomRowMenu = editedPayload.components[4].components;
+      assert.equal(bottomRowMenu[0].data.label, 'Back');
+      assert.equal(bottomRowMenu[1].data.label, 'Delete');
+    });
+
+    it('should rename Customize to Appearance in the Other select menu', async () => {
+      const { showMainMenu } = await import('../src/commands/settings.js');
+      let editedPayload = null;
+      const validGuildId = '123456789012345678';
+
+      const mockInteraction = {
+        guildId: validGuildId,
+        guild: {
+          id: validGuildId,
+          roles: { cache: new Map() }
+        },
+        deferred: true,
+        replied: false,
+        isButton: () => false,
+        isAnySelectMenu: () => false,
+        editReply: async (payload) => {
+          editedPayload = payload;
+          return payload;
+        }
+      };
+
+      setMockPool({
+        query: async () => ({ rows: [{ config: {} }] })
+      });
+
+      await showMainMenu(mockInteraction);
+      assert.ok(editedPayload, 'Payload must be returned');
+
+      // Row 3 (4th row) is the Other menu
+      const otherRow = editedPayload.components[3].components[0];
+      const otherOptions = otherRow.options;
+      const appearanceOption = otherOptions.find(o => o.data.value === 'other_customize');
+      assert.ok(appearanceOption, 'other_customize option must exist');
+      assert.equal(appearanceOption.data.label, 'Appearance', 'Option label must be Appearance');
+    });
+  });
 });

@@ -6480,31 +6480,36 @@ export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
       }
     }
 
-    // --- Row 3: Action Buttons (Back, Customize, Edit Images, Delete) ---
+    // --- Row 3: Action Buttons (Appearance, Edit Images) ---
     const hasBoxImages = Boolean(box.image_url || box.opened_image_url);
     const actionRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('shop_lb_home')
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
         .setCustomId(`shop_lb_rename_box_btn_${boxId}`)
-        .setLabel('Customize')
+        .setLabel('Appearance')
         .setEmoji('✏️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_images_btn_${boxId}`)
         .setLabel('Edit Images')
         .setEmoji('🖼️')
-        .setStyle(options.showImageMenu ? ButtonStyle.Primary : (hasBoxImages ? ButtonStyle.Primary : ButtonStyle.Secondary)),
+        .setStyle(options.showImageMenu ? ButtonStyle.Primary : (hasBoxImages ? ButtonStyle.Primary : ButtonStyle.Secondary))
+    );
+    components.push(actionRow);
+
+    // --- Row 4: Navigation & Danger Buttons (Back, Delete on their own row at the very bottom) ---
+    const bottomRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('shop_lb_home')
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`shop_lb_delete_start_${boxId}`)
         .setLabel('Delete')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger)
     );
-    components.push(actionRow);
+    components.push(bottomRow);
 
     await interaction.editReply({
       content: null,
@@ -7060,7 +7065,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
 
   const modal = new ModalBuilder()
     .setCustomId(`shop_lb_rename_modal_${boxId}`)
-    .setTitle(`Customize: ${box.name.slice(0, 30)}`);
+    .setTitle(`Appearance: ${box.name.slice(0, 30)}`);
 
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
