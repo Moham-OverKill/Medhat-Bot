@@ -104,13 +104,8 @@ export async function showQuestsDashboard(interaction) {
       );
     }
 
-    // Row 3: Disable/Enable, Add Quest, Schedule
+        // Row 3: Add Quest, Schedule
     const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('quests_toggle')
-        .setLabel(enabled ? 'Disable' : 'Enable')
-        .setEmoji(enabled ? '✖️' : '▶️')
-        .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId('quests_add_start')
         .setLabel('Add Quest')
@@ -124,13 +119,18 @@ export async function showQuestsDashboard(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 4: Back
+        // Row 4: [Back] [Disable/Enable] on their own bottom row
     const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('settings_coins')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('quests_toggle')
+        .setLabel(enabled ? 'Disable' : 'Enable')
+        .setEmoji(enabled ? '✖️' : '▶️')
+        .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
     );
 
     await interaction.editReply({ files: [], attachments: [], embeds: [embed],

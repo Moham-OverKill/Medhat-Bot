@@ -61,16 +61,19 @@ export async function getRewardsPayload(guildId) {
       { name: '♾️ Streak Cap', value: capText, inline: false }
     );
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('settings_coins')
-      .setLabel('Back')
-      .setEmoji('⬅️')
-      .setStyle(ButtonStyle.Secondary),
+    const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('rewards_config_btn')
       .setLabel('Config')
       .setEmoji('⚙️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings_coins')
+      .setLabel('Back')
+      .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('rewards_daily_toggle')
@@ -79,7 +82,7 @@ export async function getRewardsPayload(guildId) {
       .setStyle(isEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
   );
 
-  return { embeds: [embed], components: [row] };
+  return { embeds: [embed], components: [row1, row2] };
 }
 
 export async function handleRewardsSetup(interaction) {
@@ -116,45 +119,56 @@ export async function handleRewardsComponent(interaction) {
       return;
     }
 
-    // UNIFIED CONFIG MODAL
+        // UNIFIED CONFIG MODAL
     if (customId === 'rewards_config_btn') {
       const config = await getGuildConfig(guildId) || {};
-      const coinName = await getCurrencyName(guildId);
       const modal = new ModalBuilder()
         .setCustomId('rewards_config_modal')
         .setTitle('Daily Configuration');
 
+      const hasCustomBase = config.daily_base_reward !== undefined && config.daily_base_reward !== null && Number(config.daily_base_reward) !== 25;
       const baseInput = new TextInputBuilder()
         .setCustomId('base_reward')
         .setLabel('Base Daily')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('25')
-        .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
         .setRequired(false);
+      if (hasCustomBase) {
+        baseInput.setValue(String(config.daily_base_reward));
+      }
 
+      const hasCustomBooster = config.booster_multiplier !== undefined && config.booster_multiplier !== null && Number(config.booster_multiplier) !== 2;
       const boosterInput = new TextInputBuilder()
         .setCustomId('booster_multiplier')
         .setLabel('Boost Multiplier')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('2')
-        .setValue(String(config.booster_multiplier !== undefined ? config.booster_multiplier : 2))
         .setRequired(false);
+      if (hasCustomBooster) {
+        boosterInput.setValue(String(config.booster_multiplier));
+      }
 
+      const hasCustomBonus = config.daily_streak_bonus !== undefined && config.daily_streak_bonus !== null && Number(config.daily_streak_bonus) !== 5;
       const streakInput = new TextInputBuilder()
         .setCustomId('streak_bonus')
         .setLabel('Streak Bonus')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('5')
-        .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
         .setRequired(false);
+      if (hasCustomBonus) {
+        streakInput.setValue(String(config.daily_streak_bonus));
+      }
 
+      const hasCustomCap = config.daily_streak_cap !== undefined && config.daily_streak_cap !== null && Number(config.daily_streak_cap) !== 20;
       const capInput = new TextInputBuilder()
         .setCustomId('streak_cap')
         .setLabel('Streak Cap')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('20')
-        .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
         .setRequired(false);
+      if (hasCustomCap) {
+        capInput.setValue(String(config.daily_streak_cap));
+      }
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(baseInput),
