@@ -103,7 +103,7 @@ export async function updateBalance(userId, guildId, amount, type, description =
  */
 export async function claimDaily(userId, guildId, username, isBooster = false) {
   const config = await getGuildConfig(guildId) || {};
-  if (config.daily_enabled === false) {
+  if (config.daily_enabled !== true) {
     return {
       success: false,
       error: 'daily_disabled'

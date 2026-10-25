@@ -168,7 +168,7 @@ function buildBankUI(userData, member, isDailyEnabled = true) {
     .setLabel('Daily')
     .setEmoji('🎁')
     .setStyle(isDailyEnabled && isDailyAvailable ? ButtonStyle.Success : ButtonStyle.Secondary)
-    .setDisabled(!isDailyEnabled || !isDailyAvailable);
+    .setDisabled(isDailyEnabled ? !isDailyAvailable : false);
 
   const row = new ActionRowBuilder()
     .addComponents(historyButton, dailyButton);
@@ -190,12 +190,6 @@ export async function handleBankCommand(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    }
-    const config = await getGuildConfig(interaction.guildId) || {};
-    if (config.daily_enabled !== true) {
-      const { createErrorEmbed } = await import('../utils/errors.js');
-      const errorEmbed = createErrorEmbed('Bank', 'The bank is not configured for this server yet.');
-      return interaction.editReply({ files: [], content: '', embeds: [errorEmbed], components: [] });
     }
     await refreshBankUI(interaction);
   } catch (error) {
@@ -221,6 +215,14 @@ export async function handleBankDaily(interaction) {
 
   try {
     const guildId = interaction.guildId;
+
+    const config = await getGuildConfig(guildId) || {};
+    if (config.daily_enabled !== true) {
+      const { createErrorEmbed } = await import('../utils/errors.js');
+      const errorEmbed = createErrorEmbed('Daily Rewards', 'Daily rewards are not configured for this server yet.');
+      await interaction.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
 
     const userId = interaction.user.id;
     const member = interaction.member;
