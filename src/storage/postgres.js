@@ -1715,6 +1715,15 @@ export async function closeDatabase() {
  * Execute a query with error handling and automatic retry on transient connection resets
  */
 export async function query(text, params, retryCount = 0) {
+  if (!pool && retryCount < 3) {
+    sysLog('Database Link Restoring', { detail: `Awaiting pool initialization (Attempt ${retryCount + 1})` });
+    await new Promise(res => setTimeout(res, 500));
+    return query(text, params, retryCount + 1);
+  }
+  if (!pool) {
+    throw new Error('Database pool not initialized. Call initializeDatabase() first.');
+  }
+
   const qStart = performance.now();
   try {
     const result = await pool.query(text, params);
@@ -1729,14 +1738,29 @@ export async function query(text, params, retryCount = 0) {
     }
     return result;
   } catch (error) {
+    const msg = error?.message || '';
     const isTransient = error.code === 'ECONNRESET' ||
+                        error.code === 'ECONNREFUSED' ||
+                        error.code === 'ETIMEDOUT' ||
+                        error.code === 'EPIPE' ||
+                        error.code === 'EAI_AGAIN' ||
                         error.code === '57P01' ||
-                        error.message?.includes('Connection terminated unexpectedly') ||
-                        error.message?.includes('read ECONNRESET');
+                        error.code === '57P02' ||
+                        error.code === '57P03' ||
+                        error.code === '08006' ||
+                        error.code === '08001' ||
+                        error.code === '08004' ||
+                        msg.includes('Connection terminated') ||
+                        msg.includes('read ECONNRESET') ||
+                        msg.includes('write EPIPE') ||
+                        msg.includes('client has been closed') ||
+                        msg.includes('Connection terminated unexpectedly') ||
+                        msg.includes('database system is starting up') ||
+                        msg.includes('database system is shutting down');
 
-    if (isTransient && retryCount < 2) {
+    if (isTransient && retryCount < 3) {
       sysLog('Database Link Restoring', { detail: `Retrying query after transient disconnect (Attempt ${retryCount + 1})` });
-      await new Promise(res => setTimeout(res, 800));
+      await new Promise(res => setTimeout(res, 500 * (retryCount + 1)));
       return query(text, params, retryCount + 1);
     }
 

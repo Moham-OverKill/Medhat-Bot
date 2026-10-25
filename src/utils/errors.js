@@ -160,6 +160,14 @@ export async function handleInteractionError(interaction, error, context = 'Acti
     rawErrorMessage.includes('Missing Permissions') || 
     rawErrorMessage.includes('Missing Access');
 
+  const isDatabaseError =
+    rawErrorMessage.includes('Database pool not initialized') ||
+    rawErrorMessage.includes('ECONNREFUSED') ||
+    rawErrorMessage.includes('Connection terminated') ||
+    rawErrorMessage.includes('client has been closed') ||
+    rawErrorMessage.includes('database system is starting up') ||
+    rawErrorMessage.includes('read ECONNRESET');
+
   const embed = new EmbedBuilder()
     .setColor('#E74C3C')
     .setTimestamp();
@@ -191,13 +199,16 @@ export async function handleInteractionError(interaction, error, context = 'Acti
         `Discord API returned **${errorCode || 'Permission Error'}**: ${sanitizeError(rawErrorMessage)}\n\nEnsure the bot has **Administrator** or proper **Channel / Role Permissions** (Send Messages, Embed Links, Manage Roles) in your server settings.`
       );
     }
+  } else if (isDatabaseError) {
+    embed.setTitle('Service Temporarily Unavailable');
+    embed.setDescription('The database service is reconnecting. Please wait a few seconds and try your request again.');
   } else {
     // Non-permission operational error
     embed.setTitle('Action Execution Failed');
     embed.addFields(
-      { name: '📍 Action', value: `\`${context}\``, inline: false },
-      { name: '🔍 Error Details', value: `\`\`\`${sanitizeError(rawErrorMessage).slice(0, 500)}\`\`\``, inline: false },
-      { name: '💡 Resolution', value: 'If this issue persists, please check your configuration or contact a server administrator.', inline: false }
+      { name: 'Action', value: `\`${context}\``, inline: false },
+      { name: 'Error Details', value: `\`\`\`${sanitizeError(rawErrorMessage).slice(0, 500)}\`\`\``, inline: false },
+      { name: 'Resolution', value: 'If this issue persists, please check your configuration or contact a server administrator.', inline: false }
     );
   }
 
@@ -206,18 +217,21 @@ export async function handleInteractionError(interaction, error, context = 'Acti
     const isMessageComponent = (typeof interaction.isMessageComponent === 'function' && interaction.isMessageComponent()) || Boolean(interaction.message);
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ 
-        embeds: [embed], 
-        flags: MessageFlags.Ephemeral 
-      }).catch(async () => {
-        // CRITICAL GUARD: Never call editReply on a public message component!
+      if (interaction.ephemeral) {
+        // Ephemeral deferral: safely editReply so "thinking..." resolves cleanly
+        await interaction.editReply({ files: [], embeds: [embed], components: [] }).catch(async () => {
+          await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
+        });
+      } else {
+        // CRITICAL GUARD: Never call editReply on a public message component or public deferral!
         // Calling editReply on a non-ephemeral message component overwrites the public channel message
         // (e.g. shop post, hub interface, trade offer) with this error embed.
-        // Only call editReply if the interaction was explicitly deferred as ephemeral or is a slash command.
-        if (interaction.ephemeral || (!isMessageComponent && !interaction.message)) {
-          await interaction.editReply({ files: [], embeds: [embed] }).catch(() => {});
-        }
-      });
+        // Send strictly an ephemeral followUp so the original card stays completely intact.
+        await interaction.followUp({ 
+          embeds: [embed], 
+          flags: MessageFlags.Ephemeral 
+        }).catch(() => {});
+      }
     } else {
       await interaction.reply({ 
         embeds: [embed], 

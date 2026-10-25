@@ -1160,36 +1160,43 @@ export async function handleColorButton(interaction) {
     // Get all color roles (both normal and booster)
     const allColorRoleIds = await getAllColorRoles(guildId);
 
+    // Verify that the target color role exists on the server
+    const targetRole = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
+    if (!targetRole) {
+      const errEmbed = new EmbedBuilder()
+        .setColor('#E74C3C')
+        .setDescription('This color role no longer exists on the server. Please ask an administrator to refresh the color panel.');
+      return await sendPrivateResponse({ embeds: [errEmbed] });
+    }
+
+    const botMember = interaction.guild.members.me || await interaction.guild.members.fetchMe().catch(() => null);
+
     // Check if user already has this role
     const hasRole = member.roles.cache.has(roleId);
 
     if (hasRole) {
       // Check hierarchy before removing
-      const botMember = await interaction.guild.members.fetchMe().catch(() => null);
-      const targetRole = interaction.guild.roles.cache.get(roleId);
-      
-      if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
+      if (botMember && targetRole.position >= botMember.roles.highest.position) {
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription('❌ I cannot remove this role because it is positioned above the bot in the server hierarchy. Move the bot role higher in Server Settings → Roles.');
+          .setDescription('I cannot remove this role because it is positioned above the bot in the server hierarchy. Move the bot role higher in Server Settings → Roles.');
         return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
       // Remove the role
       await member.roles.remove(roleId);
       const logName = getUserLogName(member);
-      sendLog(interaction.guild, 'inventory', 'blue', '🎨 Color Role Removed', 
+      sendLog(interaction.guild, 'inventory', 'blue', 'Color Role Removed', 
         `**User:** \`${logName}\`\n` +
         `**Action:** Removed color role <@&${roleId}>.`
       );
 
       const embed = new EmbedBuilder()
         .setColor('#3498DB')
-        .setDescription(`🗑️ Removed color role <@&${roleId}>.`);
+        .setDescription(`Removed color role <@&${roleId}>.`);
       await sendPrivateResponse({ embeds: [embed] });
     } else {
       // Remove all other color roles first (ONLY if manageable)
-      const botMember = await interaction.guild.members.fetchMe().catch(() => null);
       const rolesToRemove = member.roles.cache
         .filter(role => allColorRoleIds.includes(role.id) && (!botMember || role.position < botMember.roles.highest.position))
         .map(role => role.id);
@@ -1202,26 +1209,25 @@ export async function handleColorButton(interaction) {
         }
       }
 
-      // Add the new color role (Check hierarchy and security first)
-      const targetRole = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
-      if (targetRole && botMember && targetRole.position >= botMember.roles.highest.position) {
+      // Check hierarchy and security
+      if (botMember && targetRole.position >= botMember.roles.highest.position) {
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription('❌ I cannot assign this role because it is positioned above the bot in the server hierarchy. Please move the bot role higher in Server Settings → Roles.');
+          .setDescription('I cannot assign this role because it is positioned above the bot in the server hierarchy. Please move the bot role higher in Server Settings → Roles.');
         return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
-      if (targetRole && hasAnyDangerousPermission(targetRole)) {
+      if (hasAnyDangerousPermission(targetRole)) {
         sysWarn('Dangerous Color Role Assignment Blocked', { user: member.id, guild: interaction.guildId, role: roleId, detail: 'Target color role holds dangerous permissions' });
         const errEmbed = new EmbedBuilder()
           .setColor('#E74C3C')
-          .setDescription('❌ This color role holds administrative or moderation permissions and cannot be assigned.');
+          .setDescription('This color role holds administrative or moderation permissions and cannot be assigned.');
         return await sendPrivateResponse({ embeds: [errEmbed] });
       }
 
       await member.roles.add(roleId);
       const logName = getUserLogName(member);
-      sendLog(interaction.guild, 'inventory', 'green', '🎨 Color Role Selected', 
+      sendLog(interaction.guild, 'inventory', 'green', 'Color Role Selected', 
         `**User:** \`${logName}\`\n` +
         `**Action:** Picked color role <@&${roleId}>.`
       );
@@ -1229,7 +1235,7 @@ export async function handleColorButton(interaction) {
       const roleColor = (targetRole?.hexColor && targetRole.hexColor !== '#000000') ? targetRole.hexColor : '#2ECC71';
       const embed = new EmbedBuilder()
         .setColor(roleColor)
-        .setDescription(`🎨 Picked color role <@&${roleId}>.`);
+        .setDescription(`Picked color role <@&${roleId}>.`);
       await sendPrivateResponse({ embeds: [embed] });
     }
   } catch (error) {
@@ -1241,12 +1247,14 @@ export async function handleColorButton(interaction) {
     let errorMsg = 'Failed to update your color role.';
 
     // Check for specific Discord API errors
-    if (error.code === 50013 || error.message?.includes('Missing Permissions')) {
-      errorMsg = '❌ The bot\'s role must be positioned ABOVE the color roles in Server Settings → Roles.';
+    if (error.code === 10011 || error.message?.includes('Unknown Role')) {
+      errorMsg = 'This color role no longer exists on the server.';
+    } else if (error.code === 50013 || error.message?.includes('Missing Permissions')) {
+      errorMsg = 'The bot\'s role must be positioned ABOVE the color roles in Server Settings → Roles.';
     } else if (error.code === 50001) {
-      errorMsg = '❌ The bot cannot access this role. Check role hierarchy.';
+      errorMsg = 'The bot cannot access this role. Check role hierarchy.';
     } else {
-      errorMsg = `❌ Failed to update color role: ${error.message || 'Unknown error'}`;
+      errorMsg = `Failed to update color role: ${error.message || 'Unknown error'}`;
     }
 
     const errEmbed = new EmbedBuilder()

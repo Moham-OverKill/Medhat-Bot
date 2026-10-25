@@ -27,7 +27,8 @@ import { startShopRestockScheduler } from './cron/shop-restock.js';
 import { startStartupSelfHealing } from './cron/self-healing.js';
 import { startWeeklySummaryScheduler } from './cron/weeklySummary.js';
 import { setupComponentHandlers } from './components/handlers.js';
-import { sanitizeError, formatGuildForLog, runInGuildContext } from './shared.js';
+import { sanitizeError, formatGuildForLog, runInGuildContext, wrapInteractionSafety, safeDeferReply } from './shared.js';
+import { handleInteractionError } from './utils/errors.js';
 import { sendLog, logSystemEvent, sysLog, sysWarn, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep, healAllActiveTemporaryItemsOnStartup } from './economy/shop.js';
@@ -885,13 +886,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
   return runInGuildContext(interaction.guildId, async () => {
     if (!interaction.isChatInputCommand()) return;
 
+    wrapInteractionSafety(interaction);
+
     const cmdStart = performance.now();
     const cmdName = interaction.commandName;
     const subCmd = interaction.options?.getSubcommand(false);
     const fullCmdName = subCmd ? `/${cmdName} ${subCmd}` : `/${cmdName}`;
 
+    // Active 2000ms watchdog for slash commands to prevent Discord's 3.0s hard timeout
+    const watchdog = setTimeout(async () => {
+      if (!interaction.deferred && !interaction.replied) {
+        sysLog('Slash Command Watchdog Safety Triggered', {
+          user: interaction.user?.tag || interaction.user?.id,
+          guildId: interaction.guildId,
+          detail: `Command "${fullCmdName}" not acknowledged within 2.0s. Applying emergency deferral.`
+        });
+        await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
+      }
+    }, 2000);
+
     // Check if bot is fully ready
     if (!depsState.storage) {
+      clearTimeout(watchdog);
       sysWarn(`Command Deferred During Startup: ${fullCmdName}`, {
         user: interaction.user.id,
         guild: interaction.guildId
@@ -930,21 +946,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      try {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: 'An error occurred while handling this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        } else if (interaction.deferred) {
-          await interaction.followUp({
-            content: 'An error occurred while processing this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-      } catch (fallbackError) {
-        // Ignore fallback errors like "Unknown interaction" which just means the token expired
-      }
+      await handleInteractionError(interaction, error, fullCmdName);
+    } finally {
+      clearTimeout(watchdog);
     }
   });
 });

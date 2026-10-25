@@ -152,7 +152,12 @@ async function resolveValidGuildWinners(guild, candidates, targetCount) {
         if (!userId) continue;
 
         try {
-            const member = await guild.members.fetch(userId).catch(() => null);
+            const cachedMember = guild.members.cache.get(userId);
+            const member = cachedMember || await guild.members.fetch(userId).catch(() => null);
+            if (!cachedMember) {
+                // Yield 50ms between uncached API fetches to keep Discord REST buckets healthy
+                await sleep(50);
+            }
             if (member && !member.user.bot) {
                 validMembers.push(member);
             }

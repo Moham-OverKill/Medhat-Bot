@@ -75,6 +75,7 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
             }
         });
+        await new Promise(r => setTimeout(r, 100));
     }
 
     // ── STEP 2.2: Refresh Community Interface Hubs at Midnight ──
@@ -88,6 +89,7 @@ async function runHourlyRefresh(client, isStartup = false) {
                     sysError('Midnight Hub Sync Failed', err, { guild: guildId });
                 }
             });
+            await new Promise(r => setTimeout(r, 100));
         }
     }
 
@@ -106,6 +108,7 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('Streak Role Apply Failed', err, { guild: guildId });
             }
         });
+        await new Promise(r => setTimeout(r, 100));
     }
 
     // ── STEP 3: Run KotH MVP cycle (roles + coins) for each guild ──
@@ -118,6 +121,7 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('KotH Cycle Error', err, { guild: guildId });
             }
         });
+        await new Promise(r => setTimeout(r, 100));
     }
 
     // ── STEP 3.5: Run Tag Rewards cycle for each guild (Hourly & Startup Catch-up) ──

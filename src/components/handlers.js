@@ -146,12 +146,55 @@ import {
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
 import { handleItemsComponent } from '../commands/items.js';
-import { sanitizeError, runInGuildContext } from '../shared.js';
+import { sanitizeError, runInGuildContext, wrapInteractionSafety, safeDeferReply } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
+
+/**
+ * Detects whether an interaction customId is designed to open a Discord Modal directly.
+ * Modals cannot be shown if an interaction has already been acknowledged or deferred.
+ */
+function isModalOpener(interaction) {
+  if (!interaction || !interaction.isMessageComponent || !interaction.isMessageComponent()) return false;
+  const customId = interaction.customId;
+  if (!customId || typeof customId !== 'string') return false;
+
+  return (
+    customId.includes('_modal') ||
+    customId === 'shop_lb_create_start' ||
+    customId.startsWith('shop_lb_rates_btn_') ||
+    customId.startsWith('shop_lb_coins_btn_') ||
+    customId.startsWith('shop_lb_prizes_btn_') ||
+    customId.startsWith('shop_lb_rename_box_btn_') ||
+    customId === 'shop_post_desc_btn' ||
+    customId === 'shop_post_price_btn' ||
+    customId === 'shop_post_stock_btn' ||
+    customId === 'shop_post_appearance_btn' ||
+    customId === 'shop_post_payout_btn' ||
+    customId.startsWith('shop_item_appearance_btn_') ||
+    customId.startsWith('shop_item_duration_btn_') ||
+    customId.startsWith('admin_user_balance_') ||
+    customId.startsWith('admin_user_streak_') ||
+    customId.startsWith('admin_user_level_') ||
+    customId.startsWith('admin_user_give_') ||
+    customId.startsWith('admin_user_remove_') ||
+    customId.startsWith('quests_btn_create') ||
+    customId.startsWith('quests_btn_edit_') ||
+    customId.startsWith('quests_custom_input_') ||
+    customId.startsWith('rewards_btn_add') ||
+    customId.startsWith('rewards_btn_edit_') ||
+    customId.startsWith('embed_builder_') ||
+    customId.startsWith('embed_edit_') ||
+    customId.startsWith('embed_update_') ||
+    customId.startsWith('pass_tier_') ||
+    customId.startsWith('pass_edit_') ||
+    customId.startsWith('trade_modal_') ||
+    customId.startsWith('bank_drop_')
+  );
+}
 
 export function setupComponentHandlers(client) {
   if (handlersSetup) {
@@ -160,24 +203,35 @@ export function setupComponentHandlers(client) {
   }
 
   client.on('interactionCreate', async (interaction) => {
+    wrapInteractionSafety(interaction);
+
     return runInGuildContext(interaction.guildId, async () => {
       // Warm up guild config in background without blocking interaction acknowledgment
       if (interaction.guildId) {
         getGuildConfig(interaction.guildId).catch(() => {});
       }
 
-      // --- 0. INTERACTION WATCHDOG ---
-    // Log a warning if any interaction takes > 2.5s to acknowledge.
-    const watchdog = setTimeout(() => {
-      if (!interaction.deferred && !interaction.replied) {
-        const detail = interaction.isCommand() ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
-        sysLog('⚠️ Latency Warning', {
-          user: interaction.user.tag,
-          guildId: interaction.guildId,
-          detail: `Interaction "${detail}" not acknowledged within 2.5s. Potential for "Unknown interaction" error!`
-        });
-      }
-    }, 2500);
+      // --- 0. INTERACTION WATCHDOG & TIMEOUT SHIELD ---
+      // Discord enforces a 3.0s hard timeout. At 2.0s, trigger emergency deferral for non-modal components.
+      const watchdog = setTimeout(async () => {
+        if (!interaction.deferred && !interaction.replied) {
+          const detail = interaction.isCommand?.() ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
+          if (!isModalOpener(interaction)) {
+            sysLog('Interaction Watchdog Safety Triggered', {
+              user: interaction.user?.tag || interaction.user?.id,
+              guildId: interaction.guildId,
+              detail: `Interaction "${detail}" not acknowledged within 2.0s. Applying emergency deferral.`
+            });
+            await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
+          } else {
+            sysLog('Latency Notice', {
+              user: interaction.user?.tag || interaction.user?.id,
+              guildId: interaction.guildId,
+              detail: `Modal interaction "${detail}" pending acknowledgment at 2.0s.`
+            });
+          }
+        }
+      }, 2000);
 
     try {
       // 1. --- INTERACTION WATCHTOWER ---
