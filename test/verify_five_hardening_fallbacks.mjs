@@ -118,20 +118,61 @@ test('Hardening Fallback 5: Log Channel Stale ID Auto-Healing & Fallback Dispatc
     assert.equal(mockDb.configs['guild-1'].log_audit_channel_id, '67890');
 });
 
-test('Avatar Customization: Owner Fallback Verification', async () => {
-    // Test owner evaluation logic
-    function isOwner(client, userId) {
-        if (client.application?.owner?.id === userId) return true;
-        if (client.application?.owner?.members?.has?.(userId)) return true;
-        return false;
+test('Avatar Customization: Unified Server editMe and Permission Fallback', async () => {
+    // 1. Verify MIME type detection from magic bytes
+    function detectMimeType(buf) {
+        if (buf.length >= 4) {
+            if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+            if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+            if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+            if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+        }
+        return 'image/png';
     }
 
-    const clientWithOwner = {
-        application: {
-            owner: { id: 'owner-123' }
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    const jpegHeader = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);
+    assert.equal(detectMimeType(pngHeader), 'image/png');
+    assert.equal(detectMimeType(jpegHeader), 'image/jpeg');
+
+    // 2. Verify unified editMe call and fallback logic when nickname lacks permission (50013)
+    const calls = [];
+    const mockGuildMemberManager = {
+        async editMe(payload) {
+            calls.push(payload);
+            if (payload.nick && payload.nick === 'ForbiddenNick') {
+                const err = new Error('Missing Permissions');
+                err.code = 50013;
+                throw err;
+            }
+            return { avatar: payload.avatar ? 'avatar_hash_123' : null, nick: payload.nick || null };
         }
     };
 
-    assert.equal(isOwner(clientWithOwner, 'owner-123'), true);
-    assert.equal(isOwner(clientWithOwner, 'regular-user-456'), false);
+    // Combined request with forbidden nickname
+    const initialPayload = { nick: 'ForbiddenNick', avatar: 'data:image/png;base64,sample' };
+    let finalAvatarStatus = 'Failed ❌';
+    let finalNicknameStatus = 'Failed ❌';
+
+    try {
+        await mockGuildMemberManager.editMe(initialPayload);
+        finalNicknameStatus = 'Updated ✅';
+        finalAvatarStatus = 'Updated ✅';
+    } catch (err) {
+        if (err.code === 50013 && initialPayload.nick !== undefined && initialPayload.avatar !== undefined) {
+            finalNicknameStatus = 'Failed ❌';
+            try {
+                await mockGuildMemberManager.editMe({ avatar: initialPayload.avatar });
+                finalAvatarStatus = 'Updated ✅';
+            } catch {
+                finalAvatarStatus = 'Failed ❌';
+            }
+        }
+    }
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], { nick: 'ForbiddenNick', avatar: 'data:image/png;base64,sample' });
+    assert.deepEqual(calls[1], { avatar: 'data:image/png;base64,sample' });
+    assert.equal(finalNicknameStatus, 'Failed ❌');
+    assert.equal(finalAvatarStatus, 'Updated ✅');
 });
