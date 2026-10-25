@@ -425,7 +425,7 @@ export async function handleShopItemSelect(interaction) {
  */
 async function tryAutoEquipExisting(userId, guildId, itemId, member) {
   try {
-    const pool = (await import('../storage/postgres.js')).getPool();
+    const pool = getPool();
     const invRes = await pool.query(
       `SELECT ui.id, ui.is_active, ui.expires_at, si.name, si.role_id
        FROM user_inventory ui
@@ -441,7 +441,6 @@ async function tryAutoEquipExisting(userId, guildId, itemId, member) {
     const invItem = invRes.rows[0];
     if (!invItem.role_id) return null;
 
-    const { toggleEquipItem } = await import('../economy/shop.js');
     const equipRes = await toggleEquipItem(userId, guildId, invItem.id, member, { equipOnly: true });
     if (equipRes.success && equipRes.action !== 'already_equipped') {
       return invItem.name;
@@ -532,16 +531,15 @@ export async function handleShopBuyButton(interaction) {
       }
     }
 
-    // Self-heal image on the shop post message if missing from Discord embed
+    // Self-heal image on the shop post message if missing from Discord embed (non-blocking background task)
     if (interaction.message && !interaction.message.embeds?.[0]?.image?.url) {
-      await refreshShopMessageUI(interaction, itemId, guildId).catch(err => {
+      refreshShopMessageUI(interaction, itemId, guildId).catch(err => {
         sysError('Self-heal buy button click refresh failed', err, { itemId, guildId });
       });
     }
 
     // STEP 0: Pre-Purchase & Quantity Modal Checks
     if (!isForce) {
-      const { getShopItem, checkPrerequisites } = await import('../economy/shop.js');
       const item = await getShopItem(itemId, guildId);
 
       // ========== QUANTITY MODAL & PRE-PURCHASE CHECKS ==========
@@ -650,7 +648,6 @@ export async function handleShopBuyButton(interaction) {
               const prereqs = await checkPrerequisites(member, guildId, item.required_items);
               if (prereqs.met) {
                 const unequippedRow = userInvRes.rows.find(r => !r.is_active) || userInvRes.rows[0];
-                const { toggleEquipItem } = await import('../economy/shop.js');
                 await toggleEquipItem(userId, guildId, unequippedRow.id, member, { equipOnly: true });
 
                 const equipEmbed = buildStructuredFeedbackEmbed({
