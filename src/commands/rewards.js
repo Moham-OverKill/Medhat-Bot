@@ -53,12 +53,12 @@ export async function getRewardsPayload(guildId) {
   const embed = new EmbedBuilder()
     .setTitle('Daily Configuration')
     .setColor(isEnabled ? 0x2ECC71 : 0xE74C3C)
-    .setDescription(`Status: ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}`)
-    .addFields(
-      { name: '💰 Base Daily', value: baseText, inline: false },
-      { name: '🚀 Boosters', value: boosterText, inline: false },
-      { name: '🔥 Streak Bonus', value: streakText, inline: false },
-      { name: '♾️ Streak Cap', value: capText, inline: false }
+    .setDescription(
+      `Status: ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}\n\n` +
+      `💰 Base Daily: ${baseText}\n` +
+      `🚀 Boosters: ${boosterText}\n` +
+      `🔥 Streak Bonus: ${streakText}\n` +
+      `♾️ Streak Cap: ${capText}`
     );
 
     const row1 = new ActionRowBuilder().addComponents(

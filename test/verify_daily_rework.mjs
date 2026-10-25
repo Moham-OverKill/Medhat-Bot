@@ -102,22 +102,12 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
 
       // Embed properties when enabled
       const embed = payload.embeds[0];
-      assert.equal(embed.data.color, 0x2ECC71, 'Embed color must be green when enabled');
-      assert.equal(embed.data.description, 'Status: 🟢 Enabled', 'Embed description must strictly be status only');
-
-      // Check fields are each on their own line (inline: false) and in order
-      assert.equal(embed.data.fields.length, 4, 'Must have 4 fields in embed');
-      assert.equal(embed.data.fields[0].name, '💰 Base Daily');
-      assert.equal(embed.data.fields[0].inline, false);
-
-      assert.equal(embed.data.fields[1].name, '🚀 Boosters');
-      assert.equal(embed.data.fields[1].inline, false);
-
-      assert.equal(embed.data.fields[2].name, '🔥 Streak Bonus');
-      assert.equal(embed.data.fields[2].inline, false);
-
-      assert.equal(embed.data.fields[3].name, '♾️ Streak Cap');
-      assert.equal(embed.data.fields[3].inline, false);
+      assert.equal(embed.data.color, 0x2ECC71, "Embed color must be green when enabled");
+      assert.ok(embed.data.description.includes("Status: 🟢 Enabled"), "Embed description must include status");
+      assert.ok(embed.data.description.includes("💰 Base Daily: `30 Coins`"), "Embed description must include Base Daily");
+      assert.ok(embed.data.description.includes("🚀 Boosters: `2x mult`"), "Embed description must include Boosters");
+      assert.ok(embed.data.description.includes("🔥 Streak Bonus: `+10 each day`"), "Embed description must include Streak Bonus");
+      assert.ok(embed.data.description.includes("♾️ Streak Cap: `15 days`"), "Embed description must include Streak Cap");
     });
 
     it('should format toggle button as Enable (Success green) and embed as red when disabled', async () => {
@@ -138,7 +128,9 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
 
       const embed = payload.embeds[0];
       assert.equal(embed.data.color, 0xE74C3C, 'Embed color must be red when disabled');
-      assert.equal(embed.data.description, 'Status: 🔴 Disabled', 'Embed description must strictly be status only');
+      assert.ok(embed.data.description.includes('Status: 🔴 Disabled'), 'Embed description must include status');
+      assert.ok(embed.data.description.includes('💰 Base Daily: `25 Coins`'));
+      assert.ok(embed.data.description.includes('🚀 Boosters: `1.5x mult`'));
     });
   });
 
