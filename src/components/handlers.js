@@ -153,6 +153,33 @@ import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
 
+// Set to track state-mutating actions currently in flight, protecting against rapid double-clicks
+const inFlightUserActions = new Set();
+
+/**
+ * Checks whether an interaction customId represents a state-mutating user action
+ * that requires deduplication to prevent double-spending or race conditions.
+ */
+function isStateMutatingAction(customId) {
+  if (!customId || typeof customId !== 'string') return false;
+  return (
+    customId === 'bank_daily' ||
+    customId.startsWith('bank_claim_drop_') ||
+    customId.startsWith('bank_drop_claim_') ||
+    customId.startsWith('bank_shop_confirm_buy_') ||
+    customId.startsWith('shop_buy_confirm_') ||
+    customId.startsWith('shop_buy_qty_') ||
+    customId.startsWith('bank_inv_equip_') ||
+    customId.startsWith('bank_inv_unequip_') ||
+    customId.startsWith('bank_inv_action_') ||
+    customId.startsWith('shop_lb_open_') ||
+    customId.startsWith('trade_confirm_') ||
+    customId.startsWith('trade_accept_') ||
+    customId.startsWith('color_btn_') ||
+    customId.startsWith('color_role_')
+  );
+}
+
 /**
  * Detects whether an interaction customId is designed to open a Discord Modal directly.
  * Modals cannot be shown if an interaction has already been acknowledged or deferred.
@@ -232,6 +259,26 @@ export function setupComponentHandlers(client) {
           }
         }
       }, 2000);
+
+      const customId = interaction.customId;
+      const isMutating = isStateMutatingAction(customId);
+      const actionKey = isMutating ? `${interaction.guildId || 'global'}:${interaction.user?.id}:${customId}` : null;
+
+      if (actionKey) {
+        if (inFlightUserActions.has(actionKey)) {
+          clearTimeout(watchdog);
+          sysLog('In-Flight Action Deduplication', {
+            user: interaction.user?.id,
+            guild: interaction.guildId,
+            detail: `Ignored duplicate concurrent click for "${customId}"`
+          });
+          if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate().catch(() => {});
+          }
+          return;
+        }
+        inFlightUserActions.add(actionKey);
+      }
 
     try {
       // 1. --- INTERACTION WATCHTOWER ---
@@ -803,6 +850,9 @@ export function setupComponentHandlers(client) {
         await handleInteractionError(interaction, error, `Component Handler (${interaction?.customId || 'Unknown'})`);
       }
     } finally {
+      if (actionKey) {
+        inFlightUserActions.delete(actionKey);
+      }
       clearTimeout(watchdog);
     }
   });

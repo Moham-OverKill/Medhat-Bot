@@ -18,6 +18,26 @@ import {
 import { getGuildConfig, setGuildConfig } from '../storage/config.js';
 import { sendLog, sysLog, sysError } from '../utils/logger.js';
 import { uploadHostAsset } from '../utils/image-host.js';
+
+/**
+ * Checks whether the given user is the Discord Application (Bot) Owner or belongs to the owner Team.
+ */
+async function isApplicationOwner(client, userId) {
+    try {
+        if (!client.application?.owner) {
+            await client.application?.fetch().catch(() => null);
+        }
+        const owner = client.application?.owner;
+        if (!owner) return false;
+        if (owner.id === userId) return true;
+        if (owner.members && typeof owner.members.has === 'function') {
+            return owner.members.has(userId);
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
 import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
 import { handleRewardsSetup as showRewardsPanel, handleRewardsComponent } from './rewards.js';
@@ -654,32 +674,57 @@ export async function handleSettingsComponent(interaction) {
                     } else {
                         promises.push((async () => {
                             try {
-                                let avatarBuffer = null;
+                                let avatarDataUri = null;
+                                let rawBuffer = null;
                                 if (newAvatar) {
                                     if (newAvatar.startsWith('http://') || newAvatar.startsWith('https://')) {
                                         const res = await fetch(newAvatar);
                                         if (!res.ok) throw new Error(`HTTP download failed (${res.status})`);
-                                        const contentType = res.headers.get('content-type') || 'image/png';
+                                        const rawContentType = res.headers.get('content-type') || 'image/png';
+                                        const contentType = rawContentType.split(';')[0].trim();
                                         if (!contentType.includes('image') && !contentType.includes('octet-stream')) {
                                             throw new Error(`URL is not an image (${contentType})`);
                                         }
                                         const arrayBuffer = await res.arrayBuffer();
-                                        const buffer = Buffer.from(arrayBuffer);
-                                        if (buffer.length > 10 * 1024 * 1024) {
+                                        rawBuffer = Buffer.from(arrayBuffer);
+                                        if (rawBuffer.length > 10 * 1024 * 1024) {
                                             throw new Error('Image exceeds 10MB limit');
                                         }
-                                        avatarBuffer = `data:${contentType};base64,${buffer.toString('base64')}`;
+                                        avatarDataUri = `data:${contentType};base64,${rawBuffer.toString('base64')}`;
                                     } else {
-                                        avatarBuffer = newAvatar;
+                                        avatarDataUri = newAvatar;
                                     }
                                 }
-                                await interaction.guild.members.editMe({ avatar: avatarBuffer });
-                                avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+
+                                // Attempt per-guild avatar edit first
+                                let memberAvatarUpdated = false;
+                                try {
+                                    const updatedMember = await interaction.guild.members.editMe({ avatar: avatarDataUri });
+                                    if (updatedMember?.avatar) {
+                                        memberAvatarUpdated = true;
+                                    }
+                                } catch (_) {}
+
+                                if (memberAvatarUpdated) {
+                                    avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+                                } else {
+                                    // Discord REST API does not support per-server avatars for bot accounts.
+                                    // Fall back to updating the bot application avatar if user is the application owner.
+                                    const isOwner = await isApplicationOwner(client, interaction.user.id);
+                                    if (isOwner) {
+                                        await client.user.setAvatar(newAvatar === null ? null : (rawBuffer || avatarDataUri));
+                                        avatarStatus = newAvatar === null ? 'Default ⏪' : 'Updated ✅';
+                                        avatarReason = 'Updated bot global avatar (Discord does not support per-server avatars for bots).';
+                                    } else {
+                                        avatarStatus = 'Failed ❌';
+                                        avatarReason = 'Discord does not support per-server avatars for bots. Only the bot application owner can change the bot avatar.';
+                                    }
+                                }
                             } catch (err) {
                                 avatarStatus = 'Failed ❌';
                                 const msg = String(err?.message || '');
-                                if (msg.includes('AVATAR_RATE_LIMIT') || msg.toLowerCase().includes('too fast')) {
-                                    avatarReason = 'You are changing the avatar too fast, try again later.';
+                                if (msg.includes('AVATAR_RATE_LIMIT') || msg.toLowerCase().includes('too fast') || err?.code === 50035 || err?.status === 429) {
+                                    avatarReason = 'Discord rate limit: bot avatars can only be changed up to 2 times per 10 minutes. Please try again later.';
                                 } else if (err.code === 50013 || msg.includes('feature') || msg.includes('tier') || msg.includes('COMMUNITY')) {
                                     avatarReason = 'Server must be Boost Level 2 to change bot avatar.';
                                 } else if (msg.includes('HTTP download') || msg.includes('Could not download')) {
@@ -691,7 +736,7 @@ export async function handleSettingsComponent(interaction) {
                                 } else {
                                     avatarReason = 'Could not update avatar.';
                                 }
-                                sysError('Failed to update bot server avatar', err);
+                                sysError('Failed to update bot avatar', err);
                             }
                         })());
                     }

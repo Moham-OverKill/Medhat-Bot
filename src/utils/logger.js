@@ -8,8 +8,54 @@ const LOG_CACHE_MAX_SIZE = 500;
 
 
 /**
+ * Auto-heals stale or deleted log channels by pruning the configuration key from the database and cache.
+ */
+async function pruneStaleLogChannel(guildId, configKey, channelId) {
+    if (!guildId) return;
+    logChannelCache.delete(guildId);
+    if (!configKey) return;
+
+    try {
+        const pool = getPool();
+        if (pool) {
+            await pool.query(
+                `UPDATE guild_configs 
+                 SET config = config - $1 
+                 WHERE guild_id = $2`,
+                [configKey, guildId]
+            ).catch(() => {});
+            sysLog('Stale Log Channel Pruned', {
+                guild: guildId,
+                detail: `Auto-healed deleted/inaccessible log channel ${channelId} from config.${configKey}`
+            });
+        }
+    } catch (err) {
+        sysError('Failed to prune stale log channel', err, { guild: guildId, configKey });
+    }
+}
+
+/**
+ * Fallback dispatcher to ensure critical audit logs are delivered to guild.systemChannel if configured channel is dead.
+ */
+async function fallbackDispatch(guild, embed, excludeChannelId) {
+    if (!guild || !embed) return;
+    try {
+        const systemChannel = guild.systemChannel;
+        if (systemChannel && systemChannel.id !== excludeChannelId) {
+            const me = guild.members?.me;
+            if (me) {
+                const perms = systemChannel.permissionsFor(me);
+                if (perms && perms.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
+                    await systemChannel.send({ embeds: [embed] }).catch(() => {});
+                }
+            }
+        }
+    } catch (_) {}
+}
+
+/**
  * Failsafe wrapper to send messages only if channel is accessible.
- * Automatically cleans up broken configs.
+ * Automatically cleans up broken configs and falls back to system channel.
  */
 async function safeSend(guild, channelId, embed, configKey) {
     if (!guild || !channelId) return;
@@ -17,7 +63,11 @@ async function safeSend(guild, channelId, embed, configKey) {
     try {
         const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
         
-        if (!channel) return;
+        if (!channel) {
+            await pruneStaleLogChannel(guild.id, configKey, channelId);
+            await fallbackDispatch(guild, embed, channelId);
+            return;
+        }
 
         const permissions = channel.permissionsFor(guild.members.me);
         if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
@@ -26,6 +76,7 @@ async function safeSend(guild, channelId, embed, configKey) {
                 channel: channelId,
                 detail: `Missing ViewChannel or SendMessages for ${configKey || 'log channel'}`
             });
+            await fallbackDispatch(guild, embed, channelId);
             return;
         }
 
@@ -35,14 +86,25 @@ async function safeSend(guild, channelId, embed, configKey) {
                 channel: channelId,
                 detail: `Cannot post embeds to ${configKey || 'log channel'}`
             });
+            await fallbackDispatch(guild, embed, channelId);
             return;
         }
 
-        await channel.send({ embeds: [embed] }).catch(err => {
-            sysError('safeSend Failure', err, { guild });
+        await channel.send({ embeds: [embed] }).catch(async (err) => {
+            if (err?.code === 10003 || err?.code === 50001) {
+                await pruneStaleLogChannel(guild.id, configKey, channelId);
+                await fallbackDispatch(guild, embed, channelId);
+            } else {
+                sysError('safeSend Failure', err, { guild });
+            }
         });
     } catch (err) {
-        sysError('safeSend Critical', err, { guild });
+        if (err?.code === 10003 || err?.code === 50001) {
+            await pruneStaleLogChannel(guild.id, configKey, channelId);
+            await fallbackDispatch(guild, embed, channelId);
+        } else {
+            sysError('safeSend Critical', err, { guild });
+        }
     }
 }
 

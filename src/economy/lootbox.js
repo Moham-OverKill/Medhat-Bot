@@ -556,13 +556,22 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     );
     const guildItems = guildItemsRes.rows;
 
+    // Filter out ghost items whose associated roles no longer exist in Discord
+    const guildRoles = member?.guild?.roles?.cache;
+    const validGuildItems = guildItems.filter(item => {
+      if (!item.role_id) return true;
+      if (!guildRoles || guildRoles.size === 0) return true;
+      const roleIds = item.role_id.split(/[,\s]+/).filter(Boolean);
+      return roleIds.every(rid => guildRoles.has(rid));
+    });
+
     // Build items by rarity tier lookup
     const itemsByRarity = {
-      common: guildItems.filter(i => (i.rarity || 'common').toLowerCase() === 'common'),
-      uncommon: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'uncommon'),
-      rare: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'rare'),
-      epic: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'epic'),
-      legendary: guildItems.filter(i => (i.rarity || '').toLowerCase() === 'legendary')
+      common: validGuildItems.filter(i => (i.rarity || 'common').toLowerCase() === 'common'),
+      uncommon: validGuildItems.filter(i => (i.rarity || '').toLowerCase() === 'uncommon'),
+      rare: validGuildItems.filter(i => (i.rarity || '').toLowerCase() === 'rare'),
+      epic: validGuildItems.filter(i => (i.rarity || '').toLowerCase() === 'epic'),
+      legendary: validGuildItems.filter(i => (i.rarity || '').toLowerCase() === 'legendary')
     };
 
     const RARITY_HIERARCHY = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
