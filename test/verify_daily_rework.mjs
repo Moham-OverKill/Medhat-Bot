@@ -80,25 +80,22 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       });
 
       const payload = await getRewardsPayload(guildId);
-      assert.equal(payload.components.length, 2, 'Must have 2 ActionRows');
+      assert.equal(payload.components.length, 1, 'Must have exactly 1 ActionRow');
 
-      // Row 1: Config button
-      const row1Buttons = payload.components[0].components;
-      assert.equal(row1Buttons.length, 1);
-      assert.equal(row1Buttons[0].data.custom_id, 'rewards_config_btn');
-      assert.equal(row1Buttons[0].data.label, 'Config');
-      assert.equal(row1Buttons[0].data.style, ButtonStyle.Secondary);
+      const buttons = payload.components[0].components;
+      assert.equal(buttons.length, 3, 'Must have 3 buttons: [Back] [Disable] [Config]');
 
-      // Row 2: Bottom row [Back] [Disable]
-      const row2Buttons = payload.components[1].components;
-      assert.equal(row2Buttons.length, 2);
-      assert.equal(row2Buttons[0].data.custom_id, 'settings_coins');
-      assert.equal(row2Buttons[0].data.label, 'Back');
-      assert.equal(row2Buttons[0].data.style, ButtonStyle.Secondary);
+      assert.equal(buttons[0].data.custom_id, 'settings_coins');
+      assert.equal(buttons[0].data.label, 'Back');
+      assert.equal(buttons[0].data.style, ButtonStyle.Secondary);
 
-      assert.equal(row2Buttons[1].data.custom_id, 'rewards_daily_toggle');
-      assert.equal(row2Buttons[1].data.label, 'Disable');
-      assert.equal(row2Buttons[1].data.style, ButtonStyle.Danger);
+      assert.equal(buttons[1].data.custom_id, 'rewards_daily_toggle');
+      assert.equal(buttons[1].data.label, 'Disable');
+      assert.equal(buttons[1].data.style, ButtonStyle.Danger);
+
+      assert.equal(buttons[2].data.custom_id, 'rewards_config_btn');
+      assert.equal(buttons[2].data.label, 'Config');
+      assert.equal(buttons[2].data.style, ButtonStyle.Secondary);
 
       // Embed properties when enabled
       const embed = payload.embeds[0];
@@ -120,11 +117,11 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       });
 
       const payload = await getRewardsPayload(guildId);
-      const row2Buttons = payload.components[1].components;
+      const buttons = payload.components[0].components;
 
-      assert.equal(row2Buttons[1].data.custom_id, 'rewards_daily_toggle');
-      assert.equal(row2Buttons[1].data.label, 'Enable');
-      assert.equal(row2Buttons[1].data.style, ButtonStyle.Success);
+      assert.equal(buttons[1].data.custom_id, 'rewards_daily_toggle');
+      assert.equal(buttons[1].data.label, 'Enable');
+      assert.equal(buttons[1].data.style, ButtonStyle.Success);
 
       const embed = payload.embeds[0];
       assert.equal(embed.data.color, 0xE74C3C, 'Embed color must be red when disabled');
