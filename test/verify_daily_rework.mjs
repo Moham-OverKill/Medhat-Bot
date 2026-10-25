@@ -190,6 +190,13 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
         user: { id: userId },
         deferred: false,
         replied: false,
+        deferReply: async (opts) => {
+          fakeInteraction.deferred = true;
+          fakeInteraction.flags = opts?.flags;
+        },
+        editReply: async (payload) => {
+          replyPayload = { ...payload, flags: fakeInteraction.flags };
+        },
         reply: async (payload) => {
           replyPayload = payload;
         }
