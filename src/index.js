@@ -77,7 +77,7 @@ export const client = new Client({
     Partials.User
   ],
   makeCache: Options.cacheWithLimits({
-    MessageManager: 25,
+    MessageManager: 10,
     StageInstanceManager: 0,
     ThreadManager: 200,
     GuildBanManager: 0,
@@ -90,14 +90,14 @@ export const client = new Client({
     ...Options.DefaultSweeperSettings,
     messages: {
       interval: 300,
-      lifetime: 1800
+      lifetime: 900
     },
     users: {
       interval: 3600,
       filter: () => user => !user.bot && user.id !== client.user?.id
     },
     guildMembers: {
-      interval: 1800,
+      interval: 900,
       filter: () => member => {
         if (member.id === client.user?.id) return false;
         if (member.voice?.channelId) return false;
@@ -105,7 +105,7 @@ export const client = new Client({
       }
     },
     threadMembers: {
-      interval: 1800,
+      interval: 900,
       filter: () => member => member.id !== client.user?.id
     }
   }

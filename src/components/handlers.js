@@ -2,7 +2,7 @@ import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { handleSettingsComponent } from '../commands/settings.js';
 import { handleMvpComponent } from '../commands/mvp.js';
 import { handleRewardsComponent, handleRewardsModal } from '../commands/rewards.js';
-import { handleColorButton, handleColorsComponent, handleRoleSelection } from '../commands/colors.js';
+import { handleColorButton, handleColorsComponent, handleRoleSelection, handleColorsCommand } from '../commands/colors.js';
 import {
   handleBankDaily,
   handleBankHistory,
@@ -19,7 +19,9 @@ import {
   handleBackButton,
   handleBankRefresh,
   handleShopConfirmBuy,
-  handleShopCancelBuy
+  handleShopCancelBuy,
+  handleShopBuyModalSubmit,
+  handleInventoryDropModalSubmit
 } from '../commands/bank.js';
 import {
   handleShopSetup,
@@ -146,6 +148,22 @@ import {
   handleTradeFinalConfirmation
 } from '../commands/trade.js';
 import { handleItemsComponent } from '../commands/items.js';
+import { verifyAdminAccess } from '../storage/admins.js';
+import {
+  handleBalanceModal,
+  handleStreakModal,
+  handleLevelModal,
+  handleAdminSetQuantity,
+  handleAdminGiveModal,
+  handleAdminRemoveModal
+} from '../commands/admin-users.js';
+import { handleOrganizeComponent } from '../commands/settings/organize.js';
+import { handleInterfaceModal, handleHubShortcut } from '../commands/interface.js';
+import { handlePassModal } from '../commands/settings/pass.js';
+import { handleEmbedModal, handleEmbedComponent } from '../commands/settings/embeds.js';
+import { handleLevelTabButton } from '../commands/pass.js';
+import { handleHelpSelect, handleHelpStepNavigation } from '../commands/help.js';
+import { handleNotificationsComponent } from '../commands/notifications.js';
 import { sanitizeError, runInGuildContext, wrapInteractionSafety, safeDeferReply } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -191,6 +209,8 @@ function isModalOpener(interaction) {
 
   return (
     customId.includes('_modal') ||
+    customId.startsWith('bank_shop_buy_') ||
+    customId.startsWith('shop_buy_') ||
     customId === 'shop_lb_create_start' ||
     customId.startsWith('shop_lb_rates_btn_') ||
     customId.startsWith('shop_lb_coins_btn_') ||
@@ -308,7 +328,6 @@ export function setupComponentHandlers(client) {
         const isAdminInteraction = !isPublicShopModal && adminPrefixes.some(prefix => interaction.customId.startsWith(prefix));
 
         if (isAdminInteraction) {
-          const { verifyAdminAccess } = await import('../storage/admins.js');
           const hasAccess = await verifyAdminAccess(interaction);
           if (!hasAccess) {
             return;
@@ -372,22 +391,16 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('mass_modal_create_')) {
           await handleMassModalSubmit(interaction);
         } else if (interaction.customId.startsWith('admin_user_balmod_')) {
-          const { handleBalanceModal } = await import('../commands/admin-users.js');
           await handleBalanceModal(interaction);
         } else if (interaction.customId.startsWith('admin_user_stkmod_')) {
-          const { handleStreakModal } = await import('../commands/admin-users.js');
           await handleStreakModal(interaction);
         } else if (interaction.customId.startsWith('admin_user_lvlmod_')) {
-          const { handleLevelModal } = await import('../commands/admin-users.js');
           await handleLevelModal(interaction);
         } else if (interaction.customId.startsWith('admin_user_setqty_')) {
-          const { handleAdminSetQuantity } = await import('../commands/admin-users.js');
           await handleAdminSetQuantity(interaction);
         } else if (interaction.customId.startsWith('admin_user_givemod_')) {
-          const { handleAdminGiveModal } = await import('../commands/admin-users.js');
           await handleAdminGiveModal(interaction);
         } else if (interaction.customId.startsWith('admin_user_remmod_')) {
-          const { handleAdminRemoveModal } = await import('../commands/admin-users.js');
           await handleAdminRemoveModal(interaction);
         } else if (interaction.customId.startsWith('trade_modal_')) {
           await handleTradeModal(interaction);
@@ -396,22 +409,16 @@ export function setupComponentHandlers(client) {
         } else if (interaction.customId.startsWith('settings_')) {
           await handleSettingsComponent(interaction);
         } else if (interaction.customId.startsWith('organize_')) {
-          const { handleOrganizeComponent } = await import('../commands/settings/organize.js');
           await handleOrganizeComponent(interaction);
         } else if (interaction.customId.startsWith('interface_')) {
-          const { handleInterfaceModal } = await import('../commands/interface.js');
           await handleInterfaceModal(interaction);
         } else if (interaction.customId.startsWith('shop_buy_qty_modal_')) {
-          const { handleShopBuyModalSubmit } = await import('../commands/bank.js');
           await handleShopBuyModalSubmit(interaction);
         } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
-          const { handleInventoryDropModalSubmit } = await import('../commands/bank.js');
           await handleInventoryDropModalSubmit(interaction);
         } else if (interaction.customId.startsWith('pass_')) {
-          const { handlePassModal } = await import('../commands/settings/pass.js');
           await handlePassModal(interaction);
         } else if (interaction.customId.startsWith('embed_modal_')) {
-          const { handleEmbedModal } = await import('../commands/settings/embeds.js');
           await handleEmbedModal(interaction);
         }
         return;
@@ -426,21 +433,18 @@ export function setupComponentHandlers(client) {
 
       // COMMUNITY INTERFACE / SERVER HUB SHORTCUTS
       if (customId.startsWith('hub_btn_')) {
-        const { handleHubShortcut } = await import('../commands/interface.js');
         await handleHubShortcut(interaction);
         return;
       }
 
       // LEVEL PROGRESS USER TABS
       if (customId.startsWith('level_tab_')) {
-        const { handleLevelTabButton } = await import('../commands/pass.js');
         await handleLevelTabButton(interaction);
         return;
       }
 
       // EMBED MANAGER
       if (customId.startsWith('embed_')) {
-        const { handleEmbedComponent } = await import('../commands/settings/embeds.js');
         await handleEmbedComponent(interaction);
         return;
       }
@@ -762,7 +766,6 @@ export function setupComponentHandlers(client) {
       // Colors Components (Unified Routing)
       else if (customId.startsWith('colors_') || customId === 'colors:back' || customId === 'boosters:back') {
         if (customId === 'colors:back' || customId === 'boosters:back') {
-          const { handleColorsCommand } = await import('../commands/colors.js');
           await handleColorsCommand(interaction);
         } else if (customId.startsWith('colors_role_')) {
           await handleRoleSelection(interaction);
@@ -775,14 +778,12 @@ export function setupComponentHandlers(client) {
       } else if (customId.startsWith('quest_')) {
         await handleQuestInteraction(interaction);
       } else if (customId.startsWith('help_')) {
-        const { handleHelpSelect, handleHelpStepNavigation } = await import('../commands/help.js');
         if (customId === 'help_select_topic') {
           await handleHelpSelect(interaction);
         } else {
           await handleHelpStepNavigation(interaction);
         }
       } else if (customId.startsWith('notif_')) {
-        const { handleNotificationsComponent } = await import('../commands/notifications.js');
         await handleNotificationsComponent(interaction);
       } else if (interaction.customId.startsWith('trade_')) {
         if (customId.startsWith('trade_setup_') || customId.startsWith('trade_cat_')) {

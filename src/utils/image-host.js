@@ -291,7 +291,7 @@ export async function uploadHostAsset(client, category, guild, fileInput, option
  * @param {import('discord.js').Guild|{id: string, name?: string}} guild
  * @returns {Buffer}
  */
-export function generateTestCard(category, guild) {
+export async function generateTestCard(category, guild) {
   const theme = CATEGORY_THEMES[category] || { name: category.toUpperCase(), color: '#5865F2' };
   const guildName = guild.name || `Server ${guild.id}`;
   const guildId = guild.id;
@@ -338,7 +338,7 @@ export function generateTestCard(category, guild) {
   ctx.font = `18px ${boldFont}`;
   ctx.fillText('✓ PIPELINE VERIFIED & OPERATIONAL', 70, 332);
 
-  return canvas.toBuffer('image/png');
+  return await canvas.encode('png');
 }
 
 /**
@@ -354,7 +354,7 @@ export async function sendTestImagesForGuild(client, guild) {
 
   for (const category of categories) {
     try {
-      const cardBuffer = generateTestCard(category, guild);
+      const cardBuffer = await generateTestCard(category, guild);
       const filename = `${category}_test_${Date.now()}.png`;
       const label = `🖼️ **${CATEGORY_THEMES[category]?.name.toUpperCase()} TEST ASSET**\n` +
         `**Server:** ${guild.name || guild.id} (\`${guild.id}\`)\n` +

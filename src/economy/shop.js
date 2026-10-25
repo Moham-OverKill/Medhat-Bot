@@ -48,10 +48,40 @@ export async function validateRoleUniqueness(guildId, roleId, currentItemId = nu
   }
 }
 
+// In-memory write-through cache for shop categories and item catalogs
+const shopCache = new Map();
+const SHOP_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+/**
+ * Invalidate cached shop categories and items for a specific guild (or all guilds if null).
+ * @param {string|null} [guildId]
+ */
+export function invalidateShopCache(guildId = null) {
+  if (!guildId) {
+    shopCache.clear();
+    return;
+  }
+  const strGuildId = String(guildId);
+  shopCache.delete(`categories:${strGuildId}`);
+  const prefix = `items:${strGuildId}:`;
+  for (const key of shopCache.keys()) {
+    if (key.startsWith(prefix)) {
+      shopCache.delete(key);
+    }
+  }
+}
+
 /**
  * Get all shop categories for a guild
  */
 export async function getShopCategories(guildId) {
+  if (!guildId) return [];
+  const cacheKey = `categories:${guildId}`;
+  const cached = shopCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data.map(c => ({ ...c }));
+  }
+
   try {
     const result = await query(
       `SELECT * FROM shop_categories 
@@ -60,7 +90,12 @@ export async function getShopCategories(guildId) {
       [guildId]
     );
 
-    return result.rows;
+    shopCache.set(cacheKey, {
+      data: result.rows,
+      expiresAt: Date.now() + SHOP_CACHE_TTL_MS
+    });
+
+    return result.rows.map(c => ({ ...c }));
   } catch (error) {
     logSystemError(`Failed to get shop categories for guild ${guildId}: ${sanitizeError(error)}`);
     return [];
@@ -71,6 +106,13 @@ export async function getShopCategories(guildId) {
  * Get all active shop items for a guild
  */
 export async function getShopItems(guildId, categoryId = null, sortBy = 'price', includeInactive = false, excludeLocked = false) {
+  if (!guildId) return [];
+  const cacheKey = `items:${guildId}:${categoryId}:${sortBy}:${includeInactive}:${excludeLocked}`;
+  const cached = shopCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data.map(i => ({ ...i }));
+  }
+
   try {
     let sql = `SELECT si.*, sc.name as category_name 
                FROM shop_items si
@@ -103,7 +145,12 @@ export async function getShopItems(guildId, categoryId = null, sortBy = 'price',
 
     const result = await query(sql, params);
 
-    return result.rows;
+    shopCache.set(cacheKey, {
+      data: result.rows,
+      expiresAt: Date.now() + SHOP_CACHE_TTL_MS
+    });
+
+    return result.rows.map(i => ({ ...i }));
   } catch (error) {
     logSystemError(`Failed to get shop items for guild ${guildId}: ${sanitizeError(error)}`);
     return [];
@@ -239,6 +286,7 @@ export async function addShopCategory(guildId, name, displayOrder = 0, categoryT
        RETURNING *`,
       [guildId, name, displayOrder, categoryType]
     );
+    invalidateShopCache(guildId);
     return result.rows[0];
   } catch (error) {
     logSystemError(`Failed to add shop category: ${sanitizeError(error)}`);
@@ -278,6 +326,7 @@ export async function updateShopCategory(categoryId, updates, guildId = null) {
       `UPDATE shop_categories SET ${setClauses.join(', ')} ${whereClause} RETURNING *`,
       values
     );
+    invalidateShopCache(guildId || result.rows[0]?.guild_id);
     return result.rows[0] || null;
   } catch (error) {
     logSystemError(`Failed to update shop category: ${sanitizeError(error)}`);
@@ -299,6 +348,7 @@ export async function detachItemsFromCategory(categoryId, guildId = null) {
       params.push(String(guildId));
     }
     const result = await query(sql, params);
+    invalidateShopCache(guildId);
     return { success: true, count: result.rowCount };
   } catch (error) {
     logSystemError(`Failed to detach items from category ${categoryId}: ${sanitizeError(error)}`);
@@ -323,6 +373,7 @@ export async function deleteShopCategory(categoryId, guildId = null) {
       params.push(String(guildId));
     }
     const result = await query(sql, params);
+    invalidateShopCache(guildId);
     return result.rowCount > 0;
   } catch (error) {
     logSystemError(`Failed to delete shop category: ${sanitizeError(error)}`);
@@ -379,6 +430,7 @@ export async function addShopItem(guildId, categoryId, roleId, name, description
       [guildId, categoryId, roleId, name, description, price ?? null, durationSeconds, stock, itemType, isPack, contentsJson, JSON.stringify(requiredItems || []), isActive, defaultImageUrl || null, rarity, isTradable, color || null]
     );
 
+    invalidateShopCache(guildId);
     return result.rows[0];
   } catch (error) {
     logSystemError(`Failed to add shop item for guild ${guildId}: ${sanitizeError(error)}`);
@@ -432,6 +484,7 @@ export async function updateShopItem(itemId, updates, guildId = null) {
       values
     );
 
+    invalidateShopCache(guildId || result.rows[0]?.guild_id);
     return result.rows[0];
   } catch (error) {
     logSystemError(`Failed to update shop item ${itemId}: ${sanitizeError(error)}`);
@@ -465,6 +518,7 @@ export async function deleteShopItem(itemId, guildId = null) {
       }
     } catch (_) {}
 
+    invalidateShopCache(guildId);
     sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}`, guild: String(guildId) });
     return true;
   } catch (error) {
@@ -473,7 +527,6 @@ export async function deleteShopItem(itemId, guildId = null) {
   }
 }
 
-/**
 /**
  * Helper: Check if a member meets all Required Items prerequisites.
  * Integers = Must own the item in shop_inventory.
@@ -1366,6 +1419,8 @@ export async function purchaseItem(userId, guildId, itemId, member, options = {}
       );
     }
 
+    invalidateShopCache(guildId);
+
     return {
       success: true,
       newBalance,
@@ -2128,6 +2183,8 @@ export async function cleanupGhostItems(guild) {
       sysLog('Ghost Cleanup Executed', { guild: guild.id, detail: `Removed ${shopResult.rowCount} items, ${inventoryResult.rowCount} inventory entries, updated ${packsUpdated} packs. Items: ${ghostItemNames.join(', ')}` });
     }
 
+    invalidateShopCache(guild.id);
+
     return {
       itemsRemoved: shopResult.rowCount,
       inventoryRemoved: inventoryResult.rowCount,
@@ -2214,6 +2271,8 @@ export async function cleanupDeletedRole(guildId, roleId) {
         `**Items Removed:** ${itemNames.map(n => `\`${n}\``).join(', ')}`
       );
     }
+
+    invalidateShopCache(guildId);
 
     return {
       itemsRemoved: shopResult.rowCount,
