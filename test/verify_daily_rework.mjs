@@ -93,7 +93,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
       // Button 2: Config
       assert.equal(buttons[1].data.custom_id, 'rewards_config_btn');
       assert.equal(buttons[1].data.label, 'Config');
-      assert.equal(buttons[1].data.style, ButtonStyle.Primary);
+      assert.equal(buttons[1].data.style, ButtonStyle.Secondary);
 
       // Button 3: Disable (when enabled)
       assert.equal(buttons[2].data.custom_id, 'rewards_daily_toggle');

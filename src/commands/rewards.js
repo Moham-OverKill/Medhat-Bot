@@ -71,7 +71,7 @@ export async function getRewardsPayload(guildId) {
       .setCustomId('rewards_config_btn')
       .setLabel('Config')
       .setEmoji('⚙️')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('rewards_daily_toggle')
       .setLabel(isEnabled ? 'Disable' : 'Enable')
