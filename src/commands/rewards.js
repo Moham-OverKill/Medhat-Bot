@@ -123,7 +123,7 @@ export async function handleRewardsComponent(interaction) {
     if (customId === 'rewards_config_btn') {
       const config = await getGuildConfig(guildId) || {};
       const modal = new ModalBuilder()
-        .setCustomId('rewards_config_modal')
+        .setCustomId(`rewards_config_modal_${Date.now()}`)
         .setTitle('Daily Configuration');
 
       const hasCustomBase = config.daily_base_reward !== undefined && config.daily_base_reward !== null && Number(config.daily_base_reward) !== 25;
@@ -318,7 +318,7 @@ export async function handleRewardsModal(interaction) {
   try {
     const config = await getGuildConfig(guildId) || {};
 
-    if (customId === 'rewards_config_modal') {
+    if (customId.startsWith('rewards_config_modal')) {
       const baseStr = interaction.fields.getTextInputValue('base_reward')?.trim();
       const boosterStr = interaction.fields.getTextInputValue('booster_multiplier')?.trim();
       const streakStr = interaction.fields.getTextInputValue('streak_bonus')?.trim();
