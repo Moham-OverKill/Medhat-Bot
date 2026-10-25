@@ -295,13 +295,7 @@ export async function showSetupPanel(interaction, config) {
         .setCustomId('mvp_reward_config_btn')
         .setLabel('Reward')
         .setEmoji(`${COIN_EMOJI}`)
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('mvp_toggle')
-        .setLabel(config.enabled ? 'Disable' : 'Enable')
-        .setEmoji(config.enabled ? '✖️' : '▶️')
-        .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-        .setDisabled(!canEnableAuto && !config.enabled)
+        .setStyle(ButtonStyle.Secondary)
     );
 
   const backRow = new ActionRowBuilder()
@@ -310,7 +304,13 @@ export async function showSetupPanel(interaction, config) {
         .setCustomId('settings_users_roles')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('mvp_toggle')
+        .setLabel(config.enabled ? 'Disable' : 'Enable')
+        .setEmoji(config.enabled ? '✖️' : '▶️')
+        .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+        .setDisabled(!canEnableAuto && !config.enabled)
     );
 
   components.push(actionRow, backRow);

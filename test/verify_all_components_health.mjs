@@ -16,6 +16,7 @@ import { handleTradeModal, handleTradeSetupInteraction, ACTIVE_SETUPS } from '..
 import { handleVoteCommand } from '../src/commands/vote.js';
 import { handleInviteCommand } from '../src/commands/invite.js';
 import { handleRewardsComponent, handleRewardsModal } from '../src/commands/rewards.js';
+import { showSetupPanel } from '../src/commands/mvp.js';
 
 describe('Global Component Feedback & Error Handling Audit Suite', () => {
   const guildId = '999888777666555444';
@@ -350,6 +351,70 @@ describe('Global Component Feedback & Error Handling Audit Suite', () => {
       assert.equal(savedConfig, null, 'Must NOT save config when negative values are provided');
       assert.ok(inter.followUpPayload !== null, 'Must inform user with error');
       assert.match(inter.followUpPayload.content, /Invalid Base Daily reward/);
+    });
+  });
+
+  // --- 7. MVP Configuration UI Layout and Modals ---
+  describe('MVP Configuration UI Layout and Modals', () => {
+    it('showSetupPanel should isolate [Back] [Disable/Enable] on the bottom row', async () => {
+      let sentPayload = null;
+      const inter = createMockInteraction('mvp_setup', {
+        deferred: true
+      });
+      inter.editReply = async (payload) => {
+        sentPayload = payload;
+      };
+
+      const config = {
+        enabled: true,
+        mvpRoleId: '123456789012345678',
+        winnersCount: 3,
+        mvpRewardAmount: 200
+      };
+
+      await showSetupPanel(inter, config);
+      assert.ok(sentPayload !== null, 'Must send payload');
+      assert.equal(sentPayload.components.length, 4, 'Must have 4 rows (Role, Winners, Actions, Bottom)');
+
+      // Row 3: Actions row with Progress and Reward
+      const actionRow = sentPayload.components[2].components;
+      assert.equal(actionRow.length, 2, 'Action row must have exactly 2 buttons');
+      assert.equal(actionRow[0].data.custom_id, 'mvp_stats_leaderboard');
+      assert.equal(actionRow[1].data.custom_id, 'mvp_reward_config_btn');
+
+      // Row 4: Bottom row with Back and Disable/Enable
+      const bottomRow = sentPayload.components[3].components;
+      assert.equal(bottomRow.length, 2, 'Bottom row must have exactly 2 buttons');
+      assert.equal(bottomRow[0].data.custom_id, 'settings_users_roles');
+      assert.equal(bottomRow[0].data.label, 'Back');
+      assert.equal(bottomRow[1].data.custom_id, 'mvp_toggle');
+      assert.equal(bottomRow[1].data.label, 'Disable');
+      assert.equal(bottomRow[1].data.style, ButtonStyle.Danger);
+    });
+
+    it('handleRewardsModal should process rewards_mvp_modal and save mvpRewardAmount', async () => {
+      let savedConfig = null;
+      setMockPool({
+        query: async (sql, params) => {
+          if (sql.includes('INSERT INTO guild_configs')) {
+            savedConfig = JSON.parse(params[1]);
+            return { rows: [{ config: savedConfig }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        }
+      });
+
+      let updatedWithConfig = null;
+      const inter = createMockInteraction('rewards_mvp_modal', {
+        fields: { amount: '350' },
+        deferred: true
+      });
+      inter.update = async (payload) => { updatedWithConfig = payload; };
+      inter.editReply = async (payload) => { updatedWithConfig = payload; };
+
+      await handleRewardsModal(inter);
+      assert.ok(savedConfig !== null, 'Must save config to database');
+      assert.equal(savedConfig.mvpRewardAmount, 350, 'Must update mvpRewardAmount to 350');
     });
   });
 });
