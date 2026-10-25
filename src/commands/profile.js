@@ -30,17 +30,44 @@ const rankCache = new Map();
 const RANK_CACHE_TTL_MS = 45 * 1000; // 45 seconds
 
 /**
- * Fetch user rank and total ranked count with a 45-second in-memory TTL cache
- * to eliminate expensive ROW_NUMBER() window queries and full table scans.
+ * Invalidate cached user rank for a guild or specific user.
+ * @param {string|null} [guildId]
+ * @param {string|null} [userId]
+ */
+export function invalidateRankCache(guildId = null, userId = null) {
+  if (!guildId) {
+    rankCache.clear();
+    return;
+  }
+  if (!userId) {
+    for (const key of rankCache.keys()) {
+      if (key.startsWith(`${guildId}:`)) {
+        rankCache.delete(key);
+      }
+    }
+    return;
+  }
+  rankCache.delete(`${guildId}:${userId}`);
+}
+
+/**
+ * Fetch user rank and total ranked count with an in-memory TTL cache.
+ * Automatically invalidates and re-queries if currentXp differs from cached XP,
+ * guaranteeing zero stale data when a user gains XP or levels up.
  * @param {string} guildId
  * @param {string} userId
  * @param {import('pg').Pool} pool
+ * @param {number|null} [currentXp]
  * @returns {Promise<{ rank: number, totalRankedCount: number }>}
  */
-export async function getUserRankWithCache(guildId, userId, pool) {
+export async function getUserRankWithCache(guildId, userId, pool, currentXp = null) {
   const cacheKey = `${guildId}:${userId}`;
   const cached = rankCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (
+    cached &&
+    Date.now() < cached.expiresAt &&
+    (currentXp === null || cached.totalXp === currentXp)
+  ) {
     return { rank: cached.rank, totalRankedCount: cached.totalRankedCount };
   }
 
@@ -67,6 +94,7 @@ export async function getUserRankWithCache(guildId, userId, pool) {
     rankCache.set(cacheKey, {
       rank,
       totalRankedCount,
+      totalXp: currentXp,
       expiresAt: Date.now() + RANK_CACHE_TTL_MS
     });
 
@@ -110,17 +138,19 @@ export async function handleProfileCommand(interaction) {
     // Event-driven purge so inventory data matches /inventory exactly
     await purgeUserInventory(userId, guildId, targetMember).catch(() => {});
 
-    // 1. Fetch Economy stats, Level progress, Inventory, Quests, and Rank in parallel
-    const [balanceData, passData, rankData, inventory, questResult, mvpResult, config] = await Promise.all([
+    // 1. Fetch live pass progress first so we have the user's fresh, live total XP
+    const passData = await getUserPassProgress(guildId, userId).catch(() => ({
+      currentLevel: 0,
+      totalXp: 0,
+      xpIntoCurrentLevel: 0,
+      xpForNextLevel: 100,
+      totalBoostPct: 0
+    }));
+
+    // 2. Fetch Economy stats, Inventory, Quests, Rank (validated against live XP), and Config in parallel
+    const [balanceData, rankData, inventory, questResult, mvpResult, config] = await Promise.all([
       getUserBalance(userId, guildId).catch(() => ({ balance: 0, total_earned: 0, daily_streak: 0, last_daily: null })),
-      getUserPassProgress(guildId, userId).catch(() => ({
-        currentLevel: 0,
-        totalXp: 0,
-        xpIntoCurrentLevel: 0,
-        xpForNextLevel: 100,
-        totalBoostPct: 0
-      })),
-      getUserRankWithCache(guildId, userId, pool),
+      getUserRankWithCache(guildId, userId, pool, passData.totalXp),
       getSynthesizedInventory(userId, guildId, targetMember).catch(() => []),
       pool.query(
         `SELECT GREATEST(

@@ -122,6 +122,39 @@ describe('Performance & Latency Optimization Verification Suite', () => {
       assert.equal(res2.rank, 3);
       assert.equal(res2.totalRankedCount, 25);
     });
+
+    it('should immediately bypass rank cache and re-query database when user XP changes or levels up', async () => {
+      let profileQueryCount = 0;
+      let currentMockRank = '4';
+      const mockPool = {
+        query: async (sql) => {
+          profileQueryCount++;
+          if (sql.includes('WITH ranked AS')) {
+            return { rows: [{ rank: currentMockRank }] };
+          }
+          if (sql.includes('COUNT(*)')) {
+            return { rows: [{ count: '30' }] };
+          }
+          return { rows: [] };
+        }
+      };
+
+      // 1. Initial lookup at 100 XP
+      const res1 = await getUserRankWithCache('guild_perf_2', 'user_perf_2', mockPool, 100);
+      assert.equal(profileQueryCount, 2);
+      assert.equal(res1.rank, 4);
+
+      // 2. Second lookup with identical XP (100 XP) -> must hit cache
+      const res2 = await getUserRankWithCache('guild_perf_2', 'user_perf_2', mockPool, 100);
+      assert.equal(profileQueryCount, 2, 'Identical XP must hit cache without re-querying');
+      assert.equal(res2.rank, 4);
+
+      // 3. User levels up / gains XP (now 250 XP, rank advances to 2)
+      currentMockRank = '2';
+      const res3 = await getUserRankWithCache('guild_perf_2', 'user_perf_2', mockPool, 250);
+      assert.equal(profileQueryCount, 4, 'XP change must bypass cache and re-query database immediately');
+      assert.equal(res3.rank, 2);
+    });
   });
 
   describe('Private Message Protection Invariants', () => {
