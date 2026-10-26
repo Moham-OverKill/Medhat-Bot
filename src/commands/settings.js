@@ -342,6 +342,49 @@ export async function handleSettingsComponent(interaction) {
             if (!(await verifyAdminAccess(interaction))) return;
         }
 
+        const customId = interaction.customId;
+
+        // Submodules manage their own interaction deferrals / modals internally.
+        // Route submodules immediately without premature blanket deferral.
+        if (customId === 'settings_pass' || customId.startsWith('pass_')) {
+            const { handlePassSetup, handlePassComponent } = await import('./settings/pass.js');
+            if (customId === 'settings_pass') {
+                await handlePassSetup(interaction);
+            } else {
+                await handlePassComponent(interaction);
+            }
+            return;
+        }
+
+        if (customId.startsWith('admin_user_') || customId.startsWith('admin_manage_')) {
+            const { handleAdminUserComponent } = await import('./admin-users.js');
+            await handleAdminUserComponent(interaction);
+            return;
+        }
+
+        if (customId === 'settings_organize' || customId.startsWith('organize_')) {
+            const { handleOrganizeComponent } = await import('./settings/organize.js');
+            await handleOrganizeComponent(interaction);
+            return;
+        }
+
+        if (customId.startsWith('interface_') || customId.startsWith('admin_interface_')) {
+            if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+                const { handleInterfaceModal } = await import('./interface.js');
+                await handleInterfaceModal(interaction);
+            } else {
+                const { handleInterfaceComponent } = await import('./interface.js');
+                await handleInterfaceComponent(interaction);
+            }
+            return;
+        }
+
+        if (customId.startsWith('role_rewards_')) {
+            const { handleRoleRewardsComponent } = await import('./settings/role-rewards.js');
+            await handleRoleRewardsComponent(interaction);
+            return;
+        }
+
         // Modals must call showModal() directly and cannot be deferred with deferUpdate().
         // For all non-modal component interactions, defer immediately before any async work
         // to prevent Discord's 3-second acknowledgment timeout from triggering.
@@ -358,8 +401,6 @@ export async function handleSettingsComponent(interaction) {
         if (!isModal && !needsModal && !isImmediateMenu && !interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate().catch(() => {});
         }
-
-        const customId = interaction.customId;
 
         // Handle back button from any module
         if (customId === 'settings_back' || customId === 'settings_home') {
@@ -461,16 +502,6 @@ export async function handleSettingsComponent(interaction) {
         if (customId === 'settings_embed') {
             const { renderRootEmbedMenu } = await import('./settings/embeds.js');
             await renderRootEmbedMenu(interaction);
-            return;
-        }
-
-        if (customId === 'settings_pass' || customId.startsWith('pass_')) {
-            const { handlePassSetup, handlePassComponent } = await import('./settings/pass.js');
-            if (customId === 'settings_pass') {
-                await handlePassSetup(interaction);
-            } else {
-                await handlePassComponent(interaction);
-            }
             return;
         }
 
@@ -1007,17 +1038,6 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('interface_') || customId.startsWith('admin_interface_')) {
-            if (interaction.isModalSubmit && interaction.isModalSubmit()) {
-                const { handleInterfaceModal } = await import('./interface.js');
-                await handleInterfaceModal(interaction);
-            } else {
-                const { handleInterfaceComponent } = await import('./interface.js');
-                await handleInterfaceComponent(interaction);
-            }
-            return;
-        }
-
         if (customId === 'settings_logs') {
             await handleLogsSettings(interaction);
             return;
@@ -1025,11 +1045,6 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_economy' || customId.startsWith('economy_') || customId.startsWith('eco_')) {
             await handleEconomySettings(interaction);
-            return;
-        }
-
-        if (customId === 'settings_organize' || customId.startsWith('organize_')) {
-            await handleOrganizeComponent(interaction);
             return;
         }
 
@@ -1096,11 +1111,6 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId.startsWith('colors_') || customId.startsWith('color_')) {
             await handleColorsComponent(interaction);
-            return;
-        }
-
-        if (customId.startsWith('admin_user_') || customId.startsWith('admin_manage_')) {
-            await handleAdminUserComponent(interaction);
             return;
         }
 

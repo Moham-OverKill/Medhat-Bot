@@ -208,6 +208,8 @@ function isModalOpener(interaction) {
   const customId = interaction.customId;
   if (!customId || typeof customId !== 'string') return false;
 
+  const firstValue = interaction.values?.[0] || '';
+
   return (
     customId.includes('_modal') ||
     customId.startsWith('bank_shop_buy_') ||
@@ -229,16 +231,30 @@ function isModalOpener(interaction) {
     customId.startsWith('admin_user_level_') ||
     customId.startsWith('admin_user_give_') ||
     customId.startsWith('admin_user_remove_') ||
+    (customId.startsWith('admin_user_isel_') && !firstValue.startsWith('admin_page_') && firstValue !== 'back_to_categories') ||
+    (customId.startsWith('admin_user_gsel_') && !firstValue.startsWith('admin_page_') && firstValue !== 'back_to_categories') ||
+    (customId.startsWith('admin_user_rsel_') && !firstValue.startsWith('admin_page_') && firstValue !== 'back_to_categories') ||
     customId.startsWith('quests_btn_create') ||
     customId.startsWith('quests_btn_edit_') ||
     customId.startsWith('quests_custom_input_') ||
     customId.startsWith('rewards_btn_add') ||
     customId.startsWith('rewards_btn_edit_') ||
+    customId === 'settings_vote_reward' ||
+    customId === 'settings_tag_reward' ||
+    customId === 'settings_customize' ||
+    customId === 'settings_coins_customize' ||
+    (customId.startsWith('settings_menu_') && firstValue === 'other_customize') ||
+    customId === 'organize_set_reactions' ||
+    customId === 'organize_emoji_add' ||
+    customId.startsWith('pass_set_xp_threshold_pg_') ||
+    (customId === 'pass_main_select' && firstValue.startsWith('pass_create_level_page_')) ||
+    (customId.startsWith('pass_coins_select_lvl_') && firstValue === 'custom') ||
+    customId.startsWith('pass_boost_add_role_pg_') ||
+    (customId.startsWith('pass_rewards_select_lvl_') && (firstValue.startsWith('add_item_') || firstValue.startsWith('add_chest_'))) ||
+    customId.startsWith('pass_import_role_select_') ||
     customId.startsWith('embed_builder_') ||
     customId.startsWith('embed_edit_') ||
     customId.startsWith('embed_update_') ||
-    customId.startsWith('pass_tier_') ||
-    customId.startsWith('pass_edit_') ||
     customId.startsWith('trade_modal_') ||
     customId.startsWith('bank_drop_')
   );
@@ -456,19 +472,56 @@ export function setupComponentHandlers(client) {
         return;
       }
 
-      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, admin users, organize filters, role rewards, pass, interface)
+      // PASS / LEVELS DASHBOARD
+      if (customId === 'settings_pass' || customId.startsWith('pass_')) {
+        const { handlePassSetup, handlePassComponent } = await import('../commands/settings/pass.js');
+        if (customId === 'settings_pass') {
+          await handlePassSetup(interaction);
+        } else {
+          await handlePassComponent(interaction);
+        }
+        return;
+      }
+
+      // ADMIN USERS & ADMIN MANAGEMENT
+      if (customId.startsWith('admin_user_') || customId.startsWith('admin_manage_')) {
+        const { handleAdminUserComponent } = await import('../commands/admin-users.js');
+        await handleAdminUserComponent(interaction);
+        return;
+      }
+
+      // ORGANIZE / AUTOMOD
+      if (customId.startsWith('organize_')) {
+        const { handleOrganizeComponent } = await import('../commands/settings/organize.js');
+        await handleOrganizeComponent(interaction);
+        return;
+      }
+
+      // ROLE REWARDS
+      if (customId.startsWith('role_rewards_')) {
+        const { handleRoleRewardsComponent } = await import('../commands/settings/role-rewards.js');
+        await handleRoleRewardsComponent(interaction);
+        return;
+      }
+
+      // INTERFACE / DASHBOARD SHORTCUTS
+      if (customId.startsWith('interface_') || customId.startsWith('admin_interface_')) {
+        if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+          const { handleInterfaceModal } = await import('../commands/interface.js');
+          await handleInterfaceModal(interaction);
+        } else {
+          const { handleInterfaceComponent } = await import('../commands/interface.js');
+          await handleInterfaceComponent(interaction);
+        }
+        return;
+      }
+
+      // SETTINGS NAVIGATION (back button, module navigation, leaderboard channel selections, logs)
       if (
         customId.startsWith('settings_') ||
-        customId.startsWith('organize_') ||
         customId.startsWith('leaderboard_') ||
-        customId.startsWith('admin_user_') ||
-        customId.startsWith('admin_manage_') ||
         customId.startsWith('lb_') ||
-        customId.startsWith('logs_') ||
-        customId.startsWith('role_rewards_') ||
-        customId.startsWith('pass_') ||
-        customId.startsWith('interface_') ||
-        customId.startsWith('admin_interface_')
+        customId.startsWith('logs_')
       ) {
         await handleSettingsComponent(interaction);
         return;
