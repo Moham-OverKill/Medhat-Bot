@@ -761,9 +761,11 @@ export async function handleOrganizeComponent(interaction) {
     if (customId === 'organize_set_reactions') {
         const guildId = interaction.guildId;
         const filters = await getFilters(guildId);
-        const autoReactEmojis = Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0
-            ? filters.auto_react_emojis
-            : DEFAULT_REACTIONS;
+        const hasCustomReactions = Array.isArray(filters.auto_react_emojis) && filters.auto_react_emojis.length > 0;
+        const isDefault = !hasCustomReactions || (
+            filters.auto_react_emojis.length === DEFAULT_REACTIONS.length &&
+            filters.auto_react_emojis.every((e, idx) => e === DEFAULT_REACTIONS[idx])
+        );
 
         const modal = new ModalBuilder()
             .setCustomId(`organize_auto_react_modal_${Date.now()}`)
@@ -774,9 +776,12 @@ export async function handleOrganizeComponent(interaction) {
             .setLabel('Emojis in Order')
             .setStyle(TextInputStyle.Paragraph)
             .setPlaceholder('e.g. 👍 ❤️ 😂 😭 or custom :emojis: / IDs')
-            .setValue(autoReactEmojis.join(' '))
             .setRequired(false)
             .setMaxLength(1000);
+
+        if (!isDefault) {
+            emojiInput.setValue(filters.auto_react_emojis.join(' '));
+        }
 
         modal.addComponents(new ActionRowBuilder().addComponents(emojiInput));
         return interaction.showModal(modal);
