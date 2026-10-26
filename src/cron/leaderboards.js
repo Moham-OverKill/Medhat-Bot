@@ -1,5 +1,5 @@
 import { sysLog, sysError } from '../utils/logger.js';
-import { updateLeaderboards } from '../commands/leaderboard.js';
+import { updateLeaderboards, cleanupAllLeaderboardChannels } from '../commands/leaderboard.js';
 import { loadGuildConfigs } from '../storage/config.js';
 import { getTimeUntilNextCairoHour, getCairoHour } from '../utils/time.js';
 import { runInGuildContext } from '../shared.js';
@@ -27,7 +27,14 @@ export async function startLeaderboardScheduler(client) {
         }, delay);
     };
 
-    // --- STARTUP CATCH-UP ---
+    // --- STARTUP CLEANUP & CATCH-UP ---
+    // Clean up any duplicate or orphaned leaderboard headers from prior restarts before dispatching
+    try {
+        await cleanupAllLeaderboardChannels(client);
+    } catch (err) {
+        sysError('Startup Leaderboard Cleanup Failed', err);
+    }
+
     // Perform an immediate initial check in case we missed midnight due to maintenance
     // Pass isStartup = true to prevent running KotH role updates and duplicate resets on boot.
     runHourlyRefresh(client, true).catch(err => sysError('Initial Leaderboard Check Failed', err));
