@@ -12,7 +12,8 @@ import {
   normalizeDisplayName,
   fetchImageSafe,
   formatCompactNumber,
-  extractDominantColor
+  extractDominantColor,
+  boostColorLuminance
 } from './shared.js';
 
 /**
@@ -377,7 +378,8 @@ export async function renderLeaderboardCard({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = userColor;
+      const scoreTextColor = boostColorLuminance(userColor, 0.76);
+      ctx.fillStyle = scoreTextColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(valText, valPillX + valPillW / 2, valPillY + valPillH / 2);
@@ -477,7 +479,8 @@ export async function renderLeaderboardCard({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = userColor;
+      const scoreTextColor = boostColorLuminance(userColor, 0.76);
+      ctx.fillStyle = scoreTextColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(valText, scoreBadgeX + scoreBadgeW / 2, scoreBadgeY + scoreBadgeH / 2);

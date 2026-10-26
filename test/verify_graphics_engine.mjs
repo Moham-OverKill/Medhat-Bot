@@ -12,7 +12,8 @@ import {
   getLuminance,
   getContrastTextColor,
   hexToRgba,
-  shiftColorBrightness
+  shiftColorBrightness,
+  boostColorLuminance
 } from '../src/graphics/shared.js';
 
 test('Graphics Shared Utilities Suite', async (t) => {
@@ -41,6 +42,20 @@ test('Graphics Shared Utilities Suite', async (t) => {
     assert.ok(getLuminance('#000000') < 50);
     assert.equal(getContrastTextColor('#FFFFFF'), '#000000');
     assert.equal(getContrastTextColor('#000000'), '#FFFFFF');
+  });
+
+  await t.test('boostColorLuminance should ensure dark colors achieve high readability while preserving hue', () => {
+    // Dark brown (#5A3518) luminance ~60
+    const boostedBrown = boostColorLuminance('#5A3518', 0.76);
+    assert.ok(getLuminance(boostedBrown) >= 170, 'Boosted brown luminance must be >= 170');
+
+    // Dark maroon (#3E1C18) luminance ~37
+    const boostedMaroon = boostColorLuminance('#3E1C18', 0.76);
+    assert.ok(getLuminance(boostedMaroon) >= 170, 'Boosted maroon luminance must be >= 170');
+
+    // Already bright colors (#FFD700) should be preserved
+    const preservedGold = boostColorLuminance('#FFD700', 0.76);
+    assert.equal(preservedGold.toLowerCase(), '#ffd700');
   });
 
   await t.test('normalizeToImageUrl should resolve Discord custom emojis and emojis', () => {
