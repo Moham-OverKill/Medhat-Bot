@@ -3069,8 +3069,8 @@ export async function handleEditCategoryStart(interaction, page = 1) {
 
     const embed = new EmbedBuilder()
       .setColor('#3498DB')
-      .setTitle('Category Management')
-      .setDescription('**Select a category to manage:**');
+      .setTitle('Categories')
+      .setDescription('**Select a category to configure:**');
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
@@ -5407,8 +5407,8 @@ export async function handleShopPostGate(interaction) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle('Shop Posting Options')
-      .setDescription('Choose to publish a new shop item or edit an existing post.');
+      .setTitle('Post')
+      .setDescription('Publish a new shop item or edit an existing post.');
 
     const row = new ActionRowBuilder()
       .addComponents(

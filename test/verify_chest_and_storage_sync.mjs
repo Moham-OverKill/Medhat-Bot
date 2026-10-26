@@ -8,6 +8,11 @@ import { showMainMenu, showCoinsSubMenu } from '../src/commands/settings.js';
 import { getRewardsPayload } from '../src/commands/rewards.js';
 import { handleEconomySettings } from '../src/commands/settings/economy.js';
 import { getPassDashboardPayload } from '../src/commands/settings/pass.js';
+import { renderRootEmbedMenu } from '../src/commands/settings/embeds.js';
+import { handleLogsSettings } from '../src/commands/settings/logs.js';
+import { showUserSelector, showAdminManagement } from '../src/commands/admin-users.js';
+import { showRolesMenu } from '../src/commands/settings/role-rewards.js';
+import { handleLeaderboardSettings } from '../src/commands/settings/leaderboards.js';
 
 test('Chest Assets, Storage Thread Sync & UI Standardization Suite', async (t) => {
   const guildId = '123456789012345678';
@@ -240,5 +245,93 @@ test('Chest Assets, Storage Thread Sync & UI Standardization Suite', async (t) =
     // 5. Levels (was Levels Configuration / Pass Dashboard)
     const levelsPayload = await getPassDashboardPayload(guildId, 0, null, 'root', 1, mockInteraction);
     assert.equal(levelsPayload.embeds[0].data.title, 'Levels');
+
+    // 6. Settings (was Control Panel)
+    let settingsPayload = null;
+    const settingsInteraction = {
+      guildId,
+      guild: { id: guildId, name: 'Test Server', roles: { cache: new Map() } },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { settingsPayload = data; }
+    };
+    await showMainMenu(settingsInteraction);
+    assert.equal(settingsPayload.embeds[0].data.title, 'Settings');
+
+    // 7. Embeds (was Embed Manager)
+    let embedsPayload = null;
+    const embedsInteraction = {
+      guildId,
+      guild: { id: guildId, name: 'Test Server' },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { embedsPayload = data; }
+    };
+    await renderRootEmbedMenu(embedsInteraction);
+    assert.equal(embedsPayload.embeds[0].data.title, 'Embeds');
+
+    // 8. Logs (was Logs Configuration)
+    let logsPayload = null;
+    const logsInteraction = {
+      guildId,
+      guild: { id: guildId, name: 'Test Server', channels: { cache: new Map() } },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { logsPayload = data; }
+    };
+    await handleLogsSettings(logsInteraction);
+    assert.equal(logsPayload.embeds[0].data.title, 'Logs');
+
+    // 9. Users (was User Management)
+    let usersPayload = null;
+    const usersInteraction = {
+      guildId,
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { usersPayload = data; }
+    };
+    await showUserSelector(usersInteraction);
+    assert.equal(usersPayload.embeds[0].data.title, 'Users');
+
+    // 10. Roles (was Roles Management)
+    let rolesPayload = null;
+    const rolesInteraction = {
+      guildId,
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { rolesPayload = data; }
+    };
+    await showRolesMenu(rolesInteraction);
+    assert.equal(rolesPayload.embeds[0].data.title, 'Roles');
+
+    // 11. Leaderboards (was Leaderboard Configuration)
+    let lbPayload = null;
+    const lbInteraction = {
+      guildId,
+      guild: { id: guildId, name: 'Test Server', channels: { cache: new Map() } },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { lbPayload = data; }
+    };
+    await handleLeaderboardSettings(lbInteraction);
+    assert.equal(lbPayload.embeds[0].data.title, 'Leaderboards');
+
+    // 12. Admins (was Authorized Users)
+    let adminsPayload = null;
+    const adminsInteraction = {
+      guildId,
+      guild: {
+        id: guildId,
+        ownerId: 'owner_1',
+        members: { cache: new Map(), fetch: async () => new Map() },
+        roles: { cache: new Map(), fetch: async () => new Map() }
+      },
+      user: { id: 'owner_1' },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { adminsPayload = data; }
+    };
+    await showAdminManagement(adminsInteraction);
+    assert.equal(adminsPayload.embeds[0].data.title, 'Admins');
   });
 });

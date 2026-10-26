@@ -33,7 +33,7 @@ function getAdminPendingKey(guildId, adminUserId, targetUserId) {
  */
 export async function showUserSelector(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('User Management')
+        .setTitle('Users')
         .setColor(0x2F3136);
 
     const select = new UserSelectMenuBuilder()
@@ -2543,7 +2543,7 @@ export async function showAdminManagement(interaction, fromSettings = false) {
         'And interact with the **Admin Interface (dashboard)**.';
 
     const embed = new EmbedBuilder()
-        .setTitle('Authorized Users')
+        .setTitle('Admins')
         .setDescription(desc)
         .setColor(0x5865F2);
 

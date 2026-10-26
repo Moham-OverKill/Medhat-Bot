@@ -78,7 +78,7 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('Logs Configuration')
+            .setTitle('Logs')
             .setDescription(desc)
             .setColor(warningMessage ? 0xE74C3C : (selectedId ? 0xF1C40F : 0x3498DB));
 

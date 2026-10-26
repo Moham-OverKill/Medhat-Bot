@@ -149,7 +149,7 @@ function buildRoleRewardPanel(type, config) {
  */
 export async function showRolesMenu(interaction) {
     const embed = new EmbedBuilder()
-        .setTitle('Roles Management')
+        .setTitle('Roles')
         .setDescription(
             'Configure server roles and automation.\n\n' +
             '• **Top Roles** — Automated role rewards for top members\n' +

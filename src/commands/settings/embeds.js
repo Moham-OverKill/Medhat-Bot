@@ -174,8 +174,8 @@ export async function renderRootEmbedMenu(interaction) {
   const groups = groupsResult.rows;
 
   const menuEmbed = new EmbedBuilder()
-    .setTitle('Embed Manager')
-    .setDescription('Select an existing embed or group to manage, or create a new one.')
+    .setTitle('Embeds')
+    .setDescription('Select an embed or group to configure, or create a new one.')
     .setColor(DEFAULT_EMBED_COLOR);
 
   // Menu 1: Individual Embeds

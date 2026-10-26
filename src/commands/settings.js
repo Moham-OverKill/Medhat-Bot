@@ -67,7 +67,7 @@ export async function showMainMenu(interaction) {
     const coinName = await getCurrencyName(interaction.guildId);
 
     const embed = new EmbedBuilder()
-        .setTitle('Control Panel')
+        .setTitle('Settings')
         .setDescription('Select a module to configure.')
         .setColor(0x2F3136);
 
