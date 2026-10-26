@@ -96,11 +96,15 @@ function createMockChannel(id, name, permissionsArray) {
             members: { me: { id: 'bot_id' } }
         },
         permissionsFor: () => permBitfield,
-        send: async ({ embeds }) => {
+        send: async ({ embeds, files, content }) => {
             const msgId = `msg_${Date.now()}_${Math.random()}`;
             const msg = {
                 id: msgId,
-                embeds,
+                content,
+                embeds: embeds || [],
+                files: files || [],
+                attachments: files ? files.map(f => ({ name: f.name || 'card.png' })) : [],
+                author: { id: 'bot_id' },
                 edit: async (data) => { Object.assign(msg, data); return msg; },
                 delete: async () => { deletedMessageId = msgId; return true; }
             };
@@ -108,7 +112,7 @@ function createMockChannel(id, name, permissionsArray) {
             return msg;
         },
         messages: {
-            fetch: async (msgId) => messages.get(msgId) || { id: msgId, edit: async () => {}, delete: async () => { deletedMessageId = msgId; } }
+            fetch: async (optOrId) => (typeof optOrId === 'string' ? (messages.get(optOrId) || { id: optOrId, edit: async () => {}, delete: async () => { deletedMessageId = optOrId; } }) : messages)
         },
         _messages: messages,
         getDeletedMessageId: () => deletedMessageId
@@ -119,7 +123,9 @@ function createMockChannel(id, name, permissionsArray) {
 const validChannel = createMockChannel(VALID_CHAN_1, 'general', [
     PermissionFlagsBits.ViewChannel,
     PermissionFlagsBits.SendMessages,
-    PermissionFlagsBits.EmbedLinks
+    PermissionFlagsBits.EmbedLinks,
+    PermissionFlagsBits.AttachFiles,
+    PermissionFlagsBits.ReadMessageHistory
 ]);
 
 const noSendChannel = createMockChannel(INVALID_CHAN_1, 'no-send', [

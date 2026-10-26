@@ -111,15 +111,50 @@ async function safeSend(guild, channelId, embed, configKey) {
 /**
  * Proactive permission check for settings validation
  */
-export function checkChannelPermissions(channel) {
+export function checkChannelPermissions(channel, extraPermissions = []) {
     if (!channel) return { valid: false, error: 'Channel not found.' };
     const me = channel.guild?.members?.me || channel.client?.user;
     if (!me) return { valid: true };
     const permissions = channel.permissionsFor(me);
-    if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
-        return { valid: false, error: 'I need "View Channel", "Send Messages", and "Embed Links" permissions there.' };
+    if (!permissions) {
+        return { valid: false, error: 'Cannot check channel permissions.', missing: ['View Channel'] };
+    }
+
+    const required = [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+        ...extraPermissions
+    ];
+
+    const missingFlags = required.filter(flag => !permissions.has(flag));
+    if (missingFlags.length > 0) {
+        const flagNames = {
+            [PermissionFlagsBits.ViewChannel]: 'View Channel',
+            [PermissionFlagsBits.SendMessages]: 'Send Messages',
+            [PermissionFlagsBits.EmbedLinks]: 'Embed Links',
+            [PermissionFlagsBits.AttachFiles]: 'Attach Files',
+            [PermissionFlagsBits.ReadMessageHistory]: 'Read Message History',
+            [PermissionFlagsBits.ManageMessages]: 'Manage Messages'
+        };
+        const missingNames = missingFlags.map(f => flagNames[f] || String(f));
+        return {
+            valid: false,
+            error: `I need ${missingNames.map(n => `"${n}"`).join(', ')} permissions there.`,
+            missing: missingNames
+        };
     }
     return { valid: true };
+}
+
+/**
+ * Required permissions specifically for visual leaderboard channels
+ */
+export function checkLeaderboardPermissions(channel) {
+    return checkChannelPermissions(channel, [
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ReadMessageHistory
+    ]);
 }
 
 /**

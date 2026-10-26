@@ -9,7 +9,7 @@ import {
     MessageFlags
 } from 'discord.js';
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
-import { sendLog, checkChannelPermissions, sysError } from '../../utils/logger.js';
+import { sendLog, checkChannelPermissions, checkLeaderboardPermissions, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { getUserLogName, getCurrencyName, COIN_EMOJI, isBackDisabled } from '../../shared.js';
 
@@ -50,7 +50,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             if (chanId) {
                 const targetChan = interaction.guild?.channels?.cache?.get(chanId);
                 if (targetChan) {
-                    const perm = checkChannelPermissions(targetChan);
+                    const perm = checkLeaderboardPermissions(targetChan);
                     if (!perm.valid) {
                         statusLabel = `<#${chanId}> ⚠️ *(Missing Permissions)*`;
                     } else {
@@ -252,9 +252,9 @@ export async function handleLeaderboardChannelSelect(interaction) {
         if (!categories[categoryId]) return;
         const cat = categories[categoryId];
 
-        // Proactive Permission Check
+        // Proactive Permission Check (including AttachFiles & ReadMessageHistory for leaderboard canvas cards)
         const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
-        const permissionCheck = checkChannelPermissions(channel);
+        const permissionCheck = checkLeaderboardPermissions(channel);
         if (!permissionCheck.valid) {
             return handleLeaderboardSettings(interaction, cat.id, null, `Cannot assign <#${channelId}>: ${permissionCheck.error}`);
         }
@@ -284,7 +284,7 @@ export async function handleLeaderboardChannelSelect(interaction) {
         // Send new leaderboard (title first, card second)
         const sendResult = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
         if (!sendResult || (!sendResult.cardMsgId && !sendResult.id)) {
-            return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>`);
+            return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>: ${sendResult?.error || 'Missing permissions or failed to dispatch'}`);
         }
         
         // Update DB
