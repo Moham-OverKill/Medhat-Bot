@@ -220,7 +220,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
       '• **Role Reward:** ' + roleText + '\n' +
       '• **' + coinName + ' Reward:** ' + coinsText + '\n' +
       '• **Item Rewards:** ' + itemText + '\n' +
-      '• **Chest Rewards:** ' + chestText
+      '• **' + lootBoxCatName + ' Rewards:** ' + chestText
     );
 
     // Row 2: Role Select (RoleSelectMenuBuilder)
@@ -293,7 +293,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
         rewardOptions.push({ label: lootBoxCatName.slice(0, 50), value: 'folder_chests', emoji: parseSelectEmoji(selectChestEmoji) });
       }
       if (rewardOptions.length === 0) {
-        rewardOptions.push({ label: 'No Items or Chests Available', value: 'folder_root', emoji: '❌' });
+        rewardOptions.push({ label: `No Items or ${lootBoxCatName} Available`.slice(0, 50), value: 'folder_root', emoji: '❌' });
       }
 
       rewardsSelect = new StringSelectMenuBuilder()
@@ -363,7 +363,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
           .setPlaceholder(rewardsPlaceholder)
           .addOptions([
             { label: 'Back', value: 'folder_root', emoji: '⬅️' },
-            { label: 'No Chests Available', value: 'folder_root', emoji: '❌' }
+            { label: `No ${lootBoxCatName} Available`.slice(0, 50), value: 'folder_root', emoji: '❌' }
           ]);
       } else {
         const { selectMenu } = buildPaginatedSelectMenu({
@@ -1113,6 +1113,7 @@ export async function handlePassComponent(interaction) {
       const page = parseInt(customId.replace('pass_import_start_pg_', ''), 10) || 0;
 
       const coinName = await getCurrencyName(guildId);
+      const lootBoxCatName = await getLootBoxCategoryName(guildId);
       const embed = new EmbedBuilder()
         .setTitle('Import Levels')
         .setColor(0xED4245)
@@ -1122,7 +1123,7 @@ export async function handlePassComponent(interaction) {
           '• Disable or remove your previous leveling bot from the server.\n' +
           '• Configure your XP settings before importing.\n' +
           '• Do not add levels manually; they are created automatically on import.\n' +
-          `• Customize ${coinName.toLowerCase()}, items, and chests for each level after importing.\n` +
+          `• Customize ${coinName.toLowerCase()}, items, and ${lootBoxCatName.toLowerCase()} for each level after importing.\n` +
           '• Do not re-run this migration after members start earning XP naturally.\n' +
           '• Members who left the server will lose their levels.\n' +
           '---\n' +
@@ -1346,6 +1347,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
   const previewLines = sortedLevels.map(([level, count]) => `• ${count} ${count === 1 ? 'user' : 'users'} will be level ${level}`);
 
   const coinName = await getCurrencyName(guildId);
+  const lootBoxCatName = await getLootBoxCategoryName(guildId);
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
     .setTitle('Import Preview — Confirm')
@@ -1353,7 +1355,7 @@ async function renderImportPreview(interaction, guildId, flowKey, page) {
       previewLines.join('\n') + '\n\n' +
       `**Total affected:** ${userAssignments.size} member${userAssignments.size === 1 ? '' : 's'}\n\n` +
       '• XP progress will be set for all mapped members\n' +
-      `• You can configure ${coinName.toLowerCase()}, items, and chests for each level before clicking Start`
+      `• You can configure ${coinName.toLowerCase()}, items, and ${lootBoxCatName.toLowerCase()} for each level before clicking Start`
     );
 
   const row1 = new ActionRowBuilder().addComponents(

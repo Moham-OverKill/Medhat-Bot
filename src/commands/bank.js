@@ -1583,6 +1583,10 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
 
     // Build List with role mentions or loot box tags
     const listLines = isLootBox
@@ -1609,7 +1613,7 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
       items,
       page: targetPage,
       customId: `bank_inv_item_select_${isLootBox ? 'lootboxes' : (isOther ? 'null' : categoryId)}`,
-      placeholder: isLootBox ? 'Select a Loot Box to Open' : 'Select an Item to Manage',
+      placeholder: isLootBox ? `Select a ${singularName} to Open` : 'Select an Item to Manage',
       backOption: {
         label: 'Back',
         value: 'back_to_inventory',
@@ -1620,11 +1624,11 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
       mapOption: (i, idx) => {
         if (isLootBox) {
           const itemQty = parseInt(i.quantity) || 1;
-          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `${singularName} #${i.id}`;
           return {
             label: `${baseName} (x${itemQty})`,
             value: `${i.id}_${idx}`,
-            description: 'Unopened Loot Box',
+            description: `Unopened ${singularName}`,
             emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
           };
         }
@@ -1921,6 +1925,10 @@ export async function handleInventoryItemSelect(interaction) {
       const serverCoinEmoji = config?.coin_emoji || COIN_EMOJI || '🪙';
       const coinName = config?.coin_name || await getCurrencyName(interaction.guildId);
       const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+      const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+        ? lootBoxCatName.slice(0, -1) 
+        : lootBoxCatName;
 
       const sections = [];
       sections.push(`**Quantity:** \`x${displayQty}\``);
@@ -1967,8 +1975,8 @@ export async function handleInventoryItemSelect(interaction) {
         : Math.floor(currentIndex / 20) + 1;
       const totalMenuPages = Math.max(1, Math.ceil(items.length / 20));
       const placeholder = totalMenuPages > 1
-        ? `Select a Loot Box to Manage (Page ${activeMenuPage}/${totalMenuPages})`
-        : 'Select a Loot Box to Manage';
+        ? `Select a ${singularName} to Manage (Page ${activeMenuPage}/${totalMenuPages})`
+        : `Select a ${singularName} to Manage`;
 
       const { selectMenu } = buildPaginatedSelectMenu({
         items,
@@ -1984,7 +1992,7 @@ export async function handleInventoryItemSelect(interaction) {
         pageSize: 20,
         mapOption: (i, idx) => {
           const itemQty = parseInt(i.quantity) || 1;
-          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `Loot Box #${i.id}`;
+          const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : `${singularName} #${i.id}`;
           return {
             label: `${baseName} (x${itemQty})`,
             value: `${i.id}_${idx}`,

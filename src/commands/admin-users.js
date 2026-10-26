@@ -863,13 +863,14 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
             const isTemp = !!(i.expires_at || 
                            (i.duration_seconds && i.duration_seconds > 0) || 
                            (i.duration_hours && i.duration_hours > 0));
+            const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
             const statusText = isChest
-                ? 'Loot Box'
+                ? singularName
                 : (isAdminIdentified ? 'Admin Granted' : (isTemp ? (i.is_active ? 'Active' : 'Inactive') : (i.is_active ? 'Equipped' : 'Unequipped')));
             
             const itemQty = parseInt(i.quantity) || 1;
             const qtyBadge = !isAdminIdentified ? ` (x${itemQty})` : '';
-            const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : (isChest ? `Loot Box #${i.id}` : `Item #${i.id}`);
+            const baseName = (i.name && i.name.trim().length > 0) ? i.name.slice(0, 70) : (isChest ? `${singularName} #${i.id}` : `Item #${i.id}`);
 
             return {
                 label: `${baseName}${qtyBadge}`,
@@ -1342,12 +1343,13 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
         pageSize: 20,
         mapOption: i => {
             const isChest = i.isChest || i.item_type === 'loot_box';
+            const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
             const emoji = isChest
                 ? (parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁')
                 : getItemRarityEmoji(i);
-            const desc = isChest ? 'Loot Box / Chest' : (i.role_id ? 'Role Item' : 'Inventory Item');
+            const desc = isChest ? (lootBoxCatName || 'Chests') : (i.role_id ? 'Role Item' : 'Inventory Item');
             return {
-                label: safeTruncate(i.name || (isChest ? `Loot Box #${i.id}` : `Item #${i.id}`), 100),
+                label: safeTruncate(i.name || (isChest ? `${singularName} #${i.id}` : `Item #${i.id}`), 100),
                 value: isChest ? `give_chest_${i.id}` : `give_item_${i.id}`,
                 description: desc,
                 emoji
@@ -1437,7 +1439,9 @@ export async function handleAdminGiveSelect(interaction) {
         let itemName = 'Item';
         if (isChest) {
             const boxRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1', [itemId]);
-            itemName = boxRes.rows[0]?.name || 'Chest';
+            const lootBoxCatName = await getLootBoxCategoryName(guildId);
+            const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
+            itemName = boxRes.rows[0]?.name || singularName;
         } else {
             const itemRes = await pool.query('SELECT name FROM shop_items WHERE id = $1', [itemId]);
             itemName = itemRes.rows[0]?.name || 'Item';

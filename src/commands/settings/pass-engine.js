@@ -303,7 +303,9 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
       const guild = client.guilds?.cache?.get(guildId);
       if (guild) {
         const { COIN_EMOJI } = await import('../../shared.js');
+        const { getLootBoxCategoryName } = await import('../../economy/lootbox.js');
         const coinEmoji = COIN_EMOJI.forGuild(guildId);
+        const lootBoxCatName = await getLootBoxCategoryName(guildId);
         const totalCoins = claimedLevels.reduce((sum, c) => sum + (c.coins || 0), 0);
         const totalRewardsCount = claimedLevels.reduce((sum, c) => sum + (c.rewards?.length || 0), 0);
         sendLog(
@@ -311,7 +313,7 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
           'economy',
           'green',
           '⭐ Bulk Level Sync',
-          `<@${userId}> synchronized **${claimedLevels.length} levels** (up to Level ${currentLevel}), receiving **${totalCoins.toLocaleString()}** ${coinEmoji} and **${totalRewardsCount} items/chests**.`
+          `<@${userId}> synchronized **${claimedLevels.length} levels** (up to Level ${currentLevel}), receiving **${totalCoins.toLocaleString()}** ${coinEmoji} and **${totalRewardsCount} items/${lootBoxCatName.toLowerCase()}**.`
         );
       }
     }
@@ -667,9 +669,13 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
           if (gr.type === 'item') {
             sendLog(guild, 'inventory', 'green', '🏷️ Level Item Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
           } else if (gr.type === 'chest') {
-            const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
+            const { getLootBoxCategoryEmoji, getLootBoxCategoryName } = await import('../../economy/lootbox.js');
             const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-            sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Chest Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
+            const lootBoxCatName = await getLootBoxCategoryName(guildId);
+            const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+              ? lootBoxCatName.slice(0, -1) 
+              : lootBoxCatName;
+            sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level ${singularName} Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
           }
         }
       }

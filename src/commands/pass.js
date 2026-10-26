@@ -7,7 +7,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { getUserPassProgress } from './settings/pass-engine.js';
-import { getLootBoxCategoryEmoji } from '../economy/lootbox.js';
+import { getLootBoxCategoryEmoji, getLootBoxCategoryName } from '../economy/lootbox.js';
 import { COIN_EMOJI, getCurrencyName } from '../shared.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -33,6 +33,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
 
   const coinEmoji = COIN_EMOJI.forGuild(guildId);
   const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+  const lootBoxCatName = await getLootBoxCategoryName(guildId);
 
   const embed = new EmbedBuilder().setColor(0x5865F2);
 
@@ -78,7 +79,7 @@ export async function getLevelViewPayload(guildId, userId, activeTab = 'level') 
       const summaryLines = [];
       if (totalCoins > 0) summaryLines.push(`• ${coinEmoji} **${totalCoins.toLocaleString()} Total ${coinName}**`);
       if (totalItems > 0) summaryLines.push(`• 🏷️ **${totalItems.toLocaleString()} Total Items**`);
-      if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total Chests**`);
+      if (totalChests > 0) summaryLines.push(`• ${lootBoxEmoji} **${totalChests.toLocaleString()} Total ${lootBoxCatName}**`);
 
       desc = summaryLines.length > 0 ? summaryLines.join('\n') : '_No rewards claimed yet._';
     } else {

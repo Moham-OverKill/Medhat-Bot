@@ -22,6 +22,7 @@ import { showSetupPanel as showMvpPanel, handleMvpComponent } from './mvp.js';
 import { handleShopSetup as showShopPanel } from './shop-setup.js';
 import { handleRewardsSetup as showRewardsPanel, handleRewardsComponent } from './rewards.js';
 import { showColorPanel as showColorsPanel, handleColorsComponent } from './colors.js';
+import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
 import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from './leaderboard.js';
 import { 
     handleLeaderboardSettings, 
@@ -65,6 +66,8 @@ export async function handleSettingsCommand(interaction) {
  */
 export async function showMainMenu(interaction) {
     const coinName = await getCurrencyName(interaction.guildId);
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
     const embed = new EmbedBuilder()
         .setTitle('Settings')
@@ -89,9 +92,9 @@ export async function showMainMenu(interaction) {
                 emoji: '🏷️'
             },
             {
-                label: 'Chests',
+                label: lootBoxCatName,
                 value: 'market_chests',
-                emoji: '🎁'
+                emoji: resolveComponentEmoji(lootBoxEmoji, interaction.guild, '🎁')
             },
             {
                 label: 'Market',
