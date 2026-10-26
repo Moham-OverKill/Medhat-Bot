@@ -225,7 +225,7 @@ export async function showSetupPanel(interaction, config) {
   // Build status overview
   const statusEmoji = config.enabled ? '🟢' : '🔴';
   const statusText = config.enabled ? 'Auto' : 'Disabled';
-  const rewardAmount = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 100;
+  const rewardAmount = config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 20;
   const roleMention = config.mvpRoleId ? `<@&${config.mvpRoleId}>` : '`Not Set`';
 
   const coinName = await getCurrencyName(guildId);
@@ -369,14 +369,14 @@ export async function handleMvpComponent(interaction) {
       case 'mvp_reward_config_btn':
         const coinNameModal = await getCurrencyName(guildId);
         const modal = new ModalBuilder().setCustomId(`rewards_mvp_modal_${Date.now()}`).setTitle('MVP Reward Settings');
-        const currentMvpAmount = config.mvpRewardAmount !== undefined ? Number(config.mvpRewardAmount) : 5;
+        const currentMvpAmount = config.mvpRewardAmount !== undefined ? Number(config.mvpRewardAmount) : 20;
         const input = new TextInputBuilder()
           .setCustomId('amount')
           .setLabel(`${coinNameModal} per hour`)
           .setStyle(TextInputStyle.Short)
-          .setPlaceholder('5')
+          .setPlaceholder('20')
           .setRequired(false);
-        if (currentMvpAmount !== 5) {
+        if (currentMvpAmount !== 20) {
           input.setValue(String(currentMvpAmount));
         }
         modal.addComponents(new ActionRowBuilder().addComponents(input));

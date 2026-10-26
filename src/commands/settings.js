@@ -540,15 +540,15 @@ export async function handleSettingsComponent(interaction) {
 
         if (customId === 'settings_tag_reward') {
             const config = await getGuildConfig(interaction.guildId) || {};
-            const currentTagReward = config.tag_reward_amount !== undefined ? Number(config.tag_reward_amount) : 0;
+            const currentTagReward = config.tag_reward_amount !== undefined ? Number(config.tag_reward_amount) : 100;
             const modal = new ModalBuilder().setCustomId(`settings_tag_modal_${Date.now()}`).setTitle('Tag Reward');
             const input = new TextInputBuilder()
                 .setCustomId('amount')
                 .setLabel('Reward members for using your server tag')
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('None')
+                .setPlaceholder('100')
                 .setRequired(false);
-            if (currentTagReward > 0) {
+            if (currentTagReward !== 100) {
                 input.setValue(String(currentTagReward));
             }
             modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -583,7 +583,7 @@ export async function handleSettingsComponent(interaction) {
         if (customId.startsWith('settings_tag_modal')) {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
             const amountStr = interaction.fields.getTextInputValue('amount')?.trim();
-            const amount = (amountStr === '' || amountStr === undefined) ? 0 : parseInt(amountStr, 10);
+            const amount = (amountStr === '' || amountStr === undefined) ? 100 : parseInt(amountStr, 10);
             if (isNaN(amount) || amount < 0) {
                 return interaction.followUp({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
             }

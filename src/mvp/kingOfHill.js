@@ -75,7 +75,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
     const winnersCount = Math.min(Math.max(1, config.winnersCount || 1), 5);
     const rewardAmount = config.mvpRewardAmount !== undefined
       ? Math.max(0, parseInt(config.mvpRewardAmount, 10))
-      : 100;
+      : 20;
 
     // === STEP 3: FETCH — Current live Top N ===
     const newTopUsers = await getTopActiveUsers(guildId, winnersCount, guildObj);

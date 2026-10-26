@@ -72,8 +72,8 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
   });
 
   describe('1. MVP Hourly Reward Modal', () => {
-    it('should render empty when reward is at default (5) and show "5" placeholder', async () => {
-      configCache.set(guildId, { mvpRewardAmount: 5 });
+    it('should render empty when reward is at default (20) and show "20" placeholder', async () => {
+      configCache.set(guildId, { mvpRewardAmount: 20 });
       let modalShown = null;
       const interaction = createMockInteraction('mvp_reward_config_btn', {
         showModal: async (m) => { modalShown = m; }
@@ -82,12 +82,12 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
       await handleMvpComponent(interaction);
       assert.ok(modalShown, 'Modal must be shown');
       const input = modalShown.components[0].components[0].data;
-      assert.equal(input.placeholder, '5');
-      assert.equal(input.value, undefined, 'Must not pre-fill when equal to default 5');
+      assert.equal(input.placeholder, '20');
+      assert.equal(input.value, undefined, 'Must not pre-fill when equal to default 20');
     });
 
     it('should auto-fill when reward differs from default', async () => {
-      configCache.set(guildId, { mvpRewardAmount: 25 });
+      configCache.set(guildId, { mvpRewardAmount: 50 });
       let modalShown = null;
       const interaction = createMockInteraction('mvp_reward_config_btn', {
         showModal: async (m) => { modalShown = m; }
@@ -95,11 +95,11 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
 
       await handleMvpComponent(interaction);
       const input = modalShown.components[0].components[0].data;
-      assert.equal(input.value, '25', 'Must auto-fill non-default 25');
+      assert.equal(input.value, '50', 'Must auto-fill non-default 50');
     });
 
-    it('should default to 5 on empty submission', async () => {
-      configCache.set(guildId, { mvpRewardAmount: 25 });
+    it('should default to 20 on empty submission', async () => {
+      configCache.set(guildId, { mvpRewardAmount: 50 });
       const interaction = createMockInteraction(`rewards_mvp_modal_${Date.now()}`, {
         isModalSubmit: () => true,
         fields: { getTextInputValue: () => '' }
@@ -107,7 +107,7 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
 
       await handleRewardsModal(interaction);
       const cfg = configCache.get(guildId);
-      assert.equal(cfg.mvpRewardAmount, 5, 'Empty submission must revert mvpRewardAmount to 5');
+      assert.equal(cfg.mvpRewardAmount, 20, 'Empty submission must revert mvpRewardAmount to 20');
     });
   });
 
@@ -321,8 +321,8 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
       assert.equal(cfg.vote_reward_amount, 100, 'Empty submit must revert to 100');
     });
 
-    it('Tag Reward: should render empty when at default 0 with "None" placeholder', async () => {
-      configCache.set(guildId, { tag_reward_amount: 0 });
+    it('Tag Reward: should render empty when at default 100 with "100" placeholder', async () => {
+      configCache.set(guildId, { tag_reward_amount: 100 });
       let modalShown = null;
       const interaction = createMockInteraction('settings_tag_reward', {
         showModal: async (m) => { modalShown = m; }
@@ -331,11 +331,11 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
       await handleSettingsComponent(interaction);
       assert.ok(modalShown, 'Modal must be shown');
       const input = modalShown.components[0].components[0].data;
-      assert.equal(input.placeholder, 'None');
-      assert.equal(input.value, undefined, 'Must not pre-fill when 0');
+      assert.equal(input.placeholder, '100');
+      assert.equal(input.value, undefined, 'Must not pre-fill when 100');
     });
 
-    it('Tag Reward: should auto-fill when positive and default to 0 on empty submit', async () => {
+    it('Tag Reward: should auto-fill when non-default and default to 100 on empty submit', async () => {
       configCache.set(guildId, { tag_reward_amount: 50 });
       let modalShown = null;
       const openInteraction = createMockInteraction('settings_tag_reward', {
@@ -351,7 +351,7 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
       });
       await handleSettingsComponent(submitInteraction);
       const cfg = configCache.get(guildId);
-      assert.equal(cfg.tag_reward_amount, 0, 'Empty submit must default to 0');
+      assert.equal(cfg.tag_reward_amount, 100, 'Empty submit must default to 100');
     });
   });
 
