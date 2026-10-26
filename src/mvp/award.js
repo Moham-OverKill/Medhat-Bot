@@ -934,7 +934,7 @@ export async function awardMvp(client, guildId, options = {}) {
 
     // ========== STEP 5: ANNOUNCE & REWARD ==========
     if (resultMembers.length > 0 && !isTest) {
-      const rewardAmount = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
+      const rewardAmount = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 20;
 
       if (rewardAmount > 0) {
         for (const member of resultMembers) {
@@ -988,7 +988,7 @@ export async function awardMvp(client, guildId, options = {}) {
       }
 
       const winnerLogList = resultMembers.map(m => getUserLogName(m)).join(', ');
-      const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
+      const totalReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 20;
 
       sendLog(guild, 'economy', 'gold', '⭐ MVP Awarded', 
         `**Winners:** ${winnerLogList}\n` +

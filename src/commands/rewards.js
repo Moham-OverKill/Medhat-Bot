@@ -453,7 +453,7 @@ export async function handleRewardsModal(interaction) {
     }
     else if (customId === 'rewards_mvp_modal' || customId.startsWith('rewards_mvp_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('amount');
-      const amount = inputVal?.trim() ? Math.max(0, parseInt(inputVal, 10)) : 5;
+      const amount = inputVal?.trim() ? Math.max(0, parseInt(inputVal, 10)) : 20;
 
       if (inputVal && isNaN(amount)) {
         return interaction.followUp({ content: '❌ Invalid reward amount.', flags: MessageFlags.Ephemeral });

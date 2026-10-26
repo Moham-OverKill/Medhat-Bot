@@ -54,11 +54,11 @@ async function showEconomyDashboard(interaction, view) {
         
         // Settings Variables - Synced with Rewards Dashboard
         const streakBonus = config.daily_streak_bonus !== undefined ? parseInt(config.daily_streak_bonus, 10) : 5;
-        const mvpReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 100;
+        const mvpReward = config.mvpRewardAmount !== undefined ? parseInt(config.mvpRewardAmount, 10) : 20;
         const boosterMult = config.booster_multiplier !== undefined ? parseFloat(config.booster_multiplier) : 2.0;
         const streakCap = config.daily_streak_cap !== undefined ? parseInt(config.daily_streak_cap, 10) : 30;
         const baseDaily = config.daily_base_reward !== undefined ? parseInt(config.daily_base_reward, 10) : 25;
-        const tagReward = config.tag_reward_amount !== undefined ? parseInt(config.tag_reward_amount, 10) : 0;
+        const tagReward = config.tag_reward_amount !== undefined ? parseInt(config.tag_reward_amount, 10) : 100;
         const voteReward = config.vote_reward_amount !== undefined ? parseInt(config.vote_reward_amount, 10) : 100;
 
         // Fetch Quest Configuration
