@@ -64,7 +64,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('Leaderboard Configuration')
+            .setTitle('Leaderboards')
             .setDescription(desc)
             .setColor(warningMessage ? 0xE74C3C : (selectedId ? 0xF1C40F : 0x3498DB));
 

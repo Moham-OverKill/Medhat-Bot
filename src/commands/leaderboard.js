@@ -1046,7 +1046,7 @@ async function handleStatus(interaction) {
 
         const coinName = await getCurrencyName(interaction.guildId);
         const embed = new EmbedBuilder()
-            .setTitle('Leaderboard Configuration')
+            .setTitle('Leaderboards')
             .setColor(0x0099FF)
             .addFields(
                 { name: 'Daily Activity', value: config.daily_channel_id ? `<#${config.daily_channel_id}>` : '*Not Set*', inline: true },

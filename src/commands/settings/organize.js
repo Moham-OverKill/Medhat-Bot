@@ -97,7 +97,7 @@ async function renderPanel(interaction, activeFilter = null) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('Organize — Channel Filters')
+        .setTitle('Filters')
         .setDescription(summaryLines.join('\n'))
         .setColor(0x2B2D31);
 
@@ -452,7 +452,7 @@ export async function renderEmojiModerationPanel(interaction, page = 0) {
     const isEnabled = filters.reaction_blacklist_enabled === true;
 
     const embed = new EmbedBuilder()
-        .setTitle('Organize — Emoji Blacklist');
+        .setTitle('Blacklist');
 
     // Check bot permissions for diagnostics
     const botMember = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
@@ -673,7 +673,7 @@ export async function renderForumsPanel(interaction) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('Organize — Forums');
+        .setTitle('Forums');
 
     const noOriginalStatus = isNoOriginalEnabled ? 'Enabled 🟢' : 'Disabled 🔴';
     const noAttachmentStatus = isNoAttachmentEnabled ? 'Enabled 🟢' : 'Disabled 🔴';

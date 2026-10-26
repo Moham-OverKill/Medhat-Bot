@@ -516,7 +516,7 @@ async function getBoostsDashboardPayload(guildId, page = 0) {
 
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
-    .setTitle('XP Boosts');
+    .setTitle('Boosts');
 
   if (boosters.length === 0) {
     embed.setDescription('No XP boosts configured.\n\nAdd a role boost below. Members with boosted roles earn bonus XP on all activity.');
