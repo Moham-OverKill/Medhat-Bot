@@ -220,6 +220,78 @@ async function saveThreadRecord(guildId, category, threadId) {
 }
 
 /**
+ * Synchronize thread title and starter message when a tracked guild is renamed.
+ *
+ * @param {import('discord.js').Client} client
+ * @param {string} guildId
+ * @param {string} newGuildName
+ */
+export async function syncGuildStorageThreads(client, guildId, newGuildName) {
+  const pool = getPool();
+  if (!pool) return;
+
+  const res = await pool.query(
+    'SELECT category, thread_id FROM image_host_threads WHERE guild_id = $1',
+    [guildId]
+  ).catch(err => {
+    sysWarn('Failed to query image_host_threads for guild rename sync', err);
+    return { rows: [] };
+  });
+
+  if (!res.rows || res.rows.length === 0) return;
+
+  const cleanName = newGuildName.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim() || 'Server';
+  const threadTitle = `${cleanName.slice(0, 60)} (${guildId})`.trim();
+
+  for (const row of res.rows) {
+    const { category, thread_id: threadId } = row;
+    try {
+      const thread = client.channels.cache.get(threadId) || await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || thread.deleted) continue;
+
+      if (thread.archived) {
+        await thread.setArchived(false).catch(() => {});
+      }
+
+      // 1. Update thread title to match the new server name
+      if (thread.name !== threadTitle) {
+        await thread.setName(threadTitle).catch(err => {
+          sysWarn(`Failed to update thread name for ${category} on guild rename`, err);
+        });
+      }
+
+      // 2. Fetch starter message and update Server: line while preserving guild snowflake
+      const starterMsg = await thread.fetchStarterMessage().catch(() => null);
+      if (starterMsg && starterMsg.author?.id === client.user?.id) {
+        let content = starterMsg.content;
+        const serverLineRegex = /\*\*Server:\*\* .+/;
+        const newServerLine = `**Server:** ${newGuildName} (\`${guildId}\`)`;
+
+        if (content && serverLineRegex.test(content)) {
+          content = content.replace(serverLineRegex, newServerLine);
+          await starterMsg.edit({ content }).catch(() => {});
+        } else if (content) {
+          content = `📂 **Asset Storage Thread**\n` +
+            `${newServerLine}\n` +
+            `**Category:** \`${category.toUpperCase()}\`\n` +
+            `*All uploaded ${category} assets for this server will be archived and hosted here.*`;
+          await starterMsg.edit({ content }).catch(() => {});
+        }
+      }
+
+      sysLog('Asset Storage Thread Synced on Rename', {
+        guild: guildId,
+        category,
+        thread: thread.id,
+        detail: `Renamed to: ${threadTitle}`
+      });
+    } catch (err) {
+      sysWarn(`Error syncing thread ${threadId} for category ${category}`, err);
+    }
+  }
+}
+
+/**
  * Upload an asset file or buffer to the guild's dedicated forum thread.
  *
  * @param {import('discord.js').Client} client

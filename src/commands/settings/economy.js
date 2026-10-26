@@ -46,7 +46,7 @@ async function showEconomyDashboard(interaction, view) {
 
     const embed = new EmbedBuilder()
         .setColor(0x2ECC71) // Green
-        .setTitle('Economy Dashboard');
+        .setTitle('Economy');
 
     if (view === 'prices') {
         // --- SMART PRICING VIEW ---

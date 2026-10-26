@@ -89,6 +89,11 @@ export async function showMainMenu(interaction) {
                 emoji: '🏷️'
             },
             {
+                label: 'Chests',
+                value: 'market_chests',
+                emoji: '🎁'
+            },
+            {
                 label: 'Market',
                 value: 'market_market',
                 emoji: '🛒'
@@ -169,8 +174,8 @@ export async function showCoinsSubMenu(interaction) {
     const coinName = await getCurrencyName(interaction.guildId);
 
     const embed = new EmbedBuilder()
-        .setTitle(`${coinName} Management`)
-        .setDescription('Manage your server\'s daily claims and reward modules.')
+        .setTitle(coinName)
+        .setDescription('Configure daily claims and reward modules.')
         .setColor(0x2F3136);
 
     // Row 1: Daily, Quests, Tag, Vote
@@ -371,6 +376,10 @@ export async function handleSettingsComponent(interaction) {
                 case 'market_shop':
                 case 'market_items':
                     return showShopPanel(interaction);
+                case 'market_chests': {
+                    const { handleLootBoxesPage } = await import('./shop-setup.js');
+                    return handleLootBoxesPage(interaction);
+                }
                 case 'market_market':
                 case 'market_coming_soon': {
                     await showMainMenu(interaction);
