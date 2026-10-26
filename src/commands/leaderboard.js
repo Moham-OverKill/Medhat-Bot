@@ -3,11 +3,13 @@ import {
     MessageFlags,
     EmbedBuilder,
     PermissionFlagsBits,
-    ChannelType
+    ChannelType,
+    AttachmentBuilder
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
-import { sendLog, sysError } from '../utils/logger.js';
+import { sendLog, sysError, sysLog } from '../utils/logger.js';
+import { renderLeaderboardCard, LEADERBOARD_THEMES } from '../graphics/leaderboardCard.js';
 
 // Define the /leaderboard command
 export const data = new SlashCommandBuilder()
@@ -175,23 +177,89 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
     const enriched = await Promise.all(slicedData.map(async (item) => {
         const uid = item[userIdKey] || item.userId;
         let name = item.username || 'Unknown';
+        let avatarUrl = null;
+        let roleColor = null;
         try {
             const member = guild.members.cache.get(uid) || await guild.members.fetch(uid).catch(() => null);
             if (member) {
                 name = member.displayName;
+                avatarUrl = member.displayAvatarURL({ extension: 'png', size: 256 });
+                if (member.displayHexColor && member.displayHexColor !== '#000000') {
+                    roleColor = member.displayHexColor;
+                }
             } else {
                 const user = await client.users.fetch(uid).catch(() => null);
-                name = user?.username || item.username || 'Unknown User';
+                name = user?.displayName || user?.username || item.username || 'Unknown User';
+                avatarUrl = user?.displayAvatarURL({ extension: 'png', size: 256 }) || null;
             }
         } catch {
             name = item.username || 'Unknown User';
         }
         // Sanitize name: collapse multiple spaces into one and trim
         const sanitizedName = name.replace(/\s\s+/g, ' ').trim();
-        return { ...item, displayName: sanitizedName, userId: uid };
+        return {
+            ...item,
+            displayName: sanitizedName,
+            userId: uid,
+            avatarUrl,
+            roleColor,
+            accentColor: roleColor
+        };
     }));
 
     return enriched;
+}
+
+/**
+ * Extract custom coin URL from guild config or fallback emoji
+ */
+export function getCustomCoinUrl(config, guildId) {
+    const coinEmojiStr = config?.coin_emoji || COIN_EMOJI.forGuild(guildId) || '';
+    const customEmojiMatch = String(coinEmojiStr).match(/<a?:\w+:(\d{17,20})>/);
+    if (customEmojiMatch && customEmojiMatch[1]) {
+        return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
+    }
+    return null;
+}
+
+/**
+ * Build a rich, mobile-first visual leaderboard message payload (Attachment + Live Countdown Embed)
+ */
+export async function buildLeaderboardMessagePayload({
+    category,
+    data,
+    mvpRecipients = [],
+    nextRefreshTimestamp = null,
+    guildId = null,
+    currencyName = null,
+    customCoinUrl = null
+}) {
+    const theme = LEADERBOARD_THEMES[category] || LEADERBOARD_THEMES.daily_coins;
+    const activeCoinName = currencyName || (guildId ? COIN_NAME.forGuild(guildId) : 'Coins');
+
+    const imageBuffer = await renderLeaderboardCard({
+        category,
+        data,
+        mvpRecipients,
+        currencyName: activeCoinName,
+        customCoinUrl
+    });
+
+    const filename = `${category}_leaderboard.png`;
+    const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
+
+    const embed = new EmbedBuilder()
+        .setColor(parseInt(theme.themeColor.replace('#', ''), 16))
+        .setImage(`attachment://${filename}`);
+
+    if (nextRefreshTimestamp) {
+        embed.setDescription(`⏱️ Next Refresh: **<t:${nextRefreshTimestamp}:R>**`);
+    }
+
+    return {
+        embeds: [embed],
+        files: [attachment]
+    };
 }
 
 /**
@@ -462,34 +530,53 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
     const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) return null;
 
-    let embed;
+    const { getGuildConfig } = await import('../storage/config.js');
+    const guildConfig = await getGuildConfig(guildId) || {};
+    const customCoinUrl = getCustomCoinUrl(guildConfig, guildId);
 
+    let payload;
     if (type === 'daily_coins') {
         const { getTopActiveUsers } = await import('../activity/tracker.js');
         const rawData = await getTopActiveUsers(guildId, 50, guild);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-        const { getGuildConfig } = await import('../storage/config.js');
-        const guildConfig = await getGuildConfig(guildId);
         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
         const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
-        embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true); // True for Live Progress preview
+        payload = await buildLeaderboardMessagePayload({
+            category: 'daily_coins',
+            data: enrichedData,
+            mvpRecipients: liveMvpRecipients,
+            guildId
+        });
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildCoinsEmbed(enrichedData, null, guildId);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'coins',
+            data: enrichedData,
+            guildId,
+            customCoinUrl
+        });
     } else if (type === 'streak') {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildStreakEmbed(enrichedData);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'streak',
+            data: enrichedData,
+            guildId
+        });
     } else if (type === 'level') {
         const rawData = await getTopLevelUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildLevelEmbed(enrichedData);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'level',
+            data: enrichedData,
+            guildId
+        });
     } else {
         return null;
     }
 
-    const msg = await channel.send({ embeds: [embed] });
+    const msg = await channel.send(payload);
     return msg.id;
 }
 
@@ -594,41 +681,63 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
 
         const { getNextCairoHourTimestamp } = await import('../utils/time.js');
         const nextRefreshTimestamp = getNextCairoHourTimestamp();
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guildId) || {};
+        const customCoinUrl = getCustomCoinUrl(guildConfig, guildId);
 
-        let embed;
+        let payload;
         try {
             if (t.type === 'daily_coins') {
-                // FORCE LIVE CONTENT: We ignore historical snapshots to keep it "Today's Race" 24/7
                 const { getTopActiveUsers } = await import('../activity/tracker.js');
                 const rawData = await getTopActiveUsers(guildId, 50, guild);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-                const { getGuildConfig } = await import('../storage/config.js');
-                const guildConfig = await getGuildConfig(guildId);
                 const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
                 const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
-                embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true, nextRefreshTimestamp); 
+                payload = await buildLeaderboardMessagePayload({
+                    category: 'daily_coins',
+                    data: enrichedData,
+                    mvpRecipients: liveMvpRecipients,
+                    nextRefreshTimestamp,
+                    guildId
+                });
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildCoinsEmbed(enrichedData, nextRefreshTimestamp, guildId);
+                payload = await buildLeaderboardMessagePayload({
+                    category: 'coins',
+                    data: enrichedData,
+                    nextRefreshTimestamp,
+                    guildId,
+                    customCoinUrl
+                });
             } else if (t.type === 'streak') {
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildStreakEmbed(enrichedData, nextRefreshTimestamp);
+                payload = await buildLeaderboardMessagePayload({
+                    category: 'streak',
+                    data: enrichedData,
+                    nextRefreshTimestamp,
+                    guildId
+                });
             } else if (t.type === 'level') {
                 const rawData = await getTopLevelUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                embed = buildLevelEmbed(enrichedData, nextRefreshTimestamp);
+                payload = await buildLeaderboardMessagePayload({
+                    category: 'level',
+                    data: enrichedData,
+                    nextRefreshTimestamp,
+                    guildId
+                });
             }
 
             if (messagesIntact && msgMap.get(t.type)) {
-                await msgMap.get(t.type).edit({ embeds: [embed] }).catch(async () => {
-                    const newMsg = await channel.send({ embeds: [embed] });
+                await msgMap.get(t.type).edit(payload).catch(async () => {
+                    const newMsg = await channel.send(payload);
                     config[t.configMsg] = newMsg.id;
                     configUpdated = true;
                 });
             } else {
-                const newMsg = await channel.send({ embeds: [embed] });
+                const newMsg = await channel.send(payload);
                 config[t.configMsg] = newMsg.id;
                 configUpdated = true;
             }
@@ -661,33 +770,53 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) return null;
 
-    let embed;
+    const { getGuildConfig } = await import('../storage/config.js');
+    const guildConfig = await getGuildConfig(guildId) || {};
+    const customCoinUrl = getCustomCoinUrl(guildConfig, guildId);
+
+    let payload;
     if (type === 'activity' || type === 'daily_coins') {
         const { getTopActiveUsers } = await import('../activity/tracker.js');
         const rawData = await getTopActiveUsers(guildId, 50, guild);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
-        const { getGuildConfig } = await import('../storage/config.js');
-        const guildConfig = await getGuildConfig(guildId);
         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
         const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
-        embed = buildDailyActivityEmbed(enrichedData, liveMvpRecipients, true);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'daily_coins',
+            data: enrichedData,
+            mvpRecipients: liveMvpRecipients,
+            guildId
+        });
     } else if (type === 'coins') {
         const rawData = await getTopCoinUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildCoinsEmbed(enrichedData, null, guildId);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'coins',
+            data: enrichedData,
+            guildId,
+            customCoinUrl
+        });
     } else if (type === 'streak') {
         const rawData = await getTopStreakUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildStreakEmbed(enrichedData);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'streak',
+            data: enrichedData,
+            guildId
+        });
     } else if (type === 'level') {
         const rawData = await getTopLevelUsers(guildId);
         const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-        embed = buildLevelEmbed(enrichedData);
+        payload = await buildLeaderboardMessagePayload({
+            category: 'level',
+            data: enrichedData,
+            guildId
+        });
     } else {
         return null;
     }
 
-    const newMessage = await channel.send({ embeds: [embed] });
+    const newMessage = await channel.send(payload);
     return newMessage.id;
 }
 
@@ -715,39 +844,59 @@ async function handleSetup(interaction) {
             level_message_id: null
         };
 
-        // Post initial embeds with live data
+        // Post initial visual leaderboard cards with live data
+        const { getGuildConfig } = await import('../storage/config.js');
+        const guildConfig = await getGuildConfig(guildId) || {};
+        const customCoinUrl = getCustomCoinUrl(guildConfig, guildId);
+
         // Daily - Live Top Active Users
         const { getTopActiveUsers } = await import('../activity/tracker.js');
         const rawActivity = await getTopActiveUsers(guildId, 50, interaction.guild);
         const enrichedActivity = await enrichUserData(interaction.client, guildId, rawActivity, 'userId');
-        const { getGuildConfig } = await import('../storage/config.js');
-        const guildConfig = await getGuildConfig(guildId);
         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
         const liveMvpRecipients = rawActivity.slice(0, winnersCount).map(u => u.userId);
-        const dailyEmbed = buildDailyActivityEmbed(enrichedActivity, liveMvpRecipients, true);
-        const dailyMsg = await dailyChannel.send({ embeds: [dailyEmbed] });
+        const dailyPayload = await buildLeaderboardMessagePayload({
+            category: 'daily_coins',
+            data: enrichedActivity,
+            mvpRecipients: liveMvpRecipients,
+            guildId
+        });
+        const dailyMsg = await dailyChannel.send(dailyPayload);
         config.daily_message_id = dailyMsg.id;
 
         // Coins
         const coinsData = await getTopCoinUsers(guildId);
         const enrichedCoins = await enrichUserData(interaction.client, guildId, coinsData, 'user_id');
-        const coinsEmbed = buildCoinsEmbed(enrichedCoins, null, guildId);
-        const coinsMsg = await coinsChannel.send({ embeds: [coinsEmbed] });
+        const coinsPayload = await buildLeaderboardMessagePayload({
+            category: 'coins',
+            data: enrichedCoins,
+            guildId,
+            customCoinUrl
+        });
+        const coinsMsg = await coinsChannel.send(coinsPayload);
         config.coins_message_id = coinsMsg.id;
 
         // Streak
         const streakData = await getTopStreakUsers(guildId);
         const enrichedStreak = await enrichUserData(interaction.client, guildId, streakData, 'user_id');
-        const streakEmbed = buildStreakEmbed(enrichedStreak);
-        const streakMsg = await streakChannel.send({ embeds: [streakEmbed] });
+        const streakPayload = await buildLeaderboardMessagePayload({
+            category: 'streak',
+            data: enrichedStreak,
+            guildId
+        });
+        const streakMsg = await streakChannel.send(streakPayload);
         config.streak_message_id = streakMsg.id;
 
         // Level (if configured)
         if (levelChannel) {
             const levelData = await getTopLevelUsers(guildId);
             const enrichedLevel = await enrichUserData(interaction.client, guildId, levelData, 'user_id');
-            const levelEmbed = buildLevelEmbed(enrichedLevel);
-            const levelMsg = await levelChannel.send({ embeds: [levelEmbed] });
+            const levelPayload = await buildLeaderboardMessagePayload({
+                category: 'level',
+                data: enrichedLevel,
+                guildId
+            });
+            const levelMsg = await levelChannel.send(levelPayload);
             config.level_message_id = levelMsg.id;
         }
 
