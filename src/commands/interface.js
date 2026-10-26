@@ -24,7 +24,7 @@ import { buildNotificationsPayload } from './notifications.js';
 import { getUserNotificationSettings } from '../storage/notifications.js';
 import { handleInventoryButton, getCoinThumbnailUrl } from './bank.js';
 import { isMemberBooster } from './colors.js';
-import { COIN_EMOJI, COIN_NAME, getCurrencyName, getCurrencyEmoji, safeSetButtonEmoji, getUserDisplayName, getUserLogName, isBackDisabled } from '../shared.js';
+import { COIN_EMOJI, COIN_NAME, getCurrencyName, getCurrencyEmoji, safeSetButtonEmoji, parseSelectEmoji, getUserDisplayName, getUserLogName, isBackDisabled } from '../shared.js';
 import { sendLog, sysLog, sysError, checkChannelPermissions } from '../utils/logger.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -204,6 +204,14 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     emoji: '🛒',
     buttonCustomId: 'admin_hub_shop'
   },
+  chests: {
+    id: 'chests',
+    name: 'Chests',
+    label: 'CHESTS',
+    description: 'Configure lootboxes, prize rates, and drops',
+    emoji: '🎁',
+    buttonCustomId: 'admin_hub_chests'
+  },
   economy: {
     id: 'economy',
     name: 'Economy',
@@ -320,6 +328,7 @@ export function getShortcutMeta(id) {
 }
 
 export function getAdminShortcutMeta(id) {
+  if (id === 'lootboxes') id = 'chests';
   if (id && ADMIN_SHORTCUT_REGISTRY[id]) {
     return ADMIN_SHORTCUT_REGISTRY[id];
   }
@@ -333,6 +342,8 @@ export function normalizeAdminShortcutOrder(order) {
       const id = order[i];
       if (id === 'empty') {
         result[i] = 'empty';
+      } else if (id === 'lootboxes') {
+        result[i] = 'chests';
       } else if (id && ADMIN_SHORTCUT_REGISTRY[id]) {
         result[i] = id;
       } else if (id === undefined) {
@@ -730,6 +741,7 @@ async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#00000
 
   // 1. Emoji / Icon — prominent in center with crisp, refined black outline and clean spacing
   const isCoinSlot = meta.id === 'coins';
+  const isChestSlot = meta.id === 'chests' || meta.id === 'lootboxes';
   const rawEmoji = meta.emoji || '⭐';
 
   const customUrl = parseEmojiImageUrl(rawEmoji);
@@ -750,7 +762,7 @@ async function drawShortcutCard(ctx, x, y, cardW, cardH, meta, bgColor = '#00000
     // If it was supposed to be a custom emoji but fetch failed or is unparseable text, fallback to standard glyph
     let fallbackEmoji = rawEmoji;
     if (customUrl || rawEmoji.includes('<') || rawEmoji.includes('>')) {
-      fallbackEmoji = isCoinSlot ? '🪙' : '⭐';
+      fallbackEmoji = isCoinSlot ? '🪙' : (isChestSlot ? '🎁' : '⭐');
     }
     drawEmojiWithStroke(ctx, fallbackEmoji, x + cardW / 2, emojiCenterY, emojiSize, emojiStrokeWidth);
   }
@@ -1359,6 +1371,19 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
   const guildId = options?.guildId || null;
   const coinName = options?.coinName || (guildId ? await getCurrencyName(guildId) : 'COINS');
   const coinEmoji = options?.coinEmoji || (guildId ? await getCurrencyEmoji(guildId) : '🪙');
+  let lootBoxName = options?.lootBoxName || null;
+  let lootBoxEmoji = options?.lootBoxEmoji || null;
+  if (!lootBoxName || !lootBoxEmoji) {
+    if (guildId) {
+      try {
+        const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+        if (!lootBoxName) lootBoxName = await getLootBoxCategoryName(guildId);
+        if (!lootBoxEmoji) lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+      } catch {}
+    }
+    if (!lootBoxName) lootBoxName = 'Chests';
+    if (!lootBoxEmoji) lootBoxEmoji = '🎁';
+  }
 
   const normalized = normalizeAdminShortcutOrder(shortcutOrder);
   const slotColors = normalizeSlotColors(
@@ -1434,6 +1459,9 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
         if (item.id === 'coins') {
           itemMeta.label = (coinName || 'Coins').toUpperCase();
           itemMeta.emoji = coinEmoji || '🪙';
+        } else if (item.id === 'chests' || item.id === 'lootboxes') {
+          itemMeta.label = (lootBoxName || 'Chests').toUpperCase();
+          itemMeta.emoji = lootBoxEmoji || '🎁';
         }
         await drawShortcutCard(ctx, x, y, cardW, cardH, itemMeta, bgColor);
       }
@@ -1450,7 +1478,7 @@ export function buildAdminHubEmbed() {
     .setImage('attachment://admin_interface.png');
 }
 
-export function buildAdminHubButtons(guildId = null, guild = null, shortcutOrder = null, slotButtonColors = null) {
+export function buildAdminHubButtons(guildId = null, guild = null, shortcutOrder = null, slotButtonColors = null, options = {}) {
   const order = normalizeAdminShortcutOrder(shortcutOrder);
   const buttonColors = normalizeSlotButtonColors(slotButtonColors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS);
   const rows = [];
@@ -1474,6 +1502,8 @@ export function buildAdminHubButtons(guildId = null, guild = null, shortcutOrder
           if (item.id === 'coins' && guildId) {
             const coinEmoji = COIN_EMOJI.forGuild(guildId);
             safeSetButtonEmoji(btn, coinEmoji, guild, '🪙');
+          } else if ((item.id === 'chests' || item.id === 'lootboxes') && options?.lootBoxEmoji) {
+            safeSetButtonEmoji(btn, options.lootBoxEmoji, guild, '🎁');
           } else {
             safeSetButtonEmoji(btn, meta.emoji, guild, '⭐');
           }
@@ -1535,7 +1565,12 @@ export async function publishOrUpdateAdminHub(client, guildId, options = {}) {
     });
     const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_interface.png' });
     const embed = buildAdminHubEmbed();
-    const buttonRows = buildAdminHubButtons(guildId, guild, interfaceConfig.admin_shortcut_order, interfaceConfig.admin_slot_button_colors);
+    let lootBoxEmoji = '🎁';
+    try {
+      const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+      lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+    } catch {}
+    const buttonRows = buildAdminHubButtons(guildId, guild, interfaceConfig.admin_shortcut_order, interfaceConfig.admin_slot_button_colors, { lootBoxEmoji });
     const payload = {
       embeds: [embed],
       components: buttonRows,
@@ -1642,6 +1677,11 @@ export async function handleAdminHubComponent(interaction) {
     case 'admin_hub_shop': {
       const { handleShopSetup } = await import('./shop-setup.js');
       return handleShopSetup(interaction);
+    }
+    case 'admin_hub_chests':
+    case 'admin_hub_lootboxes': {
+      const { handleLootBoxesPage } = await import('./shop-setup.js');
+      return handleLootBoxesPage(interaction);
     }
     case 'admin_hub_moderate':
     case 'admin_hub_users': {
@@ -1976,6 +2016,13 @@ export async function showAdminInterfaceSetup(interaction) {
         if (slotId === 'coins') {
           const coinEmoji = await getCurrencyEmoji(guildId);
           safeSetButtonEmoji(button, coinEmoji, interaction.guild, '🪙');
+        } else if (slotId === 'chests' || slotId === 'lootboxes') {
+          let lootBoxEmoji = '🎁';
+          try {
+            const { getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+            lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+          } catch {}
+          safeSetButtonEmoji(button, lootBoxEmoji, interaction.guild, '🎁');
         } else {
           button.setEmoji(meta.emoji);
         }
@@ -2034,7 +2081,21 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
   const currentMeta = ADMIN_SHORTCUT_REGISTRY[currentId];
   const coinName = await getCurrencyName(guildId);
   const coinEmoji = await getCurrencyEmoji(guildId);
-  const currentLabel = currentMeta ? `${currentId === 'coins' ? coinEmoji : currentMeta.emoji} ${currentId === 'coins' ? coinName : currentMeta.name}` : 'None';
+  let lootBoxName = 'Chests';
+  let lootBoxEmoji = '🎁';
+  try {
+    const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
+    lootBoxName = await getLootBoxCategoryName(guildId);
+    lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
+  } catch {}
+
+  const currentLabel = currentMeta ? (
+    currentId === 'coins'
+      ? `${coinEmoji} ${coinName}`
+      : (currentId === 'chests' || currentId === 'lootboxes')
+        ? `${lootBoxEmoji} ${lootBoxName}`
+        : `${currentMeta.emoji} ${currentMeta.name}`
+  ) : 'None';
 
   const currentColorHex = slotColors[slotIndex] || '#000000';
   const colorMeta = getCardColorMeta(currentColorHex);
@@ -2057,11 +2118,15 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
 
   const moduleOptions = [
     ...Object.values(ADMIN_SHORTCUT_REGISTRY).map(item => ({
-      label: item.id === 'coins' ? coinName : item.name,
+      label: item.id === 'coins' ? coinName : (item.id === 'chests' ? lootBoxName : item.name),
       value: item.id,
       description: item.description,
-      emoji: item.id === 'coins' ? coinEmoji : item.emoji,
-      default: item.id === currentId
+      emoji: item.id === 'coins'
+        ? parseSelectEmoji(coinEmoji, interaction.guild, '🪙')
+        : (item.id === 'chests'
+          ? parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
+          : parseSelectEmoji(item.emoji, interaction.guild, '⭐')),
+      default: item.id === currentId || (item.id === 'chests' && currentId === 'lootboxes')
     })),
     {
       label: 'None',
