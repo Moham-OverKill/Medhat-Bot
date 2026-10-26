@@ -143,6 +143,7 @@ describe('Unified Appearance UI Standardization Suite', () => {
     await handleLootBoxRenameModal(mockInteraction, 42);
     assert.ok(modalShown);
     assert.equal(modalShown.data.title, 'Appearance');
+    assert.ok(modalShown.data.custom_id.startsWith('shop_lb_rename_modal_42_'), 'Modal custom ID must include nonce to prevent client draft caching on Cancel');
   });
 
   it('5. Chests Root Page: Appearance category button and Category rename modal title', async () => {
@@ -179,6 +180,7 @@ describe('Unified Appearance UI Standardization Suite', () => {
     await handleLootBoxRenameCatStart(mockInteraction);
     assert.ok(modalShown);
     assert.equal(modalShown.data.title, 'Appearance');
+    assert.ok(modalShown.data.custom_id.startsWith('shop_lb_rename_cat_modal_'), 'Modal custom ID must include nonce to prevent client draft caching on Cancel');
   });
 
   it('6. Shop Item Details Tab: Appearance button and modal title', async () => {
