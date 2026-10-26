@@ -238,7 +238,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
 
     // Row 3: Coins Selector
     const coinPresets = [
-      { label: `None (0 ${coinName})`, value: '0', emoji: '❌' },
+      { label: 'None', value: '0', emoji: '❌' },
       { label: `50 ${coinName}`, value: '50' },
       { label: `100 ${coinName}`, value: '100' },
       { label: `250 ${coinName}`, value: '250' },
@@ -697,57 +697,57 @@ export async function handlePassComponent(interaction) {
         .setCustomId('pass_xp_threshold_modal_pg_' + page + '_' + Date.now())
         .setTitle('Configure XP');
 
+      const baseInput = new TextInputBuilder()
+        .setCustomId('pass_base_xp_input')
+        .setLabel('Base XP (Level 1)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('100')
+        .setMaxLength(6)
+        .setRequired(false);
+      if (baseXp !== 100) baseInput.setValue(String(baseXp));
+
+      const incInput = new TextInputBuilder()
+        .setCustomId('pass_increment_xp_input')
+        .setLabel('XP Increment per Level (0 = flat)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('50')
+        .setMaxLength(6)
+        .setRequired(false);
+      if (incrementXp !== 50) incInput.setValue(String(incrementXp));
+
+      const msgInput = new TextInputBuilder()
+        .setCustomId('pass_msg_xp_input')
+        .setLabel('Message XP (per valid message)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('1')
+        .setMaxLength(4)
+        .setRequired(false);
+      if (msgXp !== 1) msgInput.setValue(String(msgXp));
+
+      const voiceInput = new TextInputBuilder()
+        .setCustomId('pass_voice_xp_input')
+        .setLabel('Voice XP (per voice minute)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('1')
+        .setMaxLength(4)
+        .setRequired(false);
+      if (voiceXp !== 1) voiceInput.setValue(String(voiceXp));
+
+      const questInput = new TextInputBuilder()
+        .setCustomId('pass_quest_xp_input')
+        .setLabel('Quest Completion XP')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('150')
+        .setMaxLength(6)
+        .setRequired(false);
+      if (questXp !== 150) questInput.setValue(String(questXp));
+
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('pass_base_xp_input')
-            .setLabel('Base XP (Level 1)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('100')
-            .setValue(String(baseXp))
-            .setMaxLength(6)
-            .setRequired(false)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('pass_increment_xp_input')
-            .setLabel('XP Increment per Level (0 = flat)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('50')
-            .setValue(String(incrementXp))
-            .setMaxLength(6)
-            .setRequired(false)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('pass_msg_xp_input')
-            .setLabel('Message XP (per valid message)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('1')
-            .setValue(String(msgXp))
-            .setMaxLength(4)
-            .setRequired(false)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('pass_voice_xp_input')
-            .setLabel('Voice XP (per voice minute)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('1')
-            .setValue(String(voiceXp))
-            .setMaxLength(4)
-            .setRequired(false)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('pass_quest_xp_input')
-            .setLabel('Quest Completion XP')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('150')
-            .setValue(String(questXp))
-            .setMaxLength(6)
-            .setRequired(false)
-        )
+        new ActionRowBuilder().addComponents(baseInput),
+        new ActionRowBuilder().addComponents(incInput),
+        new ActionRowBuilder().addComponents(msgInput),
+        new ActionRowBuilder().addComponents(voiceInput),
+        new ActionRowBuilder().addComponents(questInput)
       );
 
       await interaction.showModal(modal);
@@ -948,8 +948,8 @@ export async function handlePassComponent(interaction) {
           .setCustomId('pass_coins_input')
           .setLabel(`${coinName} reward amount`)
           .setStyle(TextInputStyle.Short)
-          .setPlaceholder('500')
-          .setMinLength(1).setMaxLength(8)
+          .setPlaceholder('None')
+          .setMaxLength(8)
           .setRequired(false);
 
         if (existingCoins !== null && existingCoins > 0) {
@@ -1676,7 +1676,7 @@ export async function handlePassModal(interaction) {
       const page = match ? parseInt(match[2].split('_')[0], 10) : 0;
 
       const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input')?.trim();
-      const coins = (coinsRaw === '' || coinsRaw === undefined) ? 500 : parseInt(coinsRaw, 10);
+      const coins = (coinsRaw === '' || coinsRaw === undefined) ? 0 : parseInt(coinsRaw, 10);
       const coinName = await getCurrencyName(guildId);
       if (isNaN(coins) || coins < 0) {
         return interaction.reply({ content: `❌ ${coinName} amount must be 0 or a positive whole number.`, flags: MessageFlags.Ephemeral });

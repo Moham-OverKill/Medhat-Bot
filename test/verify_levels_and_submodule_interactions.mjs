@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { handlePassComponent, handlePassModal } from '../src/commands/settings/pass.js';
+import { handlePassComponent, handlePassModal, getPassDashboardPayload } from '../src/commands/settings/pass.js';
 import { handleSettingsComponent } from '../src/commands/settings.js';
 import { setMockPool } from '../src/storage/postgres.js';
 import { configCache } from '../src/storage/config.js';
@@ -48,7 +48,7 @@ describe('Levels Dashboard & Submodule Interaction Resilience Suite', () => {
   });
 
   describe('Levels Dashboard Modals (Must NEVER be deferred beforehand)', () => {
-    it('1. pass_set_xp_threshold_pg_ must call showModal without prior deferral', async () => {
+    it('1. pass_set_xp_threshold_pg_ must call showModal without prior deferral and render defaults empty', async () => {
       let deferred = false;
       let modalShown = null;
 
@@ -70,6 +70,53 @@ describe('Levels Dashboard & Submodule Interaction Resilience Suite', () => {
       await handlePassComponent(interaction);
       assert.ok(modalShown, 'showModal must have been called');
       assert.ok(modalShown.data.custom_id.startsWith('pass_xp_threshold_modal_pg_0_'));
+
+      // Check all 5 fields render empty when current value equals default/placeholder
+      const comps = modalShown.components.map(c => c.components[0].data);
+      assert.equal(comps[0].placeholder, '100');
+      assert.equal(comps[0].value, undefined, 'Base XP must be empty when equal to default 100');
+      assert.equal(comps[1].placeholder, '50');
+      assert.equal(comps[1].value, undefined, 'XP Increment must be empty when equal to default 50');
+      assert.equal(comps[2].placeholder, '1');
+      assert.equal(comps[2].value, undefined, 'Message XP must be empty when equal to default 1');
+      assert.equal(comps[3].placeholder, '1');
+      assert.equal(comps[3].value, undefined, 'Voice XP must be empty when equal to default 1');
+      assert.equal(comps[4].placeholder, '150');
+      assert.equal(comps[4].value, undefined, 'Quest XP must be empty when equal to default 150');
+    });
+
+    it('1b. pass_set_xp_threshold_pg_ must auto-fill when current value differs from default', async () => {
+      configCache.set(guildId, {
+        battlepass_enabled: false,
+        battlepass_base_xp: 250,
+        battlepass_xp_increment: 75,
+        battlepass_msg_xp: 3,
+        battlepass_voice_xp: 2,
+        battlepass_quest_xp: 300
+      });
+
+      let modalShown = null;
+      const interaction = {
+        customId: 'pass_set_xp_threshold_pg_0',
+        guildId,
+        user: { id: userId },
+        guild: { id: guildId, roles: { cache: new Map() } },
+        _adminVerified: true,
+        deferred: false,
+        replied: false,
+        deferUpdate: async () => {},
+        showModal: async (m) => { modalShown = m; }
+      };
+
+      await handlePassComponent(interaction);
+      assert.ok(modalShown, 'showModal must have been called');
+
+      const comps = modalShown.components.map(c => c.components[0].data);
+      assert.equal(comps[0].value, '250', 'Base XP must auto-fill when non-default');
+      assert.equal(comps[1].value, '75', 'XP Increment must auto-fill when non-default');
+      assert.equal(comps[2].value, '3', 'Message XP must auto-fill when non-default');
+      assert.equal(comps[3].value, '2', 'Voice XP must auto-fill when non-default');
+      assert.equal(comps[4].value, '300', 'Quest XP must auto-fill when non-default');
     });
 
     it('2. pass_main_select selecting pass_create_level_page_ must call showModal without prior deferral', async () => {
@@ -97,7 +144,7 @@ describe('Levels Dashboard & Submodule Interaction Resilience Suite', () => {
       assert.ok(modalShown.data.custom_id.startsWith('pass_create_lvl_modal_pg_0_'));
     });
 
-    it('3. pass_coins_select_lvl_ selecting custom must call showModal without prior deferral', async () => {
+    it('3. pass_coins_select_lvl_ selecting custom must call showModal with None placeholder and not required', async () => {
       let deferred = false;
       let modalShown = null;
 
@@ -120,6 +167,11 @@ describe('Levels Dashboard & Submodule Interaction Resilience Suite', () => {
       await handlePassComponent(interaction);
       assert.ok(modalShown, 'showModal must have been called');
       assert.ok(modalShown.data.custom_id.startsWith('pass_set_coins_modal_1_pg_0_'));
+
+      const input = modalShown.components[0].components[0].data;
+      assert.equal(input.placeholder, 'None', 'Placeholder must be strictly "None"');
+      assert.equal(input.required, false, 'Input must not be required');
+      assert.equal(input.min_length, undefined, 'min_length must not be set so empty submit is accepted by Discord');
     });
 
     it('4. pass_rewards_select_lvl_ selecting an item must call showModal without prior deferral', async () => {
@@ -571,6 +623,51 @@ describe('Levels Dashboard & Submodule Interaction Resilience Suite', () => {
       await handlePassModal(interaction);
       assert.equal(upserted, true, 'Submitting positive number must upsert reward');
       assert.equal(savedQty, 7, 'Quantity must be saved as 7');
+    });
+
+    it('should set reward_coins to 0 when Custom Coins modal is submitted empty', async () => {
+      let savedCoins = null;
+
+      setMockPool({
+        query: async (sql, params) => {
+          if (sql.includes('INSERT INTO battlepass_config')) {
+            savedCoins = params[2]; // reward_coins parameter
+            return { rowCount: 1 };
+          }
+          if (sql.includes('FROM battlepass_config')) {
+            return { rows: [{ level: 1, reward_coins: 0, reward_role_id: null }] };
+          }
+          if (sql.includes('FROM battlepass_rewards')) {
+            return { rows: [] };
+          }
+          return { rows: [], rowCount: 0 };
+        }
+      });
+
+      const interaction = {
+        customId: `pass_set_coins_modal_1_pg_0_${Date.now()}`,
+        guildId,
+        user: { id: userId },
+        guild: { id: guildId, roles: { cache: new Map() } },
+        fields: {
+          getTextInputValue: () => '' // empty
+        },
+        deferred: false,
+        replied: false,
+        deferUpdate: async () => {},
+        editReply: async () => {}
+      };
+
+      await handlePassModal(interaction);
+      assert.equal(savedCoins, 0, 'Submitting empty string must set coins to 0 (None)');
+    });
+
+    it('should label the None option in coins menu as strictly "None"', async () => {
+      const payload = await getPassDashboardPayload(guildId, 0, 1);
+      // Row 3 is coins selector
+      const options = payload.components[2].components[0].toJSON().options;
+      assert.equal(options[0].label, 'None', 'First option in coins menu must be "None" without extra hints');
+      assert.equal(options[0].value, '0');
     });
   });
 });
