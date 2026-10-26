@@ -16,7 +16,7 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
     assert.equal(nullUrl, null);
   });
 
-  await t.test('buildLeaderboardMessagePayload should assemble Discord embed and 2x image attachment', async () => {
+  await t.test('buildLeaderboardMessagePayload should assemble standalone image attachment and live countdown text', async () => {
     const timestamp = Math.floor(Date.now() / 1000) + 3600;
     const sampleData = [
       { userId: '101', displayName: 'Apex Warrior', score: 25000, roleColor: '#FFD700' },
@@ -33,17 +33,11 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
       guildId: 'guild_123'
     });
 
-    assert.ok(payload.embeds && payload.embeds.length === 1, 'Must include 1 embed');
     assert.ok(payload.files && payload.files.length === 1, 'Must include 1 image attachment');
+    assert.deepEqual(payload.embeds, [], 'Embeds array must be empty to display standalone full-width image');
+    assert.ok(payload.content && payload.content.includes(`<t:${timestamp}:R>`), 'Message content must contain live relative timestamp');
 
-    const embed = payload.embeds[0];
     const attachment = payload.files[0];
-
-    // Verify externalized live timestamp
-    assert.ok(embed.data.description.includes(`<t:${timestamp}:R>`), 'Embed must contain live relative timestamp');
-
-    // Verify embed image is bound to attachment
-    assert.equal(embed.data.image.url, 'attachment://daily_coins_leaderboard.png');
 
     // Verify attachment buffer
     assert.equal(attachment.name, 'daily_coins_leaderboard.png');
