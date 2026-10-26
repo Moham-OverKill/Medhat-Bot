@@ -11,7 +11,8 @@ import {
   safeFirstChar,
   normalizeDisplayName,
   fetchImageSafe,
-  formatCompactNumber
+  formatCompactNumber,
+  extractDominantColor
 } from './shared.js';
 
 /**
@@ -274,8 +275,9 @@ export async function renderLeaderboardCard({
       const cardY = isCenter ? currentY : currentY + 8;
       const cardH = isCenter ? podiumH : podiumH - 8;
 
-      // Dynamic color adoption: adopt custom profile / role color if available, fallback to gold/silver/bronze
-      const userColor = item.accentColor || item.roleColor || defaultColor;
+      // Dynamic color adoption: prioritize avatar dominant color, fallback to role color or gold/silver/bronze
+      const dominantColor = extractDominantColor(avatarImg);
+      const userColor = dominantColor || item.roleColor || defaultColor;
 
       // Card Background with dynamic user tint
       roundRect(ctx, cardX, cardY, podiumCardW, cardH, 14);
@@ -397,8 +399,9 @@ export async function renderLeaderboardCard({
       const avatarImg = avatarImgs[hasPodium ? idx + 3 : idx];
       const curY = currentY + idx * (rowH + rowGap);
 
-      // Dynamic color parity with profile/role color
-      const userColor = item.accentColor || item.roleColor || theme.themeColor;
+      // Dynamic color adoption: prioritize avatar dominant color, fallback to role color or theme color
+      const dominantColor = extractDominantColor(avatarImg);
+      const userColor = dominantColor || item.roleColor || theme.themeColor;
 
       // Row container with subtle dynamic tint
       roundRect(ctx, padX, curY, rowW, rowH, 10);

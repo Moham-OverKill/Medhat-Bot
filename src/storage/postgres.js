@@ -742,12 +742,16 @@ async function createTables() {
       CREATE TABLE IF NOT EXISTS leaderboard_config (
         guild_id TEXT PRIMARY KEY,
         daily_channel_id TEXT,
+        daily_title_message_id TEXT,
         daily_message_id TEXT,
         coins_channel_id TEXT,
+        coins_title_message_id TEXT,
         coins_message_id TEXT,
         streak_channel_id TEXT,
+        streak_title_message_id TEXT,
         streak_message_id TEXT,
         level_channel_id TEXT,
+        level_title_message_id TEXT,
         level_message_id TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -1391,6 +1395,12 @@ async function createTables() {
     // Level Leaderboard migration
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_channel_id TEXT`).catch(() => {});
     await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_message_id TEXT`).catch(() => {});
+
+    // Decoupled Leaderboard Title Messages migration
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS daily_title_message_id TEXT`).catch(() => {});
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS coins_title_message_id TEXT`).catch(() => {});
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS streak_title_message_id TEXT`).catch(() => {});
+    await pool.query(`ALTER TABLE leaderboard_config ADD COLUMN IF NOT EXISTS level_title_message_id TEXT`).catch(() => {});
 
     // Guild currency name and emoji columns migration
     await pool.query(`ALTER TABLE guild_configs ADD COLUMN IF NOT EXISTS coin_name VARCHAR(64) DEFAULT 'Coins'`).catch(() => {});
