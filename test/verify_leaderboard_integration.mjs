@@ -16,7 +16,7 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
     assert.equal(nullUrl, null);
   });
 
-  await t.test('buildLeaderboardMessagePayload should assemble title embed and unconstrained image attachment with no timer', async () => {
+  await t.test('buildLeaderboardMessagePayload should assemble # title header content and unconstrained image attachment with no embed and no timer', async () => {
     const sampleData = [
       { userId: '101', displayName: 'Apex Warrior', score: 25000, roleColor: '#FFD700' },
       { userId: '102', displayName: 'Cyber Knight', score: 18000, roleColor: '#00E5FF' },
@@ -32,12 +32,10 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
     });
 
     assert.ok(payload.files && payload.files.length === 1, 'Must include 1 image attachment');
-    assert.ok(payload.embeds && payload.embeds.length === 1, 'Must include 1 title embed');
-    assert.equal(payload.content, undefined, 'Must not include countdown or content text');
-
-    const embed = payload.embeds[0];
-    assert.ok(embed.data.title.includes('MVP CHAMPIONS'), 'Embed must feature category title');
-    assert.equal(embed.data.image, undefined, 'Image must not be bound inside the embed');
+    assert.ok(Array.isArray(payload.embeds) && payload.embeds.length === 0, 'Must have zero embeds');
+    assert.ok(typeof payload.content === 'string' && payload.content.startsWith('# '), 'Must start with # for large markdown title');
+    assert.ok(payload.content.includes('MVP CHAMPIONS'), 'Must feature category title in content');
+    assert.ok(!payload.content.includes('<t:'), 'Must not include countdown or relative timer');
 
     const attachment = payload.files[0];
 

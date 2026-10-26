@@ -90,7 +90,7 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
             components.push(new ActionRowBuilder().addComponents(backButton));
         } else {
             // Main View: 4 Select Menus (Rows 1-4) with 3 options each
-            const nonce = Date.now();
+            const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
             for (const cat of Object.values(categories)) {
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`lb_menu_${cat.id}_${nonce}`)
@@ -99,17 +99,20 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
                         {
                             label: 'Select A Channel',
                             value: 'channel',
-                            emoji: '💬'
+                            emoji: '💬',
+                            default: false
                         },
                         {
                             label: 'Force Refresh',
                             value: 'refresh',
-                            emoji: '🔁'
+                            emoji: '🔁',
+                            default: false
                         },
                         {
                             label: 'Disable',
                             value: 'disable',
-                            emoji: '❌'
+                            emoji: '❌',
+                            default: false
                         }
                     ]);
                 components.push(new ActionRowBuilder().addComponents(menu));
@@ -170,7 +173,6 @@ export async function handleLeaderboardMenuAction(interaction) {
         }
 
         if (action === 'refresh') {
-            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
             const config = await getLeaderboardConfig(guildId) || {};
             const chanId = config[cat.dbId];
 
@@ -178,8 +180,12 @@ export async function handleLeaderboardMenuAction(interaction) {
                 return handleLeaderboardSettings(interaction, cat.id, null, `Please assign a channel for **${cat.name}** leaderboard first before refreshing.`);
             }
 
+            // Immediately reset the settings panel UI so the select menu snaps back to placeholder instantly
+            await handleLeaderboardSettings(interaction);
+
+            // Synchronize roles and trigger visual leaderboard card update
             await handleLeaderboardRefresh(interaction, cat.id);
-            return handleLeaderboardSettings(interaction);
+            return;
         }
 
         if (action === 'disable') {
@@ -315,7 +321,9 @@ export async function handleLeaderboardRefresh(interaction, targetCategory = nul
         );
     } catch (error) {
         sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Leaderboard Refresh');
+        if (!interaction.replied) {
+            return handleInteractionError(interaction, error, 'Leaderboard Refresh');
+        }
     }
 }
 
