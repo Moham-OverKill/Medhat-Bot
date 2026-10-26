@@ -416,7 +416,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`colors_preview_back_${type}`)
-        .setLabel('Back to Colors')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
@@ -454,7 +454,7 @@ export async function showColorDeployPreview(interaction, type = 'normal', targe
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`colors_preview_back_${type}`)
-        .setLabel('Back to Colors')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     );
@@ -654,7 +654,7 @@ async function deployColorPanels(interaction, type, channelId) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back to Colors')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
         )
@@ -674,7 +674,7 @@ async function deployColorPanels(interaction, type, channelId) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back to Colors')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
         )
@@ -708,7 +708,7 @@ async function deployColorPanels(interaction, type, channelId) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back to Colors')
+            .setLabel('Back')
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
         )
@@ -750,7 +750,7 @@ async function deployColorPanels(interaction, type, channelId) {
           new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId(`colors_preview_back_${type}`)
-              .setLabel('Back to Colors')
+              .setLabel('Back')
               .setEmoji('⬅️')
               .setStyle(ButtonStyle.Secondary)
           )
@@ -773,7 +773,7 @@ async function deployColorPanels(interaction, type, channelId) {
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`colors_preview_back_${type}`)
-      .setLabel('Back to Colors')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );

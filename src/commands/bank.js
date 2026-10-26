@@ -2352,7 +2352,7 @@ export async function handleInventoryAction(interaction) {
         resultRow.addComponents(
           new ButtonBuilder()
             .setCustomId('bank_inventory')
-            .setLabel('Back to Inventory')
+            .setLabel('Back')
             .setEmoji('🎒')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
@@ -2365,7 +2365,7 @@ export async function handleInventoryAction(interaction) {
         resultRow.addComponents(
           new ButtonBuilder()
             .setCustomId('bank_inventory')
-            .setLabel('Back to Inventory')
+            .setLabel('Back')
             .setEmoji('🎒')
             .setStyle(ButtonStyle.Secondary)
         );
@@ -2544,7 +2544,7 @@ export async function handleInventoryAction(interaction) {
         const backRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('bank_inventory')
-            .setLabel('Back to Inventory')
+            .setLabel('Back')
             .setEmoji('\uD83C\uDF92')
             .setStyle(ButtonStyle.Secondary)
         );
