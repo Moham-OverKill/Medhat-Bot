@@ -14,8 +14,31 @@ import {
 } from './shared.js';
 
 /**
+ * Centered emoji rendering with exact glyph bounding-box math.
+ * Resolves font-baseline and asymmetric glyph ascent/descent offsets.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} emoji
+ * @param {number} centerX
+ * @param {number} centerY
+ * @param {string} font
+ */
+export function drawCenteredEmoji(ctx, emoji, centerX, centerY, font) {
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#FFFFFF';
+  const m = ctx.measureText(emoji);
+  const drawX = centerX - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2;
+  const drawY = centerY + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  ctx.fillText(emoji, drawX, drawY);
+  ctx.restore();
+}
+
+/**
  * Auto-scale text within maxWidth by dynamically decreasing font size.
- * Prevents text overflow without abruptly truncating with an ellipsis.
+ * If text is still too long at minFontSize, safely truncates with standard "...".
  * 
  * @param {CanvasRenderingContext2D} ctx
  * @param {string} text
@@ -25,9 +48,9 @@ import {
  * @param {number} maxFontSize
  * @param {number} minFontSize
  * @param {boolean} bold
- * @returns {number} The actual font size used
+ * @returns {{ size: number, text: string }}
  */
-export function drawFittedText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 13, bold = true) {
+export function drawFittedText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 12, bold = true) {
   let size = maxFontSize;
   const stack = bold ? boldFontStack : fontStack;
   ctx.font = `${bold ? 'bold ' : ''}${size}px ${stack}`;
@@ -37,13 +60,12 @@ export function drawFittedText(ctx, text, x, y, maxWidth, maxFontSize, minFontSi
     ctx.font = `${bold ? 'bold ' : ''}${size}px ${stack}`;
   }
 
-  // If even at minFontSize it still overflows slightly, perform safety truncation
   let finalText = text;
   if (ctx.measureText(finalText).width > maxWidth) {
-    while (ctx.measureText(finalText + '…').width > maxWidth && finalText.length > 0) {
+    while (ctx.measureText(finalText + '...').width > maxWidth && finalText.length > 0) {
       finalText = finalText.slice(0, -1);
     }
-    finalText += '…';
+    finalText += '...';
   }
 
   ctx.fillText(finalText, x, y);
@@ -141,27 +163,27 @@ export async function renderLeaderboardCard({
     ...slicedData.map(item => (item.avatarUrl ? fetchImageSafe(item.avatarUrl) : Promise.resolve(null)))
   ]);
 
-  // Dimensions & Retina scale
-  const baseWidth = 960;
-  const scale = 2; // 2x Retina super-sampling
-  const padX = 36;
-  const padY = 32;
+  // Fixed uniform dimensions & 2x Retina scale (optimized for Discord mobile display)
+  const baseWidth = 680;
+  const scale = 2;
+  const padX = 18;
+  const padY = 18;
 
   // Dynamic layout calculations
-  const headerH = 84;
+  const headerH = 68;
   const hasPodium = count >= 3;
-  const podiumH = hasPodium ? 248 : 0;
-  const podiumMarginBottom = hasPodium ? 20 : 0;
+  const podiumH = hasPodium ? 218 : 0;
+  const podiumMarginBottom = hasPodium ? 14 : 0;
 
   const rowCount = hasPodium ? count - 3 : count;
-  const rowH = 56;
-  const rowGap = 10;
+  const rowH = 48;
+  const rowGap = 7;
   const rowsSectionH = rowCount > 0 ? (rowCount * rowH + (rowCount - 1) * rowGap) : 0;
 
   // Determine overall base height
   let baseHeight;
   if (count === 0) {
-    baseHeight = padY + headerH + 200 + padY; // Empty state height
+    baseHeight = padY + headerH + 180 + padY; // Empty state height
   } else {
     baseHeight = padY + headerH + (hasPodium ? podiumH + podiumMarginBottom : 0) + rowsSectionH + padY;
   }
@@ -173,7 +195,7 @@ export async function renderLeaderboardCard({
   ctx.imageSmoothingQuality = 'high';
 
   // 1. Transparent Rounded Card Background
-  const cardRadius = 24;
+  const cardRadius = 20;
   ctx.save();
   roundRect(ctx, 0, 0, baseWidth, baseHeight, cardRadius);
   ctx.clip();
@@ -186,16 +208,16 @@ export async function renderLeaderboardCard({
   ctx.fillRect(0, 0, baseWidth, baseHeight);
 
   // Top header ambient glow matching theme color
-  const glowGrad = ctx.createRadialGradient(baseWidth / 2, 40, 10, baseWidth / 2, 40, 420);
+  const glowGrad = ctx.createRadialGradient(baseWidth / 2, 30, 10, baseWidth / 2, 30, 360);
   glowGrad.addColorStop(0, hexToRgba(theme.themeColor, 0.22));
   glowGrad.addColorStop(1, 'transparent');
   ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, baseWidth, 240);
+  ctx.fillRect(0, 0, baseWidth, 200);
 
   ctx.restore();
 
-  // 2. Outer Card Border
-  const borderThickness = 4;
+  // 2. Outer Card Border (Trimmed and clean)
+  const borderThickness = 3;
   const halfBorder = borderThickness / 2;
   roundRect(ctx, halfBorder, halfBorder, baseWidth - borderThickness, baseHeight - borderThickness, cardRadius - halfBorder);
   ctx.strokeStyle = hexToRgba(theme.themeColor, 0.7);
@@ -204,56 +226,54 @@ export async function renderLeaderboardCard({
 
   // 3. Clean Header (Category Icon + Main Title only, zero subheaders/timers)
   const headerY = padY;
-  const iconSize = 56;
+  const iconSize = 50;
 
   // Icon container
-  roundRect(ctx, padX, headerY, iconSize, iconSize, 16);
+  roundRect(ctx, padX, headerY, iconSize, iconSize, 14);
   ctx.fillStyle = hexToRgba(theme.themeColor, 0.16);
   ctx.fill();
-  ctx.strokeStyle = hexToRgba(theme.themeColor, 0.45);
+  ctx.strokeStyle = hexToRgba(theme.themeColor, 0.5);
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Draw category icon: fills the whole box prominently
+  const iconCenterX = padX + iconSize / 2;
+  const iconCenterY = headerY + iconSize / 2;
+
+  // Draw category icon: mathematically centered horizontally and vertically
   if (theme.isCoin && (customCoinImg || customCoinUrl)) {
     if (customCoinImg) {
-      ctx.drawImage(customCoinImg, padX + 5, headerY + 5, iconSize - 10, iconSize - 10);
+      const coinPad = 7;
+      ctx.drawImage(customCoinImg, padX + coinPad, headerY + coinPad, iconSize - coinPad * 2, iconSize - coinPad * 2);
     } else {
-      drawVectorCoin(ctx, padX + iconSize / 2, headerY + iconSize / 2, (iconSize - 6) / 2);
+      drawVectorCoin(ctx, iconCenterX, iconCenterY, (iconSize - 8) / 2);
     }
   } else {
-    ctx.save();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = `44px ${fontStack}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(theme.iconEmoji, padX + iconSize / 2, headerY + iconSize / 2 + 1);
-    ctx.restore();
+    drawCenteredEmoji(ctx, theme.iconEmoji, iconCenterX, iconCenterY, `38px ${fontStack}`);
   }
 
   // Clean, massive main title
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold 30px ${boldFontStack}`;
-  ctx.fillText(theme.title, padX + iconSize + 16, headerY + iconSize / 2);
+  ctx.font = `bold 26px ${boldFontStack}`;
+  ctx.fillText(theme.title, padX + iconSize + 14, headerY + iconSize / 2);
 
   // Header separator line
-  const headerBottomY = headerY + iconSize + 16;
+  const headerBottomY = headerY + iconSize + 12;
   ctx.beginPath();
   ctx.moveTo(padX, headerBottomY);
   ctx.lineTo(baseWidth - padX, headerBottomY);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   // Empty State Handling
   if (count === 0) {
-    const emptyBoxY = headerBottomY + 28;
-    const emptyBoxH = 140;
+    const emptyBoxY = headerBottomY + 20;
+    const emptyBoxH = 120;
     const emptyBoxW = baseWidth - padX * 2;
 
-    roundRect(ctx, padX, emptyBoxY, emptyBoxW, emptyBoxH, 16);
+    roundRect(ctx, padX, emptyBoxY, emptyBoxW, emptyBoxH, 14);
     ctx.fillStyle = 'rgba(11, 17, 26, 0.7)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
@@ -262,20 +282,23 @@ export async function renderLeaderboardCard({
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `bold 18px ${boldFontStack}`;
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText('No rankings recorded yet for this category.', baseWidth / 2, emptyBoxY + emptyBoxH / 2);
+    ctx.fillStyle = '#64748B';
+    ctx.font = `bold 16px ${boldFontStack}`;
+    ctx.fillText('NO LEADERBOARD STANDINGS RECORDED YET', baseWidth / 2, emptyBoxY + 50);
 
-    const buffer = await canvas.encode('png');
-    return buffer;
+    ctx.fillStyle = '#475569';
+    ctx.font = `13px ${fontStack}`;
+    ctx.fillText('Standings will automatically compute upon user server activities.', baseWidth / 2, emptyBoxY + 75);
+
+    return canvas.encode('png');
   }
 
-  // 4. Top 3 Tournament Podium Section (When count >= 3)
-  let currentY = headerBottomY + 18;
+  let currentY = headerBottomY + 12;
 
+  // 4. Top 3 Tournament Podium Section
   if (hasPodium) {
-    const podiumCardW = 284;
-    const podiumGap = 18;
+    const podiumGap = 10;
+    const podiumCardW = (baseWidth - padX * 2 - podiumGap * 2) / 3;
 
     // Podium order: [ #2 Silver on Left, #1 Champion in Center, #3 Bronze on Right ]
     const podiumList = [
@@ -306,25 +329,19 @@ export async function renderLeaderboardCard({
     ];
 
     podiumList.forEach((podium, idx) => {
-      const { rank, label, defaultColor, item, avatarImg, isCenter } = podium;
+      const { label, defaultColor, item, avatarImg, isCenter } = podium;
       const cardX = padX + idx * (podiumCardW + podiumGap);
-      const cardY = isCenter ? currentY : currentY + 12;
-      const cardH = isCenter ? podiumH : podiumH - 12;
+      const cardY = isCenter ? currentY : currentY + 10;
+      const cardH = isCenter ? podiumH : podiumH - 10;
 
       // Dynamic color adoption: adopt custom profile / role color if available, fallback to gold/silver/bronze
       const userColor = item.accentColor || item.roleColor || defaultColor;
-      const isWinner = mvpRecipients.includes(item.userId || item.user_id);
 
       // Card Background with dynamic user tint
-      roundRect(ctx, cardX, cardY, podiumCardW, cardH, 18);
+      roundRect(ctx, cardX, cardY, podiumCardW, cardH, 16);
       const cardBgGrad = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
-      if (isCenter) {
-        cardBgGrad.addColorStop(0, hexToRgba(userColor, 0.22));
-        cardBgGrad.addColorStop(1, '#0C111A');
-      } else {
-        cardBgGrad.addColorStop(0, hexToRgba(userColor, 0.12));
-        cardBgGrad.addColorStop(1, '#090D14');
-      }
+      cardBgGrad.addColorStop(0, hexToRgba(userColor, isCenter ? 0.22 : 0.1));
+      cardBgGrad.addColorStop(1, '#090D14');
       ctx.fillStyle = cardBgGrad;
       ctx.fill();
 
@@ -332,38 +349,38 @@ export async function renderLeaderboardCard({
       ctx.save();
       if (isCenter) {
         ctx.shadowColor = hexToRgba(userColor, 0.45);
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = 14;
       }
-      roundRect(ctx, cardX, cardY, podiumCardW, cardH, 18);
-      ctx.strokeStyle = hexToRgba(userColor, isCenter ? 0.9 : 0.5);
+      roundRect(ctx, cardX, cardY, podiumCardW, cardH, 16);
+      ctx.strokeStyle = hexToRgba(userColor, isCenter ? 0.9 : 0.45);
       ctx.lineWidth = isCenter ? 2.5 : 1.5;
       ctx.stroke();
       ctx.restore();
 
       // Streamlined Rank Badge (#1, #2, #3) centered on top border
-      const badgeW = isCenter ? 76 : 68;
-      const badgeH = 26;
+      const badgeW = isCenter ? 66 : 58;
+      const badgeH = 22;
       const badgeX = cardX + (podiumCardW - badgeW) / 2;
-      const badgeY = cardY - 13;
+      const badgeY = cardY - 11;
 
-      roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 13);
+      roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 11);
       ctx.fillStyle = userColor;
       ctx.fill();
       ctx.strokeStyle = '#080B10';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      ctx.font = `bold ${isCenter ? 15 : 14}px ${boldFontStack}`;
+      ctx.font = `bold ${isCenter ? 14 : 12}px ${boldFontStack}`;
       ctx.fillStyle = '#080B10';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
       // Large Avatar Portrait (Scaled up for mobile readability, guaranteed circle)
-      const avatarD = isCenter ? 86 : 74;
+      const avatarD = isCenter ? 76 : 66;
       const avatarR = avatarD / 2;
       const avatarCenterX = cardX + podiumCardW / 2;
-      const avatarCenterY = cardY + (isCenter ? 70 : 64);
+      const avatarCenterY = cardY + (isCenter ? 62 : 56);
 
       ctx.save();
       ctx.beginPath();
@@ -376,7 +393,7 @@ export async function renderLeaderboardCard({
       } else {
         ctx.fillStyle = '#1E293B';
         ctx.fillRect(avatarCenterX - avatarR, avatarCenterY - avatarR, avatarD, avatarD);
-        ctx.font = `bold ${isCenter ? 34 : 28}px ${boldFontStack}`;
+        ctx.font = `bold ${isCenter ? 30 : 26}px ${boldFontStack}`;
         ctx.fillStyle = userColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -389,36 +406,35 @@ export async function renderLeaderboardCard({
       ctx.beginPath();
       ctx.arc(avatarCenterX, avatarCenterY, avatarR, 0, Math.PI * 2);
       ctx.strokeStyle = userColor;
-      ctx.lineWidth = isCenter ? 3.5 : 2.5;
+      ctx.lineWidth = isCenter ? 3 : 2;
       ctx.stroke();
       ctx.restore();
 
       // Display Name Only (Server nickname) with auto-scaling to eliminate truncation/overflow
-      const nameY = cardY + (isCenter ? 142 : 132);
-      const maxNameWidth = podiumCardW - 24;
+      const nameY = cardY + (isCenter ? 124 : 114);
+      const maxNameWidth = podiumCardW - 16;
       const rawName = item.displayName || 'Unknown';
-      const nameToDisplay = rawName;
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#FFFFFF';
-      drawFittedText(ctx, nameToDisplay, avatarCenterX, nameY, maxNameWidth, isCenter ? 22 : 19, 13, true);
+      drawFittedText(ctx, rawName, avatarCenterX, nameY, maxNameWidth, isCenter ? 18 : 16, 12, true);
 
       // Highlighted Value Capsule Pill
       const valText = formatLeaderboardValue(item, theme, currencyName);
-      const valPillW = Math.min(podiumCardW - 24, Math.max(140, ctx.measureText(valText).width + 36));
-      const valPillH = isCenter ? 36 : 32;
+      ctx.font = `bold ${isCenter ? 14 : 12}px ${boldFontStack}`;
+      const valPillW = Math.min(podiumCardW - 16, Math.max(110, ctx.measureText(valText).width + 24));
+      const valPillH = isCenter ? 32 : 28;
       const valPillX = cardX + (podiumCardW - valPillW) / 2;
-      const valPillY = cardY + cardH - valPillH - (isCenter ? 18 : 14);
+      const valPillY = cardY + cardH - valPillH - (isCenter ? 14 : 12);
 
-      roundRect(ctx, valPillX, valPillY, valPillW, valPillH, 10);
+      roundRect(ctx, valPillX, valPillY, valPillW, valPillH, 8);
       ctx.fillStyle = hexToRgba(userColor, 0.18);
       ctx.fill();
       ctx.strokeStyle = hexToRgba(userColor, 0.45);
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.font = `bold ${isCenter ? 16 : 14}px ${boldFontStack}`;
       ctx.fillStyle = userColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -443,7 +459,6 @@ export async function renderLeaderboardCard({
 
       // Dynamic color parity with profile/role color
       const userColor = item.accentColor || item.roleColor || theme.themeColor;
-      const isWinner = mvpRecipients.includes(item.userId || item.user_id);
 
       // Row container with subtle dynamic tint
       roundRect(ctx, padX, curY, rowW, rowH, 12);
@@ -454,28 +469,28 @@ export async function renderLeaderboardCard({
       ctx.stroke();
 
       // Rank Pill Badge on Left
-      const rankPillW = 44;
-      const rankPillH = 34;
-      const rankPillX = padX + 10;
+      const rankPillW = 38;
+      const rankPillH = 30;
+      const rankPillX = padX + 8;
       const rankPillY = curY + (rowH - rankPillH) / 2;
 
-      roundRect(ctx, rankPillX, rankPillY, rankPillW, rankPillH, 8);
+      roundRect(ctx, rankPillX, rankPillY, rankPillW, rankPillH, 6);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.fill();
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.font = `bold 16px ${boldFontStack}`;
+      ctx.font = `bold 14px ${boldFontStack}`;
       ctx.fillStyle = '#94A3B8';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(rankStr, rankPillX + rankPillW / 2, rankPillY + rankPillH / 2);
 
-      // Scaled Up Circular User Avatar (40px)
-      const avatarD = 40;
+      // Scaled Up Circular User Avatar (34px)
+      const avatarD = 34;
       const avatarR = avatarD / 2;
-      const avatarCenterX = padX + 76 + avatarR;
+      const avatarCenterX = rankPillX + rankPillW + 8 + avatarR;
       const avatarCenterY = curY + rowH / 2;
 
       ctx.save();
@@ -488,7 +503,7 @@ export async function renderLeaderboardCard({
       } else {
         ctx.fillStyle = '#1E293B';
         ctx.fillRect(avatarCenterX - avatarR, avatarCenterY - avatarR, avatarD, avatarD);
-        ctx.font = `bold 18px ${boldFontStack}`;
+        ctx.font = `bold 15px ${boldFontStack}`;
         ctx.fillStyle = userColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -500,40 +515,39 @@ export async function renderLeaderboardCard({
       ctx.beginPath();
       ctx.arc(avatarCenterX, avatarCenterY, avatarR, 0, Math.PI * 2);
       ctx.strokeStyle = hexToRgba(userColor, 0.6);
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
       // Right-Aligned Metric Capsule
       const valText = formatLeaderboardValue(item, theme, currencyName);
-      ctx.font = `bold 15px ${boldFontStack}`;
+      ctx.font = `bold 13px ${boldFontStack}`;
       const measuredValW = ctx.measureText(valText).width;
-      const scoreBadgeW = Math.max(120, measuredValW + 28);
-      const scoreBadgeH = 34;
-      const scoreBadgeX = padX + rowW - scoreBadgeW - 12;
+      const scoreBadgeW = Math.max(96, measuredValW + 22);
+      const scoreBadgeH = 30;
+      const scoreBadgeX = padX + rowW - scoreBadgeW - 8;
       const scoreBadgeY = curY + (rowH - scoreBadgeH) / 2;
 
       roundRect(ctx, scoreBadgeX, scoreBadgeY, scoreBadgeW, scoreBadgeH, 8);
-      ctx.fillStyle = hexToRgba(userColor, 0.12);
+      ctx.fillStyle = hexToRgba(userColor, 0.15);
       ctx.fill();
-      ctx.strokeStyle = hexToRgba(userColor, 0.3);
+      ctx.strokeStyle = hexToRgba(userColor, 0.35);
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = userColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(valText, scoreBadgeX + scoreBadgeW / 2, scoreBadgeY + scoreBadgeH / 2);
 
-      // Server Display Name Only (Zero Subheaders/Handles) with Auto-Scaling
-      const nameStartX = avatarCenterX + avatarR + 16;
-      const maxNameWidth = scoreBadgeX - nameStartX - 16;
+      // Server Display Name: clean scale down and "..." if way too long
+      const nameStartX = avatarCenterX + avatarR + 12;
+      const maxNameWidth = scoreBadgeX - nameStartX - 10;
       const rawName = item.displayName || 'Unknown';
-      const nameToDisplay = rawName;
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#FFFFFF';
-      drawFittedText(ctx, nameToDisplay, nameStartX, curY + rowH / 2, maxNameWidth, 19, 13, true);
+      drawFittedText(ctx, rawName, nameStartX, curY + rowH / 2, maxNameWidth, 15, 12, true);
     });
   }
 
