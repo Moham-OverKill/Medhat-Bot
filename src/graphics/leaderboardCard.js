@@ -84,7 +84,7 @@ export const LEADERBOARD_THEMES = {
     themeColor: '#F59E0B',
     accentGrad: ['#FFD700', '#D97706'],
     iconEmoji: '⭐',
-    unitLabel: 'pts',
+    unitLabel: 'points',
     valueKey: 'score'
   },
   coins: {
@@ -121,8 +121,7 @@ export const LEADERBOARD_THEMES = {
 function formatLeaderboardValue(item, theme, currencyName = null) {
   if (theme.isLevel) {
     const lv = item.level ?? 1;
-    const xp = item.battlepass_xp ? formatCompactNumber(item.battlepass_xp) : null;
-    return xp ? `Lv. ${lv} (${xp} XP)` : `Lv. ${lv}`;
+    return `Lv. ${lv}`;
   }
   const raw = Number(item[theme.valueKey]) || 0;
   const compact = formatCompactNumber(raw);

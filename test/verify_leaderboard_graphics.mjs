@@ -86,7 +86,7 @@ test('Leaderboard Card Graphics Suite', async (t) => {
     assert.equal(buffer[0], 0x89);
   });
 
-  await t.test('renderLeaderboardCard should render Highest Levels with Lv and XP formatting', async () => {
+  await t.test('renderLeaderboardCard should render Highest Levels with Lv formatting without XP count', async () => {
     const levelData = [
       { userId: '1', displayName: 'OverLord XP', level: 64, battlepass_xp: 182000, roleColor: '#8B5CF6' },
       { userId: '2', displayName: 'Arcane Mage', level: 51, battlepass_xp: 124000 },
