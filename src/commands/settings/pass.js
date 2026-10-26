@@ -1193,7 +1193,7 @@ export async function handlePassComponent(interaction) {
       state.pendingRoleName = role.name;
 
       const modal = new ModalBuilder()
-        .setCustomId('pass_import_level_modal_' + page)
+        .setCustomId('pass_import_level_modal_' + page + '_' + Date.now())
         .setTitle(`Map: @${role.name.slice(0, 40)}`);
 
       modal.addComponents(
@@ -1779,7 +1779,7 @@ export async function handlePassModal(interaction) {
 
     // ── 6. Import Level Modal (role → level mapping) ──────────────────────
     if (customId.startsWith('pass_import_level_modal_')) {
-      const page = parseInt(customId.replace('pass_import_level_modal_', ''), 10) || 0;
+      const page = parseInt(customId.replace('pass_import_level_modal_', '').split('_')[0], 10) || 0;
       const flowKey = `${guildId}:${interaction.user.id}`;
       const state = importFlowState.get(flowKey);
 
