@@ -192,20 +192,24 @@ export async function handleBalanceAction(interaction, targetUserId) {
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
     const displayName = targetMember ? targetMember.displayName : targetUserId;
 
+    const pool = getPool();
+    const balRes = await pool.query('SELECT balance FROM user_balances WHERE guild_id = $1 AND user_id = $2', [interaction.guildId, targetUserId]);
+    const currentBalance = balRes.rows.length > 0 ? (parseInt(balRes.rows[0].balance, 10) || 0) : 0;
+
     // Use a safer title for modals. Some Unicode characters (like mathematical script) 
     // can cause serialization issues in specific Discord API versions for Modals.
     const safeTitle = `Adjust Balance: ${targetMember?.user.username || targetUserId}`;
 
     const modal = new ModalBuilder()
-        .setCustomId(`admin_user_balmod_${targetUserId}`)
+        .setCustomId(`admin_user_balmod_${targetUserId}_${Date.now()}`)
         .setTitle(safeTruncate(safeTitle, 45));
 
     const input = new TextInputBuilder()
         .setCustomId('new_balance')
         .setLabel('New Exact Balance')
-        .setPlaceholder('Enter total coins user should have...')
+        .setPlaceholder(String(currentBalance))
         .setStyle(TextInputStyle.Short)
-        .setRequired(true);
+        .setRequired(false);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     await interaction.showModal(modal);
@@ -216,8 +220,16 @@ export async function handleBalanceAction(interaction, targetUserId) {
  */
 export async function handleBalanceModal(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const targetUserId = interaction.customId.split('_').pop();
-    const newBalance = parseInt(interaction.fields.getTextInputValue('new_balance'), 10);
+    const targetUserId = interaction.customId.replace('admin_user_balmod_', '').split('_')[0];
+    const rawVal = interaction.fields.getTextInputValue('new_balance')?.trim();
+
+    // Leaving it empty does nothing on submit
+    if (!rawVal) {
+        await showUserDashboard(interaction, targetUserId);
+        return;
+    }
+
+    const newBalance = parseInt(rawVal, 10);
 
     if (!Number.isSafeInteger(newBalance) || newBalance < 0) {
         return interaction.followUp({ content: '❌ Invalid balance. Please enter a valid non-negative integer.', flags: MessageFlags.Ephemeral });
@@ -302,16 +314,15 @@ export async function handleStreakAction(interaction, targetUserId) {
     const currentStreak = res.rows.length > 0 ? (parseInt(res.rows[0].daily_streak) || 0) : 0;
 
     const modal = new ModalBuilder()
-        .setCustomId(`admin_user_stkmod_${targetUserId}`)
+        .setCustomId(`admin_user_stkmod_${targetUserId}_${Date.now()}`)
         .setTitle('Edit User Streak');
 
     const input = new TextInputBuilder()
         .setCustomId('new_streak')
         .setLabel('Current Streak Days')
-        .setPlaceholder('Enter total streak days...')
-        .setValue(String(currentStreak))
+        .setPlaceholder(String(currentStreak))
         .setStyle(TextInputStyle.Short)
-        .setRequired(true);
+        .setRequired(false);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     await interaction.showModal(modal);
@@ -322,8 +333,14 @@ export async function handleStreakAction(interaction, targetUserId) {
  */
 export async function handleStreakModal(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const targetUserId = interaction.customId.split('_').pop();
-    const newStreakText = interaction.fields.getTextInputValue('new_streak');
+    const targetUserId = interaction.customId.replace('admin_user_stkmod_', '').split('_')[0];
+    const newStreakText = interaction.fields.getTextInputValue('new_streak')?.trim();
+
+    // Leaving it empty does nothing on submit
+    if (!newStreakText) {
+        await showUserDashboard(interaction, targetUserId);
+        return;
+    }
 
     if (!/^\d+$/.test(newStreakText)) {
         return interaction.followUp({ content: '❌ Invalid input. Streak must be a positive number.', flags: MessageFlags.Ephemeral });
@@ -414,7 +431,7 @@ export async function handleLevelAction(interaction, targetUserId) {
     const { level: userLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
 
     const modal = new ModalBuilder()
-        .setCustomId(`admin_user_lvlmod_${targetUserId}`)
+        .setCustomId(`admin_user_lvlmod_${targetUserId}_${Date.now()}`)
         .setTitle(safeTruncate(safeTitle, 45));
 
     const input = new TextInputBuilder()
@@ -422,7 +439,7 @@ export async function handleLevelAction(interaction, targetUserId) {
         .setLabel('New Level')
         .setPlaceholder(String(userLevel))
         .setStyle(TextInputStyle.Short)
-        .setRequired(true);
+        .setRequired(false);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     await interaction.showModal(modal);
@@ -433,8 +450,16 @@ export async function handleLevelAction(interaction, targetUserId) {
  */
 export async function handleLevelModal(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-    const targetUserId = interaction.customId.split('_').pop();
-    const newLevel = parseInt(interaction.fields.getTextInputValue('new_level'), 10);
+    const targetUserId = interaction.customId.replace('admin_user_lvlmod_', '').split('_')[0];
+    const rawLevel = interaction.fields.getTextInputValue('new_level')?.trim();
+
+    // Leaving it empty does nothing on submit
+    if (!rawLevel) {
+        await showUserDashboard(interaction, targetUserId);
+        return;
+    }
+
+    const newLevel = parseInt(rawLevel, 10);
 
     if (isNaN(newLevel) || newLevel < 0) {
         return interaction.followUp({ content: '❌ Invalid level. Please enter a valid non-negative number.', flags: MessageFlags.Ephemeral });
@@ -983,7 +1008,7 @@ export async function handleAdminRemoveSelect(interaction) {
         const itemName = itemRes.rows[0].name || 'Item';
 
         const modal = new ModalBuilder()
-            .setCustomId(`admin_user_remmod_${targetUserId}_${invId}`)
+            .setCustomId(`admin_user_remmod_${targetUserId}_${invId}_${Date.now()}`)
             .setTitle(safeTruncate(`Edit Quantity: ${itemName}`, 45));
 
         const qtyInput = new TextInputBuilder()
@@ -1448,14 +1473,13 @@ export async function handleAdminGiveSelect(interaction) {
         }
 
         const modal = new ModalBuilder()
-            .setCustomId(`admin_user_givemod_${targetUserId}_${typePrefix}_${itemId}`)
+            .setCustomId(`admin_user_givemod_${targetUserId}_${typePrefix}_${itemId}_${Date.now()}`)
             .setTitle(safeTruncate(`Give ${itemName}`, 45));
 
         const qtyInput = new TextInputBuilder()
             .setCustomId('give_quantity')
             .setLabel('Enter quantity to give:')
             .setPlaceholder('1')
-            .setValue('1')
             .setMinLength(1)
             .setMaxLength(6)
             .setStyle(TextInputStyle.Short)
@@ -1998,7 +2022,7 @@ export async function handleAdminUserComponent(interaction) {
                 const itemName = itemRes.rows[0].name || 'Item';
 
                 const modal = new ModalBuilder()
-                    .setCustomId(`admin_user_setqty_${targetUserId}_${invId}_${catId}`)
+                    .setCustomId(`admin_user_setqty_${targetUserId}_${invId}_${catId}_${Date.now()}`)
                     .setTitle(safeTruncate(`Edit Quantity: ${itemName}`, 45));
 
                 const qtyInput = new TextInputBuilder()

@@ -766,7 +766,7 @@ export async function handleOrganizeComponent(interaction) {
             : DEFAULT_REACTIONS;
 
         const modal = new ModalBuilder()
-            .setCustomId('organize_auto_react_modal')
+            .setCustomId(`organize_auto_react_modal_${Date.now()}`)
             .setTitle('Auto React Emojis');
 
         const emojiInput = new TextInputBuilder()
@@ -806,10 +806,11 @@ export async function handleOrganizeComponent(interaction) {
     }
 
     // 2. Handle modal submit
-    if (customId === 'organize_auto_react_modal') {
+    if (customId === 'organize_auto_react_modal' || customId.startsWith('organize_auto_react_modal_')) {
         const guildId = interaction.guildId;
         const rawInput = interaction.fields.getTextInputValue('organize_auto_react_input');
-        const parsedEmojis = parseReactionEmojis(rawInput, interaction.guild, interaction.client);
+        const parsed = rawInput?.trim() ? parseReactionEmojis(rawInput, interaction.guild, interaction.client) : [];
+        const parsedEmojis = parsed.length > 0 ? parsed : DEFAULT_REACTIONS;
 
         const filters = await getFilters(guildId);
         const updatedFilters = { ...filters, auto_react_emojis: parsedEmojis };

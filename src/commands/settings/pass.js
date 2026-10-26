@@ -694,7 +694,7 @@ export async function handlePassComponent(interaction) {
       const questXp = parseInt(freshConfig.battlepass_quest_xp ?? 150, 10);
 
       const modal = new ModalBuilder()
-        .setCustomId('pass_xp_threshold_modal_pg_' + page)
+        .setCustomId('pass_xp_threshold_modal_pg_' + page + '_' + Date.now())
         .setTitle('Configure XP');
 
       modal.addComponents(
@@ -791,14 +791,14 @@ export async function handlePassComponent(interaction) {
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('35')
         .setMaxLength(4)
-        .setRequired(true);
+        .setRequired(false);
 
       if (currentBoost) {
         boostInput.setValue(String(currentBoost));
       }
 
       const modal = new ModalBuilder()
-        .setCustomId('pass_boost_pct_modal_' + roleId + '_pg_' + page)
+        .setCustomId('pass_boost_pct_modal_' + roleId + '_pg_' + page + '_' + Date.now())
         .setTitle('Set Boost Percentage')
         .addComponents(new ActionRowBuilder().addComponents(boostInput));
 
@@ -842,7 +842,7 @@ export async function handlePassComponent(interaction) {
         const nextSuggestedLevel = levels.length > 0 ? Math.max(...levels.map(l => l.level)) + 1 : 1;
 
         const modal = new ModalBuilder()
-          .setCustomId('pass_create_lvl_modal_pg_' + page)
+          .setCustomId('pass_create_lvl_modal_pg_' + page + '_' + Date.now())
           .setTitle('Create New Level');
 
         modal.addComponents(
@@ -852,7 +852,6 @@ export async function handlePassComponent(interaction) {
               .setLabel('Level Number')
               .setStyle(TextInputStyle.Short)
               .setPlaceholder('Enter level number (e.g. ' + nextSuggestedLevel + ')')
-              .setValue(String(nextSuggestedLevel))
               .setMinLength(1).setMaxLength(5)
               .setRequired(true)
           )
@@ -937,21 +936,27 @@ export async function handlePassComponent(interaction) {
 
       if (selectedValue === 'custom') {
         const coinName = await getCurrencyName(guildId);
+        const pool = getPool();
+        const cfgRes = await pool.query('SELECT reward_coins FROM battlepass_config WHERE guild_id = $1 AND level = $2', [guildId, level]);
+        const existingCoins = cfgRes.rows.length > 0 ? parseInt(cfgRes.rows[0].reward_coins, 10) : null;
+
         const modal = new ModalBuilder()
-          .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page)
+          .setCustomId('pass_set_coins_modal_' + level + '_pg_' + page + '_' + Date.now())
           .setTitle(`Set Custom ${coinName} — Level ${level}`.slice(0, 45));
 
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('pass_coins_input')
-              .setLabel(`${coinName} reward amount`)
-              .setStyle(TextInputStyle.Short)
-              .setPlaceholder(`Enter ${coinName.toLowerCase()} amount (e.g. 500)`)
-              .setMinLength(1).setMaxLength(8)
-              .setRequired(true)
-          )
-        );
+        const coinsInput = new TextInputBuilder()
+          .setCustomId('pass_coins_input')
+          .setLabel(`${coinName} reward amount`)
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('500')
+          .setMinLength(1).setMaxLength(8)
+          .setRequired(false);
+
+        if (existingCoins !== null && existingCoins > 0) {
+          coinsInput.setValue(String(existingCoins));
+        }
+
+        modal.addComponents(new ActionRowBuilder().addComponents(coinsInput));
         await interaction.showModal(modal);
         return;
       }
@@ -1013,7 +1018,7 @@ export async function handlePassComponent(interaction) {
         const currentQty = existRes.rows[0]?.quantity || 1;
 
         const modal = new ModalBuilder()
-          .setCustomId(`pass_reward_qty_${level}_item_${itemId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}`)
+          .setCustomId(`pass_reward_qty_${level}_item_${itemId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}_${Date.now()}`)
           .setTitle(`Set Quantity: ${itemName}`.slice(0, 45));
 
         modal.addComponents(
@@ -1025,7 +1030,7 @@ export async function handlePassComponent(interaction) {
               .setPlaceholder('0 = Remove')
               .setValue(String(currentQty))
               .setMinLength(1).setMaxLength(3)
-              .setRequired(true)
+              .setRequired(false)
           )
         );
         await interaction.showModal(modal);
@@ -1044,7 +1049,7 @@ export async function handlePassComponent(interaction) {
         const currentQty = existRes.rows[0]?.quantity || 1;
 
         const modal = new ModalBuilder()
-          .setCustomId(`pass_reward_qty_${level}_chest_${chestId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}`)
+          .setCustomId(`pass_reward_qty_${level}_chest_${chestId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}_${Date.now()}`)
           .setTitle(`Set Quantity: ${chestName}`.slice(0, 45));
 
         modal.addComponents(
@@ -1056,7 +1061,7 @@ export async function handlePassComponent(interaction) {
               .setPlaceholder('0 = Remove')
               .setValue(String(currentQty))
               .setMinLength(1).setMaxLength(3)
-              .setRequired(true)
+              .setRequired(false)
           )
         );
         await interaction.showModal(modal);
@@ -1552,7 +1557,7 @@ export async function handlePassModal(interaction) {
 
     // ── 1. Reward Quantity Modal ──────────────────────────────────────────
     if (customId.startsWith('pass_reward_qty_')) {
-      const match = customId.match(/pass_reward_qty_(\d+)_(item|chest)_(\d+)_pg_(\d+)_fld_([a-zA-Z0-9_]+?)(?:_rpg_(\d+))?$/);
+      const match = customId.match(/pass_reward_qty_(\d+)_(item|chest)_(\d+)_pg_(\d+)_fld_([a-zA-Z0-9_]+?)(?:_rpg_(\d+))?(?:_\d+)?$/);
       if (!match) return;
 
       const level = parseInt(match[1], 10);
@@ -1562,8 +1567,8 @@ export async function handlePassModal(interaction) {
       const currentFolder = match[5] || 'root';
       const currentRewardPage = match[6] ? parseInt(match[6], 10) : 1;
 
-      const qtyRaw = interaction.fields.getTextInputValue('reward_quantity').trim();
-      const quantity = parseInt(qtyRaw, 10);
+      const qtyRaw = interaction.fields.getTextInputValue('reward_quantity')?.trim();
+      const quantity = (qtyRaw === '' || qtyRaw === undefined) ? 1 : parseInt(qtyRaw, 10);
 
       if (isNaN(quantity) || quantity < 0 || quantity > 999) {
         return interaction.reply({ content: '❌ Quantity must be between 0 and 999 (enter 0 to remove).', flags: MessageFlags.Ephemeral });
@@ -1630,7 +1635,7 @@ export async function handlePassModal(interaction) {
 
     // ── 2. Create New Level Modal ─────────────────────────────────────────
     if (customId.startsWith('pass_create_lvl_modal_pg_')) {
-      const page = parseInt(customId.replace('pass_create_lvl_modal_pg_', ''), 10) || 0;
+      const page = parseInt(customId.replace('pass_create_lvl_modal_pg_', '').split('_')[0], 10) || 0;
       const levelRaw = interaction.fields.getTextInputValue('pass_level_input').trim();
       const level = parseInt(levelRaw, 10);
 
@@ -1661,10 +1666,10 @@ export async function handlePassModal(interaction) {
     if (customId.startsWith('pass_set_coins_modal_')) {
       const match = customId.match(/pass_set_coins_modal_(\d+)_pg_(\d+)/);
       const level = match ? parseInt(match[1], 10) : 1;
-      const page = match ? parseInt(match[2], 10) : 0;
+      const page = match ? parseInt(match[2].split('_')[0], 10) : 0;
 
-      const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input').trim();
-      const coins = parseInt(coinsRaw, 10);
+      const coinsRaw = interaction.fields.getTextInputValue('pass_coins_input')?.trim();
+      const coins = (coinsRaw === '' || coinsRaw === undefined) ? 500 : parseInt(coinsRaw, 10);
       const coinName = await getCurrencyName(guildId);
       if (isNaN(coins) || coins < 0) {
         return interaction.reply({ content: `❌ ${coinName} amount must be 0 or a positive whole number.`, flags: MessageFlags.Ephemeral });
@@ -1688,7 +1693,7 @@ export async function handlePassModal(interaction) {
 
     // ── 4. Set XP Modal (unified 5-field) ─────────────────────────────────
     if (customId.startsWith('pass_xp_threshold_modal_pg_')) {
-      const page = parseInt(customId.replace('pass_xp_threshold_modal_pg_', ''), 10) || 0;
+      const page = parseInt(customId.replace('pass_xp_threshold_modal_pg_', '').split('_')[0], 10) || 0;
 
       const baseRaw = (interaction.fields.getTextInputValue('pass_base_xp_input') || '').trim();
       const incRaw = (interaction.fields.getTextInputValue('pass_increment_xp_input') || '').trim();
@@ -1741,10 +1746,10 @@ export async function handlePassModal(interaction) {
       const match = customId.match(/pass_boost_pct_modal_(.+)_pg_(\d+)/);
       if (!match) return;
       const roleId = match[1];
-      const page = parseInt(match[2], 10) || 0;
+      const page = parseInt(match[2].split('_')[0], 10) || 0;
 
-      const pctRaw = interaction.fields.getTextInputValue('boost_pct_input').trim();
-      const pct = parseInt(pctRaw, 10);
+      const pctRaw = interaction.fields.getTextInputValue('boost_pct_input')?.trim();
+      const pct = (pctRaw === '' || pctRaw === undefined) ? 35 : parseInt(pctRaw, 10);
 
       if (isNaN(pct) || pct < 1 || pct > 500) {
         return interaction.reply({ content: '❌ Boost percentage must be between 1 and 500.', flags: MessageFlags.Ephemeral });
