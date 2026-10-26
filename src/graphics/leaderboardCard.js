@@ -83,7 +83,7 @@ export const LEADERBOARD_THEMES = {
     title: 'HIGHEST LEVELS',
     themeColor: '#6366F1',
     accentGrad: ['#818CF8', '#4F46E5'],
-    iconEmoji: '🆙',
+    iconEmoji: '⬆️',
     unitLabel: 'Lv',
     valueKey: 'level',
     isLevel: true
@@ -148,9 +148,9 @@ export async function renderLeaderboardCard({
   const padY = 32;
 
   // Dynamic layout calculations
-  const headerH = 76;
+  const headerH = 84;
   const hasPodium = count >= 3;
-  const podiumH = hasPodium ? 226 : 0;
+  const podiumH = hasPodium ? 248 : 0;
   const podiumMarginBottom = hasPodium ? 20 : 0;
 
   const rowCount = hasPodium ? count - 3 : count;
@@ -204,35 +204,38 @@ export async function renderLeaderboardCard({
 
   // 3. Clean Header (Category Icon + Main Title only, zero subheaders/timers)
   const headerY = padY;
-  const iconSize = 48;
+  const iconSize = 56;
 
   // Icon container
-  roundRect(ctx, padX, headerY, iconSize, iconSize, 14);
+  roundRect(ctx, padX, headerY, iconSize, iconSize, 16);
   ctx.fillStyle = hexToRgba(theme.themeColor, 0.16);
   ctx.fill();
   ctx.strokeStyle = hexToRgba(theme.themeColor, 0.45);
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Draw category icon: if custom coin image exists for Richest, use it; otherwise render emoji
+  // Draw category icon: fills the whole box prominently
   if (theme.isCoin && (customCoinImg || customCoinUrl)) {
     if (customCoinImg) {
-      ctx.drawImage(customCoinImg, padX + 8, headerY + 8, 32, 32);
+      ctx.drawImage(customCoinImg, padX + 5, headerY + 5, iconSize - 10, iconSize - 10);
     } else {
-      drawVectorCoin(ctx, padX + iconSize / 2, headerY + iconSize / 2, 16);
+      drawVectorCoin(ctx, padX + iconSize / 2, headerY + iconSize / 2, (iconSize - 6) / 2);
     }
   } else {
-    ctx.font = `28px ${fontStack}`;
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `44px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(theme.iconEmoji, padX + iconSize / 2, headerY + iconSize / 2 + 1);
+    ctx.restore();
   }
 
   // Clean, massive main title
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold 28px ${boldFontStack}`;
+  ctx.font = `bold 30px ${boldFontStack}`;
   ctx.fillText(theme.title, padX + iconSize + 16, headerY + iconSize / 2);
 
   // Header separator line
@@ -305,8 +308,8 @@ export async function renderLeaderboardCard({
     podiumList.forEach((podium, idx) => {
       const { rank, label, defaultColor, item, avatarImg, isCenter } = podium;
       const cardX = padX + idx * (podiumCardW + podiumGap);
-      const cardY = isCenter ? currentY : currentY + 10;
-      const cardH = isCenter ? podiumH : podiumH - 10;
+      const cardY = isCenter ? currentY : currentY + 12;
+      const cardH = isCenter ? podiumH : podiumH - 12;
 
       // Dynamic color adoption: adopt custom profile / role color if available, fallback to gold/silver/bronze
       const userColor = item.accentColor || item.roleColor || defaultColor;
@@ -356,15 +359,16 @@ export async function renderLeaderboardCard({
       ctx.textBaseline = 'middle';
       ctx.fillText(label, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
-      // Large Avatar Portrait (Scaled up for mobile readability)
-      const avatarD = isCenter ? 84 : 72;
+      // Large Avatar Portrait (Scaled up for mobile readability, guaranteed circle)
+      const avatarD = isCenter ? 86 : 74;
       const avatarR = avatarD / 2;
       const avatarCenterX = cardX + podiumCardW / 2;
-      const avatarCenterY = cardY + (isCenter ? 64 : 58);
+      const avatarCenterY = cardY + (isCenter ? 70 : 64);
 
       ctx.save();
       ctx.beginPath();
       ctx.arc(avatarCenterX, avatarCenterY, avatarR, 0, Math.PI * 2);
+      ctx.closePath();
       ctx.clip();
 
       if (avatarImg) {
@@ -372,7 +376,7 @@ export async function renderLeaderboardCard({
       } else {
         ctx.fillStyle = '#1E293B';
         ctx.fillRect(avatarCenterX - avatarR, avatarCenterY - avatarR, avatarD, avatarD);
-        ctx.font = `bold ${isCenter ? 32 : 28}px ${boldFontStack}`;
+        ctx.font = `bold ${isCenter ? 34 : 28}px ${boldFontStack}`;
         ctx.fillStyle = userColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -390,10 +394,10 @@ export async function renderLeaderboardCard({
       ctx.restore();
 
       // Display Name Only (Server nickname) with auto-scaling to eliminate truncation/overflow
-      const nameY = cardY + (isCenter ? 134 : 124);
+      const nameY = cardY + (isCenter ? 142 : 132);
       const maxNameWidth = podiumCardW - 24;
       const rawName = item.displayName || 'Unknown';
-      const nameToDisplay = isWinner ? `${rawName} ★` : rawName;
+      const nameToDisplay = rawName;
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -402,8 +406,8 @@ export async function renderLeaderboardCard({
 
       // Highlighted Value Capsule Pill
       const valText = formatLeaderboardValue(item, theme, currencyName);
-      const valPillW = Math.min(podiumCardW - 32, Math.max(140, ctx.measureText(valText).width + 36));
-      const valPillH = isCenter ? 34 : 30;
+      const valPillW = Math.min(podiumCardW - 24, Math.max(140, ctx.measureText(valText).width + 36));
+      const valPillH = isCenter ? 36 : 32;
       const valPillX = cardX + (podiumCardW - valPillW) / 2;
       const valPillY = cardY + cardH - valPillH - (isCenter ? 18 : 14);
 
@@ -524,7 +528,7 @@ export async function renderLeaderboardCard({
       const nameStartX = avatarCenterX + avatarR + 16;
       const maxNameWidth = scoreBadgeX - nameStartX - 16;
       const rawName = item.displayName || 'Unknown';
-      const nameToDisplay = isWinner ? `${rawName} ★` : rawName;
+      const nameToDisplay = rawName;
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
