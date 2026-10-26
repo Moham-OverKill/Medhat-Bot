@@ -435,7 +435,8 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setCustomId('settings_back')
         .setLabel('Back')
         .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(isBackDisabled(interaction)),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
         .setLabel('Appearance')
