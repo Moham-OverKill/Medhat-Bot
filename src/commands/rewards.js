@@ -51,7 +51,7 @@ export async function getRewardsPayload(guildId) {
   const capText = `\`${streakCap} days\``;
 
   const embed = new EmbedBuilder()
-    .setTitle('Daily Configuration')
+    .setTitle('Daily')
     .setColor(isEnabled ? 0x2ECC71 : 0xE74C3C)
     .setDescription(
       `Status: ${isEnabled ? '🟢 Enabled' : '🔴 Disabled'}\n\n` +

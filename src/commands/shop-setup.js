@@ -257,7 +257,7 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
 
   const embed = new EmbedBuilder()
     .setColor('#9B59B6')
-    .setTitle('Shop Configuration')
+    .setTitle('Items')
     .setDescription('Manage categories and items in your server shop.')
     .addFields(
       { name: '📂 Categories', value: `${categoriesCount}`, inline: true },
@@ -300,7 +300,7 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
     ]);
   const rowPacks = new ActionRowBuilder().addComponents(packsSelect);
 
-  // Row 4: Back (left), Loot Boxes (center), Post (right)
+  // Row 4: Back (left), Post (right)
   const rowButtons = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
@@ -309,15 +309,6 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(isBackDisabled(interaction)),
-      safeSetButtonEmoji(
-        new ButtonBuilder()
-          .setCustomId('shop_lb_home')
-          .setLabel(lootBoxCatName.slice(0, 50))
-          .setStyle(ButtonStyle.Secondary),
-        lootBoxEmoji,
-        guild,
-        '🎁'
-      ),
       new ButtonBuilder()
         .setCustomId('shop_admin_post')
         .setLabel('Post')
@@ -410,7 +401,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
 
     const embed = new EmbedBuilder()
       .setColor('#9B59B6')
-      .setTitle(`${lootBoxCatName} Management`)
+      .setTitle(lootBoxCatName)
       .setDescription(desc);
 
     const components = [];
@@ -441,7 +432,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     // 2. Action Buttons: Back, Config, Create
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('shop_admin_home')
+        .setCustomId('settings_back')
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary),
@@ -6152,10 +6143,6 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
       }
     }
 
-    // Mutual fallback: If only one is entered, use for both
-    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
-    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
-
     const { getGuildEmojiBlacklist, containsBlacklistedEmoji } = await import('../middleware/emoji-filter.js');
     const emojiConfig = await getGuildEmojiBlacklist(interaction.guildId);
     if (emojiConfig.enabled && containsBlacklistedEmoji(name, emojiConfig.blacklist)) {
@@ -6626,9 +6613,6 @@ export async function handleLootBoxImagesSubmit(interaction, boxId) {
       });
       openedImageUrl = uploadRes.url;
     }
-
-    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
-    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
 
     await updateLootBox(boxId, interaction.guildId, { imageUrl, openedImageUrl });
     await showLootBoxEditorPanel(interaction, boxId);
@@ -7164,9 +7148,6 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     }
 
     // Mutual fallback: If only one is entered, use for both
-    if (imageUrl && !openedImageUrl) openedImageUrl = imageUrl;
-    if (openedImageUrl && !imageUrl) imageUrl = openedImageUrl;
-
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl, openedImageUrl });
 
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);

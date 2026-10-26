@@ -408,22 +408,29 @@ function drawCoinBox(ctx, x, y, width, height, coins, side = 'left', customCoinI
     displayText += '...';
   }
 
+  const drawCoinIcon = (iconX) => {
+    if (customCoinImg) {
+      const iw = customCoinImg.width || 1;
+      const ih = customCoinImg.height || 1;
+      const ratio = Math.min(coinIconSize / iw, coinIconSize / ih);
+      const dw = iw * ratio;
+      const dh = ih * ratio;
+      const dx = iconX + (coinIconSize - dw) / 2;
+      const dy = coinIconY + (coinIconSize - dh) / 2;
+      ctx.drawImage(customCoinImg, dx, dy, dw, dh);
+    } else {
+      drawVectorCoin(ctx, iconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
+    }
+  };
+
   if (side === 'left') {
     const coinIconX = x + pad;
-    if (customCoinImg) {
-      drawContainedImage(ctx, customCoinImg, coinIconX, coinIconY, coinIconSize, 6);
-    } else {
-      drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-    }
+    drawCoinIcon(coinIconX);
     ctx.textAlign = 'left';
     ctx.fillText(displayText, coinIconX + coinIconSize + 8, y + height / 2);
   } else {
     const coinIconX = x + width - pad - coinIconSize;
-    if (customCoinImg) {
-      drawContainedImage(ctx, customCoinImg, coinIconX, coinIconY, coinIconSize, 6);
-    } else {
-      drawVectorCoin(ctx, coinIconX + coinIconSize / 2, coinIconY + coinIconSize / 2, coinIconSize / 2);
-    }
+    drawCoinIcon(coinIconX);
     ctx.textAlign = 'right';
     ctx.fillText(displayText, coinIconX - 8, y + height / 2);
   }

@@ -432,7 +432,7 @@ export async function getPassDashboardPayload(guildId, page = 0, selectedLevel =
   }
 
   // ── ROOT DASHBOARD ─────────────────────────────────────────────────────
-  embed.setTitle('Levels Configuration');
+  embed.setTitle('Levels');
 
   if (totalLevels === 0) {
     embed.setDescription('No levels configured yet.');

@@ -139,7 +139,7 @@ export async function getLootBox(boxId, guildId) {
     box.items_enabled = box.items_enabled !== false;
     box.coins_enabled = box.coins_enabled !== false;
     box.image_url = box.image_url ? box.image_url.trim() : null;
-    box.opened_image_url = box.opened_image_url ? box.opened_image_url.trim() : (box.image_url || null);
+    box.opened_image_url = box.opened_image_url ? box.opened_image_url.trim() : null;
 
     // Calculate item pool weight
     box.totalItemWeight = box.chance_common + box.chance_uncommon + box.chance_rare + 
@@ -172,12 +172,8 @@ export async function createLootBox(guildId, { name, imageUrl = null, openedImag
     await client.query('BEGIN');
 
     const cleanName = (name || 'Mystery Chest').trim().slice(0, 100);
-    let cleanImage = imageUrl ? imageUrl.trim() : null;
-    let cleanOpened = openedImageUrl ? openedImageUrl.trim() : null;
-
-    // Fallback: If only one is entered, use for both
-    if (cleanImage && !cleanOpened) cleanOpened = cleanImage;
-    if (cleanOpened && !cleanImage) cleanImage = cleanOpened;
+    const cleanImage = imageUrl ? imageUrl.trim() : null;
+    const cleanOpened = openedImageUrl ? openedImageUrl.trim() : null;
 
     // 1. Insert into loot_boxes with defaults
     const boxRes = await client.query(
@@ -776,7 +772,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
         id: box.id,
         name: box.name,
         image_url: box.image_url,
-        opened_image_url: box.opened_image_url || box.image_url
+        opened_image_url: box.opened_image_url || null
       },
       prizes: awardedPrizes,
       totalCoins: totalCoinsAwarded

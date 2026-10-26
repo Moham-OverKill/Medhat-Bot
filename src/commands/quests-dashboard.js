@@ -72,7 +72,7 @@ export async function showQuestsDashboard(interaction) {
         }).join('\n');
 
     const embed = new EmbedBuilder()
-      .setTitle('Quests Control Panel')
+      .setTitle('Quests')
       .setColor(enabled ? '#2ECC71' : '#95A5A6')
       .setDescription(
         `**Status:** ${enabled ? '✅ Enabled' : '❌ Disabled'}\n\n${questListText}`

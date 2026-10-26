@@ -230,7 +230,7 @@ export async function showSetupPanel(interaction, config) {
 
   const coinName = await getCurrencyName(guildId);
   const embed = new EmbedBuilder()
-    .setTitle('MVP Configuration')
+    .setTitle('MVP')
     .setColor(!isConfigured ? 0xFFAA00 : (config.enabled ? 0x00FF00 : 0xFF0000))
     .addFields(
       { name: `${statusEmoji} Status`, value: statusText, inline: true },

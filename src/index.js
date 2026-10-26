@@ -764,6 +764,24 @@ client.on(Events.GuildChannelDelete, async (channel) => {
 // EMOJI BLACKLIST MODERATION LISTENERS
 // ============================================
 
+// Server Name / Metadata Updates (Sync storage threads)
+client.on(Events.GuildUpdate, async (oldGuild, newGuild) => {
+  return runInGuildContext(newGuild.id, async () => {
+    try {
+      if (oldGuild && newGuild && oldGuild.name !== newGuild.name) {
+        const { syncGuildStorageThreads } = await import('./utils/image-host.js');
+        await syncGuildStorageThreads(newGuild.client, newGuild.id, newGuild.name);
+      }
+    } catch (err) {
+      sysError('GuildUpdate Storage Thread Sync Failed', err, {
+        guild: newGuild.id,
+        oldName: oldGuild?.name,
+        newName: newGuild.name
+      });
+    }
+  });
+});
+
 // Member Nickname / Role Updates
 client.on(Events.GuildMemberUpdate, async (_oldMember, newMember) => {
   return runInGuildContext(newMember.guild?.id, async () => {
