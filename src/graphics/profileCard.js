@@ -1,258 +1,21 @@
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { createCanvas } from '@napi-rs/canvas';
 import { performance } from 'node:perf_hooks';
-import { sysError, sysWarn, sysLog } from '../utils/logger.js';
+import { sysWarn, sysLog } from '../utils/logger.js';
 import crypto from 'node:crypto';
 import { COIN_NAME } from '../shared.js';
+import {
+  fontStack,
+  roundRect,
+  drawVectorCoin,
+  hexToRgba,
+  shiftColorBrightness,
+  extractDominantColor,
+  fetchImageSafe,
+  formatCompactNumber,
+  safeFirstChar
+} from './shared.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const fontsDir = path.resolve(__dirname, '../assets/fonts');
-
-// Register bundled fonts for consistent font rendering across all platforms and Docker
-try {
-  const cairoPath = path.join(fontsDir, 'Cairo.ttf');
-  const notoPath = path.join(fontsDir, 'NotoSansArabic.ttf');
-  const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
-  const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
-
-  if (fs.existsSync(cairoPath)) {
-    GlobalFonts.registerFromPath(cairoPath, 'Cairo');
-  }
-  if (fs.existsSync(notoPath)) {
-    GlobalFonts.registerFromPath(notoPath, 'Noto Sans Arabic');
-  }
-  if (fs.existsSync(boldPath)) {
-    GlobalFonts.registerFromPath(boldPath, 'Roboto');
-  }
-  if (fs.existsSync(regularPath)) {
-    GlobalFonts.registerFromPath(regularPath, 'Roboto');
-  }
-} catch (err) {
-  sysError('Font Registration Error', err);
-}
-
-const fontStack = '"Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
-
-/**
- * Format numbers with compact suffixes (e.g., 1.5K, 2.3M) or standard commas
- * @param {number} num
- * @returns {string}
- */
-export function formatCompactNumber(num) {
-  const n = Number(num) || 0;
-  if (Math.abs(n) >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B';
-  if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-  if (Math.abs(n) >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
-  return n.toLocaleString();
-}
-
-/**
- * Draw a rounded rectangle path on 2D context
- */
-function roundRect(ctx, x, y, width, height, radius) {
-  if (typeof radius === 'number') {
-    radius = { tl: radius, tr: radius, br: radius, bl: radius };
-  } else {
-    radius = {
-      tl: radius?.tl || 0,
-      tr: radius?.tr || 0,
-      br: radius?.br || 0,
-      bl: radius?.bl || 0
-    };
-  }
-  const maxR = Math.min(width / 2, height / 2);
-  const tl = Math.max(0, Math.min(radius.tl, maxR));
-  const tr = Math.max(0, Math.min(radius.tr, maxR));
-  const br = Math.max(0, Math.min(radius.br, maxR));
-  const bl = Math.max(0, Math.min(radius.bl, maxR));
-
-  ctx.beginPath();
-  ctx.moveTo(x + tl, y);
-  ctx.lineTo(x + width - tr, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + tr);
-  ctx.lineTo(x + width, y + height - br);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - br, y + height);
-  ctx.lineTo(x + bl, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - bl);
-  ctx.lineTo(x, y + tl);
-  ctx.quadraticCurveTo(x, y, x + tl, y);
-  ctx.closePath();
-}
-
-const assetImageCache = new Map();
-const ASSET_CACHE_MAX = 25;
-const ASSET_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
-
-/**
- * Safely fetch an external image with in-memory caching, timeout, and buffer fallback
- * @param {string} url
- * @returns {Promise<import('@napi-rs/canvas').Image|null>}
- */
-async function fetchImageSafe(url) {
-  if (!url) return null;
-  const now = Date.now();
-  const cached = assetImageCache.get(url);
-  if (cached && (now - cached.timestamp < ASSET_CACHE_TTL)) {
-    return cached.img;
-  }
-
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
-    if (!res.ok) return null;
-    const arrayBuffer = await res.arrayBuffer();
-    const img = await loadImage(Buffer.from(arrayBuffer));
-    if (assetImageCache.size >= ASSET_CACHE_MAX) {
-      const oldestKey = assetImageCache.keys().next().value;
-      assetImageCache.delete(oldestKey);
-    }
-    assetImageCache.set(url, { img, timestamp: now });
-    return img;
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Draw a crisp, high-resolution golden coin vector on canvas
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} x - Center X
- * @param {number} y - Center Y
- * @param {number} radius - Coin radius
- */
-function drawVectorCoin(ctx, x, y, radius) {
-  ctx.save();
-  // Outer gold rim
-  const outerGrad = ctx.createLinearGradient(x - radius, y - radius, x + radius, y + radius);
-  outerGrad.addColorStop(0, '#FFE875');
-  outerGrad.addColorStop(0.5, '#F5A623');
-  outerGrad.addColorStop(1, '#B87400');
-  ctx.fillStyle = outerGrad;
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Inner coin ridge
-  const innerRadius = radius * 0.82;
-  const innerGrad = ctx.createLinearGradient(x - innerRadius, y - innerRadius, x + innerRadius, y + innerRadius);
-  innerGrad.addColorStop(0, '#F7B731');
-  innerGrad.addColorStop(1, '#D48806');
-  ctx.fillStyle = innerGrad;
-  ctx.beginPath();
-  ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Coin star/dollar symbol in center
-  ctx.fillStyle = '#FFF8DB';
-  ctx.font = `bold ${Math.round(radius * 1.05)}px ${fontStack}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('$', x, y + 0.5);
-  ctx.restore();
-}
-
-/**
- * Convert hex color to rgba string
- * @param {string} hex
- * @param {number} alpha
- * @returns {string}
- */
-function hexToRgba(hex, alpha = 1) {
-  let clean = String(hex || '#00E5FF').replace('#', '');
-  if (clean.length === 3) {
-    clean = clean.split('').map(c => c + c).join('');
-  }
-  const num = parseInt(clean, 16);
-  if (isNaN(num)) return `rgba(0, 229, 255, ${alpha})`;
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Shift hex color brightness by a percentage (-1.0 to 1.0)
- * @param {string} hex
- * @param {number} percent
- * @returns {string}
- */
-function shiftColorBrightness(hex, percent) {
-  let clean = String(hex || '#00E5FF').replace('#', '');
-  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
-  const num = parseInt(clean, 16);
-  if (isNaN(num)) return '#0099FF';
-  let r = (num >> 16) & 255;
-  let g = (num >> 8) & 255;
-  let b = num & 255;
-  r = Math.min(255, Math.max(0, Math.round(r * (1 + percent))));
-  g = Math.min(255, Math.max(0, Math.round(g * (1 + percent))));
-  b = Math.min(255, Math.max(0, Math.round(b * (1 + percent))));
-  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Extract dominant vibrant color from an avatar image
- * @param {import('@napi-rs/canvas').Image} img
- * @returns {string|null} Hex color code or null
- */
-export function extractDominantColor(img) {
-  if (!img) return null;
-  try {
-    const size = 48;
-    const offCanvas = createCanvas(size, size);
-    const offCtx = offCanvas.getContext('2d');
-    offCtx.drawImage(img, 0, 0, size, size);
-    const { data } = offCtx.getImageData(0, 0, size, size);
-
-    const colorCounts = new Map();
-    let maxScore = 0;
-    let dominant = null;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
-
-      if (a < 128) continue; // transparent pixel
-
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const delta = max - min;
-      const brightness = (r + g + b) / 3;
-
-      // Filter out extreme darks, extreme lights, and low-saturation grays
-      if (brightness < 30 || brightness > 235) continue;
-      if (delta < 20) continue;
-
-      // Quantize to 5 bits per channel (16-step quantization)
-      const qr = Math.min(255, Math.round(r / 16) * 16);
-      const qg = Math.min(255, Math.round(g / 16) * 16);
-      const qb = Math.min(255, Math.round(b / 16) * 16);
-      const key = (qr << 16) | (qg << 8) | qb;
-
-      // Weight by saturation and hue intensity
-      const saturation = delta / max;
-      const score = (colorCounts.get(key) || 0) + (1 + saturation * 2.5);
-      colorCounts.set(key, score);
-
-      if (score > maxScore) {
-        maxScore = score;
-        dominant = { r: qr, g: qg, b: qb };
-      }
-    }
-
-    if (!dominant) return null;
-    return '#' + [dominant.r, dominant.g, dominant.b].map(x => x.toString(16).padStart(2, '0')).join('');
-  } catch (_) {
-    return null;
-  }
-}
+export { formatCompactNumber, extractDominantColor };
 
 /**
  * Generate Arcane-style Profile Card Buffer
@@ -369,7 +132,7 @@ export async function generateProfileCard(profileData) {
   const renderStart = performance.now();
   const baseWidth = 960;
   const baseHeight = 260;
-  const scale = 1.25;
+  const scale = 2; // 2x Retina Super-Sampling for crystal-sharp rendering
   const canvas = createCanvas(Math.round(baseWidth * scale), Math.round(baseHeight * scale));
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
@@ -430,7 +193,7 @@ export async function generateProfileCard(profileData) {
   glowGrad.addColorStop(0, hexToRgba(themeColor, 0.22));
   glowGrad.addColorStop(1, 'transparent');
   ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, 450, 260);
+  ctx.fillRect(0, 0, 450, height);
 
   ctx.restore();
 
@@ -465,7 +228,7 @@ export async function generateProfileCard(profileData) {
     ctx.font = `bold 48px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText((displayName[0] || 'U').toUpperCase(), avatarX + avatarRadius, avatarY + avatarRadius);
+    ctx.fillText(safeFirstChar(displayName).toUpperCase(), avatarX + avatarRadius, avatarY + avatarRadius);
   }
   ctx.restore();
 
