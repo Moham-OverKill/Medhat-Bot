@@ -1,284 +1,22 @@
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { createCanvas } from '@napi-rs/canvas';
 import { performance } from 'node:perf_hooks';
-import { sysError, sysWarn, sysLog } from '../utils/logger.js';
-import { extractDominantColor } from './profileCard.js';
+import { sysWarn, sysLog } from '../utils/logger.js';
 import { COIN_NAME } from '../shared.js';
+import {
+  fontStack,
+  roundRect,
+  drawVectorCoin,
+  hexToRgba,
+  shiftColorBrightness,
+  extractDominantColor,
+  extractCoinColor,
+  normalizeToImageUrl,
+  fetchImageSafe,
+  safeFirstChar
+} from './shared.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const fontsDir = path.resolve(__dirname, '../assets/fonts');
+export { normalizeToImageUrl, fetchImageSafe, extractCoinColor };
 
-// Register bundled fonts for cross-platform rendering (including Docker/Linux)
-try {
-  const cairoPath = path.join(fontsDir, 'Cairo.ttf');
-  const notoArabicPath = path.join(fontsDir, 'NotoSansArabic.ttf');
-  const boldPath = path.join(fontsDir, 'Roboto-Bold.ttf');
-  const regularPath = path.join(fontsDir, 'Roboto-Regular.ttf');
-
-  if (fs.existsSync(cairoPath)) {
-    GlobalFonts.registerFromPath(cairoPath, 'Cairo');
-  }
-  if (fs.existsSync(notoArabicPath)) {
-    GlobalFonts.registerFromPath(notoArabicPath, 'Noto Sans Arabic');
-  }
-  if (fs.existsSync(boldPath)) {
-    GlobalFonts.registerFromPath(boldPath, 'Roboto');
-  }
-  if (fs.existsSync(regularPath)) {
-    GlobalFonts.registerFromPath(regularPath, 'Roboto');
-  }
-} catch (err) {
-  sysError('TradeCard Font Registration Error', err);
-}
-
-const fontStack = '"Cairo", "Noto Sans Arabic", "Roboto", "Segoe UI", "Tahoma", Arial, sans-serif';
-
-/**
- * Draw a rounded rectangle path on 2D context
- */
-function roundRect(ctx, x, y, width, height, radius) {
-  if (typeof radius === 'number') {
-    radius = { tl: radius, tr: radius, br: radius, bl: radius };
-  } else {
-    radius = {
-      tl: radius?.tl || 0,
-      tr: radius?.tr || 0,
-      br: radius?.br || 0,
-      bl: radius?.bl || 0
-    };
-  }
-  const maxR = Math.min(width / 2, height / 2);
-  const tl = Math.max(0, Math.min(radius.tl, maxR));
-  const tr = Math.max(0, Math.min(radius.tr, maxR));
-  const br = Math.max(0, Math.min(radius.br, maxR));
-  const bl = Math.max(0, Math.min(radius.bl, maxR));
-
-  ctx.beginPath();
-  ctx.moveTo(x + tl, y);
-  ctx.lineTo(x + width - tr, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + tr);
-  ctx.lineTo(x + width, y + height - br);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - br, y + height);
-  ctx.lineTo(x + bl, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - bl);
-  ctx.lineTo(x, y + tl);
-  ctx.quadraticCurveTo(x, y, x + tl, y);
-  ctx.closePath();
-}
-
-/**
- * Normalize any image input (direct HTTP URL, Discord custom emoji, snowflake ID, or Unicode emoji)
- * into a renderable image URL.
- * @param {string|null} input
- * @returns {string|null}
- */
-export function normalizeToImageUrl(input) {
-  if (!input || typeof input !== 'string') return null;
-  const str = input.trim();
-  if (!str || str.toLowerCase() === 'none' || str.toLowerCase() === 'null') return null;
-
-  // Direct image URL
-  if (str.startsWith('http://') || str.startsWith('https://')) {
-    return str;
-  }
-
-  // Discord custom emoji: <:name:ID> or <a:name:ID>
-  const customEmojiMatch = str.match(/<a?:[a-zA-Z0-9_]+:(\d+)>/);
-  if (customEmojiMatch && customEmojiMatch[1]) {
-    return `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png?size=128&quality=lossless`;
-  }
-
-  // Raw snowflake ID: 17-22 digits
-  if (/^\d{17,22}$/.test(str)) {
-    return `https://cdn.discordapp.com/emojis/${str}.png?size=128&quality=lossless`;
-  }
-
-  // Only proceed if str is a valid Unicode emoji sequence
-  const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\u200D|\p{Emoji_Modifier})+$/u.test(str);
-  if (!isEmoji) {
-    return null;
-  }
-
-  // Unicode emoji: extract code points and build Twemoji CDN URL
-  const codePoints = [];
-  for (const sym of str) {
-    codePoints.push(sym.codePointAt(0).toString(16));
-  }
-  const filtered = codePoints.filter(c => c !== 'fe0f');
-  const code = (filtered.length > 0 ? filtered : codePoints).join('-');
-  if (code && code.length > 0) {
-    return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
-  }
-
-  return null;
-}
-
-/**
- * Safely fetch an external image with timeout, CDN fallback, and diagnostic logging
- */
-export async function fetchImageSafe(rawUrl) {
-  if (!rawUrl) return null;
-  const url = (typeof rawUrl === 'string' ? normalizeToImageUrl(rawUrl) : null) || rawUrl;
-  if (!url) return null;
-
-  const urlStr = typeof url === 'string' ? url : 'buffer';
-  try {
-    if (Buffer.isBuffer(url)) return await loadImage(url);
-    if (typeof url === 'string' && (url.startsWith('/') || url.includes(':\\') || url.includes(':/') || url.startsWith('file://'))) {
-      const cleanPath = url.replace('file://', '');
-      if (fs.existsSync(cleanPath)) return await loadImage(cleanPath);
-    }
-
-    let res = null;
-    try {
-      res = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        signal: AbortSignal.timeout(4000)
-      });
-    } catch (netErr) {
-      sysWarn('Trade Card Image Primary Fetch Network Error', { url: urlStr.slice(0, 120), error: netErr?.message });
-    }
-
-    // Fallback for Twemoji if primary failed or returned non-200
-    if (!res || !res.ok) {
-      if (typeof url === 'string' && url.includes('cdnjs.cloudflare.com/ajax/libs/twemoji/')) {
-        const fallbackUrl = url.replace('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/', 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/');
-        try {
-          const fbRes = await fetch(fallbackUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-            signal: AbortSignal.timeout(4000)
-          });
-          if (fbRes.ok) {
-            const fbBuffer = await fbRes.arrayBuffer();
-            const img = await loadImage(Buffer.from(fbBuffer));
-            sysLog('Trade Card Image Loaded via Fallback CDN', { url: fallbackUrl.slice(0, 100), width: img.width, height: img.height });
-            return img;
-          } else {
-            sysWarn('Trade Card Image Fallback Failed', { fallbackUrl: fallbackUrl.slice(0, 100), status: fbRes.status });
-          }
-        } catch (fbErr) {
-          sysWarn('Trade Card Image Fallback Network Error', { fallbackUrl: fallbackUrl.slice(0, 100), error: fbErr?.message });
-        }
-      }
-      sysWarn('Trade Card Image Fetch Failed', { url: urlStr.slice(0, 120), status: res?.status || 'no_response' });
-      return null;
-    }
-
-    const arrayBuffer = await res.arrayBuffer();
-    const img = await loadImage(Buffer.from(arrayBuffer));
-    sysLog('Trade Card Image Loaded', { url: urlStr.slice(0, 100), width: img.width, height: img.height });
-    return img;
-  } catch (err) {
-    sysWarn('Trade Card Image Processing Error', { url: urlStr.slice(0, 120), error: err?.message });
-    return null;
-  }
-}
-
-/**
- * Convert hex color to rgba string
- */
-function hexToRgba(hex, alpha = 1) {
-  let clean = String(hex || '#00E5FF').replace('#', '');
-  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
-  const num = parseInt(clean, 16);
-  if (isNaN(num)) return `rgba(0, 229, 255, ${alpha})`;
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Shift color brightness
- */
-function shiftColorBrightness(hex, percent) {
-  let clean = String(hex || '#00E5FF').replace('#', '');
-  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
-  const num = parseInt(clean, 16);
-  if (isNaN(num)) return '#0099FF';
-  const r = Math.min(255, Math.max(0, Math.round(((num >> 16) & 255) * (1 + percent))));
-  const g = Math.min(255, Math.max(0, Math.round(((num >> 8) & 255) * (1 + percent))));
-  const b = Math.min(255, Math.max(0, Math.round((num & 255) * (1 + percent))));
-  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Extract dominant vibrant color from custom coin icon with fallback to gold
- */
-export function extractCoinColor(img, fallback = '#F59E0B') {
-  if (!img) return fallback;
-  try {
-    const dominant = extractDominantColor(img);
-    if (dominant) return dominant;
-
-    // Fallback: If extractDominantColor filtered out low-saturation/monochromatic pixels,
-    // sample average RGB of non-transparent pixels
-    const size = 32;
-    const offCanvas = createCanvas(size, size);
-    const offCtx = offCanvas.getContext('2d');
-    offCtx.drawImage(img, 0, 0, size, size);
-    const { data } = offCtx.getImageData(0, 0, size, size);
-
-    let rSum = 0, gSum = 0, bSum = 0, count = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const a = data[i + 3];
-      if (a < 128) continue;
-      rSum += data[i];
-      gSum += data[i + 1];
-      bSum += data[i + 2];
-      count++;
-    }
-
-    if (count > 0) {
-      const r = Math.round(rSum / count);
-      const g = Math.round(gSum / count);
-      const b = Math.round(bSum / count);
-      return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-    }
-  } catch (err) {
-    sysWarn('Failed to extract coin color, using fallback', err);
-  }
-  return fallback;
-}
-
-/**
- * Draw embossed golden coin vector
- */
-function drawVectorCoin(ctx, x, y, radius) {
-  ctx.save();
-  const outerGrad = ctx.createLinearGradient(x - radius, y - radius, x + radius, y + radius);
-  outerGrad.addColorStop(0, '#FFE875');
-  outerGrad.addColorStop(0.5, '#F5A623');
-  outerGrad.addColorStop(1, '#B87400');
-  ctx.fillStyle = outerGrad;
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  const innerRadius = radius * 0.82;
-  const innerGrad = ctx.createLinearGradient(x - innerRadius, y - innerRadius, x + innerRadius, y + innerRadius);
-  innerGrad.addColorStop(0, '#F7B731');
-  innerGrad.addColorStop(1, '#D48806');
-  ctx.fillStyle = innerGrad;
-  ctx.beginPath();
-  ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.fillStyle = '#FFF8DB';
-  ctx.font = `bold ${Math.round(radius * 1.05)}px ${fontStack}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('$', x, y + 0.5);
-  ctx.restore();
-}
 
 /**
  * Draw central vector status symbol
@@ -921,7 +659,7 @@ export async function renderTradeCard({
       ctx.fillStyle = '#FFFFFF';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const initial = (displayName && displayName[0]) ? displayName[0].toUpperCase() : 'U';
+      const initial = safeFirstChar(displayName).toUpperCase();
       ctx.fillText(initial, avatarX + avatarRadius, avatarY + avatarRadius);
     }
     ctx.restore();
