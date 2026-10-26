@@ -356,21 +356,21 @@ export function setupComponentHandlers(client) {
           await handleItemModalSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_cat_modal_edit_')) {
           await handleEditCategoryModalSubmit(interaction);
-        } else if (interaction.customId === 'shop_lb_create_modal') {
+        } else if (interaction.customId === 'shop_lb_create_modal' || interaction.customId.startsWith('shop_lb_create_modal_')) {
           await handleLootBoxCreateModalSubmit(interaction);
-        } else if (interaction.customId === 'shop_lb_rename_cat_modal') {
+        } else if (interaction.customId === 'shop_lb_rename_cat_modal' || interaction.customId.startsWith('shop_lb_rename_cat_modal_')) {
           await handleLootBoxRenameCatSubmit(interaction);
         } else if (interaction.customId.startsWith('shop_lb_rename_modal_') || interaction.customId.startsWith('shop_lb_edit_modal_')) {
-          const boxId = parseInt(interaction.customId.replace('shop_lb_rename_modal_', '').replace('shop_lb_edit_modal_', ''), 10);
+          const boxId = parseInt(interaction.customId.replace('shop_lb_rename_modal_', '').replace('shop_lb_edit_modal_', '').split('_')[0], 10);
           await handleLootBoxRenameSubmit(interaction, boxId);
         } else if (interaction.customId.startsWith('shop_lb_rates_modal_')) {
-          const boxId = parseInt(interaction.customId.replace('shop_lb_rates_modal_', ''), 10);
+          const boxId = parseInt(interaction.customId.replace('shop_lb_rates_modal_', '').split('_')[0], 10);
           await handleLootBoxRarityRatesSubmit(interaction, boxId);
         } else if (interaction.customId.startsWith('shop_lb_coins_modal_')) {
-          const boxId = parseInt(interaction.customId.replace('shop_lb_coins_modal_', ''), 10);
+          const boxId = parseInt(interaction.customId.replace('shop_lb_coins_modal_', '').split('_')[0], 10);
           await handleLootBoxCoinsConfigSubmit(interaction, boxId);
         } else if (interaction.customId.startsWith('shop_lb_prizes_modal_')) {
-          const boxId = parseInt(interaction.customId.replace('shop_lb_prizes_modal_', ''), 10);
+          const boxId = parseInt(interaction.customId.replace('shop_lb_prizes_modal_', '').split('_')[0], 10);
           await handleLootBoxPrizeCountSubmit(interaction, boxId);
         } else if (interaction.customId.startsWith('shop_lb_images_modal_')) {
           const boxId = parseInt(interaction.customId.replace('shop_lb_images_modal_', '').split('_')[0], 10);

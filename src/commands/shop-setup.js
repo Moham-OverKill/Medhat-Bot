@@ -6055,7 +6055,7 @@ export async function handleShopPostUpdate(interaction) {
 export async function handleLootBoxCreateModalStart(interaction) {
   const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
   const modal = new ModalBuilder()
-    .setCustomId('shop_lb_create_modal')
+    .setCustomId(`shop_lb_create_modal_${Date.now()}`)
     .setTitle(`Create ${lootBoxCatName.slice(0, 35)}`);
 
   const nameInput = new TextInputBuilder()
@@ -6182,7 +6182,7 @@ export async function handleLootBoxRenameCatStart(interaction) {
   const currentEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
   const modal = new ModalBuilder()
-    .setCustomId('shop_lb_rename_cat_modal')
+    .setCustomId(`shop_lb_rename_cat_modal_${Date.now()}`)
     .setTitle('Appearance');
 
   const catInput = new TextInputBuilder()
@@ -6696,7 +6696,7 @@ export async function handleLootBoxRarityRatesModal(interaction, boxId) {
   if (!box) return;
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_rates_modal_${boxId}`)
+    .setCustomId(`shop_lb_rates_modal_${boxId}_${Date.now()}`)
     .setTitle('Configure Rarity Rates');
 
   const commonInput = new TextInputBuilder()
@@ -6832,7 +6832,7 @@ export async function handleLootBoxCoinsConfigModal(interaction, boxId) {
 
   const coinName = await getCurrencyName(interaction.guildId);
   const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_coins_modal_${boxId}`)
+    .setCustomId(`shop_lb_coins_modal_${boxId}_${Date.now()}`)
     .setTitle(`Configure ${coinName} Reward`.slice(0, 45));
 
   const chanceInput = new TextInputBuilder()
@@ -6956,7 +6956,7 @@ export async function handleLootBoxPrizeCountModal(interaction, boxId) {
   if (!box) return;
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_prizes_modal_${boxId}`)
+    .setCustomId(`shop_lb_prizes_modal_${boxId}_${Date.now()}`)
     .setTitle('Configure Prize Count');
 
   const minPrizesInput = new TextInputBuilder()
@@ -7057,7 +7057,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
   if (!box) return;
 
   const modal = new ModalBuilder()
-    .setCustomId(`shop_lb_rename_modal_${boxId}`)
+    .setCustomId(`shop_lb_rename_modal_${boxId}_${Date.now()}`)
     .setTitle('Appearance');
 
   const nameInput = new TextInputBuilder()
