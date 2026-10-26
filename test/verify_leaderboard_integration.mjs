@@ -16,8 +16,7 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
     assert.equal(nullUrl, null);
   });
 
-  await t.test('buildLeaderboardMessagePayload should assemble standalone image attachment and live countdown text', async () => {
-    const timestamp = Math.floor(Date.now() / 1000) + 3600;
+  await t.test('buildLeaderboardMessagePayload should assemble title embed and unconstrained image attachment with no timer', async () => {
     const sampleData = [
       { userId: '101', displayName: 'Apex Warrior', score: 25000, roleColor: '#FFD700' },
       { userId: '102', displayName: 'Cyber Knight', score: 18000, roleColor: '#00E5FF' },
@@ -29,13 +28,16 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
       category: 'daily_coins',
       data: sampleData,
       mvpRecipients: ['101'],
-      nextRefreshTimestamp: timestamp,
       guildId: 'guild_123'
     });
 
     assert.ok(payload.files && payload.files.length === 1, 'Must include 1 image attachment');
-    assert.deepEqual(payload.embeds, [], 'Embeds array must be empty to display standalone full-width image');
-    assert.ok(payload.content && payload.content.includes(`<t:${timestamp}:R>`), 'Message content must contain live relative timestamp');
+    assert.ok(payload.embeds && payload.embeds.length === 1, 'Must include 1 title embed');
+    assert.equal(payload.content, undefined, 'Must not include countdown or content text');
+
+    const embed = payload.embeds[0];
+    assert.ok(embed.data.title.includes('MVP CHAMPIONS'), 'Embed must feature category title');
+    assert.equal(embed.data.image, undefined, 'Image must not be bound inside the embed');
 
     const attachment = payload.files[0];
 
