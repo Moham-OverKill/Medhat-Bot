@@ -793,7 +793,7 @@ export async function handlePassComponent(interaction) {
         .setMaxLength(4)
         .setRequired(false);
 
-      if (currentBoost) {
+      if (currentBoost && Number(currentBoost) !== 35) {
         boostInput.setValue(String(currentBoost));
       }
 

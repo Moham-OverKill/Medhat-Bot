@@ -318,7 +318,7 @@ export async function showSetupPanel(interaction, config) {
   // Use editReply() if already acknowledged, otherwise update() for component interactions
   const responseMethod = (interaction.deferred || interaction.replied)
     ? 'editReply'
-    : (interaction.isAnySelectMenu() || interaction.isButton() || interaction.isModalSubmit()
+    : ((interaction.isAnySelectMenu?.() || interaction.isButton?.() || interaction.isModalSubmit?.())
       ? 'update'
       : 'editReply');
 
@@ -369,13 +369,16 @@ export async function handleMvpComponent(interaction) {
       case 'mvp_reward_config_btn':
         const coinNameModal = await getCurrencyName(guildId);
         const modal = new ModalBuilder().setCustomId(`rewards_mvp_modal_${Date.now()}`).setTitle('MVP Reward Settings');
+        const currentMvpAmount = config.mvpRewardAmount !== undefined ? Number(config.mvpRewardAmount) : 5;
         const input = new TextInputBuilder()
           .setCustomId('amount')
           .setLabel(`${coinNameModal} per hour`)
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('5')
-          .setValue(String(config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 5))
           .setRequired(false);
+        if (currentMvpAmount !== 5) {
+          input.setValue(String(currentMvpAmount));
+        }
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);
         break;

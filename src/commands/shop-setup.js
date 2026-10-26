@@ -3317,7 +3317,8 @@ export async function handleCategoryRemoveSelect(interaction) {
 export async function handleEditCategoryRenameStart(interaction) {
   try {
     // DO NOT DEFER - We need to show a modal immediately
-    const categoryId = interaction.customId.split('_').pop();
+    const match = interaction.customId.match(/shop_cat_modal_edit_([^_]+)/);
+    const categoryId = match ? match[1] : interaction.customId.split('_').pop();
     const categories = await getShopCategories(interaction.guildId);
     const category = categories.find(c => c.id.toString() === categoryId);
 
@@ -3343,10 +3344,12 @@ export async function handleEditCategoryRenameStart(interaction) {
       .setLabel('Category Type (0=Multi, 1=Single)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('0 = Multi, 1 = Single')
-      .setValue(String(category.category_type || 0))
-      .setMinLength(1)
       .setMaxLength(1)
-      .setRequired(true);
+      .setRequired(false);
+
+    if (category.category_type === 1) {
+      typeInput.setValue('1');
+    }
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(nameInput),
@@ -3652,10 +3655,11 @@ export async function handleEditCategoryRemoveItemsSelect(interaction) {
 export async function handleEditCategoryModalSubmit(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    const categoryId = interaction.customId.split('_').pop();
+    const match = interaction.customId.match(/shop_cat_modal_edit_([^_]+)/);
+    const categoryId = match ? match[1] : interaction.customId.split('_').pop();
     const name = interaction.fields.getTextInputValue('cat_name');
-    const typeRaw = interaction.fields.getTextInputValue('cat_type');
-    const type = parseInt(typeRaw);
+    const typeRaw = interaction.fields.getTextInputValue('cat_type')?.trim();
+    const type = (typeRaw === '' || typeRaw === undefined) ? 0 : parseInt(typeRaw, 10);
 
     if (isNaN(type) || (type !== 0 && type !== 1)) {
       return interaction.followUp({ content: '❌ Invalid Category Type. Use 0 for Multi (Stack) or 1 for Single (Swap).', flags: MessageFlags.Ephemeral });
@@ -6192,19 +6196,25 @@ export async function handleLootBoxRenameCatStart(interaction) {
     .setCustomId('cat_name')
     .setLabel('Category Display Name')
     .setStyle(TextInputStyle.Short)
-    .setValue(currentCat)
     .setPlaceholder('e.g. Chests, Gifts, Loot Boxes')
-    .setRequired(true)
+    .setRequired(false)
     .setMaxLength(32);
+
+  if (currentCat && currentCat !== 'Chests') {
+    catInput.setValue(currentCat);
+  }
 
   const emojiInput = new TextInputBuilder()
     .setCustomId('cat_emoji')
     .setLabel('Category Emoji')
     .setStyle(TextInputStyle.Short)
-    .setValue(currentEmoji || '🎁')
     .setPlaceholder('e.g. 🎁, 📦, 💎 or :custom_emoji: / emoji ID')
     .setRequired(false)
     .setMaxLength(100);
+
+  if (currentEmoji && currentEmoji !== '🎁') {
+    emojiInput.setValue(currentEmoji);
+  }
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(catInput),
@@ -6219,7 +6229,8 @@ export async function handleLootBoxRenameCatStart(interaction) {
 export async function handleLootBoxRenameCatSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const newName = (interaction.fields.getTextInputValue('cat_name') || 'Chests').trim().slice(0, 32);
+    const rawName = interaction.fields.getTextInputValue('cat_name')?.trim();
+    const newName = (rawName || 'Chests').slice(0, 32);
     let rawEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
     if (!rawEmoji) rawEmoji = '🎁';
 
