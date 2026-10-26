@@ -1015,24 +1015,25 @@ export async function handlePassComponent(interaction) {
           'SELECT quantity FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND shop_item_id = $4',
           [guildId, level, 'item', itemId]
         );
-        const currentQty = existRes.rows[0]?.quantity || 1;
+        const existingQty = existRes.rows.length > 0 ? parseInt(existRes.rows[0].quantity, 10) : null;
 
         const modal = new ModalBuilder()
           .setCustomId(`pass_reward_qty_${level}_item_${itemId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}_${Date.now()}`)
           .setTitle(`Set Quantity: ${itemName}`.slice(0, 45));
 
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('reward_quantity')
-              .setLabel('Quantity (0 = Remove)')
-              .setStyle(TextInputStyle.Short)
-              .setPlaceholder('0 = Remove')
-              .setValue(String(currentQty))
-              .setMinLength(1).setMaxLength(3)
-              .setRequired(false)
-          )
-        );
+        const qtyInput = new TextInputBuilder()
+          .setCustomId('reward_quantity')
+          .setLabel('Quantity')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('None')
+          .setMaxLength(3)
+          .setRequired(false);
+
+        if (existingQty !== null && existingQty > 0) {
+          qtyInput.setValue(String(existingQty));
+        }
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
         await interaction.showModal(modal);
         return;
       }
@@ -1046,24 +1047,25 @@ export async function handlePassComponent(interaction) {
           'SELECT quantity FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4',
           [guildId, level, 'chest', chestId]
         );
-        const currentQty = existRes.rows[0]?.quantity || 1;
+        const existingQty = existRes.rows.length > 0 ? parseInt(existRes.rows[0].quantity, 10) : null;
 
         const modal = new ModalBuilder()
           .setCustomId(`pass_reward_qty_${level}_chest_${chestId}_pg_${page}_fld_${currentFolder}_rpg_${currentRewardPage}_${Date.now()}`)
           .setTitle(`Set Quantity: ${chestName}`.slice(0, 45));
 
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('reward_quantity')
-              .setLabel('Quantity (0 = Remove)')
-              .setStyle(TextInputStyle.Short)
-              .setPlaceholder('0 = Remove')
-              .setValue(String(currentQty))
-              .setMinLength(1).setMaxLength(3)
-              .setRequired(false)
-          )
-        );
+        const qtyInput = new TextInputBuilder()
+          .setCustomId('reward_quantity')
+          .setLabel('Quantity')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('None')
+          .setMaxLength(3)
+          .setRequired(false);
+
+        if (existingQty !== null && existingQty > 0) {
+          qtyInput.setValue(String(existingQty));
+        }
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
         await interaction.showModal(modal);
         return;
       }
@@ -1568,10 +1570,10 @@ export async function handlePassModal(interaction) {
       const currentRewardPage = match[6] ? parseInt(match[6], 10) : 1;
 
       const qtyRaw = interaction.fields.getTextInputValue('reward_quantity')?.trim();
-      const quantity = (qtyRaw === '' || qtyRaw === undefined) ? 1 : parseInt(qtyRaw, 10);
+      const quantity = (qtyRaw === '' || qtyRaw === undefined) ? 0 : parseInt(qtyRaw, 10);
 
       if (isNaN(quantity) || quantity < 0 || quantity > 999) {
-        return interaction.reply({ content: '❌ Quantity must be between 0 and 999 (enter 0 to remove).', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ Quantity must be between 0 and 999 (0 or empty to remove).', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferUpdate().catch(() => {});
@@ -1587,19 +1589,24 @@ export async function handlePassModal(interaction) {
       }
 
       if (quantity === 0) {
+        let deleted = 0;
         if (type === 'item') {
-          await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND shop_item_id = $4', [guildId, level, 'item', targetId]);
+          const res = await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND shop_item_id = $4', [guildId, level, 'item', targetId]);
+          deleted = res.rowCount || 0;
         } else {
-          await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4', [guildId, level, 'chest', targetId]);
+          const res = await pool.query('DELETE FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4', [guildId, level, 'chest', targetId]);
+          deleted = res.rowCount || 0;
         }
-        sysLog('Level Reward Removed', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} removed` });
-        sendLog(
-          interaction.guild,
-          'audit',
-          'orange',
-          '🎁 Level Reward Removed',
-          `Admin **<@${interaction.user.id}>** removed **${rewardName}** from **Level ${level}**.`
-        );
+        if (deleted > 0) {
+          sysLog('Level Reward Removed', { guild: guildId, user: interaction.user.id, detail: `Level ${level} | ${type} #${targetId} removed` });
+          sendLog(
+            interaction.guild,
+            'audit',
+            'orange',
+            '🎁 Level Reward Removed',
+            `Admin **<@${interaction.user.id}>** removed **${rewardName}** from **Level ${level}**.`
+          );
+        }
       } else {
         if (type === 'item') {
           await pool.query(
