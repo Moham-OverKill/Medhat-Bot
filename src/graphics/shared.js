@@ -37,18 +37,67 @@ try {
   sysError('Shared Font Registration Error', err);
 }
 
-export const fontStack = '"Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI", "DejaVu Sans", Arial, sans-serif';
-export const boldFontStack = '"Roboto-Bold", "Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI", Arial, sans-serif';
+export const fontStack = '"Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI Symbol", "Segoe UI Historic", "Segoe UI", "MS Gothic", "Yu Gothic", "Malgun Gothic", "DejaVu Sans", Arial, sans-serif';
+export const boldFontStack = '"Roboto-Bold", "Roboto", "Cairo", "Noto Sans Arabic", "Segoe UI Emoji", "Segoe UI Symbol", "Segoe UI Historic", "Segoe UI", "MS Gothic", "Yu Gothic", "Malgun Gothic", Arial, sans-serif';
 
 /**
- * Safely extract the first grapheme/character from a string (handles surrogate pairs and emojis).
+ * Small caps character transliteration lookup map.
+ */
+const SMALL_CAPS_MAP = {
+  '\u1D00': 'A', '\u1D03': 'B', '\u1D04': 'C', '\u1D05': 'D', '\u1D07': 'E',
+  '\u1D08': 'E', '\u1D09': 'I', '\u1D0A': 'J', '\u1D0B': 'K', '\u1D0C': 'L',
+  '\u1D0D': 'M', '\u1D0E': 'N', '\u1D0F': 'O', '\u1D10': 'O', '\u1D11': 'O',
+  '\u1D12': 'O', '\u1D13': 'O', '\u1D18': 'P', '\u1D19': 'Q', '\u1D1A': 'R',
+  '\u1D1B': 'T', '\u1D1C': 'U', '\u1D1D': 'U', '\u1D1E': 'V', '\u1D1F': 'V',
+  '\u1D20': 'W', '\u1D21': 'W', '\u1D22': 'Z',
+  '\u0262': 'G', '\u029C': 'H', '\u026A': 'I', '\u029F': 'L', '\u0274': 'N',
+  '\u0280': 'R', '\u028F': 'Y', '\u0299': 'B', '\u028C': 'V',
+  'ᴀ': 'A', 'ʙ': 'B', 'ᴄ': 'C', 'ᴅ': 'D', 'ᴇ': 'E', 'ғ': 'F', 'ɢ': 'G', 'ʜ': 'H',
+  'ɪ': 'I', 'ᴊ': 'J', 'ᴋ': 'K', 'ʟ': 'L', 'ᴍ': 'M', 'ɴ': 'N', 'ᴏ': 'O', 'ᴘ': 'P',
+  'ǫ': 'Q', 'ʀ': 'R', 's': 'S', 'ᴛ': 'T', 'ᴜ': 'U', 'ᴠ': 'V', 'ᴡ': 'W', 'x': 'X',
+  'ʏ': 'Y', 'ᴢ': 'Z'
+};
+
+/**
+ * Sanitize and normalize display names for canvas rendering across cards.
+ * Decomposes fancy unicode fonts (Mathematical Alphanumerics, Fraktur, Fullwidth)
+ * to base Latin characters matching the standard Roboto/Cairo font, while preserving
+ * emojis, Arabic, CJK, and legitimate symbols.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function normalizeDisplayName(name) {
+  if (!name || typeof name !== 'string') return 'Unknown';
+
+  // 1. NFKD decomposition maps Mathematical Fraktur, Bold, Script, Double-Struck, Fullwidth to base Latin
+  let str = name.normalize('NFKD');
+
+  // 2. Small Caps transliteration
+  str = str.replace(/[\u0250-\u02AF\u1D00-\u1D25ᴀ-ᴢ]/g, ch => SMALL_CAPS_MAP[ch] || ch);
+
+  // 3. Remove non-printable control characters, nulls, surrogate debris, private use, and zero-width spaces
+  str = str.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\uFEFF\uFFF0-\uFFFF]/g, '');
+
+  // 4. Collapse multiple spaces into one and trim
+  str = str.replace(/\s+/g, ' ').trim();
+
+  return str || 'Unknown';
+}
+
+/**
+ * Safely extract the first grapheme/character from a string (handles surrogate pairs, emojis, and aesthetic fonts).
  * @param {string} str
  * @param {string} fallback
  * @returns {string}
  */
 export function safeFirstChar(str, fallback = 'U') {
   if (!str || typeof str !== 'string') return fallback;
-  const chars = Array.from(str.trim());
+  const normalized = normalizeDisplayName(str);
+  const trimmed = normalized.trim();
+  if (!trimmed) return fallback;
+
+  const chars = Array.from(trimmed);
   return chars.length > 0 ? chars[0] : fallback;
 }
 

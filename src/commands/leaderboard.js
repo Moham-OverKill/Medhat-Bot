@@ -10,6 +10,7 @@ import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
 import { sendLog, sysError, sysLog } from '../utils/logger.js';
 import { renderLeaderboardCard, LEADERBOARD_THEMES } from '../graphics/leaderboardCard.js';
+import { normalizeDisplayName } from '../graphics/shared.js';
 
 // Define the /leaderboard command
 export const data = new SlashCommandBuilder()
@@ -195,8 +196,8 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
         } catch {
             name = item.username || 'Unknown User';
         }
-        // Sanitize name: collapse multiple spaces into one and trim
-        const sanitizedName = name.replace(/\s\s+/g, ' ').trim();
+        // Sanitize and normalize name: collapse multiple spaces, trim, and normalize special font glyphs
+        const sanitizedName = normalizeDisplayName(name);
         return {
             ...item,
             displayName: sanitizedName,
@@ -248,16 +249,13 @@ export async function buildLeaderboardMessagePayload({
     const filename = `${category}_leaderboard.png`;
     const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
 
-    const embed = new EmbedBuilder()
-        .setColor(parseInt(theme.themeColor.replace('#', ''), 16))
-        .setImage(`attachment://${filename}`);
-
-    if (nextRefreshTimestamp) {
-        embed.setDescription(`⏱️ Next Refresh: **<t:${nextRefreshTimestamp}:R>**`);
-    }
+    const content = nextRefreshTimestamp
+        ? `⏱️ Next Refresh: **<t:${nextRefreshTimestamp}:R>**`
+        : undefined;
 
     return {
-        embeds: [embed],
+        content,
+        embeds: [],
         files: [attachment]
     };
 }

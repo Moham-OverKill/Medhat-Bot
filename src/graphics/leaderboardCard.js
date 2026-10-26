@@ -9,6 +9,7 @@ import {
   hexToRgba,
   shiftColorBrightness,
   safeFirstChar,
+  normalizeDisplayName,
   fetchImageSafe,
   formatCompactNumber
 } from './shared.js';
@@ -413,7 +414,7 @@ export async function renderLeaderboardCard({
       // Display Name Only (Server nickname) with auto-scaling to eliminate truncation/overflow
       const nameY = cardY + (isCenter ? 124 : 114);
       const maxNameWidth = podiumCardW - 16;
-      const rawName = item.displayName || 'Unknown';
+      const rawName = normalizeDisplayName(item.displayName || 'Unknown');
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -542,7 +543,7 @@ export async function renderLeaderboardCard({
       // Server Display Name: clean scale down and "..." if way too long
       const nameStartX = avatarCenterX + avatarR + 12;
       const maxNameWidth = scoreBadgeX - nameStartX - 10;
-      const rawName = item.displayName || 'Unknown';
+      const rawName = normalizeDisplayName(item.displayName || 'Unknown');
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
