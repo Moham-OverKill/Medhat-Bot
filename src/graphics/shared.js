@@ -339,6 +339,63 @@ export function getContrastTextColor(hexOrLum) {
 }
 
 /**
+ * Dynamically boost a color's luminance/lightness to ensure high readability on dark backgrounds,
+ * while preserving its original hue and chromatic personality.
+ *
+ * @param {string} hex - Input hex color
+ * @param {number} [targetLightness=0.76] - Minimum HSL lightness (0.0 to 1.0)
+ * @returns {string} High-contrast hex color
+ */
+export function boostColorLuminance(hex, targetLightness = 0.76) {
+  const clean = normalizeHex(hex);
+  const r = parseInt(clean.slice(1, 3), 16) / 255;
+  const g = parseInt(clean.slice(3, 5), 16) / 255;
+  const b = parseInt(clean.slice(5, 7), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  let l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  if (getLuminance(clean) >= 170 || l >= targetLightness) {
+    return clean;
+  }
+
+  l = targetLightness;
+  s = Math.max(0.40, Math.min(s, 0.85));
+
+  function hue2rgb(p, q, t) {
+    let val = t;
+    if (val < 0) val += 1;
+    if (val > 1) val -= 1;
+    if (val < 1 / 6) return p + (q - p) * 6 * val;
+    if (val < 1 / 2) return q;
+    if (val < 2 / 3) return p + (q - p) * (2 / 3 - val) * 6;
+    return p;
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const outR = Math.round(hue2rgb(p, q, h + 1 / 3) * 255);
+  const outG = Math.round(hue2rgb(p, q, h) * 255);
+  const outB = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
+
+  return '#' + [outR, outG, outB].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Extract dominant vibrant color from an image using center-weighted perceptual clustering
  * @param {import('@napi-rs/canvas').Image} img
  * @returns {string|null}
