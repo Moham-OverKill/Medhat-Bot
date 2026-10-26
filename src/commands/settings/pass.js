@@ -1523,7 +1523,7 @@ async function executeImportSync(interaction, guildId, flowKey, page) {
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('pass_home_page_' + page)
-      .setLabel('Back to Levels')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );

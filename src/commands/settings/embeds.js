@@ -650,7 +650,7 @@ export async function renderGroupAttachedEmbedsPage(interaction, groupId) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`embed_group_manage_${groupId}`)
-        .setLabel('Back to Group')
+        .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
     )
@@ -716,7 +716,7 @@ export async function renderGroupSendPage(interaction, groupId) {
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`embed_group_manage_${groupId}`)
-      .setLabel('Back to Group')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );

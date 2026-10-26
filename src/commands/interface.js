@@ -2172,7 +2172,7 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('admin_interface_setup_btn')
-      .setLabel('Back to Setup')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -2361,7 +2361,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
   const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('interface_setup_btn')
-      .setLabel('Back to Setup')
+      .setLabel('Back')
       .setEmoji('⬅️')
       .setStyle(ButtonStyle.Secondary)
   );
