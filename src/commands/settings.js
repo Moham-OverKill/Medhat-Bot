@@ -344,7 +344,10 @@ export async function handleSettingsComponent(interaction) {
             interaction.customId === 'settings_customize' ||
             interaction.customId === 'settings_coins_customize' ||
             (interaction.customId.startsWith('settings_menu_') && interaction.values?.[0] === 'other_customize');
-        if (!isModal && !needsModal && !interaction.deferred && !interaction.replied) {
+        const isImmediateMenu =
+            interaction.customId.startsWith('lb_menu_') ||
+            interaction.customId === 'settings_leaderboards';
+        if (!isModal && !needsModal && !isImmediateMenu && !interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate().catch(() => {});
         }
 

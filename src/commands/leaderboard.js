@@ -253,12 +253,9 @@ export async function buildLeaderboardMessagePayload({
     const coinEmojiStr = guildId ? COIN_EMOJI.forGuild(guildId) : '';
     const categoryIcon = (category === 'coins' && coinEmojiStr) ? coinEmojiStr : theme.iconEmoji;
 
-    const titleEmbed = new EmbedBuilder()
-        .setColor(parseInt(theme.themeColor.replace('#', ''), 16))
-        .setTitle(`${categoryIcon} ${theme.title}`);
-
     return {
-        embeds: [titleEmbed],
+        content: `# ${categoryIcon} ${theme.title}`,
+        embeds: [],
         files: [attachment]
     };
 }
