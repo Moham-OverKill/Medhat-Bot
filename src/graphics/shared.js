@@ -339,7 +339,7 @@ export function getContrastTextColor(hexOrLum) {
 }
 
 /**
- * Extract dominant vibrant color from an image
+ * Extract dominant vibrant color from an image using center-weighted perceptual clustering
  * @param {import('@napi-rs/canvas').Image} img
  * @returns {string|null}
  */
@@ -352,43 +352,96 @@ export function extractDominantColor(img) {
     offCtx.drawImage(img, 0, 0, size, size);
     const { data } = offCtx.getImageData(0, 0, size, size);
 
-    const colorCounts = new Map();
-    let maxScore = 0;
-    let dominant = null;
+    const buckets = new Map();
+    let neutralCount = 0;
+    let neutralLSum = 0;
+    let totalValid = 0;
 
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const idx = (y * size + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+        if (a < 128) continue;
 
-      if (a < 128) continue;
+        const rNorm = r / 255, gNorm = g / 255, bNorm = b / 255;
+        const max = Math.max(rNorm, gNorm, bNorm);
+        const min = Math.min(rNorm, gNorm, bNorm);
+        const delta = max - min;
+        const l = (max + min) / 2;
 
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const delta = max - min;
-      const brightness = (r + g + b) / 3;
+        if (l < 0.08 || l > 0.95) continue;
+        totalValid++;
 
-      if (brightness < 30 || brightness > 235) continue;
-      if (delta < 20) continue;
+        // Weight pixels closer to the center circle higher
+        const dx = x - 23.5, dy = y - 23.5;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const centerWeight = 1.0 + Math.max(0, 1 - dist / 24) * 0.8;
 
-      const qr = Math.min(255, Math.round(r / 16) * 16);
-      const qg = Math.min(255, Math.round(g / 16) * 16);
-      const qb = Math.min(255, Math.round(b / 16) * 16);
-      const key = (qr << 16) | (qg << 8) | qb;
+        const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
 
-      const saturation = delta / max;
-      const score = (colorCounts.get(key) || 0) + (1 + saturation * 2.5);
-      colorCounts.set(key, score);
+        if (s < 0.12) {
+          neutralCount++;
+          neutralLSum += l;
+          continue;
+        }
 
-      if (score > maxScore) {
-        maxScore = score;
-        dominant = { r: qr, g: qg, b: qb };
+        let h = 0;
+        if (delta !== 0) {
+          if (max === rNorm) h = ((gNorm - bNorm) / delta) % 6;
+          else if (max === gNorm) h = (bNorm - rNorm) / delta + 2;
+          else h = (rNorm - gNorm) / delta + 4;
+          h = Math.round(h * 60);
+          if (h < 0) h += 360;
+        }
+
+        const hueBin = Math.floor(h / 22.5) % 16;
+        const satBin = s < 0.35 ? 0 : (s < 0.7 ? 1 : 2);
+        const lumBin = l < 0.4 ? 0 : (l < 0.65 ? 1 : 2);
+        const key = (hueBin * 9) + (satBin * 3) + lumBin;
+
+        const score = centerWeight * (1 + Math.sqrt(s)) * (1 - Math.abs(l - 0.5) * 0.7);
+
+        const existing = buckets.get(key) || { score: 0, rSum: 0, gSum: 0, bSum: 0, count: 0 };
+        existing.score += score;
+        existing.rSum += r;
+        existing.gSum += g;
+        existing.bSum += b;
+        existing.count++;
+        buckets.set(key, existing);
       }
     }
 
-    if (!dominant) return null;
-    return '#' + [dominant.r, dominant.g, dominant.b].map(x => x.toString(16).padStart(2, '0')).join('');
+    if (totalValid === 0) return null;
+
+    let best = null;
+    let maxScore = 0;
+    for (const b of buckets.values()) {
+      if (b.score > maxScore) {
+        maxScore = b.score;
+        best = b;
+      }
+    }
+
+    // Fallback for monochrome / black & white avatars
+    if (!best || (best.count < totalValid * 0.04 && neutralCount > totalValid * 0.6)) {
+      const avgL = neutralCount > 0 ? (neutralLSum / neutralCount) : 0.5;
+      return avgL >= 0.5 ? '#CBD5E1' : '#94A3B8';
+    }
+
+    let finalR = Math.round(best.rSum / best.count);
+    let finalG = Math.round(best.gSum / best.count);
+    let finalB = Math.round(best.bSum / best.count);
+
+    // Ensure luminance is visible on dark theme backgrounds
+    const lum = (finalR * 299 + finalG * 587 + finalB * 114) / 1000;
+    if (lum < 50) {
+      const boost = 50 / Math.max(1, lum);
+      finalR = Math.min(255, Math.round(finalR * boost));
+      finalG = Math.min(255, Math.round(finalG * boost));
+      finalB = Math.min(255, Math.round(finalB * boost));
+    }
+
+    return '#' + [finalR, finalG, finalB].map(c => c.toString(16).padStart(2, '0')).join('');
   } catch (_) {
     return null;
   }

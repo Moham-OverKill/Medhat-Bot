@@ -22,10 +22,10 @@ export async function getCategories(guildId) {
     const isUnicode = Boolean(coinEmoji && !coinEmoji.startsWith('<'));
     const menuEmoji = isUnicode ? coinEmoji : '🪙';
     return {
-        activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', menuEmoji: '🥈', dbId: 'daily_channel_id', msgId: 'daily_message_id', desc: 'Top active users today' },
-        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '🪙', menuEmoji, dbId: 'coins_channel_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
-        streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', menuEmoji: '🔥', dbId: 'streak_channel_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
-        level: { id: 'level', name: 'Highest Level', emoji: '⭐', menuEmoji: '⭐', dbId: 'level_channel_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
+        activity: { id: 'activity', name: 'Daily Activity', emoji: '🥈', menuEmoji: '🥈', dbId: 'daily_channel_id', titleMsgId: 'daily_title_message_id', msgId: 'daily_message_id', desc: 'Top active users today' },
+        coins: { id: 'coins', name: `Total ${coinName}`, emoji: coinEmoji || '🪙', menuEmoji, dbId: 'coins_channel_id', titleMsgId: 'coins_title_message_id', msgId: 'coins_message_id', desc: 'Richest users in server' },
+        streak: { id: 'streak', name: 'Highest Streak', emoji: '🔥', menuEmoji: '🔥', dbId: 'streak_channel_id', titleMsgId: 'streak_title_message_id', msgId: 'streak_message_id', desc: 'Top daily claim streaks' },
+        level: { id: 'level', name: 'Highest Level', emoji: '⭐', menuEmoji: '⭐', dbId: 'level_channel_id', titleMsgId: 'level_title_message_id', msgId: 'level_message_id', desc: 'Top level & XP users' }
     };
 }
 
@@ -192,24 +192,32 @@ export async function handleLeaderboardMenuAction(interaction) {
             if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
             let config = await getLeaderboardConfig(guildId) || {};
             const oldChan = config[cat.dbId];
-            const oldMsg = config[cat.msgId];
+            const oldTitleMsg = config[cat.titleMsgId];
+            const oldCardMsg = config[cat.msgId];
 
             if (!oldChan) {
                 return handleLeaderboardSettings(interaction);
             }
 
-            // Cleanup old message from Discord channel
-            if (oldMsg && oldChan) {
+            // Cleanup old title and card messages from Discord channel
+            if (oldChan) {
                 try {
                     const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
                     if (chan) {
-                        const msg = await chan.messages.fetch(oldMsg).catch(() => null);
-                        if (msg) await msg.delete().catch(() => {});
+                        if (oldTitleMsg) {
+                            const titleMsg = await chan.messages.fetch(oldTitleMsg).catch(() => null);
+                            if (titleMsg) await titleMsg.delete().catch(() => {});
+                        }
+                        if (oldCardMsg) {
+                            const cardMsg = await chan.messages.fetch(oldCardMsg).catch(() => null);
+                            if (cardMsg) await cardMsg.delete().catch(() => {});
+                        }
                     }
                 } catch {}
             }
 
             config[cat.dbId] = null;
+            config[cat.titleMsgId] = null;
             config[cat.msgId] = null;
             await setLeaderboardConfig(guildId, config);
 
@@ -253,28 +261,36 @@ export async function handleLeaderboardChannelSelect(interaction) {
 
         let config = await getLeaderboardConfig(guildId) || {};
 
-        // Cleanup old message if reassigning
+        // Cleanup old title and card messages if reassigning
         const oldChanId = config[cat.dbId];
+        const oldTitleMsgId = config[cat.titleMsgId];
         const oldMsgId = config[cat.msgId];
-        if (oldMsgId && oldChanId) {
+        if (oldChanId) {
             try {
                 const oldChan = interaction.guild.channels.cache.get(oldChanId) || await interaction.guild.channels.fetch(oldChanId).catch(() => null);
                 if (oldChan) {
-                    const oldMsg = await oldChan.messages.fetch(oldMsgId).catch(() => null);
-                    if (oldMsg) await oldMsg.delete().catch(() => {});
+                    if (oldTitleMsgId) {
+                        const oldTitleMsg = await oldChan.messages.fetch(oldTitleMsgId).catch(() => null);
+                        if (oldTitleMsg) await oldTitleMsg.delete().catch(() => {});
+                    }
+                    if (oldMsgId) {
+                        const oldMsg = await oldChan.messages.fetch(oldMsgId).catch(() => null);
+                        if (oldMsg) await oldMsg.delete().catch(() => {});
+                    }
                 }
             } catch {}
         }
 
-        // Send new leaderboard
-        const nextMsgId = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
-        if (!nextMsgId) {
+        // Send new leaderboard (title first, card second)
+        const sendResult = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
+        if (!sendResult || (!sendResult.cardMsgId && !sendResult.id)) {
             return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>`);
         }
         
         // Update DB
         config[cat.dbId] = channelId;
-        config[cat.msgId] = nextMsgId;
+        config[cat.titleMsgId] = sendResult.titleMsgId || null;
+        config[cat.msgId] = sendResult.cardMsgId || sendResult.id;
         await setLeaderboardConfig(guildId, config);
 
         // Audit Log
@@ -352,19 +368,27 @@ export async function handleLeaderboardDisable(interaction, targetCategoryId = n
 
         let config = await getLeaderboardConfig(guildId) || {};
         const oldChan = config[cat.dbId];
+        const oldTitleMsg = config[cat.titleMsgId];
         const oldMsg = config[cat.msgId];
 
-        if (oldMsg && oldChan) {
+        if (oldChan) {
             try {
                 const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
                 if (chan) {
-                    const msg = await chan.messages.fetch(oldMsg).catch(() => null);
-                    if (msg) await msg.delete().catch(() => {});
+                    if (oldTitleMsg) {
+                        const titleMsg = await chan.messages.fetch(oldTitleMsg).catch(() => null);
+                        if (titleMsg) await titleMsg.delete().catch(() => {});
+                    }
+                    if (oldMsg) {
+                        const msg = await chan.messages.fetch(oldMsg).catch(() => null);
+                        if (msg) await msg.delete().catch(() => {});
+                    }
                 }
             } catch {}
         }
 
         config[cat.dbId] = null;
+        config[cat.titleMsgId] = null;
         config[cat.msgId] = null;
         await setLeaderboardConfig(guildId, config);
 

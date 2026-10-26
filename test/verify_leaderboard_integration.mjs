@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildLeaderboardTitlePayload,
   buildLeaderboardMessagePayload,
   getCustomCoinUrl
 } from '../src/commands/leaderboard.js';
@@ -16,7 +17,17 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
     assert.equal(nullUrl, null);
   });
 
-  await t.test('buildLeaderboardMessagePayload should assemble # title header content and unconstrained image attachment with no embed and no timer', async () => {
+  await t.test('buildLeaderboardTitlePayload should produce standalone markdown header message (> # <icon> <TITLE>)', () => {
+    const titlePayload = buildLeaderboardTitlePayload('daily_coins', 'guild_123');
+
+    assert.equal(titlePayload.embeds.length, 0, 'Title message must have zero embeds');
+    assert.equal(titlePayload.files.length, 0, 'Title message must have zero file attachments');
+    assert.ok(typeof titlePayload.content === 'string' && titlePayload.content.startsWith('> # '), 'Title must start with > # for blockquote header');
+    assert.ok(titlePayload.content.includes('MVP CHAMPIONS'), 'Title must contain category title');
+    assert.ok(!titlePayload.content.includes('<t:'), 'Title must not include countdown or relative timer');
+  });
+
+  await t.test('buildLeaderboardMessagePayload should assemble standalone image attachment with empty content and zero embeds', async () => {
     const sampleData = [
       { userId: '101', displayName: 'Apex Warrior', score: 25000, roleColor: '#FFD700' },
       { userId: '102', displayName: 'Cyber Knight', score: 18000, roleColor: '#00E5FF' },
@@ -33,9 +44,7 @@ test('Leaderboard Dispatch Integration Suite', async (t) => {
 
     assert.ok(payload.files && payload.files.length === 1, 'Must include 1 image attachment');
     assert.ok(Array.isArray(payload.embeds) && payload.embeds.length === 0, 'Must have zero embeds');
-    assert.ok(typeof payload.content === 'string' && payload.content.startsWith('# '), 'Must start with # for large markdown title');
-    assert.ok(payload.content.includes('MVP CHAMPIONS'), 'Must feature category title in content');
-    assert.ok(!payload.content.includes('<t:'), 'Must not include countdown or relative timer');
+    assert.equal(payload.content, '', 'Card message content must be empty string so title is decoupled');
 
     const attachment = payload.files[0];
 

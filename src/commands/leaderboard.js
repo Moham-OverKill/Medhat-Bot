@@ -116,39 +116,47 @@ export async function setLeaderboardConfig(guildId, config) {
     const existing = await getLeaderboardConfig(guildId) || {};
     const merged = {
         daily_channel_id: config.daily_channel_id !== undefined ? config.daily_channel_id : (existing.daily_channel_id ?? null),
+        daily_title_message_id: config.daily_title_message_id !== undefined ? config.daily_title_message_id : (existing.daily_title_message_id ?? null),
         daily_message_id: config.daily_message_id !== undefined ? config.daily_message_id : (existing.daily_message_id ?? null),
         coins_channel_id: config.coins_channel_id !== undefined ? config.coins_channel_id : (existing.coins_channel_id ?? null),
+        coins_title_message_id: config.coins_title_message_id !== undefined ? config.coins_title_message_id : (existing.coins_title_message_id ?? null),
         coins_message_id: config.coins_message_id !== undefined ? config.coins_message_id : (existing.coins_message_id ?? null),
         streak_channel_id: config.streak_channel_id !== undefined ? config.streak_channel_id : (existing.streak_channel_id ?? null),
+        streak_title_message_id: config.streak_title_message_id !== undefined ? config.streak_title_message_id : (existing.streak_title_message_id ?? null),
         streak_message_id: config.streak_message_id !== undefined ? config.streak_message_id : (existing.streak_message_id ?? null),
         level_channel_id: config.level_channel_id !== undefined ? config.level_channel_id : (existing.level_channel_id ?? null),
+        level_title_message_id: config.level_title_message_id !== undefined ? config.level_title_message_id : (existing.level_title_message_id ?? null),
         level_message_id: config.level_message_id !== undefined ? config.level_message_id : (existing.level_message_id ?? null)
     };
     await pool.query(`
     INSERT INTO leaderboard_config (
       guild_id, 
-      daily_channel_id, daily_message_id,
-      coins_channel_id, coins_message_id,
-      streak_channel_id, streak_message_id,
-      level_channel_id, level_message_id,
+      daily_channel_id, daily_title_message_id, daily_message_id,
+      coins_channel_id, coins_title_message_id, coins_message_id,
+      streak_channel_id, streak_title_message_id, streak_message_id,
+      level_channel_id, level_title_message_id, level_message_id,
       updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
     ON CONFLICT (guild_id) DO UPDATE SET
       daily_channel_id = EXCLUDED.daily_channel_id,
+      daily_title_message_id = EXCLUDED.daily_title_message_id,
       daily_message_id = EXCLUDED.daily_message_id,
       coins_channel_id = EXCLUDED.coins_channel_id,
+      coins_title_message_id = EXCLUDED.coins_title_message_id,
       coins_message_id = EXCLUDED.coins_message_id,
       streak_channel_id = EXCLUDED.streak_channel_id,
+      streak_title_message_id = EXCLUDED.streak_title_message_id,
       streak_message_id = EXCLUDED.streak_message_id,
       level_channel_id = EXCLUDED.level_channel_id,
+      level_title_message_id = EXCLUDED.level_title_message_id,
       level_message_id = EXCLUDED.level_message_id,
       updated_at = CURRENT_TIMESTAMP
   `, [
         guildId,
-        merged.daily_channel_id, merged.daily_message_id,
-        merged.coins_channel_id, merged.coins_message_id,
-        merged.streak_channel_id, merged.streak_message_id,
-        merged.level_channel_id, merged.level_message_id
+        merged.daily_channel_id, merged.daily_title_message_id, merged.daily_message_id,
+        merged.coins_channel_id, merged.coins_title_message_id, merged.coins_message_id,
+        merged.streak_channel_id, merged.streak_title_message_id, merged.streak_message_id,
+        merged.level_channel_id, merged.level_title_message_id, merged.level_message_id
     ]);
 
     leaderboardConfigCache.set(guildId, { guild_id: guildId, ...merged });
@@ -225,7 +233,22 @@ export function getCustomCoinUrl(config, guildId) {
 }
 
 /**
- * Build a rich, mobile-first visual leaderboard message payload (Attachment + Live Countdown Embed)
+ * Build the decoupled leaderboard category title message payload (> # <icon> <TITLE>)
+ */
+export function buildLeaderboardTitlePayload(category, guildId = null) {
+    const theme = LEADERBOARD_THEMES[category] || LEADERBOARD_THEMES.daily_coins;
+    const coinEmojiStr = guildId ? COIN_EMOJI.forGuild(guildId) : '';
+    const categoryIcon = (category === 'coins' && coinEmojiStr) ? coinEmojiStr : theme.iconEmoji;
+
+    return {
+        content: `> # ${categoryIcon} ${theme.title}`,
+        embeds: [],
+        files: []
+    };
+}
+
+/**
+ * Build a rich, mobile-first visual leaderboard card image attachment payload
  */
 export async function buildLeaderboardMessagePayload({
     category,
@@ -250,11 +273,8 @@ export async function buildLeaderboardMessagePayload({
     const filename = `${category}_leaderboard.png`;
     const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
 
-    const coinEmojiStr = guildId ? COIN_EMOJI.forGuild(guildId) : '';
-    const categoryIcon = (category === 'coins' && coinEmojiStr) ? coinEmojiStr : theme.iconEmoji;
-
     return {
-        content: `# ${categoryIcon} ${theme.title}`,
+        content: '',
         embeds: [],
         files: [attachment]
     };
@@ -574,6 +594,9 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
         return null;
     }
 
+    const catKey = (type === 'activity') ? 'daily_coins' : type;
+    const titlePayload = buildLeaderboardTitlePayload(catKey, guildId);
+    await channel.send(titlePayload);
     const msg = await channel.send(payload);
     return msg.id;
 }
@@ -597,10 +620,10 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
 
     // Define the strict order of leaderboard types
     const channelKeys = [
-        { type: 'daily_coins', configChannel: 'daily_channel_id', configMsg: 'daily_message_id', name: 'MVP Champions' },
-        { type: 'coins', configChannel: 'coins_channel_id', configMsg: 'coins_message_id', name: 'Richest Members' },
-        { type: 'streak', configChannel: 'streak_channel_id', configMsg: 'streak_message_id', name: 'Longest Streaks' },
-        { type: 'level', configChannel: 'level_channel_id', configMsg: 'level_message_id', name: 'Highest Levels' }
+        { type: 'daily_coins', configChannel: 'daily_channel_id', configTitleMsg: 'daily_title_message_id', configMsg: 'daily_message_id', name: 'MVP Champions' },
+        { type: 'coins', configChannel: 'coins_channel_id', configTitleMsg: 'coins_title_message_id', configMsg: 'coins_message_id', name: 'Richest Members' },
+        { type: 'streak', configChannel: 'streak_channel_id', configTitleMsg: 'streak_title_message_id', configMsg: 'streak_message_id', name: 'Longest Streaks' },
+        { type: 'level', configChannel: 'level_channel_id', configTitleMsg: 'level_title_message_id', configMsg: 'level_message_id', name: 'Highest Levels' }
     ];
 
     // Filter to only configured types
@@ -610,7 +633,8 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
     // Phase 1: Verify Order & Integrity
     let messagesIntact = true;
     const channelMap = new Map();
-    const msgMap = new Map();
+    const titleMsgMap = new Map();
+    const cardMsgMap = new Map();
 
     for (const t of configuredTypes) {
         try {
@@ -623,10 +647,20 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 break;
             }
             
+            // Check title message
+            if (config[t.configTitleMsg]) {
+                const titleMsg = await channel.messages.fetch(config[t.configTitleMsg]).catch(() => null);
+                titleMsgMap.set(t.type, titleMsg);
+                if (!titleMsg) messagesIntact = false;
+            } else {
+                messagesIntact = false;
+            }
+
+            // Check card message
             if (config[t.configMsg]) {
-                const msg = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
-                msgMap.set(t.type, msg);
-                if (!msg) messagesIntact = false;
+                const cardMsg = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
+                cardMsgMap.set(t.type, cardMsg);
+                if (!cardMsg) messagesIntact = false;
             } else {
                 messagesIntact = false;
             }
@@ -635,37 +669,63 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         }
     }
 
-    // Strict Sequence Check: Ensure Daily -> Richest -> Streak -> Level
+    // Strict Sequence Check: Ensure for each channel, messages alternate Title -> Card in category order:
+    // Daily Title < Daily Card < Coins Title < Coins Card < Streak Title < Streak Card < Level Title < Level Card
     if (messagesIntact) {
         const msgsByChannel = {};
         for (const t of configuredTypes) {
             const cid = config[t.configChannel];
             if (!msgsByChannel[cid]) msgsByChannel[cid] = [];
-            msgsByChannel[cid].push({ type: t.type, msgId: config[t.configMsg] });
+            msgsByChannel[cid].push({
+                type: t.type,
+                role: 'title',
+                msgId: config[t.configTitleMsg]
+            });
+            msgsByChannel[cid].push({
+                type: t.type,
+                role: 'card',
+                msgId: config[t.configMsg]
+            });
         }
         
         for (const cid in msgsByChannel) {
-            const channelMsgs = msgsByChannel[cid]; 
-            if (channelMsgs.length > 1) {
-                // Expected order: daily_coins < coins < streak < level (snowflake comparison)
-                const sortedBySnowflake = [...channelMsgs].sort((a, b) => (BigInt(a.msgId) < BigInt(b.msgId) ? -1 : 1));
-                const expectedOrder = ['daily_coins', 'coins', 'streak', 'level'].filter(type => channelMsgs.some(cm => cm.type === type));
-                
-                for (let i = 0; i < sortedBySnowflake.length; i++) {
-                    if (sortedBySnowflake[i].type !== expectedOrder[i]) {
+            const expectedItems = msgsByChannel[cid];
+            if (expectedItems.length > 1) {
+                for (let i = 0; i < expectedItems.length - 1; i++) {
+                    const curr = expectedItems[i].msgId;
+                    const next = expectedItems[i + 1].msgId;
+                    if (!curr || !next) {
                         messagesIntact = false;
                         break;
                     }
+                    try {
+                        const currentId = BigInt(curr);
+                        const nextId = BigInt(next);
+                        if (currentId >= nextId) {
+                            messagesIntact = false;
+                            break;
+                        }
+                    } catch {
+                        if (String(curr) >= String(next)) {
+                            messagesIntact = false;
+                            break;
+                        }
+                    }
                 }
             }
+            if (!messagesIntact) break;
         }
     }
 
     // Phase 2: Sweep if Broken
     if (!messagesIntact) {
         for (const t of configuredTypes) {
-            const msg = msgMap.get(t.type);
-            if (msg) await msg.delete().catch(() => {});
+            const titleMsg = titleMsgMap.get(t.type);
+            if (titleMsg) await titleMsg.delete().catch(() => {});
+            config[t.configTitleMsg] = null;
+
+            const cardMsg = cardMsgMap.get(t.type);
+            if (cardMsg) await cardMsg.delete().catch(() => {});
             config[t.configMsg] = null;
         }
     }
@@ -683,7 +743,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         const guildConfig = await getGuildConfig(guildId) || {};
         const customCoinUrl = getCustomCoinUrl(guildConfig, guildId);
 
-        let payload;
+        let cardPayload;
         try {
             if (t.type === 'daily_coins') {
                 const { getTopActiveUsers } = await import('../activity/tracker.js');
@@ -691,7 +751,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
                 const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
                 const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
-                payload = await buildLeaderboardMessagePayload({
+                cardPayload = await buildLeaderboardMessagePayload({
                     category: 'daily_coins',
                     data: enrichedData,
                     mvpRecipients: liveMvpRecipients,
@@ -701,7 +761,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             } else if (t.type === 'coins') {
                 const rawData = await getTopCoinUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                payload = await buildLeaderboardMessagePayload({
+                cardPayload = await buildLeaderboardMessagePayload({
                     category: 'coins',
                     data: enrichedData,
                     nextRefreshTimestamp,
@@ -711,7 +771,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             } else if (t.type === 'streak') {
                 const rawData = await getTopStreakUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                payload = await buildLeaderboardMessagePayload({
+                cardPayload = await buildLeaderboardMessagePayload({
                     category: 'streak',
                     data: enrichedData,
                     nextRefreshTimestamp,
@@ -720,7 +780,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             } else if (t.type === 'level') {
                 const rawData = await getTopLevelUsers(guildId);
                 const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
-                payload = await buildLeaderboardMessagePayload({
+                cardPayload = await buildLeaderboardMessagePayload({
                     category: 'level',
                     data: enrichedData,
                     nextRefreshTimestamp,
@@ -728,15 +788,29 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 });
             }
 
-            if (messagesIntact && msgMap.get(t.type)) {
-                await msgMap.get(t.type).edit(payload).catch(async () => {
-                    const newMsg = await channel.send(payload);
-                    config[t.configMsg] = newMsg.id;
+            const titlePayload = buildLeaderboardTitlePayload(t.type, guildId);
+
+            if (messagesIntact && cardMsgMap.get(t.type) && titleMsgMap.get(t.type)) {
+                // Title message is NEVER edited! It stays untouched without '(edited)' indicator.
+                // Only edit the card message in-place
+                await cardMsgMap.get(t.type).edit(cardPayload).catch(async () => {
+                    const oldTitle = titleMsgMap.get(t.type);
+                    if (oldTitle) await oldTitle.delete().catch(() => {});
+                    const newTitleMsg = await channel.send(titlePayload);
+                    config[t.configTitleMsg] = newTitleMsg.id;
+
+                    const newCardMsg = await channel.send(cardPayload);
+                    config[t.configMsg] = newCardMsg.id;
                     configUpdated = true;
                 });
             } else {
-                const newMsg = await channel.send(payload);
-                config[t.configMsg] = newMsg.id;
+                // Dispatch Title Message first
+                const newTitleMsg = await channel.send(titlePayload);
+                config[t.configTitleMsg] = newTitleMsg.id;
+
+                // Dispatch Card Image Message second
+                const newCardMsg = await channel.send(cardPayload);
+                config[t.configMsg] = newCardMsg.id;
                 configUpdated = true;
             }
         } catch (err) {
@@ -814,8 +888,16 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
         return null;
     }
 
-    const newMessage = await channel.send(payload);
-    return newMessage.id;
+    const catKey = (type === 'activity') ? 'daily_coins' : type;
+    const titlePayload = buildLeaderboardTitlePayload(catKey, guildId);
+    const titleMessage = await channel.send(titlePayload);
+    const cardMessage = await channel.send(payload);
+
+    return {
+        titleMsgId: titleMessage.id,
+        cardMsgId: cardMessage.id,
+        id: cardMessage.id
+    };
 }
 
 /**
@@ -833,12 +915,16 @@ async function handleSetup(interaction) {
     try {
         const config = {
             daily_channel_id: dailyChannel.id,
+            daily_title_message_id: null,
             daily_message_id: null,
             coins_channel_id: coinsChannel.id,
+            coins_title_message_id: null,
             coins_message_id: null,
             streak_channel_id: streakChannel.id,
+            streak_title_message_id: null,
             streak_message_id: null,
             level_channel_id: levelChannel ? levelChannel.id : null,
+            level_title_message_id: null,
             level_message_id: null
         };
 
@@ -853,6 +939,10 @@ async function handleSetup(interaction) {
         const enrichedActivity = await enrichUserData(interaction.client, guildId, rawActivity, 'userId');
         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
         const liveMvpRecipients = rawActivity.slice(0, winnersCount).map(u => u.userId);
+        const dailyTitlePayload = buildLeaderboardTitlePayload('daily_coins', guildId);
+        const dailyTitleMsg = await dailyChannel.send(dailyTitlePayload);
+        config.daily_title_message_id = dailyTitleMsg.id;
+
         const dailyPayload = await buildLeaderboardMessagePayload({
             category: 'daily_coins',
             data: enrichedActivity,
@@ -865,6 +955,10 @@ async function handleSetup(interaction) {
         // Coins
         const coinsData = await getTopCoinUsers(guildId);
         const enrichedCoins = await enrichUserData(interaction.client, guildId, coinsData, 'user_id');
+        const coinsTitlePayload = buildLeaderboardTitlePayload('coins', guildId);
+        const coinsTitleMsg = await coinsChannel.send(coinsTitlePayload);
+        config.coins_title_message_id = coinsTitleMsg.id;
+
         const coinsPayload = await buildLeaderboardMessagePayload({
             category: 'coins',
             data: enrichedCoins,
@@ -877,6 +971,10 @@ async function handleSetup(interaction) {
         // Streak
         const streakData = await getTopStreakUsers(guildId);
         const enrichedStreak = await enrichUserData(interaction.client, guildId, streakData, 'user_id');
+        const streakTitlePayload = buildLeaderboardTitlePayload('streak', guildId);
+        const streakTitleMsg = await streakChannel.send(streakTitlePayload);
+        config.streak_title_message_id = streakTitleMsg.id;
+
         const streakPayload = await buildLeaderboardMessagePayload({
             category: 'streak',
             data: enrichedStreak,
@@ -889,6 +987,10 @@ async function handleSetup(interaction) {
         if (levelChannel) {
             const levelData = await getTopLevelUsers(guildId);
             const enrichedLevel = await enrichUserData(interaction.client, guildId, levelData, 'user_id');
+            const levelTitlePayload = buildLeaderboardTitlePayload('level', guildId);
+            const levelTitleMsg = await levelChannel.send(levelTitlePayload);
+            config.level_title_message_id = levelTitleMsg.id;
+
             const levelPayload = await buildLeaderboardMessagePayload({
                 category: 'level',
                 data: enrichedLevel,

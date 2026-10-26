@@ -49,13 +49,17 @@ const mockPool = {
                 const updated = {
                     ...existing,
                     daily_channel_id: params[1],
-                    daily_message_id: params[2],
-                    coins_channel_id: params[3],
-                    coins_message_id: params[4],
-                    streak_channel_id: params[5],
-                    streak_message_id: params[6],
-                    level_channel_id: params[7],
-                    level_message_id: params[8]
+                    daily_title_message_id: params[2],
+                    daily_message_id: params[3],
+                    coins_channel_id: params[4],
+                    coins_title_message_id: params[5],
+                    coins_message_id: params[6],
+                    streak_channel_id: params[7],
+                    streak_title_message_id: params[8],
+                    streak_message_id: params[9],
+                    level_channel_id: params[10],
+                    level_title_message_id: params[11],
+                    level_message_id: params[12]
                 };
                 mockStorage.leaderboard_config.set(guildId, updated);
                 return { rows: [updated] };
@@ -104,8 +108,9 @@ function createMockChannel(id, name, permissionsArray) {
             return msg;
         },
         messages: {
-            fetch: async (msgId) => messages.get(msgId) || { edit: async () => {}, delete: async () => { deletedMessageId = msgId; } }
+            fetch: async (msgId) => messages.get(msgId) || { id: msgId, edit: async () => {}, delete: async () => { deletedMessageId = msgId; } }
         },
+        _messages: messages,
         getDeletedMessageId: () => deletedMessageId
     };
     return channel;
@@ -222,10 +227,20 @@ console.log('✅ Logs Action (Disable): Successfully disables category from drop
 // -------------------------------------------------------------
 console.log('Testing Leaderboard Configuration: 4 Select Menus with 3 options + Only Back button...');
 
-let leaderboardDispatchedEmbeds = [];
-validChannel.send = async ({ embeds }) => {
-    leaderboardDispatchedEmbeds.push(embeds);
-    return { id: 'lb_msg_2002' };
+let leaderboardDispatchedMessages = [];
+validChannel.send = async (payload) => {
+    const msgId = `90000000000000000${leaderboardDispatchedMessages.length + 1}`;
+    const msgObj = {
+        id: msgId,
+        content: payload?.content,
+        embeds: payload?.embeds,
+        files: payload?.files,
+        delete: async () => true,
+        edit: async () => true
+    };
+    validChannel._messages.set(msgId, msgObj);
+    leaderboardDispatchedMessages.push(msgObj);
+    return msgObj;
 };
 
 const mockLbInteraction = {
@@ -316,11 +331,13 @@ mockLbInteraction.values = [VALID_CHAN_1];
 await handleLeaderboardChannelSelect(mockLbInteraction);
 assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on channel assignment');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'DB must store coins_channel_id');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, 'lb_msg_2002', 'DB must store coins_message_id');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, '900000000000000001', 'DB must store coins_title_message_id');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, '900000000000000002', 'DB must store coins_message_id');
+assert.strictEqual(leaderboardDispatchedMessages[0].content.startsWith('> # '), true, 'Title message must start with > #');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
 assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
 assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
-console.log('✅ Leaderboard Action (Select A Channel): Opens channel picker, dispatches live embed, saves to DB, returns to 4-menu view.');
+console.log('✅ Leaderboard Action (Select A Channel): Opens channel picker, dispatches decoupled title and card, saves to DB, returns to 4-menu view.');
 
 // Test Leaderboard Action: Force Refresh (with dynamic nonce customId)
 sentFollowUps = [];
@@ -338,6 +355,7 @@ mockLbInteraction.values = ['disable'];
 await handleLeaderboardMenuAction(mockLbInteraction);
 assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on disable');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'DB coins_channel_id must be null');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'DB coins_title_message_id must be null');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB coins_message_id must be null');
 assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must show Not Set');
 assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
