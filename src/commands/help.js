@@ -24,6 +24,13 @@ export async function handleHelpCommand(interaction) {
     const guildId = interaction.guildId;
     const config = guildId ? await getGuildConfig(guildId) : null;
     const botName = config?.bot_name || interaction.client.user?.username || 'Medhat';
+    let lootBoxCatName = 'chests';
+    if (guildId) {
+      try {
+        const { getLootBoxCategoryName } = await import('../economy/lootbox.js');
+        lootBoxCatName = (await getLootBoxCategoryName(guildId)).toLowerCase();
+      } catch {}
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(`${botName} Command Directory`)
@@ -34,7 +41,7 @@ export async function handleHelpCommand(interaction) {
         { name: '🏦 `/bank`', value: 'Access personal balance and transaction history', inline: false },
         { name: '🎁 `/daily`', value: 'Claim your daily coin reward and streak bonus', inline: false },
         { name: '🎒 `/inventory`', value: 'View, equip, and manage your items', inline: false },
-        { name: '📦 `/items`', value: 'Browse server items and available chests', inline: false },
+        { name: '📦 `/items`', value: `Browse server items and available ${lootBoxCatName}`, inline: false },
         { name: '🤝 `/trade`', value: 'Trade coins and items with other server members', inline: false },
         { name: '👤 `/profile`', value: 'View user profile, card, rank, and stats', inline: false },
         { name: '🔔 `/notifications`', value: 'Configure DM notifications for this server', inline: false },

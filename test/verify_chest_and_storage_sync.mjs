@@ -13,6 +13,7 @@ import { handleLogsSettings } from '../src/commands/settings/logs.js';
 import { showUserSelector, showAdminManagement } from '../src/commands/admin-users.js';
 import { showRolesMenu } from '../src/commands/settings/role-rewards.js';
 import { handleLeaderboardSettings } from '../src/commands/settings/leaderboards.js';
+import { configCache } from '../src/storage/config.js';
 
 test('Chest Assets, Storage Thread Sync & UI Standardization Suite', async (t) => {
   const guildId = '123456789012345678';
@@ -94,7 +95,9 @@ test('Chest Assets, Storage Thread Sync & UI Standardization Suite', async (t) =
         return { rows: [{ total: '50000', count: '10' }] };
       }
       if (text.includes('guild_configs')) {
-        return { rows: [] };
+        const gId = params[0];
+        const cfg = mockStorage.guild_configs.get(gId);
+        return { rows: cfg ? [{ config: cfg }] : [] };
       }
       return { rows: [] };
     }
@@ -333,5 +336,35 @@ test('Chest Assets, Storage Thread Sync & UI Standardization Suite', async (t) =
     };
     await showAdminManagement(adminsInteraction);
     assert.equal(adminsPayload.embeds[0].data.title, 'Admins');
+  });
+
+  await t.test('Dynamic loot box category name and emoji customization should apply everywhere across UI', async () => {
+    configCache.clear();
+    const customGuildId = '999111222333444555';
+    const customEmoji = '<:minecraftchest:1539577473728254032>';
+
+    mockStorage.guild_configs.set(customGuildId, {
+      loot_box_category_name: 'Boxes',
+      loot_box_category_emoji: customEmoji
+    });
+
+    // 1. Settings main menu shop dropdown
+    let renderedPayload = null;
+    const mockInteraction = {
+      guildId: customGuildId,
+      guild: { id: customGuildId, name: 'Custom Server', emojis: { cache: new Map() } },
+      deferred: true,
+      replied: false,
+      editReply: async (data) => { renderedPayload = data; }
+    };
+
+    await showMainMenu(mockInteraction);
+    const shopRow = renderedPayload.components[0];
+    const shopSelect = shopRow.components[0];
+    const chestOption = shopSelect.options.find(o => o.data.value === 'market_chests');
+
+    assert.ok(chestOption, 'Shop dropdown must contain market_chests option');
+    assert.equal(chestOption.data.label, 'Boxes', 'Option label must match custom category name Boxes');
+    assert.equal(chestOption.data.emoji.id, '1539577473728254032', 'Option emoji must resolve custom emoji snowflake ID');
   });
 });

@@ -6216,7 +6216,7 @@ export async function handleLootBoxRenameCatStart(interaction) {
 export async function handleLootBoxRenameCatSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const newName = (interaction.fields.getTextInputValue('cat_name') || 'Loot Boxes').trim().slice(0, 32);
+    const newName = (interaction.fields.getTextInputValue('cat_name') || 'Chests').trim().slice(0, 32);
     let rawEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
     if (!rawEmoji) rawEmoji = '🎁';
 

@@ -5,16 +5,16 @@ import { sysLog, sysError } from '../utils/logger.js';
 import { RARITY_COLORS, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 
 /**
- * Get the custom category name for loot boxes (default: 'Loot Boxes')
+ * Get the custom category name for loot boxes (default: 'Chests')
  */
 export async function getLootBoxCategoryName(guildId) {
-  if (!guildId) return 'Loot Boxes';
+  if (!guildId) return 'Chests';
   try {
     const config = await getGuildConfig(guildId);
     const customName = config?.loot_box_category_name?.trim();
-    return customName && customName.length > 0 ? customName.slice(0, 32) : 'Loot Boxes';
+    return customName && customName.length > 0 ? customName.slice(0, 32) : 'Chests';
   } catch {
-    return 'Loot Boxes';
+    return 'Chests';
   }
 }
 
