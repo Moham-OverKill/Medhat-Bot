@@ -250,13 +250,15 @@ export async function buildLeaderboardMessagePayload({
     const filename = `${category}_leaderboard.png`;
     const attachment = new AttachmentBuilder(imageBuffer, { name: filename });
 
-    const content = nextRefreshTimestamp
-        ? `⏱️ Next Refresh: **<t:${nextRefreshTimestamp}:R>**`
-        : undefined;
+    const coinEmojiStr = guildId ? COIN_EMOJI.forGuild(guildId) : '';
+    const categoryIcon = (category === 'coins' && coinEmojiStr) ? coinEmojiStr : theme.iconEmoji;
+
+    const titleEmbed = new EmbedBuilder()
+        .setColor(parseInt(theme.themeColor.replace('#', ''), 16))
+        .setTitle(`${categoryIcon} ${theme.title}`);
 
     return {
-        content,
-        embeds: [],
+        embeds: [titleEmbed],
         files: [attachment]
     };
 }

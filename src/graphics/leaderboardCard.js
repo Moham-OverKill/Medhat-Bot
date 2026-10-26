@@ -167,14 +167,10 @@ export async function renderLeaderboardCard({
   // Fixed uniform dimensions & 2x Retina scale (optimized for Discord mobile display)
   const baseWidth = 500;
   const scale = 2;
-  const padX = 10;
-  const padY = 10;
-
-  // Dynamic layout calculations
-  const headerIconSize = 46;
-  const headerH = headerIconSize;
-  const headerSepGap = 8;
+  const padX = 6;
   const hasPodium = count >= 3;
+  const topPad = hasPodium ? 14 : 8;
+  const bottomPad = 8;
   const podiumH = hasPodium ? 186 : 0;
   const podiumMarginBottom = hasPodium ? 8 : 0;
 
@@ -183,12 +179,12 @@ export async function renderLeaderboardCard({
   const rowGap = 4;
   const rowsSectionH = rowCount > 0 ? (rowCount * rowH + (rowCount - 1) * rowGap) : 0;
 
-  // Determine overall base height
+  // Determine overall base height (pure leaderboard: no top title banner, no outer borders)
   let baseHeight;
   if (count === 0) {
-    baseHeight = padY + headerH + headerSepGap * 2 + 1 + 140 + padY; // Empty state height
+    baseHeight = topPad + 140 + bottomPad; // Empty state height
   } else {
-    baseHeight = padY + headerH + headerSepGap * 2 + 1 + (hasPodium ? podiumH + podiumMarginBottom : 0) + rowsSectionH + padY;
+    baseHeight = topPad + (hasPodium ? podiumH + podiumMarginBottom : 0) + rowsSectionH + bottomPad;
   }
 
   const canvas = createCanvas(Math.round(baseWidth * scale), Math.round(baseHeight * scale));
@@ -197,81 +193,23 @@ export async function renderLeaderboardCard({
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // 1. Transparent Rounded Card Background
-  const cardRadius = 18;
+  // 1. Transparent Rounded Card Background (Seamless, no outer borders)
+  const cardRadius = 14;
   ctx.save();
   roundRect(ctx, 0, 0, baseWidth, baseHeight, cardRadius);
   ctx.clip();
 
   const bgGrad = ctx.createLinearGradient(0, 0, baseWidth, baseHeight);
-  bgGrad.addColorStop(0, '#080B10');
-  bgGrad.addColorStop(0.4, '#0D131C');
-  bgGrad.addColorStop(1, '#121A26');
+  bgGrad.addColorStop(0, '#070A0F');
+  bgGrad.addColorStop(0.5, '#0B1017');
+  bgGrad.addColorStop(1, '#0F151F');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, baseWidth, baseHeight);
-
-  // Top header ambient glow matching theme color
-  const glowGrad = ctx.createRadialGradient(baseWidth / 2, 20, 5, baseWidth / 2, 20, 260);
-  glowGrad.addColorStop(0, hexToRgba(theme.themeColor, 0.25));
-  glowGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, baseWidth, 180);
-
   ctx.restore();
-
-  // 2. Outer Card Border (Trimmed and clean)
-  const borderThickness = 2.5;
-  const halfBorder = borderThickness / 2;
-  roundRect(ctx, halfBorder, halfBorder, baseWidth - borderThickness, baseHeight - borderThickness, cardRadius - halfBorder);
-  ctx.strokeStyle = hexToRgba(theme.themeColor, 0.7);
-  ctx.lineWidth = borderThickness;
-  ctx.stroke();
-
-  // 3. Clean Header (Category Icon + Main Title only, zero subheaders/timers)
-  const headerY = padY;
-
-  // Icon container
-  roundRect(ctx, padX, headerY, headerIconSize, headerIconSize, 12);
-  ctx.fillStyle = hexToRgba(theme.themeColor, 0.16);
-  ctx.fill();
-  ctx.strokeStyle = hexToRgba(theme.themeColor, 0.5);
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  const iconCenterX = padX + headerIconSize / 2;
-  const iconCenterY = headerY + headerIconSize / 2;
-
-  // Draw category icon: optically centered horizontally and vertically
-  if (theme.isCoin && (customCoinImg || customCoinUrl)) {
-    if (customCoinImg) {
-      const coinPad = 5;
-      ctx.drawImage(customCoinImg, padX + coinPad, headerY + coinPad - 2, headerIconSize - coinPad * 2, headerIconSize - coinPad * 2);
-    } else {
-      drawVectorCoin(ctx, iconCenterX, iconCenterY - 1.5, (headerIconSize - 8) / 2);
-    }
-  } else {
-    drawCenteredEmoji(ctx, theme.iconEmoji, iconCenterX, iconCenterY, `34px ${fontStack}`);
-  }
-
-  // Clean, prominent main title
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold 24px ${boldFontStack}`;
-  ctx.fillText(theme.title, padX + headerIconSize + 12, headerY + headerIconSize / 2);
-
-  // Header separator line
-  const sepY = headerY + headerIconSize + headerSepGap;
-  ctx.beginPath();
-  ctx.moveTo(padX, sepY);
-  ctx.lineTo(baseWidth - padX, sepY);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
 
   // Empty State Handling
   if (count === 0) {
-    const emptyBoxY = sepY + headerSepGap + 10;
+    const emptyBoxY = topPad + 10;
     const emptyBoxH = 120;
     const emptyBoxW = baseWidth - padX * 2;
 
@@ -295,7 +233,7 @@ export async function renderLeaderboardCard({
     return canvas.encode('png');
   }
 
-  let currentY = sepY + headerSepGap;
+  let currentY = topPad;
 
   // 4. Top 3 Tournament Podium Section
   if (hasPodium) {
