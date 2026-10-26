@@ -206,55 +206,67 @@ export async function handleRewardsComponent(interaction) {
     // MODALS
     if (customId === 'rewards_booster_btn') {
       const config = await getGuildConfig(guildId) || {};
-      const modal = new ModalBuilder().setCustomId('rewards_booster_modal').setTitle('Booster Multiplier');
+      const currentVal = Math.floor(config.booster_multiplier || 2);
+      const modal = new ModalBuilder().setCustomId(`rewards_booster_modal_${Date.now()}`).setTitle('Booster Multiplier');
       const input = new TextInputBuilder()
         .setCustomId('multiplier')
         .setLabel('Multiplier')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('2')
-        .setValue(String(Math.floor(config.booster_multiplier || 2)))
         .setRequired(false);
+      if (currentVal !== 2) {
+        input.setValue(String(currentVal));
+      }
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       await interaction.showModal(modal);
     }
     else if (customId === 'rewards_streak_btn') {
       const config = await getGuildConfig(guildId) || {};
       const coinName = await getCurrencyName(guildId);
-      const modal = new ModalBuilder().setCustomId('rewards_streak_modal').setTitle('Daily Streak Bonus');
+      const currentVal = config.daily_streak_bonus !== undefined ? Number(config.daily_streak_bonus) : 5;
+      const modal = new ModalBuilder().setCustomId(`rewards_streak_modal_${Date.now()}`).setTitle('Daily Streak Bonus');
       const input = new TextInputBuilder()
         .setCustomId('amount')
         .setLabel(`${coinName} per streak day`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('5')
-        .setValue(String(config.daily_streak_bonus !== undefined ? config.daily_streak_bonus : 5))
         .setRequired(false);
+      if (currentVal !== 5) {
+        input.setValue(String(currentVal));
+      }
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       await interaction.showModal(modal);
     }
     else if (customId === 'rewards_daily_base_btn') {
       const config = await getGuildConfig(guildId) || {};
       const coinName = await getCurrencyName(guildId);
-      const modal = new ModalBuilder().setCustomId('rewards_daily_base_modal').setTitle('Base Daily Reward');
+      const currentVal = config.daily_base_reward !== undefined ? Number(config.daily_base_reward) : 25;
+      const modal = new ModalBuilder().setCustomId(`rewards_daily_base_modal_${Date.now()}`).setTitle('Base Daily Reward');
       const input = new TextInputBuilder()
         .setCustomId('amount')
         .setLabel(`Base ${coinName} (Day 1)`)
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('25')
-        .setValue(String(config.daily_base_reward !== undefined ? config.daily_base_reward : 25))
         .setRequired(false);
+      if (currentVal !== 25) {
+        input.setValue(String(currentVal));
+      }
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       await interaction.showModal(modal);
     }
     else if (customId === 'rewards_streak_cap_btn') {
       const config = await getGuildConfig(guildId) || {};
-      const modal = new ModalBuilder().setCustomId('rewards_streak_cap_modal').setTitle('Max Streak Bonus Cap');
+      const currentVal = config.daily_streak_cap !== undefined ? Number(config.daily_streak_cap) : 20;
+      const modal = new ModalBuilder().setCustomId(`rewards_streak_cap_modal_${Date.now()}`).setTitle('Max Streak Bonus Cap');
       const input = new TextInputBuilder()
         .setCustomId('cap')
         .setLabel('Maximum streak days')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('20')
-        .setValue(String(config.daily_streak_cap !== undefined ? config.daily_streak_cap : 20))
         .setRequired(false);
+      if (currentVal !== 20) {
+        input.setValue(String(currentVal));
+      }
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       await interaction.showModal(modal);
     }
@@ -359,7 +371,7 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(guildId);
       await interaction.editReply(payload);
     }
-    else if (customId === 'rewards_booster_modal') {
+    else if (customId === 'rewards_booster_modal' || customId.startsWith('rewards_booster_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('multiplier');
       const mult = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 2;
 
@@ -379,7 +391,7 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.editReply(payload);
     }
-    else if (customId === 'rewards_streak_modal') {
+    else if (customId === 'rewards_streak_modal' || customId.startsWith('rewards_streak_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('amount');
       const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 5;
 
@@ -399,7 +411,7 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.editReply(payload);
     }
-    else if (customId === 'rewards_daily_base_modal') {
+    else if (customId === 'rewards_daily_base_modal' || customId.startsWith('rewards_daily_base_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('amount');
       const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 25;
 
@@ -419,7 +431,7 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.editReply(payload);
     }
-    else if (customId === 'rewards_streak_cap_modal') {
+    else if (customId === 'rewards_streak_cap_modal' || customId.startsWith('rewards_streak_cap_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('cap');
       const cap = inputVal ? Math.max(1, parseInt(inputVal, 10)) : 20;
 
@@ -439,9 +451,9 @@ export async function handleRewardsModal(interaction) {
       const payload = await getRewardsPayload(interaction.guildId);
       await interaction.editReply(payload);
     }
-    else if (customId === 'rewards_mvp_modal') {
+    else if (customId === 'rewards_mvp_modal' || customId.startsWith('rewards_mvp_modal_')) {
       const inputVal = interaction.fields.getTextInputValue('amount');
-      const amount = inputVal ? Math.max(0, parseInt(inputVal, 10)) : 100;
+      const amount = inputVal?.trim() ? Math.max(0, parseInt(inputVal, 10)) : 5;
 
       if (inputVal && isNaN(amount)) {
         return interaction.followUp({ content: '❌ Invalid reward amount.', flags: MessageFlags.Ephemeral });

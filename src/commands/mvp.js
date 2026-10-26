@@ -368,13 +368,13 @@ export async function handleMvpComponent(interaction) {
 
       case 'mvp_reward_config_btn':
         const coinNameModal = await getCurrencyName(guildId);
-        const modal = new ModalBuilder().setCustomId('rewards_mvp_modal').setTitle('MVP Reward Settings');
+        const modal = new ModalBuilder().setCustomId(`rewards_mvp_modal_${Date.now()}`).setTitle('MVP Reward Settings');
         const input = new TextInputBuilder()
           .setCustomId('amount')
           .setLabel(`${coinNameModal} per hour`)
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('5')
-          .setValue(String(config.mvpRewardAmount || 5))
+          .setValue(String(config.mvpRewardAmount !== undefined ? config.mvpRewardAmount : 5))
           .setRequired(false);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);

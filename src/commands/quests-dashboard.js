@@ -603,7 +603,7 @@ export async function handleEditQuest(interaction, questId) {
   const titlePlaceholder = generateDefaultTitle(quest.action_type, quest.channel_type, quest.required_count, channelName);
 
   const modal = new ModalBuilder()
-    .setCustomId(`quests_edit_modal_${questId}`)
+    .setCustomId(`quests_edit_modal_${questId}_${Date.now()}`)
     .setTitle('Edit Quest');
 
   const titleInput = new TextInputBuilder()
@@ -622,6 +622,7 @@ export async function handleEditQuest(interaction, questId) {
     .setCustomId('required_count')
     .setLabel(`Required Count (${actionLabel})`)
     .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g. 10')
     .setValue(String(quest.required_count))
     .setRequired(true);
 
@@ -630,6 +631,7 @@ export async function handleEditQuest(interaction, questId) {
     .setCustomId('reward_coins')
     .setLabel(`${coinName} Reward`)
     .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g. 100')
     .setValue(String(quest.reward_coins))
     .setRequired(true);
 
@@ -646,7 +648,7 @@ export async function handleEditQuestModal(interaction) {
   try {
     await interaction.deferUpdate();
 
-    const questId = parseInt(interaction.customId.split('_').pop(), 10);
+    const questId = parseInt(interaction.customId.replace('quests_edit_modal_', '').split('_')[0], 10);
     const customTitle = interaction.fields.getTextInputValue('custom_title')?.trim() || null;
     const requiredCount = parseInt(interaction.fields.getTextInputValue('required_count'), 10);
     const rewardCoins = parseInt(interaction.fields.getTextInputValue('reward_coins'), 10);

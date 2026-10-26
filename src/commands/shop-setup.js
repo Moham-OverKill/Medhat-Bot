@@ -1176,7 +1176,7 @@ export async function handleItemModalSubmit(interaction) {
     let itemId, type, action;
 
     if (customId.startsWith('shop_pack_modal_edit_')) {
-      itemId = customId.split('_').pop();
+      itemId = customId.replace('shop_pack_modal_edit_', '').split('_')[0];
       type = 'pack';
       action = 'edit';
     } else {
@@ -2991,7 +2991,7 @@ export async function handleCategoryModalSubmit(interaction) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     const customId = interaction.customId;
     const isEdit = customId.startsWith('shop_cat_modal_edit_');
-    const categoryId = isEdit ? customId.split('_').pop() : null;
+    const categoryId = isEdit ? customId.replace('shop_cat_modal_edit_', '').split('_')[0] : null;
 
     const name = interaction.fields.getTextInputValue('cat_name');
     const typeRaw = interaction.fields.getTextInputValue('cat_type');
@@ -3327,13 +3327,14 @@ export async function handleEditCategoryRenameStart(interaction) {
     }
 
     const modal = new ModalBuilder()
-      .setCustomId(`shop_cat_modal_edit_${categoryId}`)
+      .setCustomId(`shop_cat_modal_edit_${categoryId}_${Date.now()}`)
       .setTitle('Edit Category');
 
     const nameInput = new TextInputBuilder()
       .setCustomId('cat_name')
       .setLabel('Category Name')
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. Roles')
       .setValue(category.name)
       .setRequired(true);
 
@@ -3341,6 +3342,7 @@ export async function handleEditCategoryRenameStart(interaction) {
       .setCustomId('cat_type')
       .setLabel('Category Type (0=Multi, 1=Single)')
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder('0 = Multi, 1 = Single')
       .setValue(String(category.category_type || 0))
       .setMinLength(1)
       .setMaxLength(1)
@@ -4901,13 +4903,14 @@ export async function handleEditPackDetails(interaction) {
     }
 
     const modal = new ModalBuilder()
-      .setCustomId(`shop_pack_modal_edit_${packId}`)
+      .setCustomId(`shop_pack_modal_edit_${packId}_${Date.now()}`)
       .setTitle('Edit Pack');
 
     const nameInput = new TextInputBuilder()
       .setCustomId('item_name')
       .setLabel('Name')
       .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. Starter Pack')
       .setValue(pack.name)
       .setRequired(true);
 
