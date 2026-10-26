@@ -183,14 +183,15 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
         try {
             const member = guild.members.cache.get(uid) || await guild.members.fetch(uid).catch(() => null);
             if (member) {
-                name = member.displayName;
+                // Prioritize user's Discord username over nickname as requested, with fallback
+                name = member.user?.username || member.displayName || item.username || 'Unknown User';
                 avatarUrl = member.displayAvatarURL({ extension: 'png', size: 256 });
                 if (member.displayHexColor && member.displayHexColor !== '#000000') {
                     roleColor = member.displayHexColor;
                 }
             } else {
                 const user = await client.users.fetch(uid).catch(() => null);
-                name = user?.displayName || user?.username || item.username || 'Unknown User';
+                name = user?.username || user?.displayName || item.username || 'Unknown User';
                 avatarUrl = user?.displayAvatarURL({ extension: 'png', size: 256 }) || null;
             }
         } catch {

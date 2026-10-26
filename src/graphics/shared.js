@@ -59,10 +59,50 @@ const SMALL_CAPS_MAP = {
 };
 
 /**
+ * Lookalike unicode characters commonly produced by aesthetic text generators
+ * (Canadian Syllabics, Cherokee, Armenian, CJK radicals, and Greek/Math symbols).
+ * Maps visual lookalikes back to base Latin characters matching the standard Roboto font.
+ */
+const FANCY_LOOKALIKE_MAP = {
+  // Canadian Aboriginal Syllabics (frequently used in Discord nicknames)
+  'ᗩ': 'A', 'ᗷ': 'B', 'ᑕ': 'C', 'ᗪ': 'D', 'ᗡ': 'D', 'ᕼ': 'H', 'ᒍ': 'J', 'ᒪ': 'L',
+  'ᗰ': 'M', 'ᑎ': 'N', 'ᑫ': 'Q', 'ᖇ': 'R', 'Տ': 'S', 'ㄒ': 'T', 'ᑌ': 'U', 'ᐯ': 'V',
+  'ᗯ': 'W', '᙭': 'X', 'ㄚ': 'Y', '乙': 'Z',
+  'ᗢ': 'O', 'ᗣ': 'A', 'ᗤ': 'Q', 'ᗥ': 'Q', 'ᘛ': 'E', 'ᘚ': 'E', 'ᘜ': 'G',
+
+  // CJK Radicals / Ideographs used as visual Latin letters
+  '乃': 'B', '匚': 'C', '刀': 'D', '乇': 'E', '千': 'F', '厶': 'G', '卄': 'H',
+  '工': 'I', '丨': 'I', '丿': 'J', '片': 'K', '乚': 'L', '爪': 'M', '冂': 'N',
+  '口': 'O', '〇': 'O', '卩': 'P', '尺': 'R', '丂': 'S', '凵': 'U', 'リ': 'V',
+  '山': 'W', '乂': 'X', '入': 'A',
+
+  // Armenian Lookalikes
+  'Տ': 'S', 'տ': 't', 'հ': 'h', 'ո': 'n', 'ս': 'u', 'զ': 'q', 'ց': 'g',
+  'լ': 'l', 'ժ': 'd', 'ր': 'r', 'օ': 'o', 'ռ': 'n', 'ք': 'p',
+
+  // Cherokee Lookalikes
+  'Ꭰ': 'D', 'Ꭱ': 'R', 'Ꭲ': 'T', 'Ꭳ': 'O', 'Ꭴ': 'U', 'Ꭵ': 'V', 'Ꭶ': 'S',
+  'Ꭷ': 'K', 'Ꭸ': 'P', 'Ꭹ': 'y', 'Ꭺ': 'A', 'Ꭻ': 'J', 'Ꭼ': 'E', 'Ꮃ': 'W',
+  'Ꮄ': 'P', 'Ꮆ': 'G', 'Ꮇ': 'M', 'Ꮉ': 'M', 'Ꮋ': 'H', 'Ꮐ': 'C', 'Ꮓ': 'Z',
+  'Ꮖ': 'X', 'Ꮘ': 'P', 'Ꮙ': 'V', 'Ꮚ': 'W', 'Ꮜ': 'U', 'Ꮝ': 's', 'Ꮞ': '4',
+  'Ꮟ': 'b', 'Ꮠ': 'Y', 'Ꮡ': 'y', 'Ꮢ': 'R', 'Ꮣ': 'L', 'Ꮤ': 'W', 'Ꮥ': 'S',
+  'Ꮧ': 'J', 'Ꮨ': 'C', 'Ꮩ': 'V', 'Ꮪ': 'S', 'Ꮯ': 'C', 'Ꮹ': 'G', 'Ꮺ': 'P',
+  'Ꮼ': 'O', 'Ᏻ': 'G', 'Ᏼ': 'B',
+
+  // Common Greek lookalikes in nicknames
+  'Δ': 'A', 'Λ': 'A', 'λ': 'l', 'β': 'b', 'θ': 'o', 'μ': 'u', 'π': 'n',
+  'ρ': 'p', 'σ': 'o', 'Σ': 'E', 'τ': 't', 'φ': 'o', 'ψ': 'y', 'ω': 'w', 'Ω': 'O',
+
+  // Math / Misc symbols used as letters
+  '∀': 'A', '¢': 'c', '©': 'c', '®': 'r', '§': 's', '†': 't', '‡': 't',
+  'ℓ': 'l', 'ø': 'o', 'Ø': 'O', 'Ǝ': 'E', 'ǝ': 'e', 'Ƹ': 'E', 'Ʒ': 'Z'
+};
+
+/**
  * Sanitize and normalize display names for canvas rendering across cards.
  * Decomposes fancy unicode fonts (Mathematical Alphanumerics, Fraktur, Fullwidth)
- * to base Latin characters matching the standard Roboto/Cairo font, while preserving
- * emojis, Arabic, CJK, and legitimate symbols.
+ * and aesthetic lookalike symbols to base Latin characters matching the standard
+ * Roboto font, while preserving emojis, Arabic, legitimate CJK, and valid symbols.
  *
  * @param {string} name
  * @returns {string}
@@ -70,16 +110,22 @@ const SMALL_CAPS_MAP = {
 export function normalizeDisplayName(name) {
   if (!name || typeof name !== 'string') return 'Unknown';
 
-  // 1. NFKD decomposition maps Mathematical Fraktur, Bold, Script, Double-Struck, Fullwidth to base Latin
+  // 1. NFKD decomposition maps Mathematical Fraktur, Bold, Script, Double-Struck, Fullwidth, Super/Subscripts to base Latin
   let str = name.normalize('NFKD');
 
   // 2. Small Caps transliteration
   str = str.replace(/[\u0250-\u02AF\u1D00-\u1D25ᴀ-ᴢ]/g, ch => SMALL_CAPS_MAP[ch] || ch);
 
-  // 3. Remove non-printable control characters, nulls, surrogate debris, private use, and zero-width spaces
+  // 3. Aesthetic Lookalike Transliteration (Canadian Syllabics, Cherokee, Armenian, CJK radicals)
+  str = str.replace(/./gu, ch => FANCY_LOOKALIKE_MAP[ch] || ch);
+
+  // 4. Remove non-printable control characters, nulls, surrogate debris, private use, and zero-width spaces
   str = str.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\uFEFF\uFFF0-\uFFFF]/g, '');
 
-  // 4. Collapse multiple spaces into one and trim
+  // 5. Recompose into NFC so Korean Hangul, Arabic ligatures, and standard accented letters are properly composed
+  str = str.normalize('NFC');
+
+  // 6. Collapse multiple spaces into one and trim
   str = str.replace(/\s+/g, ' ').trim();
 
   return str || 'Unknown';

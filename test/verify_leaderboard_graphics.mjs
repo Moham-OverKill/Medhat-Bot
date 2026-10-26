@@ -5,6 +5,7 @@ import {
   drawFittedText,
   LEADERBOARD_THEMES
 } from '../src/graphics/leaderboardCard.js';
+import { normalizeDisplayName } from '../src/graphics/shared.js';
 import { createCanvas } from '@napi-rs/canvas';
 
 test('Leaderboard Card Graphics Suite', async (t) => {
@@ -99,6 +100,16 @@ test('Leaderboard Card Graphics Suite', async (t) => {
 
     assert.ok(Buffer.isBuffer(buffer));
     assert.equal(buffer[0], 0x89);
+  });
+
+  await t.test('normalizeDisplayName should cleanly de-curse aesthetic lookalike characters and preserve valid unicode', () => {
+    assert.equal(normalizeDisplayName('! Տ卩丨ᗪ乇尺 | 𝗥𝘅𝗦⁴⁷'), '! SPIDER | RxS47');
+    assert.equal(normalizeDisplayName('! 𝔓𝔥𝔬𝔯𝔡𝔢𝔵 | 𝔇𝔈𝔙⁴⁷'), '! Phordex | DEV47');
+    assert.equal(normalizeDisplayName('Pʜᴏʀᴅᴇx ⚡'), 'PHORDEx ⚡');
+    assert.equal(normalizeDisplayName('𝒩ezuko 🍮 🐾 🎀'), 'Nezuko 🍮 🐾 🎀');
+    assert.equal(normalizeDisplayName('الضحكة لايت 🌟'), 'الضحكة لايت 🌟');
+    assert.equal(normalizeDisplayName('한글 테스트 👑'), '한글 테스트 👑');
+    assert.equal(normalizeDisplayName('日本語 カタカナ 漢字'), '日本語 カタカナ 漢字');
   });
 
   await t.test('renderLeaderboardCard should handle empty state cleanly', async () => {
