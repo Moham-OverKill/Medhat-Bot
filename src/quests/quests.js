@@ -298,7 +298,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     if (justCompleted) {
       Promise.all([
         import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
-        import('./index.js').then(m => m.client || null).catch(() => null)
+        import('../index.js').then(m => m.client || null).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
           const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
@@ -469,7 +469,7 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
       triggerQuestLog(guildId, userId, quest).catch(() => {});
       Promise.all([
         import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
-        import('./index.js').then(m => m.client || null).catch(() => null)
+        import('../index.js').then(m => m.client || null).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
           const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
