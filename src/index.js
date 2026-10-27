@@ -465,7 +465,7 @@ client.once(Events.ClientReady, async () => {
     });
 
     const initMem = process.memoryUsage();
-    sysLog('[CLEAN] Memory Optimization Active', { 
+    logger.info('SYSTEM', 'Memory Optimization Active', { 
       v8MaxHeap: '384MB', 
       msgCacheCap: '25 per channel', 
       heapUsed: `${Math.round(initMem.heapUsed / 1024 / 1024)}MB`,
@@ -475,7 +475,7 @@ client.once(Events.ClientReady, async () => {
     // Periodic memory check every 30 minutes
     setInterval(() => {
       const mem = process.memoryUsage();
-      sysLog('[CLEAN] Memory Check', {
+      logger.info('SYSTEM', 'Memory Check', {
         heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB / 384MB`,
         rss: `${Math.round(mem.rss / 1024 / 1024)}MB`
       });
