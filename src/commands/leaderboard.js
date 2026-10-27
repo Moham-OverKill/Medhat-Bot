@@ -709,7 +709,31 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
         // Check for card messages
         for (const t of types) {
             const isConfiguredCard = config && config[t.configMsg] === msg.id;
-            const hasCategoryAttachment = msg.attachments && msg.attachments.some(a => a.name && (a.name.includes(t.type) || a.name.includes('leaderboard')));
+            let hasCategoryAttachment = false;
+
+            if (msg.attachments && (msg.attachments.size > 0 || msg.attachments.length > 0)) {
+                const attachList = Array.isArray(msg.attachments)
+                    ? msg.attachments
+                    : Array.from(msg.attachments.values ? msg.attachments.values() : msg.attachments);
+
+                hasCategoryAttachment = attachList.some(a => {
+                    const name = a?.name || a?.filename || '';
+                    if (t.type === 'daily_coins') {
+                        return name.includes('daily_coins') || name.includes('daily') || name.includes('activity');
+                    }
+                    if (t.type === 'coins') {
+                        return (name.includes('coins_leaderboard') || name.includes('coins')) && !name.includes('daily_coins');
+                    }
+                    if (t.type === 'streak') {
+                        return name.includes('streak');
+                    }
+                    if (t.type === 'level') {
+                        return name.includes('level');
+                    }
+                    return false;
+                });
+            }
+
             const hasCategoryEmbed = msg.embeds && msg.embeds.some(e => e.title && e.title.includes(LEADERBOARD_THEMES[t.type]?.title));
 
             if (isConfiguredCard || hasCategoryAttachment || hasCategoryEmbed) {
@@ -721,7 +745,7 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
 
         if (!categorized) {
             // Stray or unlinked header message
-            if (content.startsWith('> # ') || content.includes('CHAMPIONS') || content.includes('RICHEST') || content.includes('STREAKS') || content.includes('LEVELS')) {
+            if (content.startsWith('> # ') && (content.includes('CHAMPIONS') || content.includes('RICHEST') || content.includes('STREAKS') || content.includes('LEVELS'))) {
                 otherLeaderboardMessages.push(msg);
             }
         }
@@ -1065,33 +1089,92 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                 continue;
             }
 
-            // STEP 2: Inspect channel for previous titles/leaderboards, remove duplicate/orphaned messages
-            const cleanResult = await cleanLeaderboardChannel(channel, client, typesForChannel, config, guildId);
-            if (cleanResult.configUpdated) {
-                configChangedOverall = true;
+            // STEP 2: Check if existing configured messages are present in Discord
+            let messagesIntact = true;
+            const titleMsgMap = new Map();
+            const cardMsgMap = new Map();
+
+            for (const t of typesForChannel) {
+                const titleId = config[t.configTitleMsg];
+                const cardId = config[t.configMsg];
+
+                if (!titleId || !cardId) {
+                    messagesIntact = false;
+                    break;
+                }
+
+                const titleMsg = channel.messages.cache?.get?.(titleId) || await channel.messages.fetch(titleId).catch(() => null);
+                const cardMsg = channel.messages.cache?.get?.(cardId) || await channel.messages.fetch(cardId).catch(() => null);
+
+                if (!titleMsg || !cardMsg) {
+                    messagesIntact = false;
+                    break;
+                }
+
+                titleMsgMap.set(t.type, titleMsg);
+                cardMsgMap.set(t.type, cardMsg);
             }
 
-            const isChannelIntact = cleanResult.intact;
-            const survivingPairs = cleanResult.survivingPairs || new Map();
-
-            // STEP 3: If channel is not intact, sweep all remaining messages for these types to prepare a fresh sequence
-            if (!isChannelIntact) {
+            // STEP 3: Verify strict monotonic sequence for intact messages:
+            // Title 1 < Card 1 < Title 2 < Card 2 < Title 3 < Card 3 ...
+            if (messagesIntact) {
+                const sequence = [];
                 for (const t of typesForChannel) {
-                    if (config[t.configTitleMsg]) {
-                        const oldT = await channel.messages.fetch(config[t.configTitleMsg]).catch(() => null);
-                        if (oldT) await oldT.delete().catch(() => {});
-                        config[t.configTitleMsg] = null;
-                    }
-                    if (config[t.configMsg]) {
-                        const oldC = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
-                        if (oldC) await oldC.delete().catch(() => {});
-                        config[t.configMsg] = null;
+                    sequence.push(titleMsgMap.get(t.type).id);
+                    sequence.push(cardMsgMap.get(t.type).id);
+                }
+
+                if (sequence.length > 1) {
+                    for (let i = 0; i < sequence.length - 1; i++) {
+                        if (compareSnowflakes(sequence[i], sequence[i + 1]) >= 0) {
+                            messagesIntact = false;
+                            break;
+                        }
                     }
                 }
-                await setLeaderboardConfig(guildId, config);
             }
 
-            // STEP 4: Build payloads and dispatch or edit messages in strict category sequence
+            // STEP 4: Only if NOT intact, attempt channel scan to recover missing IDs or clean orphans
+            if (!messagesIntact) {
+                const cleanResult = await cleanLeaderboardChannel(channel, client, typesForChannel, config, guildId);
+                if (cleanResult.configUpdated) {
+                    configChangedOverall = true;
+                }
+
+                if (cleanResult.intact && cleanResult.survivingPairs) {
+                    messagesIntact = true;
+                    for (const t of typesForChannel) {
+                        const pair = cleanResult.survivingPairs.get(t.type);
+                        if (pair) {
+                            titleMsgMap.set(t.type, pair.title);
+                            cardMsgMap.set(t.type, pair.card);
+                        } else {
+                            messagesIntact = false;
+                            break;
+                        }
+                    }
+                }
+
+                // If still not intact after scanning, sweep broken messages for this channel
+                if (!messagesIntact) {
+                    for (const t of typesForChannel) {
+                        if (config[t.configTitleMsg]) {
+                            const oldT = await channel.messages.fetch(config[t.configTitleMsg]).catch(() => null);
+                            if (oldT) await oldT.delete().catch(() => {});
+                            config[t.configTitleMsg] = null;
+                        }
+                        if (config[t.configMsg]) {
+                            const oldC = await channel.messages.fetch(config[t.configMsg]).catch(() => null);
+                            if (oldC) await oldC.delete().catch(() => {});
+                            config[t.configMsg] = null;
+                        }
+                    }
+                    configChangedOverall = true;
+                    await setLeaderboardConfig(guildId, config);
+                }
+            }
+
+            // STEP 5: Build payloads and dispatch or edit messages in strict category sequence
             for (const t of typesForChannel) {
                 try {
                     let cardPayload;
@@ -1140,15 +1223,16 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
 
                     const titlePayload = buildLeaderboardTitlePayload(t.type, guildId);
 
-                    if (isChannelIntact && survivingPairs.has(t.type)) {
+                    if (messagesIntact && cardMsgMap.get(t.type) && titleMsgMap.get(t.type)) {
                         // Title message is NEVER edited! It stays untouched without '(edited)' indicator.
                         // Only edit the card message in-place
-                        const pair = survivingPairs.get(t.type);
+                        const existingCardMsg = cardMsgMap.get(t.type);
                         try {
-                            await pair.card.edit(cardPayload);
+                            await existingCardMsg.edit(cardPayload);
                         } catch {
                             // In-place edit failed; clean up old title message and re-dispatch atomically
-                            await pair.title.delete().catch(() => {});
+                            const existingTitleMsg = titleMsgMap.get(t.type);
+                            if (existingTitleMsg) await existingTitleMsg.delete().catch(() => {});
                             let newTitleMsg = null;
                             try {
                                 newTitleMsg = await channel.send(titlePayload);
