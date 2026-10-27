@@ -790,12 +790,20 @@ export async function voicePointsTick(client) {
           return;
         }
 
-        let member;
-        try {
-          member = guild.members.cache.get(row.user_id) || await guild.members.fetch(row.user_id);
-        } catch (e) {
-          await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
-          return;
+        let member = guild.members.cache.get(row.user_id);
+        if (!member) {
+          const departedAt = departedGuildMembersCache.get(`${row.guild_id}:${row.user_id}`);
+          if (departedAt && (Date.now() - departedAt) < DEPARTED_MEMBER_TTL) {
+            await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
+            return;
+          }
+          try {
+            member = await guild.members.fetch(row.user_id);
+          } catch (e) {
+            markMemberDeparted(row.guild_id, row.user_id);
+            await stopTrackingUser(pool, row.guild_id, row.user_id, guild, 'not in server');
+            return;
+          }
         }
 
         const voiceState = member.voice;

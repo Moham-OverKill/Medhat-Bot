@@ -273,9 +273,14 @@ export async function rotateGuildQuests(guildId, config, pool, client = null, op
         const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
 
         if (userIds.length > 0 && guild) {
+          const uncachedUids = userIds.filter(uid => !guild.members.cache.has(uid));
+          if (uncachedUids.length > 0) {
+            await guild.members.fetch({ user: uncachedUids }).catch(() => null);
+          }
+
           const validUserIds = [];
           for (const uid of userIds) {
-            const isStillMember = guild.members.cache.has(uid) || !!(await guild.members.fetch(uid).catch(() => null));
+            const isStillMember = guild.members.cache.has(uid);
             if (!isStillMember) {
               await disableUserNotificationsOnLeave(guildId, uid);
             } else {

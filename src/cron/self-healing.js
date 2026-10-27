@@ -168,6 +168,16 @@ export async function healColorPanels(client) {
           continue;
         }
 
+        const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
+        if (botMember && !channel.permissionsFor(botMember)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
+          logger.warn('PERMISSIONS', 'Self-healing skipped color panel check due to missing channel permissions', {
+            guildId: row.guild_id,
+            channelId: row.channel_id,
+            messageId: row.message_id
+          });
+          continue;
+        }
+
         let message = null;
         try {
           message = await channel.messages.fetch(row.message_id);
@@ -175,6 +185,13 @@ export async function healColorPanels(client) {
           if (fetchErr.code === 10008 || fetchErr.status === 404) {
             await pool.query('DELETE FROM color_panels WHERE message_id = $1', [row.message_id]).catch(() => {});
             continue;
+          }
+          if (fetchErr.code === 50013 || fetchErr.status === 403) {
+            logger.warn('PERMISSIONS', 'Self-healing lacks permission to fetch color panel message', {
+              guildId: row.guild_id,
+              channelId: row.channel_id,
+              messageId: row.message_id
+            });
           }
           continue;
         }
@@ -189,14 +206,28 @@ export async function healColorPanels(client) {
         if (hasCorruptedContent || hasMissingComponents || hasMissingAttachments) {
           const payload = await buildColorPanelPayload(guild, row.panel_type, row.panel_index);
           if (payload) {
-            await message.edit(payload).catch(() => {});
-            sysLog('Tracked Color Panel Self-Healed', {
-              guild: row.guild_id,
-              channel: row.channel_id,
-              messageId: row.message_id,
-              panelIndex: row.panel_index,
-              type: row.panel_type
-            });
+            try {
+              await message.edit(payload);
+              sysLog('Tracked Color Panel Self-Healed', {
+                guild: row.guild_id,
+                channel: row.channel_id,
+                messageId: row.message_id,
+                panelIndex: row.panel_index,
+                type: row.panel_type
+              });
+            } catch (editErr) {
+              if (editErr?.code === 50013 || editErr?.status === 403) {
+                logger.warn('PERMISSIONS', 'Self-healing skipped color panel edit due to missing permissions', {
+                  guildId: row.guild_id,
+                  channelId: row.channel_id,
+                  messageId: row.message_id
+                });
+              } else if (editErr?.code === 10008 || editErr?.status === 404) {
+                await pool.query('DELETE FROM color_panels WHERE message_id = $1', [row.message_id]).catch(() => {});
+              } else {
+                sysError('Single Tracked Color Panel Heal Error', editErr, { messageId: row.message_id });
+              }
+            }
           }
         }
       } catch (err) {
