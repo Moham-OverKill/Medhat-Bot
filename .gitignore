@@ -19,3 +19,9 @@ data/
 # Railway local configuration
 .railway/
 
+# AI and agent configurations (local only)
+GEMINI.md
+AGENTS.md
+.agents/
+.agent/
+
