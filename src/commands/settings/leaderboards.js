@@ -44,6 +44,32 @@ export async function handleLeaderboardSettings(interaction, configOverride = nu
             desc += `⚠️ **Notice:** ${warningMessage}\n\n`;
         }
 
+        // Live verification of existing messages in Discord to detect manual message deletions
+        let configChanged = false;
+        for (const cat of Object.values(categories)) {
+            const chanId = config[cat.dbId];
+            if (chanId && config[cat.msgId]) {
+                const targetChan = interaction.guild?.channels?.cache?.get(chanId) || await interaction.guild?.channels?.fetch(chanId).catch(() => null);
+                if (targetChan) {
+                    const existingMsg = targetChan.messages?.cache?.get?.(config[cat.msgId]) || await targetChan.messages?.fetch?.(config[cat.msgId]).catch(() => null);
+                    if (!existingMsg) {
+                        // Message was manually deleted in Discord; self-heal config so Publish state is restored
+                        config[cat.msgId] = null;
+                        config[cat.titleMsgId] = null;
+                        configChanged = true;
+                    }
+                } else {
+                    config[cat.msgId] = null;
+                    config[cat.titleMsgId] = null;
+                    configChanged = true;
+                }
+            }
+        }
+
+        if (configChanged) {
+            await setLeaderboardConfig(guildId, config);
+        }
+
         for (const cat of Object.values(categories)) {
             const chanId = config[cat.dbId];
             let statusLabel = '*Not Set*';
@@ -71,13 +97,14 @@ export async function handleLeaderboardSettings(interaction, configOverride = nu
         const components = [];
         const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-        // Rows 1-4: Direct Channel Select Menus
+        // Rows 1-4: Direct Channel Select Menus (Placeholders strictly use menuEmoji to avoid raw custom emoji strings)
         for (const cat of Object.values(categories)) {
             const chanId = config[cat.dbId];
             const targetChan = chanId ? interaction.guild?.channels?.cache?.get(chanId) : null;
+            const placeholderPrefix = cat.menuEmoji || '📊';
             const placeholderText = targetChan 
-                ? `${cat.emoji} ${cat.name}: #${targetChan.name}`
-                : (chanId ? `${cat.emoji} ${cat.name}: <#${chanId}>` : `${cat.menuEmoji || '📊'} Select ${cat.name} Channel...`);
+                ? `${placeholderPrefix} ${cat.name}: #${targetChan.name}`
+                : (chanId ? `${placeholderPrefix} ${cat.name}: <#${chanId}>` : `${placeholderPrefix} Select ${cat.name} Channel...`);
 
             const channelSelect = new ChannelSelectMenuBuilder()
                 .setCustomId(`lb_channel_${cat.id}_${nonce}`)
@@ -87,25 +114,11 @@ export async function handleLeaderboardSettings(interaction, configOverride = nu
             components.push(new ActionRowBuilder().addComponents(channelSelect));
         }
 
-        // Row 5: Action Buttons ([Send]/[Refresh], [Disable All], [Back])
+        // Row 5: Action Buttons ([Back], [Publish/Refresh], [Disable])
         const configuredCats = Object.values(categories).filter(c => Boolean(config[c.dbId]));
         const hasAnyConfigured = configuredCats.length > 0;
-        // Button is 'Refresh' ONLY if at least 1 channel is configured AND all configured channels already have active messages
+        // Button is 'Refresh' ONLY if at least 1 channel is configured AND all configured channels have active verified messages
         const isRefresh = hasAnyConfigured && configuredCats.every(c => config[c.msgId] && config[c.titleMsgId]);
-
-        const sendRefreshBtn = new ButtonBuilder()
-            .setCustomId('lb_action_send_refresh')
-            .setLabel(isRefresh ? 'Refresh' : 'Send')
-            .setEmoji(isRefresh ? '🔁' : '📤')
-            .setStyle(isRefresh ? ButtonStyle.Primary : ButtonStyle.Success)
-            .setDisabled(!hasAnyConfigured);
-
-        const disableAllBtn = new ButtonBuilder()
-            .setCustomId('lb_action_disable_all')
-            .setLabel('Disable')
-            .setEmoji('❌')
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(!hasAnyConfigured);
 
         const backBtn = new ButtonBuilder()
             .setCustomId('settings_home')
@@ -114,7 +127,22 @@ export async function handleLeaderboardSettings(interaction, configOverride = nu
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(isBackDisabled(interaction));
 
-        components.push(new ActionRowBuilder().addComponents(sendRefreshBtn, disableAllBtn, backBtn));
+        const sendRefreshBtn = new ButtonBuilder()
+            .setCustomId('lb_action_send_refresh')
+            .setLabel(isRefresh ? 'Refresh' : 'Publish')
+            .setEmoji(isRefresh ? '🔁' : '🚀')
+            .setStyle(isRefresh ? ButtonStyle.Primary : ButtonStyle.Success)
+            .setDisabled(!hasAnyConfigured);
+
+        const disableAllBtn = new ButtonBuilder()
+            .setCustomId('lb_action_disable_all')
+            .setLabel('Disable')
+            .setEmoji('✖️')
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(!hasAnyConfigured);
+
+        // Standard server format: [Back] is strictly on the far left!
+        components.push(new ActionRowBuilder().addComponents(backBtn, sendRefreshBtn, disableAllBtn));
 
         const msgData = {
             embeds: [embed],
