@@ -1,5 +1,5 @@
 import { REST, Routes } from 'discord.js';
-import { sysError, sysLog } from '../utils/logger.js';
+import { logger, sysError, sysLog } from '../utils/logger.js';
 import { bankCommand } from './bank.js';
 import { inventoryCommand } from './inventory.js';
 import { itemMassCommand } from './item-mass.js';
@@ -127,12 +127,23 @@ export async function registerSlashCommands(client) {
   const restClient = client.rest || new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
   try {
+    const baseNames = BASE_COMMANDS.map(c => `/${c.name}`);
+    const conditionalNames = ['/quest', '/level', '/daily'];
+    const subcommandsCount = BASE_COMMANDS.reduce((acc, c) => acc + (c.options?.filter(o => o.type === 1 || o.type === 2)?.length || 0), 0);
+
+    logger.info('STARTUP', 'Slash commands loaded into registry', {
+      baseCommandsCount: BASE_COMMANDS.length,
+      conditionalCommandsCount: conditionalNames.length,
+      subcommandsMapped: subcommandsCount,
+      commands: [...baseNames, ...conditionalNames]
+    });
+
     // 1. Clear any leftover global commands to prevent bleeding into unconfigured guilds
     await restClient.put(
       Routes.applicationCommands(client.application.id),
       { body: [] }
     );
-    sysLog('Global Slash Commands Cleared', { detail: 'Scoped registration to guild-level' });
+    logger.info('DISPATCH', 'Global slash commands cleared (scoped registration to guild-level)');
 
     // 2. Synchronize guild slash commands across all guilds in the background (non-blocking)
     // Active/configured guilds are prioritized so newly introduced commands (like /profile) appear immediately.

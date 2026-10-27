@@ -18,7 +18,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { randomUUID } from 'node:crypto';
-import { sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
+import { logger, sendLog, formatDiff, sendBulkLog, sysLog, sysError } from '../utils/logger.js';
 import { handleInteractionError, diagnoseChannelPermissions } from '../utils/errors.js';
 import { sanitizeError, COIN_EMOJI, isValidEconomyAmount, getUserLogName, parseSelectEmoji, safeSetButtonEmoji, resolveComponentEmoji, hasAnyDangerousPermission, RARITY_OPTIONS, getCurrencyName, getCurrencyEmoji, formatCurrentImageDescription, isBackDisabled, getItemEmbedColor, safeDeferUpdate } from '../shared.js';
 import { uploadHostAsset } from '../utils/image-host.js';
@@ -5169,7 +5169,7 @@ export async function handlePackAddContentStart(interaction, layer = 'root', mes
         components: [row, rowBack],
         embeds: [embedPrompt] });
   } catch (error) {
-    console.error('CRITICAL ADMIN ERROR DETAILS:', error);
+    logger.error('SHOP', 'Critical admin error encountered in pack add content start', { userId: interaction?.user?.id }, error);
     await handleInteractionError(interaction, error, 'pack add content start');
   }
 }
@@ -5257,7 +5257,7 @@ export async function handlePackAddContentSelect(interaction) {
     return handlePackAddContentStart(interaction, currentLayer, `✅ **${addedItemName}** added to **${packName}**.`);
 
   } catch (error) {
-    console.error('CRITICAL ADMIN ERROR DETAILS:', error);
+    logger.error('SHOP', 'Critical admin error encountered in pack add content select', { userId: interaction?.user?.id }, error);
     await handleInteractionError(interaction, error, 'pack add content select');
   }
 }
@@ -5328,7 +5328,7 @@ export async function handlePackRemoveContentStart(interaction, messageStr = nul
         components: [row, rowBack],
         embeds: [embedPrompt] });
   } catch (error) {
-    console.error('CRITICAL ADMIN ERROR DETAILS:', error);
+    logger.error('SHOP', 'Critical admin error encountered in pack add content select', { userId: interaction?.user?.id }, error);
     await handleInteractionError(interaction, error, 'pack remove content start');
   }
 }
@@ -5393,7 +5393,7 @@ export async function handlePackRemoveContentSelect(interaction) {
     return handlePackRemoveContentStart(interaction, `✅ **${removedItemName}** removed from **${packName}**.`);
 
   } catch (error) {
-    console.error('CRITICAL ADMIN ERROR DETAILS:', error);
+    logger.error('SHOP', 'Critical admin error encountered in pack add content select', { userId: interaction?.user?.id }, error);
     await handleInteractionError(interaction, error, 'pack remove content select');
   }
 }

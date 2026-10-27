@@ -293,7 +293,8 @@ describe('Modal Auto-fill & Placeholder Refinements Suite', () => {
     assert.strictEqual(input.value, undefined, 'Default 20 must render empty to display placeholder');
   });
 
-  it('8. MVP Hourly Reward modal: auto-fills saved config amount, placeholder is 5, dynamic nonce', async () => {
+  it('8. MVP Hourly Reward modal: auto-fills saved config amount, placeholder is 20, dynamic nonce', async () => {
+    configCache.set(guildId, { mvpRewardAmount: 100 });
     let capturedModal = null;
     const mockInteraction = {
       guildId,
@@ -307,7 +308,7 @@ describe('Modal Auto-fill & Placeholder Refinements Suite', () => {
     assert.ok(capturedModal);
     assert.match(capturedModal.data.custom_id, /^rewards_mvp_modal_\d+$/);
     const input = capturedModal.components[0].components[0].data;
-    assert.strictEqual(input.placeholder, '5');
+    assert.strictEqual(input.placeholder, '20');
     assert.strictEqual(input.value, '100', 'Must auto-fill current saved config amount');
     assert.strictEqual(input.required, false);
   });

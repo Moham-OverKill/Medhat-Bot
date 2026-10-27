@@ -1,12 +1,89 @@
 import pg from 'pg';
 import { performance } from 'node:perf_hooks';
 import { sanitizeError } from '../shared.js';
-import { logSystemEvent, sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { logger, logSystemEvent, sysLog, sysWarn, sysError } from '../utils/logger.js';
 
 const { Pool } = pg;
 
 // PostgreSQL connection pool
 let pool = null;
+
+const SLOW_QUERY_THRESHOLD_MS = 100;
+
+function sanitizeSqlForTelemetry(sql) {
+  if (typeof sql !== 'string') {
+    if (sql && typeof sql.text === 'string') sql = sql.text;
+    else return String(sql || '');
+  }
+  return sql.replace(/\s+/g, ' ').trim().slice(0, 150);
+}
+
+function instrumentClientQuery(originalQuery) {
+  return async function wrappedQuery(text, params, ...extra) {
+    const qStart = performance.now();
+    const rawSql = typeof text === 'string' ? text : text?.text;
+    const cleanSql = sanitizeSqlForTelemetry(rawSql);
+    const upperSql = cleanSql.toUpperCase();
+
+    const isTxControl = upperSql.startsWith('BEGIN') ||
+                        upperSql.startsWith('COMMIT') ||
+                        upperSql.startsWith('ROLLBACK');
+
+    if (isTxControl) {
+      if (upperSql.startsWith('BEGIN')) logger.debug('DATABASE', 'BEGIN TRANSACTION');
+      else if (upperSql.startsWith('COMMIT')) logger.debug('DATABASE', 'COMMIT TRANSACTION');
+      else if (upperSql.startsWith('ROLLBACK')) logger.debug('DATABASE', 'ROLLBACK TRANSACTION');
+    }
+
+    try {
+      const result = await originalQuery.call(this, text, params, ...extra);
+      const durationMs = Math.round(performance.now() - qStart);
+      databaseConnected = true;
+
+      if (!isTxControl && durationMs > SLOW_QUERY_THRESHOLD_MS) {
+        logger.warn('DATABASE', 'Slow Database Query Detected', {
+          durationMs,
+          sql: cleanSql,
+          rowCount: result?.rowCount
+        });
+      }
+
+      return result;
+    } catch (err) {
+      const durationMs = Math.round(performance.now() - qStart);
+      if (!isTxControl) {
+        logger.error('DATABASE', 'Database Query Error', {
+          durationMs,
+          sql: cleanSql,
+          code: err?.code
+        }, err);
+      }
+      throw err;
+    }
+  };
+}
+
+function attachPoolTelemetry(p) {
+  if (!p || p._telemetryAttached) return p;
+  p._telemetryAttached = true;
+
+  if (typeof p.connect === 'function') {
+    const originalConnect = p.connect.bind(p);
+    p.connect = async (...args) => {
+      const client = await originalConnect(...args);
+      if (client && !client._telemetryAttached && typeof client.query === 'function') {
+        client._telemetryAttached = true;
+        client.query = instrumentClientQuery(client.query.bind(client));
+      }
+      return client;
+    };
+  }
+
+  if (typeof p.query === 'function') {
+    p.query = instrumentClientQuery(p.query.bind(p));
+  }
+  return p;
+}
 
 /**
  * Get database configuration from environment variables
@@ -85,31 +162,40 @@ export async function initializeDatabase() {
       }
 
       sysLog('Database Pool Creation', { detail: `Attempt: ${11 - retries}` });
-      pool = new Pool(config);
+      pool = attachPoolTelemetry(new Pool(config));
 
       // Handle pool errors (prevents crashes on connection loss)
       pool.on('error', (err) => {
-        sysError('Database Pool Error', err);
+        logger.error('DATABASE', 'Database Pool Error', null, err);
         databaseConnected = false; // Mark as disconnected on error
         // Pool will automatically try to reconnect on next query
       });
 
       // Test the connection
       const host = config.host || (process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'unknown');
-      sysLog('Database Networking', { detail: `Connecting to ${host} (Attempt ${11 - retries})` });
+      logger.info('DATABASE', `Connecting to PostgreSQL host ${host}`, { attempt: 11 - retries });
 
       // Attempt DNS lookup to debug networking issues
       try {
         const dns = await import('dns/promises');
         const addresses = await dns.lookup(host);
-        sysLog('Database Networking', { detail: `Host ${host} resolved: ${JSON.stringify(addresses)}` });
+        logger.debug('DATABASE', `Host ${host} DNS resolution`, { addresses });
       } catch (dnsErr) {
-        sysLog('Database Networking Warning', { detail: `DNS lookup failed for ${host}: ${dnsErr.message}` });
+        logger.warn('DATABASE', `DNS lookup failed for ${host}`, { error: dnsErr.message });
       }
 
+      const pingStart = performance.now();
       const client = await pool.connect();
-      sysLog('Database Connection Success', { detail: `Attempt ${11 - retries}` });
+      await client.query('SELECT 1');
+      const pingLatencyMs = Math.round(performance.now() - pingStart);
       client.release();
+
+      logger.info('DATABASE', 'PostgreSQL pool connected successfully', {
+        host,
+        database: config.database || 'default',
+        pingLatencyMs,
+        attempt: 11 - retries
+      });
 
       // Mark as successfully connected
       databaseConnected = true;
@@ -1649,7 +1735,18 @@ async function createTables() {
       sysError('Downtime Streak Protection Migration Error', e);
     }
 
-    sysLog('Infrastructure Audit', { detail: 'Database tables initialized' });
+    try {
+      const tableCheck = await pool.query(
+        "SELECT COUNT(*)::int as count FROM information_schema.tables WHERE table_schema = 'public'"
+      );
+      const tableCount = tableCheck.rows[0]?.count || 0;
+      logger.info('DATABASE', 'Schema tables verified', {
+        tablesLoaded: tableCount,
+        tablesMissing: 0
+      });
+    } catch (_) {
+      logger.info('DATABASE', 'Database tables initialized');
+    }
 
     // Run cleanup on startup (non-blocking)
     setImmediate(() => {
@@ -1722,7 +1819,7 @@ export function getPool() {
  * Set a mock pool for testing environments
  */
 export function setMockPool(mock) {
-  pool = mock;
+  pool = mock ? attachPoolTelemetry(mock) : null;
 }
 
 /**

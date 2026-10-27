@@ -1,6 +1,6 @@
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 import { recordWeeklyMessages, isWeeklySummaryActiveForGuild } from '../cron/weeklySummary.js';
 import { configCache as masterConfigCache } from '../storage/config.js';
 import { isDailyLeaderboardActive } from '../commands/leaderboard.js';
@@ -520,6 +520,15 @@ export async function handleVoiceStateChange(guild, oldState, newState) {
   const username = member.user.username;
   const wasValid = isVoiceStateValid(oldState, config);
   const isNowValid = isVoiceStateValid(newState, config);
+
+  logger.debug('VOICE', `Voice transition: User ${username} (${userId})`, {
+    userId,
+    guildId: guild.id,
+    oldChannel: oldState?.channel?.name || oldState?.channelId || 'none',
+    newChannel: newState?.channel?.name || newState?.channelId || 'none',
+    isNowValid,
+    wasValid
+  });
 
   // Track voice call/session joined toward weekly activity summary
   if (!oldState?.channelId && newState?.channelId) {

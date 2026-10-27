@@ -8,7 +8,7 @@
  */
 import { MessageFlags, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { getPool, isDatabaseReady } from './postgres.js';
-import { sysError, sysLog } from '../utils/logger.js';
+import { logger, sysError, sysLog } from '../utils/logger.js';
 import { hasAnyDangerousPermission } from '../shared.js';
 
 // Fast in-memory cache for admin permission checks (TTL: 20 seconds)
@@ -598,10 +598,11 @@ export async function verifyAdminAccess(interaction) {
   }
 
   // 5. Hard Denial
-  sysError('Security Violation: Unauthorized Admin Action Blocked', new Error('User not on server_admins/server_admin_roles whitelist and not a Discord administrator'), {
-    user: userId,
-    guild: guildId,
-    detail: interaction.commandName ? `Command: /${interaction.commandName}` : `CustomID: ${interaction.customId}`
+  const targetAction = interaction.commandName ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
+  logger.warn('SECURITY', `Unauthorized interaction attempt blocked: ${targetAction}`, {
+    userId,
+    guildId,
+    reason: 'Non-Admin'
   });
 
   const denyMsg = {

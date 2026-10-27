@@ -1,5 +1,5 @@
 import { getPool } from '../storage/postgres.js';
-import { sysLog, sysError, sendLog } from '../utils/logger.js';
+import { logger, sysLog, sysError, sendLog } from '../utils/logger.js';
 
 let isSweepRunning = false;
 
@@ -32,6 +32,7 @@ export function startExpirationScheduler(client) {
 export async function processGlobalExpiredItems(client) {
   if (isSweepRunning) return;
   isSweepRunning = true;
+  const cycleStart = performance.now();
 
   try {
     const pool = getPool();
@@ -43,6 +44,8 @@ export async function processGlobalExpiredItems(client) {
     );
 
     if (result.rows.length === 0) return;
+
+    logger.debug('CRON:EXPIRATIONS', 'Starting expiration sweep cycle', { pendingCount: result.rows.length });
 
     for (const item of result.rows) {
       const currentQty = parseInt(item.quantity) || 1;
@@ -110,8 +113,13 @@ export async function processGlobalExpiredItems(client) {
         );
       }
     }
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('CRON:EXPIRATIONS', `Expiration sweep finished in ${durationMs}ms`, {
+      processedCount: result.rows.length,
+      durationMs
+    });
   } catch (err) {
-    sysError('Global Expiration Sweep Failed', err);
+    logger.error('CRON:EXPIRATIONS', 'Global Expiration Sweep Failed', null, err);
   } finally {
     isSweepRunning = false;
   }

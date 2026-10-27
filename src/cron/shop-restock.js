@@ -1,5 +1,5 @@
 import { getPool } from '../storage/postgres.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 import { refreshShopMessageUI } from '../commands/bank.js';
 
 let isRestockRunning = false;
@@ -34,6 +34,7 @@ export function startShopRestockScheduler(client) {
 export async function processAutoRestocks(client) {
   if (isRestockRunning) return;
   isRestockRunning = true;
+  const cycleStart = performance.now();
 
   try {
     const pool = getPool();
@@ -55,6 +56,9 @@ export async function processAutoRestocks(client) {
     );
 
     if (result.rows.length === 0) return;
+
+    logger.debug('CRON:RESTOCK', 'Starting auto-restock cycle', { eligibleCount: result.rows.length });
+    let restockedCount = 0;
 
     for (const row of result.rows) {
       try {
@@ -111,19 +115,28 @@ export async function processAutoRestocks(client) {
         );
 
         await refreshShopMessageUI({ message, client, guildId: row.guild_id }, row.item_id, row.guild_id);
-        sysLog('Auto Shop Restock Executed', {
-          guild: row.guild_id,
-          detail: `Item ${row.item_name} restocked / claims reset (Message: ${row.message_id})`
+        restockedCount++;
+        logger.info('CRON:RESTOCK', `Restocked item "${row.item_name}"`, {
+          guildId: row.guild_id,
+          messageId: row.message_id,
+          itemId: row.item_id
         });
       } catch (postErr) {
-        sysError('Auto Restock Single Post Error', postErr, { messageId: row.message_id, itemId: row.item_id });
+        logger.error('CRON:RESTOCK', 'Auto Restock Single Post Error', { messageId: row.message_id, itemId: row.item_id }, postErr);
       }
 
       // Throttling delay between posts to prevent 429 rate limits
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
+
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('CRON:RESTOCK', `Restock cycle finished in ${durationMs}ms`, {
+      evaluatedCount: result.rows.length,
+      restockedCount,
+      durationMs
+    });
   } catch (err) {
-    sysError('Shop Restock Sweeper Failed', err);
+    logger.error('CRON:RESTOCK', 'Shop Restock Sweeper Failed', null, err);
   } finally {
     isRestockRunning = false;
   }

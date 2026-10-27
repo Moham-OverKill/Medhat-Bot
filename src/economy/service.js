@@ -1,7 +1,7 @@
 import { query, getPool } from '../storage/postgres.js';
 import { sanitizeError, COIN_EMOJI } from '../shared.js';
 import { formatDetailedTimeRemaining, getNextCairoMidnight, hasClaimedToday, isStreakValid } from '../utils/time.js';
-import { sendLog, logServerEvent, logServerError, sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { logger, sendLog, logServerEvent, logServerError, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { getGuildConfig } from '../storage/config.js';
 
 /**
@@ -84,6 +84,17 @@ export async function updateBalance(userId, guildId, amount, type, description =
     );
 
     await client.query('COMMIT');
+
+    const beforeBalance = newBalance - numericAmount;
+    const deltaStr = numericAmount >= 0 ? `+${numericAmount}` : `${numericAmount}`;
+    logger.info('ECONOMY', `Balance updated: ${beforeBalance} -> ${newBalance} (${deltaStr})`, {
+      userId,
+      guildId,
+      reason: type,
+      delta: numericAmount,
+      before: beforeBalance,
+      after: newBalance
+    });
 
     return { success: true, balance: newBalance, amount };
   } catch (error) {
