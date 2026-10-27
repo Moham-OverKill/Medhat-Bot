@@ -1,4 +1,4 @@
-import { logger, sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { updateLeaderboards, cleanupAllLeaderboardChannels } from '../commands/leaderboard.js';
 import { loadGuildConfigs } from '../storage/config.js';
 import { getTimeUntilNextCairoHour, getCairoHour } from '../utils/time.js';
@@ -72,7 +72,10 @@ async function runHourlyRefresh(client, isStartup = false) {
                 if (g) guildIds.push(gid);
             } catch (err) {
                 if (err?.code === 10004 || err?.status === 404) {
-                    sysWarn('Departed guild detected during hourly refresh; pruning stale leaderboard config', { guild: gid });
+                    logger.warn('CONFIG', 'Departed guild detected during hourly refresh; pruning stale leaderboard config', {
+                        guildId: gid,
+                        error: err?.message || 'Unknown Guild'
+                    });
                     await deleteLeaderboardConfig(gid).catch(() => {});
                 }
             }
