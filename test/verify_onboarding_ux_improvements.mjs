@@ -8,8 +8,7 @@ import {
   handleCreateItemStart,
   handleCreateRoleSelect,
   getShopSetupPayload,
-  handleCreateItemAutoRoleModal,
-  handleCreateItemAutoRoleSubmit
+  handleCreateItemModalSubmit
 } from '../src/commands/shop-setup.js';
 import { showMainMenu } from '../src/commands/settings.js';
 import { handleShopBuyModalSubmit } from '../src/commands/bank.js';
@@ -45,42 +44,138 @@ describe('Onboarding & Mobile UX Streamlining Suite', () => {
     });
   });
 
-  it('1. Item Creation: provides Auto-Create Role button and opens modal', async () => {
-    let replyPayload = null;
-    const mockInteraction = {
-      deferred: true,
-      replied: false,
-      guildId: '123456789',
-      guild: { id: '123456789' },
-      editReply: async (payload) => {
-        replyPayload = payload;
-        return payload;
-      }
-    };
-
-    await handleCreateItemStart(mockInteraction);
-    assert.ok(replyPayload, 'Should render create item screen');
-
-    // Nav row is components[3]
-    const navRow = replyPayload.components[3];
-    assert.ok(navRow, 'Nav row must be present');
-
-    const autoRoleBtn = navRow.components.find(c => c.data?.custom_id === 'shop_create_item_auto_role');
-    assert.ok(autoRoleBtn, 'shop_create_item_auto_role button must be present in nav row');
-    assert.equal(autoRoleBtn.data.label, 'Auto-Create Role');
-    assert.equal(autoRoleBtn.data.style, ButtonStyle.Success);
-
-    // Verify modal opener
+  it('1. Item Creation: immediately shows modal and provisions role on submit', async () => {
     let modalShown = null;
-    const modalInteraction = {
+    let webhookEdited = false;
+    const mockInteraction = {
+      deferred: false,
+      replied: false,
+      guildId: '123456789012345678',
+      guild: {
+        id: '123456789012345678',
+        roles: { cache: new Map() }
+      },
       showModal: async (modal) => {
         modalShown = modal;
+        return modal;
+      },
+      webhook: {
+        editMessage: async () => {
+          webhookEdited = true;
+        }
       }
     };
-    await handleCreateItemAutoRoleModal(modalInteraction);
-    assert.ok(modalShown, 'Modal must be shown');
-    assert.equal(modalShown.data.custom_id, 'shop_create_item_auto_role_modal');
-    assert.equal(modalShown.components[0].components[0].data.custom_id, 'item_name');
+
+    // 1. Immediately opens modal upon selecting "Create Item"
+    await handleCreateItemStart(mockInteraction);
+    assert.ok(modalShown, 'handleCreateItemStart must show modal directly');
+    assert.equal(modalShown.data.title, 'Create Item');
+    assert.ok(modalShown.data.custom_id.startsWith('shop_create_item_modal'));
+
+    const nameInput = modalShown.components[0].components[0];
+    assert.equal(nameInput.data.custom_id, 'item_name');
+    assert.equal(nameInput.data.label, 'What do you want to create?');
+    assert.equal(nameInput.data.required, true);
+
+    // 2. Refreshes message behind modal so menu doesn't stay stuck on "Create Item"
+    assert.ok(webhookEdited, 'Must refresh source message to reset select menu');
+
+    // 3. Submitting the modal auto-provisions role and opens Tab 1 (Details) with "Change Role" placeholder
+    let createdRole = null;
+    let editReplyPayload = null;
+    const submitInteraction = {
+      deferred: false,
+      replied: false,
+      guildId: '123456789012345678',
+      user: { id: 'admin1', tag: 'Admin#0001', username: 'Admin' },
+      member: {
+        id: 'admin1',
+        roles: { cache: new Map() },
+        permissions: { has: () => true }
+      },
+      memberPermissions: { has: () => true },
+      guild: {
+        id: '123456789012345678',
+        name: 'Test Server',
+        roles: {
+          cache: new Map(),
+          create: async (options) => {
+            createdRole = {
+              id: '999888111222333444',
+              name: options.name,
+              permissions: { has: () => false },
+              members: new Map()
+            };
+            return createdRole;
+          }
+        },
+        members: {
+          me: {
+            permissions: { has: (perm) => true }
+          },
+          fetch: async () => new Map()
+        }
+      },
+      fields: {
+        getTextInputValue: (id) => 'VIP Legend'
+      },
+      deferReply: async () => {},
+      editReply: async (payload) => {
+        editReplyPayload = payload;
+        return payload;
+      },
+      followUp: async () => {}
+    };
+
+    // Mock query for adding item and re-rendering details
+    let insertedItem = null;
+    setMockPool({
+      query: async (sql, params = []) => {
+        if (typeof sql === 'string' && sql.includes('INSERT INTO shop_items')) {
+          insertedItem = {
+            id: 777,
+            guild_id: params[0],
+            name: params[3],
+            role_id: params[2],
+            is_tradable: params[15],
+            rarity: 'common',
+            item_type: 'role'
+          };
+          return { rows: [insertedItem] };
+        }
+        if (typeof sql === 'string' && (sql.includes('FROM shop_items si') || sql.includes('shop_items WHERE id = $1'))) {
+          return { rows: [insertedItem || { id: 777, name: 'VIP Legend', role_id: '999888111222333444', is_tradable: true, rarity: 'common', item_type: 'role' }] };
+        }
+        if (typeof sql === 'string' && sql.includes('SELECT * FROM shop_items')) {
+          return { rows: [] };
+        }
+        if (typeof sql === 'string' && sql.includes('shop_categories')) {
+          return { rows: [] };
+        }
+        if (typeof sql === 'string' && sql.includes('user_inventory')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      }
+    });
+
+    try {
+      await handleCreateItemModalSubmit(submitInteraction);
+
+      assert.ok(createdRole, 'Role must be created in Discord with entered name');
+      assert.equal(createdRole.name, 'VIP Legend');
+      assert.ok(insertedItem, 'Item must be inserted into database');
+      assert.equal(insertedItem.is_tradable, true, 'New item must be tradable by default');
+
+      // Verify Tab 1 (Details) renders "Change Role" in the role select menu
+      assert.ok(editReplyPayload, 'Tab 1 Details must be rendered in editReply');
+      const roleRow = editReplyPayload.components[1];
+      const roleSelect = roleRow.components[0];
+      assert.equal(roleSelect.data.placeholder, 'Change Role', 'Role menu placeholder must say Change Role');
+    } catch (err) {
+      console.error('TEST 1 ERROR:', err);
+      throw err;
+    }
   });
 
   it('2. Main Settings Shop Menu: contains Post and removes Market', async () => {
