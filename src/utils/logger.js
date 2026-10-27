@@ -174,13 +174,15 @@ function writeLog(level, moduleName, message, context = null, error = null) {
   const reset = supportsColor ? ANSI.RESET : '';
   const gray = supportsColor ? ANSI.GRAY : '';
 
-  const targetError = error || (context && context.error instanceof Error ? context.error : (typeof context?.error === 'string' ? new Error(context.error) : null));
+  // Extract real Error instance if supplied directly or via context
+  const actualError = error instanceof Error
+    ? error
+    : (context?.error instanceof Error ? context.error : null);
 
-  if (targetError) {
-    const rawErrMsg = targetError.message || String(targetError);
-    if (rawErrMsg && rawErrMsg !== 'Error' && !cleanMsg.includes(rawErrMsg)) {
-      cleanMsg += `: ${stripLog(rawErrMsg)}`;
-    }
+  // Extract error message string for inclusion in log line if not already present
+  const rawErrMsg = actualError?.message || (typeof context?.error === 'string' ? context.error : (error && typeof error === 'string' ? error : null));
+  if (rawErrMsg && rawErrMsg !== 'Error' && !cleanMsg.includes(rawErrMsg)) {
+    cleanMsg += `: ${stripLog(rawErrMsg)}`;
   }
 
   cleanMsg = cleanMsg.replace(/^(\[[A-Za-z0-9_\-\s:]+\]\s*)+/g, '').trim();
@@ -197,20 +199,19 @@ function writeLog(level, moduleName, message, context = null, error = null) {
 
   if (level >= LogLevel.ERROR) {
     process.stderr.write(logLine);
+    // Write stack trace to stderr only for ERROR or FATAL levels when a real Error instance exists
+    if (actualError && actualError.stack) {
+      const stackFrames = actualError.stack
+        .split('\n')
+        .slice(1, 6)
+        .map(line => `        ${gray}${line.trim()}${reset}`)
+        .join('\n');
+      if (stackFrames) {
+        process.stderr.write(`${stackFrames}\n`);
+      }
+    }
   } else {
     process.stdout.write(logLine);
-  }
-
-  // Handle stack trace if error exists
-  if (targetError && targetError.stack) {
-    const stackFrames = targetError.stack
-      .split('\n')
-      .slice(1, 6)
-      .map(line => `        ${gray}${line.trim()}${reset}`)
-      .join('\n');
-    if (stackFrames) {
-      process.stderr.write(`${stackFrames}\n`);
-    }
   }
 }
 
