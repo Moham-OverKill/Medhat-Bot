@@ -112,7 +112,8 @@ function createMockChannel(id, name, permissionsArray) {
             return msg;
         },
         messages: {
-            fetch: async (optOrId) => (typeof optOrId === 'string' ? (messages.get(optOrId) || { id: optOrId, edit: async () => {}, delete: async () => { deletedMessageId = optOrId; } }) : messages)
+            cache: messages,
+            fetch: async (optOrId) => (typeof optOrId === 'string' ? (messages.get(optOrId) || null) : messages)
         },
         _messages: messages,
         getDeletedMessageId: () => deletedMessageId
@@ -308,15 +309,16 @@ for (let i = 0; i < 4; i++) {
     assert(menu.data.placeholder.includes('Select'), `Placeholder should indicate selection prompt when unconfigured`);
 }
 
-// Verify Row 5 has 3 buttons: [Send/Refresh], [Disable All], [Back]
+// Verify Row 5 has 3 buttons: [Back], [Publish/Refresh], [Disable]
 const lbRow5 = lastRenderedPayload.components[4];
 assert.strictEqual(lbRow5.components.length, 3, 'Row 5 must have 3 buttons');
-assert.strictEqual(lbRow5.components[0].data.label, 'Send', 'Button 1 must be Send initially');
-assert.strictEqual(lbRow5.components[0].data.disabled, true, 'Send button must be disabled when no channels are configured');
-assert.strictEqual(lbRow5.components[1].data.label, 'Disable', 'Button 2 must be Disable');
-assert.strictEqual(lbRow5.components[1].data.disabled, true, 'Disable button must be disabled when no channels are configured');
-assert.strictEqual(lbRow5.components[2].data.label, 'Back', 'Button 3 must be Back');
-console.log('✅ Leaderboard Configuration UI: Exactly 4 direct channel menus and [Send], [Disable], [Back] on Row 5.');
+assert.strictEqual(lbRow5.components[0].data.label, 'Back', 'Button 1 (far left) must be Back');
+assert.strictEqual(lbRow5.components[1].data.label, 'Publish', 'Button 2 (center) must be Publish initially');
+assert.strictEqual(lbRow5.components[1].data.disabled, true, 'Publish button must be disabled when no channels are configured');
+assert.strictEqual(lbRow5.components[2].data.label, 'Disable', 'Button 3 (right) must be Disable');
+assert.strictEqual(lbRow5.components[2].data.emoji.name, '✖️', 'Disable button emoji must be ✖️');
+assert.strictEqual(lbRow5.components[2].data.disabled, true, 'Disable button must be disabled when no channels are configured');
+console.log('✅ Leaderboard Configuration UI: Exactly 4 direct channel menus and [Back], [Publish], [Disable] on Row 5.');
 
 // Test 2.1: Assign Channel on First Click (Without immediate auto-sending)
 sentFollowUps = [];
@@ -328,11 +330,11 @@ assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_ch
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'Must NOT auto-send title immediately upon selecting channel');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Must NOT auto-send card immediately upon selecting channel');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
-assert.strictEqual(lastRenderedPayload.components[4].components[0].data.label, 'Send', 'Row 5 Button 1 must be Send when messages are not yet dispatched');
-assert.strictEqual(lastRenderedPayload.components[4].components[0].data.disabled, false, 'Send button must be enabled once a channel is set');
-console.log('✅ Leaderboard Channel Assignment: Saves channel to DB with zero immediate message dispatch, enabling [Send].');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.label, 'Publish', 'Row 5 Button 2 must be Publish when messages are not yet dispatched');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.disabled, false, 'Publish button must be enabled once a channel is set');
+console.log('✅ Leaderboard Channel Assignment: Saves channel to DB with zero immediate message dispatch, enabling [Publish].');
 
-// Test 2.2: Batch Send via [Send] Button
+// Test 2.2: Batch Send via [Publish] Button
 sentFollowUps = [];
 mockLbInteraction.customId = 'lb_action_send_refresh';
 mockLbInteraction.values = [];
@@ -341,10 +343,17 @@ assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_ch
 assert.notStrictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'Title message must be dispatched');
 assert.notStrictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Card message must be dispatched');
 assert.strictEqual(leaderboardDispatchedMessages[0].content.startsWith('> # '), true, 'Title message must start with > #');
-assert.strictEqual(lastRenderedPayload.components[4].components[0].data.label, 'Refresh', 'Row 5 Button 1 must dynamically flip to Refresh once messages are active');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.label, 'Refresh', 'Row 5 Button 2 must dynamically flip to Refresh once messages are active');
 console.log('✅ Leaderboard Batch Send: Atomically dispatches title and card messages, dynamically flipping button to [Refresh].');
 
-// Test 2.3: Re-selecting the same channel toggles it off (Per-Category Disable)
+// Test 2.3: Manual Message Deletion in Discord is detected live and flips button back to [Publish]
+validChannel._messages.clear(); // Simulate user manually deleting messages in Discord
+await handleLeaderboardSettings(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB message ID must be self-healed when message is deleted in Discord');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.label, 'Publish', 'Button must flip back to Publish when live Discord messages are gone');
+console.log('✅ Live Discord Message Detection: Successfully detects deleted messages, self-heals DB, and restores [Publish] state.');
+
+// Test 2.4: Re-selecting the same channel toggles it off (Per-Category Disable)
 sentFollowUps = [];
 mockLbInteraction.customId = 'lb_channel_coins_222222';
 mockLbInteraction.values = [VALID_CHAN_1]; // Same channel selected again
@@ -355,7 +364,7 @@ assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_me
 assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must reflect category reset to Not Set');
 console.log('✅ Leaderboard Single Category Removal: Selecting the same channel again unsets it and cleans up messages.');
 
-// Test 2.4: Disable All Action Button
+// Test 2.5: Disable All Action Button
 // Assign activity channel first
 mockLbInteraction.customId = 'lb_channel_activity_333333';
 mockLbInteraction.values = [VALID_CHAN_1];
@@ -368,8 +377,9 @@ mockLbInteraction.customId = 'lb_action_disable_all';
 await handleLeaderboardDisableAll(mockLbInteraction);
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.daily_channel_id, null, 'Disable All must unset daily_channel_id');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'Disable All must unset coins_channel_id');
-assert.strictEqual(lastRenderedPayload.components[4].components[0].data.disabled, true, 'Send button disabled when all cleared');
-assert.strictEqual(lastRenderedPayload.components[4].components[1].data.disabled, true, 'Disable button disabled when all cleared');
+assert.strictEqual(lastRenderedPayload.components[4].components[0].data.label, 'Back', 'Back button on far left');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.disabled, true, 'Publish button disabled when all cleared');
+assert.strictEqual(lastRenderedPayload.components[4].components[2].data.disabled, true, 'Disable button disabled when all cleared');
 console.log('✅ Leaderboard Disable All Action: Clears all leaderboard channels and message references from DB.');
 
 console.log('--- ALL VERIFICATIONS PASSED SUCCESSFULLY ---');
