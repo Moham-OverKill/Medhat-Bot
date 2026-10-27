@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
-import { sendLog, sysError, sysLog, checkLeaderboardPermissions } from '../utils/logger.js';
+import { sendLog, sysWarn, sysError, sysLog, checkLeaderboardPermissions } from '../utils/logger.js';
 import { renderLeaderboardCard, LEADERBOARD_THEMES } from '../graphics/leaderboardCard.js';
 import { normalizeDisplayName } from '../graphics/shared.js';
 
@@ -949,11 +949,11 @@ export async function sendLeaderboardPreview(client, channelId, guildId, type) {
 
     const permCheck = checkLeaderboardPermissions(channel);
     if (!permCheck.valid) {
-        sysError('Cannot send leaderboard preview: missing permissions', null, {
+        sysWarn('Cannot send leaderboard preview: missing permissions', {
             guildId,
             channelId,
             type,
-            error: permCheck.error,
+            detail: permCheck.error,
             missing: permCheck.missing
         });
         return null;
@@ -1079,10 +1079,10 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             // STEP 1: Verify all required permissions upfront before sending or editing anything
             const permCheck = checkLeaderboardPermissions(channel);
             if (!permCheck.valid) {
-                sysError('Leaderboard channel missing permissions', null, {
+                sysWarn('Leaderboard channel missing permissions', {
                     guild: guildId,
                     channel: cid,
-                    error: permCheck.error,
+                    detail: permCheck.error,
                     missing: permCheck.missing
                 });
                 // Strictly abort processing for this channel — do not send titles or cards!
@@ -1297,11 +1297,11 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     // Verify all required permissions upfront before sending anything
     const permCheck = checkLeaderboardPermissions(channel);
     if (!permCheck.valid) {
-        sysError('Cannot send single leaderboard: missing channel permissions', null, {
+        sysWarn('Cannot send single leaderboard: missing channel permissions', {
             guildId,
             channelId,
             type,
-            error: permCheck.error,
+            detail: permCheck.error,
             missing: permCheck.missing
         });
         return { error: permCheck.error, missing: permCheck.missing };

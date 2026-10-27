@@ -666,13 +666,29 @@ async function createTables() {
 
     // Migration for tracking table rename (done before CREATE TABLE)
     try {
-      await pool.query(`ALTER TABLE IF EXISTS missions RENAME TO quests;`);
-      await pool.query(`ALTER INDEX IF EXISTS idx_missions_guild_id RENAME TO idx_quests_guild_id;`);
-      
-      await pool.query(`ALTER TABLE IF EXISTS mission_progress RENAME TO quest_progress;`);
-      await pool.query(`ALTER TABLE IF EXISTS quest_progress RENAME COLUMN mission_id TO quest_id;`);
-      await pool.query(`ALTER TABLE IF EXISTS quest_progress RENAME COLUMN mission_date TO quest_date;`);
-      await pool.query(`ALTER INDEX IF EXISTS idx_mission_progress_lookup RENAME TO idx_quest_progress_lookup;`);
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'missions') THEN
+            ALTER TABLE missions RENAME TO quests;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_missions_guild_id') THEN
+            ALTER INDEX idx_missions_guild_id RENAME TO idx_quests_guild_id;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'mission_progress') THEN
+            ALTER TABLE mission_progress RENAME TO quest_progress;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quest_progress' AND column_name = 'mission_id') THEN
+            ALTER TABLE quest_progress RENAME COLUMN mission_id TO quest_id;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quest_progress' AND column_name = 'mission_date') THEN
+            ALTER TABLE quest_progress RENAME COLUMN mission_date TO quest_date;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_mission_progress_lookup') THEN
+            ALTER INDEX idx_mission_progress_lookup RENAME TO idx_quest_progress_lookup;
+          END IF;
+        END $$;
+      `);
     } catch(e) {
       // Ignored if already renamed or doesn't exist
     }
