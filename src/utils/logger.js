@@ -146,6 +146,8 @@ function writeLog(level, moduleName, message, context = null, error = null) {
     }
   }
 
+  cleanMsg = cleanMsg.replace(/^(\[[A-Za-z0-9_\-\s:]+\]\s*)+/g, '').trim();
+
   let contextStr = '';
   if (context && typeof context === 'object') {
     const serialized = serializeContext(context);
@@ -154,7 +156,7 @@ function writeLog(level, moduleName, message, context = null, error = null) {
     }
   }
 
-  const logLine = `[${timestamp}] [${color}${levelName}${reset}] [${cleanModule}] ${cleanMsg}${contextStr}\n`;
+  const logLine = `${timestamp} ${color}${levelName}${reset} ${cleanModule}: ${cleanMsg}${contextStr}\n`;
 
   if (level >= LogLevel.ERROR) {
     process.stderr.write(logLine);
@@ -576,10 +578,9 @@ function resolveTag(action, explicitTag) {
 function cleanActionTitle(action) {
   if (!action || typeof action !== 'string') return '';
   return stripLog(action)
-    .replace(/^\[[A-Z0-9_\-\s]+\]\s*/i, '')
+    .replace(/^(\[[A-Za-z0-9_\-\s:]+\]\s*)+/g, '')
     .replace(/^(Self-Healing:\s*)/i, '')
     .replace(/^(Phase:\s*)/i, '')
-    .replace(/^\[CLEAN\]\s*/i, '')
     .replace(/^(ECONOMY Event\s*)/i, 'Economy Event')
     .trim();
 }

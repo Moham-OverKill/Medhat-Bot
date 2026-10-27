@@ -18,6 +18,22 @@ function sanitizeSqlForTelemetry(sql) {
   return sql.replace(/\s+/g, ' ').trim().slice(0, 150);
 }
 
+function getMutationType(sql) {
+  if (typeof sql !== 'string') return null;
+  const normalized = sql.replace(/\/\*[\s\S]*?\*\/|--.*$/gm, '').trim().toUpperCase();
+  if (normalized.startsWith('INSERT')) return 'INSERT (Add)';
+  if (normalized.startsWith('UPDATE')) return 'UPDATE (Modify)';
+  if (normalized.startsWith('DELETE')) return 'DELETE (Remove)';
+  if (normalized.startsWith('ALTER')) return 'ALTER (Schema Modify)';
+  if (normalized.startsWith('CREATE')) return 'CREATE (Schema Add)';
+  if (normalized.startsWith('DROP')) return 'DROP (Schema Remove)';
+  if (normalized.startsWith('TRUNCATE')) return 'TRUNCATE (Purge)';
+  if (normalized.includes('INSERT INTO')) return 'INSERT (Add)';
+  if (normalized.includes('UPDATE ') && normalized.includes('SET ')) return 'UPDATE (Modify)';
+  if (normalized.includes('DELETE FROM')) return 'DELETE (Remove)';
+  return null;
+}
+
 function instrumentClientQuery(originalQuery) {
   return async function wrappedQuery(text, params, ...extra) {
     const qStart = performance.now();
@@ -40,7 +56,23 @@ function instrumentClientQuery(originalQuery) {
       const durationMs = Math.round(performance.now() - qStart);
       databaseConnected = true;
 
-      if (!isTxControl && durationMs > SLOW_QUERY_THRESHOLD_MS) {
+      const mutationType = getMutationType(cleanSql);
+      if (mutationType) {
+        const rowCount = result?.rowCount ?? (Array.isArray(result) ? result.length : 0);
+        let paramsSummary = undefined;
+        if (Array.isArray(params) && params.length > 0) {
+          paramsSummary = params.map(p => {
+            if (typeof p === 'string' && p.length > 60) return p.slice(0, 57) + '...';
+            return p;
+          });
+        }
+
+        logger.info('DATABASE', `DB Change ${mutationType}: ${cleanSql}`, {
+          affectedRows: rowCount,
+          durationMs,
+          ...(paramsSummary ? { params: paramsSummary } : {})
+        });
+      } else if (!isTxControl && durationMs > SLOW_QUERY_THRESHOLD_MS) {
         logger.warn('DATABASE', 'Slow Database Query Detected', {
           durationMs,
           sql: cleanSql,

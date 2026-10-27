@@ -94,19 +94,25 @@ test('Logging Engine Architecture Suite', async (t) => {
       const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
 
       const debugLine = stripAnsi(stdoutCaptured[0]);
-      assert.match(debugLine, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[DEBUG\] \[DISPATCH\] Debug message test \| Context: \{"debugKey":123\}\n$/);
+      assert.match(debugLine, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} DEBUG DISPATCH: Debug message test \| Context: \{"debugKey":123\}\n$/);
+      assert.ok(!debugLine.includes('[DEBUG]'), 'Must not have [DEBUG] bracket');
+      assert.ok(!debugLine.includes('[DISPATCH]'), 'Must not have [DISPATCH] bracket');
 
       const infoLine = stripAnsi(stdoutCaptured[1]);
-      assert.match(infoLine, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[INFO\] \[STARTUP\] Info message test \| Context: \{"guilds":5\}\n$/);
+      assert.match(infoLine, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} INFO STARTUP: Info message test \| Context: \{"guilds":5\}\n$/);
+      assert.ok(!infoLine.includes('[INFO]'), 'Must not have [INFO] bracket');
 
       const warnLine = stripAnsi(stdoutCaptured[2]);
-      assert.match(warnLine, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[WARN\] \[SECURITY\] Warn message test \| Context: \{"blockedUser":"user_42"\}\n$/);
+      assert.match(warnLine, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} WARN SECURITY: Warn message test \| Context: \{"blockedUser":"user_42"\}\n$/);
+      assert.ok(!warnLine.includes('[WARN]'), 'Must not have [WARN] bracket');
 
       const errLine = stripAnsi(stderrCaptured[0]);
-      assert.match(errLine, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[ERROR\] \[DATABASE\] Error message test \| Context: \{"code":"50013"\}\n$/);
+      assert.match(errLine, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} ERROR DATABASE: Error message test \| Context: \{"code":"50013"\}\n$/);
+      assert.ok(!errLine.includes('[ERROR]'), 'Must not have [ERROR] bracket');
 
       const fatalLine = stripAnsi(stderrCaptured[1]);
-      assert.match(fatalLine, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] \[FATAL\] \[SYSTEM\] Fatal crash test \| Context: \{"uptime":120\}\n$/);
+      assert.match(fatalLine, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} FATAL SYSTEM: Fatal crash test \| Context: \{"uptime":120\}\n$/);
+      assert.ok(!fatalLine.includes('[FATAL]'), 'Must not have [FATAL] bracket');
     } finally {
       restoreStreams();
     }
@@ -177,7 +183,18 @@ test('Logging Engine Architecture Suite', async (t) => {
       simulatedDelay = 0;
 
       const slowLogFound = stdoutCaptured.some(line => line.includes('Slow Database Query Detected') && line.includes('large_table'));
-      assert.ok(slowLogFound, 'Must log [WARN] [DATABASE] Slow Database Query Detected when query > 100ms');
+      assert.ok(slowLogFound, 'Must log Slow Database Query Detected when query > 100ms');
+
+      // Test database mutation changes logging (Add, Modify, Remove)
+      await p.query('INSERT INTO user_balances (user_id, balance) VALUES ($1, $2)', ['usr_99', 500]);
+      await p.query('UPDATE user_balances SET balance = balance + 10 WHERE user_id = $1', ['usr_99']);
+      await p.query('DELETE FROM user_inventory WHERE user_id = $1', ['usr_99']);
+
+      const fullOutput = stdoutCaptured.join('\n');
+      assert.ok(fullOutput.includes('DB Change INSERT (Add): INSERT INTO user_balances'), 'Must log INSERT database changes');
+      assert.ok(fullOutput.includes('DB Change UPDATE (Modify): UPDATE user_balances'), 'Must log UPDATE database changes');
+      assert.ok(fullOutput.includes('DB Change DELETE (Remove): DELETE FROM user_inventory'), 'Must log DELETE database changes');
+      assert.ok(fullOutput.includes('"affectedRows":1'), 'Must include affectedRows in mutation context');
 
     } finally {
       setMockPool(null);
@@ -216,10 +233,11 @@ test('Logging Engine Architecture Suite', async (t) => {
       assert.ok(stderrCaptured.length >= 1, 'stderr must capture legacy error calls');
 
       const fullStdout = stdoutCaptured.join('\n');
-      assert.ok(fullStdout.includes('[SHOP] Item Purchased'), 'sysLog with item purchased must route to SHOP');
-      assert.ok(fullStdout.includes('[WARN] Rate Limit Encountered') || fullStdout.includes('Rate Limit Encountered'), 'sysWarn must emit WARN');
-      assert.ok(fullStdout.includes('[STARTUP] Service Initialized'), 'log.startup must route to STARTUP');
-      assert.ok(fullStdout.includes('[CRON] Cycle Complete'), 'log.cron must route to CRON');
+      assert.ok(fullStdout.includes('SHOP: Item Purchased'), 'sysLog with item purchased must route to SHOP');
+      assert.ok(fullStdout.includes('WARN SYSTEM: Rate Limit Encountered') || fullStdout.includes('Rate Limit Encountered'), 'sysWarn must emit WARN');
+      assert.ok(fullStdout.includes('STARTUP: Service Initialized'), 'log.startup must route to STARTUP');
+      assert.ok(fullStdout.includes('CRON: Cycle Complete'), 'log.cron must route to CRON');
+      assert.ok(!fullStdout.includes('[SHOP]'), 'Must not contain [SHOP] bracket');
 
       const fullStderr = stderrCaptured.join('\n');
       assert.ok(fullStderr.includes('Database Connection Failed'), 'sysError must emit to stderr');
