@@ -1366,9 +1366,9 @@ export async function handleInventoryButton(interaction) {
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
 
-    // Ensure member is resolved with warmed role cache if available
-    let member = interaction.member;
-    if ((!member || !member.roles?.cache) && interaction.guild) {
+    // Ensure member is resolved without redundant REST fetches
+    let member = interaction.member || interaction.guild?.members.cache.get(userId);
+    if (!member && interaction.guild) {
       member = await interaction.guild.members.fetch(userId).catch(() => interaction.member);
     }
 
@@ -1536,9 +1536,9 @@ export async function handleInventoryCategorySelect(interaction, targetPage = 1,
     const isOther = catIdStr === 'null';
     const categoryId = (isOther || isLootBox) ? null : parseInt(catIdStr, 10);
 
-    // Ensure member is resolved with warmed role cache if available
-    let member = interaction.member;
-    if ((!member || !member.roles?.cache) && interaction.guild) {
+    // Ensure member is resolved without redundant REST fetches
+    let member = interaction.member || interaction.guild?.members.cache.get(interaction.user.id);
+    if (!member && interaction.guild) {
       member = await interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
     }
 
@@ -1848,9 +1848,9 @@ export async function handleInventoryItemSelect(interaction) {
     const isLootBoxCategory = categoryId === 'lootboxes';
     const isOther = !isLootBoxCategory && (categoryId === null || categoryId === 'null');
 
-    // Ensure member is resolved with warmed role cache if available
-    let member = interaction.member;
-    if ((!member || !member.roles?.cache) && interaction.guild) {
+    // Ensure member is resolved without redundant REST fetches
+    let member = interaction.member || interaction.guild?.members.cache.get(interaction.user.id);
+    if (!member && interaction.guild) {
       member = await interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
     }
 

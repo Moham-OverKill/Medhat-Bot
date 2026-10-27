@@ -589,6 +589,25 @@ export async function fetchImageSafe(rawUrl) {
     return cached.img;
   }
 
+  // Fast pre-check: expired Discord CDN attachment URLs are guaranteed to 404
+  if (typeof url === 'string' && (url.includes('cdn.discordapp.com/attachments/') || url.includes('media.discordapp.net/attachments/'))) {
+    try {
+      const parsedUrl = new URL(url);
+      const exParam = parsedUrl.searchParams.get('ex');
+      if (exParam) {
+        const expiresAtMs = parseInt(exParam, 16) * 1000;
+        if (!isNaN(expiresAtMs) && expiresAtMs <= now) {
+          if (imageCache.size >= IMAGE_CACHE_MAX) {
+            const oldestKey = imageCache.keys().next().value;
+            imageCache.delete(oldestKey);
+          }
+          imageCache.set(url, { img: null, timestamp: now });
+          return null;
+        }
+      }
+    } catch (_) {}
+  }
+
   try {
     // Local filesystem path support
     if (url.startsWith('/') || url.includes(':\\') || url.includes(':/') || url.startsWith('file://')) {
@@ -644,6 +663,13 @@ export async function fetchImageSafe(rawUrl) {
           }
         } catch (_) {}
       }
+      // Negative cache unavailable assets to prevent stalling future renders
+      if (imageCache.size >= IMAGE_CACHE_MAX) {
+        const oldest = imageCache.keys().next().value;
+        imageCache.delete(oldest);
+      }
+      imageCache.set(url, { img: null, timestamp: now });
+
       logger.warn('RENDER', 'External image asset unavailable, falling back to placeholder', {
         url: typeof url === 'string' ? url.slice(0, 100) : 'unknown',
         status: res?.status || 'Network Error'
@@ -661,6 +687,13 @@ export async function fetchImageSafe(rawUrl) {
     imageCache.set(url, { img, timestamp: now });
     return img;
   } catch (err) {
+    if (typeof url === 'string') {
+      if (imageCache.size >= IMAGE_CACHE_MAX) {
+        const oldestKey = imageCache.keys().next().value;
+        imageCache.delete(oldestKey);
+      }
+      imageCache.set(url, { img: null, timestamp: now });
+    }
     logger.warn('RENDER', 'External image decode failed, falling back to placeholder', {
       url: typeof url === 'string' ? url.slice(0, 100) : 'buffer',
       error: err?.message || String(err)

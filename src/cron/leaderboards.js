@@ -4,6 +4,12 @@ import { loadGuildConfigs } from '../storage/config.js';
 import { getTimeUntilNextCairoHour, getCairoHour } from '../utils/time.js';
 import { runInGuildContext } from '../shared.js';
 
+const isTestEnv = Boolean(
+    process.env.NODE_ENV === 'test' ||
+    process.argv.some(arg => typeof arg === 'string' && (arg.includes('test') || arg.includes('verify_'))) ||
+    process.execArgv?.some(arg => typeof arg === 'string' && arg.includes('test'))
+);
+
 /**
  * Static Cairo Hourly Ticker
  * Automatically refreshes all leaderboard channels every hour on the hour (Cairo Time).
@@ -106,7 +112,10 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('Guild Leaderboard Sync Failed', err, { guild: guildId });
             }
         });
-        await new Promise(r => setTimeout(r, 100));
+        const interGuildDelay = isTestEnv ? 0 : 500;
+        if (interGuildDelay > 0) {
+            await new Promise(r => setTimeout(r, interGuildDelay));
+        }
     }
 
     // ── STEP 2.2: Refresh Community Interface Hubs at Midnight ──
@@ -120,7 +129,10 @@ async function runHourlyRefresh(client, isStartup = false) {
                     sysError('Midnight Hub Sync Failed', err, { guild: guildId });
                 }
             });
-            await new Promise(r => setTimeout(r, 100));
+            const interGuildDelay = isTestEnv ? 0 : 500;
+        if (interGuildDelay > 0) {
+            await new Promise(r => setTimeout(r, interGuildDelay));
+        }
         }
     }
 
@@ -139,7 +151,10 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('Streak Role Apply Failed', err, { guild: guildId });
             }
         });
-        await new Promise(r => setTimeout(r, 100));
+        const interGuildDelay = isTestEnv ? 0 : 500;
+        if (interGuildDelay > 0) {
+            await new Promise(r => setTimeout(r, interGuildDelay));
+        }
     }
 
     // ── STEP 3: Run KotH MVP cycle (roles + coins) for each guild ──
@@ -152,7 +167,10 @@ async function runHourlyRefresh(client, isStartup = false) {
                 sysError('KotH Cycle Error', err, { guild: guildId });
             }
         });
-        await new Promise(r => setTimeout(r, 100));
+        const interGuildDelay = isTestEnv ? 0 : 500;
+        if (interGuildDelay > 0) {
+            await new Promise(r => setTimeout(r, interGuildDelay));
+        }
     }
 
     // ── STEP 3.5: Run Tag Rewards cycle for each guild (Hourly & Startup Catch-up) ──

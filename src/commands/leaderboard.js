@@ -1424,6 +1424,17 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                             throw dispatchErr;
                         }
                     }
+
+                    // Pacing delay to remain well under Discord's 5 edits / 5s channel rate limit bucket
+                    const isTestEnv = Boolean(
+                        process.env.NODE_ENV === 'test' ||
+                        process.argv.some(arg => typeof arg === 'string' && (arg.includes('test') || arg.includes('verify_'))) ||
+                        process.execArgv?.some(arg => typeof arg === 'string' && arg.includes('test'))
+                    );
+                    const editPacingMs = isTestEnv ? 0 : 1000;
+                    if (editPacingMs > 0) {
+                        await new Promise(r => setTimeout(r, editPacingMs));
+                    }
                 } catch (err) {
                     sysError(`Failed to update ${t.type} leaderboard`, err, { guild: guildId, channel: cid });
                 }
