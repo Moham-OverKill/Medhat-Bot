@@ -34,6 +34,11 @@ function getMutationType(sql) {
   return null;
 }
 
+let lastDbLogSec = 0;
+let dbLogsInSec = 0;
+let throttledDbLogs = 0;
+const MAX_DB_LOGS_PER_SEC = 10;
+
 function instrumentClientQuery(originalQuery) {
   return async function wrappedQuery(text, params, ...extra) {
     const qStart = performance.now();
@@ -66,19 +71,42 @@ function instrumentClientQuery(originalQuery) {
       const mutationType = getMutationType(cleanSql);
       if (mutationType) {
         const rowCount = result?.rowCount ?? (Array.isArray(result) ? result.length : 0);
-        let paramsSummary = undefined;
-        if (Array.isArray(params) && params.length > 0) {
-          paramsSummary = params.map(p => {
-            if (typeof p === 'string' && p.length > 60) return p.slice(0, 57) + '...';
-            return p;
-          });
-        }
+        const isDdl = mutationType.startsWith('CREATE') ||
+                      mutationType.startsWith('ALTER') ||
+                      mutationType.startsWith('DROP') ||
+                      mutationType.startsWith('TRUNCATE');
 
-        logger.info('DATABASE', `DB Change ${mutationType}: ${cleanSql} in ${durationMs}ms`, {
-          affectedRows: rowCount,
-          durationMs,
-          ...(paramsSummary ? { params: paramsSummary } : {})
-        });
+        // Only log when rows were actually added/modified/removed or schema changed
+        if (rowCount > 0 || isDdl) {
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (nowSec !== lastDbLogSec) {
+            if (throttledDbLogs > 0) {
+              logger.info('DATABASE', `DB Change: ${throttledDbLogs} additional database mutations executed in previous second`);
+            }
+            lastDbLogSec = nowSec;
+            dbLogsInSec = 0;
+            throttledDbLogs = 0;
+          }
+
+          if (dbLogsInSec < MAX_DB_LOGS_PER_SEC) {
+            dbLogsInSec++;
+            let paramsSummary = undefined;
+            if (Array.isArray(params) && params.length > 0) {
+              paramsSummary = params.map(p => {
+                if (typeof p === 'string' && p.length > 60) return p.slice(0, 57) + '...';
+                return p;
+              });
+            }
+
+            logger.info('DATABASE', `DB Change ${mutationType}: ${cleanSql} in ${durationMs}ms`, {
+              affectedRows: rowCount,
+              durationMs,
+              ...(paramsSummary ? { params: paramsSummary } : {})
+            });
+          } else {
+            throttledDbLogs++;
+          }
+        }
       } else if (!isTxControl && durationMs > SLOW_QUERY_THRESHOLD_MS) {
         logger.warn('DATABASE', `Slow Database Query Detected (${durationMs}ms): ${cleanSql}`, {
           durationMs,

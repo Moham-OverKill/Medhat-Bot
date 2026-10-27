@@ -305,4 +305,42 @@ test('Logging Engine Architecture Suite', async (t) => {
       restoreStreams();
     }
   });
+
+  await t.test('Container Stdout Rate Limiting: Throttles high-frequency verbose logs and preserves ERROR logs', async () => {
+    captureStreams();
+    logger.setLevel(LogLevel.DEBUG);
+    logger._resetRateLimit();
+
+    try {
+      // Emit 50 info logs rapidly in the current second
+      for (let i = 0; i < 50; i++) {
+        logger.info('STORM', `Storm log message ${i}`);
+      }
+
+      // 40 standard logs + 1 throttle warning = 41 stdout writes
+      assert.equal(stdoutCaptured.length, 41, 'Should emit exactly 40 logs plus 1 throttle notice in a single second');
+      const fullStdout = stdoutCaptured.join('\n');
+      assert.ok(fullStdout.includes('LOGGER: High-frequency log throttling active (>40 logs/sec limit to protect deployment)'), 'Must emit throttle notice');
+      assert.ok(!fullStdout.includes('Storm log message 45'), 'Log 45 must be throttled');
+
+      // ERROR and FATAL logs must NEVER be throttled even during an active throttle window
+      logger.error('CRITICAL', 'Critical system error during storm');
+      logger.fatal('CRITICAL', 'Fatal crash during storm');
+
+      assert.equal(stderrCaptured.length, 2, 'ERROR and FATAL must not be throttled and write to stderr');
+      const fullStderr = stderrCaptured.join('\n');
+      assert.ok(fullStderr.includes('Critical system error during storm'));
+      assert.ok(fullStderr.includes('Fatal crash during storm'));
+
+      // Wait 1050ms for rollover to next second and emit an info log to trigger stabilization notice
+      await new Promise(r => setTimeout(r, 1050));
+      logger.info('STORM', 'Post-storm log message');
+
+      const rolloverStdout = stdoutCaptured.join('\n');
+      assert.ok(rolloverStdout.includes('LOGGER: Log rate stabilized (10 verbose logs throttled in previous second)'), 'Must report stabilized log rate with exact count of throttled logs');
+    } finally {
+      logger._resetRateLimit();
+      restoreStreams();
+    }
+  });
 });
