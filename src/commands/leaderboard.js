@@ -790,8 +790,8 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
         let categorized = false;
         const content = msg.content || '';
 
-        // Check for title messages
-        for (const t of types) {
+        // Check for title messages across all known categories to preserve other valid leaderboards
+        for (const t of channelKeys) {
             const theme = LEADERBOARD_THEMES[t.type];
             const isConfiguredTitle = config && config[t.configTitleMsg] === msg.id;
             const matchesThemeTitle = (theme && content.includes(theme.title)) ||
@@ -801,7 +801,9 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
                 (t.type === 'level' && (content.includes('HIGHEST LEVELS') || content.includes('LEVELS')));
 
             if (isConfiguredTitle || matchesThemeTitle) {
-                recognizedTitles.get(t.type).push(msg);
+                if (recognizedTitles.has(t.type)) {
+                    recognizedTitles.get(t.type).push(msg);
+                }
                 categorized = true;
                 break;
             }
@@ -809,8 +811,8 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
 
         if (categorized) continue;
 
-        // Check for card messages
-        for (const t of types) {
+        // Check for card messages across all known categories
+        for (const t of channelKeys) {
             const isConfiguredCard = config && config[t.configMsg] === msg.id;
             let hasCategoryAttachment = false;
 
@@ -840,7 +842,9 @@ export async function cleanLeaderboardChannel(channel, client, configuredTypes =
             const hasCategoryEmbed = msg.embeds && msg.embeds.some(e => e.title && e.title.includes(LEADERBOARD_THEMES[t.type]?.title));
 
             if (isConfiguredCard || hasCategoryAttachment || hasCategoryEmbed) {
-                recognizedCards.get(t.type).push(msg);
+                if (recognizedCards.has(t.type)) {
+                    recognizedCards.get(t.type).push(msg);
+                }
                 categorized = true;
                 break;
             }
@@ -1532,13 +1536,8 @@ export async function sendSingleLeaderboard(client, guildId, type, channelId) {
     const catKey = (type === 'activity') ? 'daily_coins' : type;
     const titlePayload = buildLeaderboardTitlePayload(catKey, guildId);
 
-    // Clean up any stale or orphan messages for this type in target channel
-    await cleanLeaderboardChannel(channel, client, [{
-        type: catKey,
-        configChannel: '',
-        configTitleMsg: '',
-        configMsg: ''
-    }]).catch(() => {});
+    // Clean up any stale or orphan messages in target channel without wiping other active types
+    await cleanLeaderboardChannel(channel, client, null, null, guildId).catch(() => {});
 
     // Atomic send with rollback
     let titleMessage = null;

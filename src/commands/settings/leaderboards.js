@@ -3,13 +3,12 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    StringSelectMenuBuilder,
     ChannelSelectMenuBuilder,
     ChannelType,
     MessageFlags
 } from 'discord.js';
-import { getLeaderboardConfig, setLeaderboardConfig, sendSingleLeaderboard } from '../leaderboard.js';
-import { sendLog, checkChannelPermissions, checkLeaderboardPermissions, sysError } from '../../utils/logger.js';
+import { getLeaderboardConfig, setLeaderboardConfig } from '../leaderboard.js';
+import { sendLog, checkLeaderboardPermissions, sysError } from '../../utils/logger.js';
 import { handleInteractionError } from '../../utils/errors.js';
 import { getUserLogName, getCurrencyName, COIN_EMOJI, isBackDisabled } from '../../shared.js';
 
@@ -31,9 +30,10 @@ export async function getCategories(guildId) {
 
 /**
  * Main Leaderboard Settings Panel
- * 4 category select menus with 3 options each + single Back button
+ * Rows 1-4: Direct ChannelSelectMenus for each category (first-click assignment, re-select to toggle off)
+ * Row 5: Action Buttons ([Send]/[Refresh], [Disable All], [Back])
  */
-export async function handleLeaderboardSettings(interaction, selectedId = null, configOverride = null, warningMessage = null) {
+export async function handleLeaderboardSettings(interaction, configOverride = null, warningMessage = null) {
     try {
         const guildId = interaction.guildId;
         const config = configOverride || await getLeaderboardConfig(guildId) || {};
@@ -66,67 +66,55 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
         const embed = new EmbedBuilder()
             .setTitle('Leaderboards')
             .setDescription(desc)
-            .setColor(warningMessage ? 0xE74C3C : (selectedId ? 0xF1C40F : 0x3498DB));
+            .setColor(warningMessage ? 0xE74C3C : 0x3498DB);
 
         const components = [];
+        const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-        // If a specific category was clicked to "Select A Channel", show channel picker + Back
-        if (selectedId && categories[selectedId]) {
-            const active = categories[selectedId];
+        // Rows 1-4: Direct Channel Select Menus
+        for (const cat of Object.values(categories)) {
+            const chanId = config[cat.dbId];
+            const targetChan = chanId ? interaction.guild?.channels?.cache?.get(chanId) : null;
+            const placeholderText = targetChan 
+                ? `${cat.emoji} ${cat.name}: #${targetChan.name}`
+                : (chanId ? `${cat.emoji} ${cat.name}: <#${chanId}>` : `${cat.menuEmoji || '📊'} Select ${cat.name} Channel...`);
 
-            // Row 1: Channel selection dropdown
             const channelSelect = new ChannelSelectMenuBuilder()
-                .setCustomId(`lb_set_channel_${active.id}`)
-                .setPlaceholder(`Select a channel for ${active.name}...`)
+                .setCustomId(`lb_channel_${cat.id}_${nonce}`)
+                .setPlaceholder(placeholderText.slice(0, 100))
                 .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
             components.push(new ActionRowBuilder().addComponents(channelSelect));
-
-            // Row 2: Single Back button returning to 4-menu view
-            const backButton = new ButtonBuilder()
-                .setCustomId('settings_leaderboards')
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary);
-            components.push(new ActionRowBuilder().addComponents(backButton));
-        } else {
-            // Main View: 4 Select Menus (Rows 1-4) with 3 options each
-            const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-            for (const cat of Object.values(categories)) {
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`lb_menu_${cat.id}_${nonce}`)
-                    .setPlaceholder(`${cat.menuEmoji || '📊'} ${cat.name}...`)
-                    .addOptions([
-                        {
-                            label: 'Select A Channel',
-                            value: 'channel',
-                            emoji: '💬',
-                            default: false
-                        },
-                        {
-                            label: 'Force Refresh',
-                            value: 'refresh',
-                            emoji: '🔁',
-                            default: false
-                        },
-                        {
-                            label: 'Disable',
-                            value: 'disable',
-                            emoji: '❌',
-                            default: false
-                        }
-                    ]);
-                components.push(new ActionRowBuilder().addComponents(menu));
-            }
-
-            // Row 5: Single Back button only
-            const backButton = new ButtonBuilder()
-                .setCustomId('settings_home')
-                .setLabel('Back')
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary)
-                .setDisabled(isBackDisabled(interaction));
-            components.push(new ActionRowBuilder().addComponents(backButton));
         }
+
+        // Row 5: Action Buttons ([Send]/[Refresh], [Disable All], [Back])
+        const configuredCats = Object.values(categories).filter(c => Boolean(config[c.dbId]));
+        const hasAnyConfigured = configuredCats.length > 0;
+        // Button is 'Refresh' ONLY if at least 1 channel is configured AND all configured channels already have active messages
+        const isRefresh = hasAnyConfigured && configuredCats.every(c => config[c.msgId] && config[c.titleMsgId]);
+
+        const sendRefreshBtn = new ButtonBuilder()
+            .setCustomId('lb_action_send_refresh')
+            .setLabel(isRefresh ? 'Refresh' : 'Send')
+            .setEmoji(isRefresh ? '🔁' : '📤')
+            .setStyle(isRefresh ? ButtonStyle.Primary : ButtonStyle.Success)
+            .setDisabled(!hasAnyConfigured);
+
+        const disableAllBtn = new ButtonBuilder()
+            .setCustomId('lb_action_disable_all')
+            .setLabel('Disable')
+            .setEmoji('❌')
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(!hasAnyConfigured);
+
+        const backBtn = new ButtonBuilder()
+            .setCustomId('settings_home')
+            .setLabel('Back')
+            .setEmoji('⬅️')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(isBackDisabled(interaction));
+
+        components.push(new ActionRowBuilder().addComponents(sendRefreshBtn, disableAllBtn, backBtn));
 
         const msgData = {
             embeds: [embed],
@@ -153,67 +141,46 @@ export async function handleLeaderboardSettings(interaction, selectedId = null, 
 }
 
 /**
- * Handle 3-Option Select Menu actions (Select A Channel, Force Refresh, Disable)
+ * Listener: Direct Channel Selection (Rows 1-4)
+ * - If selecting the same channel again: toggles off / unsets that specific category.
+ * - If selecting a new channel: updates DB without immediately auto-sending messages.
  */
-export async function handleLeaderboardMenuAction(interaction) {
+export async function handleLeaderboardChannelSelect(interaction) {
     try {
-        const customId = interaction.customId; // lb_menu_CATEGORY or lb_menu_CATEGORY_NONCE
-        const raw = customId.replace('lb_menu_', '');
-        const categoryId = raw.split('_')[0];
-        const action = interaction.values[0]; // channel | refresh | disable
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
+        const selectedChannelId = interaction.values[0];
+
+        // CustomId format: lb_channel_<categoryId>_<nonce> or lb_set_channel_<categoryId>
+        const parts = interaction.customId.split('_');
+        let categoryId = parts[2];
+        if (!categoryId || categoryId === 'channel' || categoryId === 'set') {
+            categoryId = parts[3];
+        }
 
         const categories = await getCategories(guildId);
         const cat = categories[categoryId];
         if (!cat) return;
 
-        if (action === 'channel') {
-            // Open Channel Selection view
-            return handleLeaderboardSettings(interaction, cat.id);
-        }
+        let config = await getLeaderboardConfig(guildId) || {};
+        const currentChannelId = config[cat.dbId];
 
-        if (action === 'refresh') {
-            const config = await getLeaderboardConfig(guildId) || {};
-            const chanId = config[cat.dbId];
-
-            if (!chanId) {
-                return handleLeaderboardSettings(interaction, cat.id, null, `Please assign a channel for **${cat.name}** leaderboard first before refreshing.`);
-            }
-
-            // Immediately reset the settings panel UI so the select menu snaps back to placeholder instantly
-            await handleLeaderboardSettings(interaction);
-
-            // Synchronize roles and trigger visual leaderboard card update
-            await handleLeaderboardRefresh(interaction, cat.id);
-            return;
-        }
-
-        if (action === 'disable') {
-            if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-            let config = await getLeaderboardConfig(guildId) || {};
-            const oldChan = config[cat.dbId];
-            const oldTitleMsg = config[cat.titleMsgId];
-            const oldCardMsg = config[cat.msgId];
-
-            if (!oldChan) {
-                return handleLeaderboardSettings(interaction);
-            }
-
-            // Cleanup old title and card messages from Discord channel
-            if (oldChan) {
+        // TOGGLE REMOVAL: Selecting the same channel again removes/disables only this category
+        if (selectedChannelId === currentChannelId) {
+            if (currentChannelId) {
                 try {
-                    const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
+                    const chan = interaction.guild?.channels?.cache?.get(currentChannelId) || await interaction.guild?.channels?.fetch(currentChannelId).catch(() => null);
                     if (chan) {
-                        if (oldTitleMsg) {
-                            const titleMsg = await chan.messages.fetch(oldTitleMsg).catch(() => null);
+                        if (config[cat.titleMsgId]) {
+                            const titleMsg = await chan.messages.fetch(config[cat.titleMsgId]).catch(() => null);
                             if (titleMsg) await titleMsg.delete().catch(() => {});
                         }
-                        if (oldCardMsg) {
-                            const cardMsg = await chan.messages.fetch(oldCardMsg).catch(() => null);
+                        if (config[cat.msgId]) {
+                            const cardMsg = await chan.messages.fetch(config[cat.msgId]).catch(() => null);
                             if (cardMsg) await cardMsg.delete().catch(() => {});
                         }
                     }
-                } catch {}
+                } catch (_) {}
             }
 
             config[cat.dbId] = null;
@@ -227,82 +194,47 @@ export async function handleLeaderboardMenuAction(interaction) {
                 `**Action:** Disabled the **${cat.name}** leaderboard.`
             );
 
-            return handleLeaderboardSettings(interaction, null, config);
+            return handleLeaderboardSettings(interaction, config);
         }
-    } catch (error) {
-        sysError('Leaderboard menu action failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Leaderboard Menu Action');
-    }
-}
 
-/**
- * Listener: Channel Selection
- */
-export async function handleLeaderboardChannelSelect(interaction) {
-    try {
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-        const guildId = interaction.guildId;
-        const channelId = interaction.values[0];
-        const categoryId = interaction.customId
-            .replace('lb_set_channel_', '')
-            .replace('leaderboard_channel_', '')
-            .replace('lb_assign_', '');
-        
-        const categories = await getCategories(guildId);
-        if (!categories[categoryId]) return;
-        const cat = categories[categoryId];
-
-        // Proactive Permission Check (including AttachFiles & ReadMessageHistory for leaderboard canvas cards)
-        const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+        // NEW CHANNEL ASSIGNMENT: Proactive Permission Validation
+        const channel = interaction.guild?.channels?.cache?.get(selectedChannelId) || await interaction.guild?.channels?.fetch(selectedChannelId).catch(() => null);
         const permissionCheck = checkLeaderboardPermissions(channel);
         if (!permissionCheck.valid) {
-            return handleLeaderboardSettings(interaction, cat.id, null, `Cannot assign <#${channelId}>: ${permissionCheck.error}`);
+            return handleLeaderboardSettings(interaction, config, `Cannot assign <#${selectedChannelId}>: ${permissionCheck.error}`);
         }
 
-        let config = await getLeaderboardConfig(guildId) || {};
-
-        // Cleanup old title and card messages if reassigning
-        const oldChanId = config[cat.dbId];
-        const oldTitleMsgId = config[cat.titleMsgId];
-        const oldMsgId = config[cat.msgId];
-        if (oldChanId) {
+        // Cleanup old channel messages if moving this category from a different channel
+        if (currentChannelId && currentChannelId !== selectedChannelId) {
             try {
-                const oldChan = interaction.guild.channels.cache.get(oldChanId) || await interaction.guild.channels.fetch(oldChanId).catch(() => null);
+                const oldChan = interaction.guild?.channels?.cache?.get(currentChannelId) || await interaction.guild?.channels?.fetch(currentChannelId).catch(() => null);
                 if (oldChan) {
-                    if (oldTitleMsgId) {
-                        const oldTitleMsg = await oldChan.messages.fetch(oldTitleMsgId).catch(() => null);
+                    if (config[cat.titleMsgId]) {
+                        const oldTitleMsg = await oldChan.messages.fetch(config[cat.titleMsgId]).catch(() => null);
                         if (oldTitleMsg) await oldTitleMsg.delete().catch(() => {});
                     }
-                    if (oldMsgId) {
-                        const oldMsg = await oldChan.messages.fetch(oldMsgId).catch(() => null);
-                        if (oldMsg) await oldMsg.delete().catch(() => {});
+                    if (config[cat.msgId]) {
+                        const oldCardMsg = await oldChan.messages.fetch(config[cat.msgId]).catch(() => null);
+                        if (oldCardMsg) await oldCardMsg.delete().catch(() => {});
                     }
                 }
-            } catch {}
+            } catch (_) {}
         }
 
-        // Send new leaderboard (title first, card second)
-        const sendResult = await sendSingleLeaderboard(interaction.client, guildId, cat.id, channelId);
-        if (!sendResult || (!sendResult.cardMsgId && !sendResult.id)) {
-            return handleLeaderboardSettings(interaction, cat.id, null, `Could not send message to <#${channelId}>: ${sendResult?.error || 'Missing permissions or failed to dispatch'}`);
-        }
-        
-        // Update DB
-        config[cat.dbId] = channelId;
-        config[cat.titleMsgId] = sendResult.titleMsgId || null;
-        config[cat.msgId] = sendResult.cardMsgId || sendResult.id;
+        // Update DB with the new channel assignment (Do NOT auto-send messages yet)
+        config[cat.dbId] = selectedChannelId;
+        config[cat.titleMsgId] = null;
+        config[cat.msgId] = null;
         await setLeaderboardConfig(guildId, config);
 
-        // Audit Log
         const logName = getUserLogName(interaction);
         sendLog(interaction.guild, 'audit', 'cyan', '📊 Leaderboard Config Changed', 
             `**Admin:** \`${logName}\`\n` +
             `**Type:** \`${cat.name}\`\n` +
-            `**Action:** Set channel to ${channel}`
+            `**Action:** Set channel to ${channel || `<#${selectedChannelId}>`}`
         );
 
-        // Return back to the main 4-menu view
-        return handleLeaderboardSettings(interaction, null, config);
+        return handleLeaderboardSettings(interaction, config);
     } catch (error) {
         sysError('Leaderboard channel select failed', error, { user: interaction.user.id, guild: interaction.guildId });
         return handleInteractionError(interaction, error, 'Leaderboard Channel Select');
@@ -310,99 +242,106 @@ export async function handleLeaderboardChannelSelect(interaction) {
 }
 
 /**
- * Listener: Refresh All or Specific Category
+ * Listener: Batch Send / Refresh Action (Row 5 Button 1)
+ * Atomic dispatch: synchronizes roles and sends or refreshes configured channels.
  */
-export async function handleLeaderboardRefresh(interaction, targetCategory = null) {
+export async function handleLeaderboardBatchSendOrRefresh(interaction) {
     try {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        const guildId = interaction.guildId;
+        const config = await getLeaderboardConfig(guildId) || {};
+        const categories = await getCategories(guildId);
+        const hasConfigured = Object.values(categories).some(c => Boolean(config[c.dbId]));
+
+        if (!hasConfigured) {
+            return handleLeaderboardSettings(interaction, config, 'Please assign at least one channel first before sending or refreshing.');
+        }
+
         // 1. Synchronize MVP roles in Discord immediately without paying extra coins
         const { runKingOfHillCycle } = await import('../../mvp/kingOfHill.js');
-        await runKingOfHillCycle(interaction.client, interaction.guildId, { payCoins: false }).catch(err => {
-            sysError('KotH Role Sync Error on Refresh', err, { guild: interaction.guildId });
+        await runKingOfHillCycle(interaction.client, guildId, { payCoins: false }).catch(err => {
+            sysError('KotH Role Sync Error on Send/Refresh', err, { guild: guildId });
         });
 
         // 2. Synchronize Richest & Streak roles in Discord
         const { applyRichestRole, applyStreakRole } = await import('../../mvp/role-assignment.js');
-        await applyRichestRole(interaction.client, interaction.guildId).catch(() => {});
-        await applyStreakRole(interaction.client, interaction.guildId).catch(() => {});
+        await applyRichestRole(interaction.client, guildId).catch(() => {});
+        await applyStreakRole(interaction.client, guildId).catch(() => {});
 
-        // 3. Update leaderboard channel embeds
+        // 3. Atomically dispatch missing messages or edit cards in-place
         const { updateLeaderboards } = await import('../leaderboard.js');
-        await updateLeaderboards(interaction.client, interaction.guildId, null, []);
-        
+        await updateLeaderboards(interaction.client, guildId, null, []);
+
         // Audit Log
         const logName = getUserLogName(interaction);
         sendLog(interaction.guild, 'audit', 'blue', '🔄 Leaderboards Refreshed', 
             `**Admin:** \`${logName}\`\n` +
-            `**Action:** Manually triggered refresh of leaderboard channels and synchronized roles.`
+            `**Action:** Dispatched / refreshed leaderboard channels and synchronized roles.`
         );
+
+        return handleLeaderboardSettings(interaction);
     } catch (error) {
-        sysError('Leaderboard manual refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        sysError('Leaderboard batch send/refresh failed', error, { user: interaction.user.id, guild: interaction.guildId });
         if (!interaction.replied) {
-            return handleInteractionError(interaction, error, 'Leaderboard Refresh');
+            return handleInteractionError(interaction, error, 'Leaderboard Batch Send/Refresh');
         }
     }
 }
 
-
 /**
- * Listener: Category Select (Legacy compatibility)
+ * Listener: Disable All Action (Row 5 Button 2)
+ * Cleans up all active messages across all 4 categories from Discord channels and clears DB.
  */
-export async function handleLeaderboardCategorySelect(interaction) {
-    const selectedId = interaction.values[0];
-    return handleLeaderboardSettings(interaction, selectedId);
-}
-
-/**
- * Listener: Per-Category Disable
- */
-export async function handleLeaderboardDisable(interaction, targetCategoryId = null) {
+export async function handleLeaderboardDisableAll(interaction) {
     try {
         if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
         const guildId = interaction.guildId;
-        const categoryId = targetCategoryId || interaction.customId
-            .replace('lb_disable_', '')
-            .replace('leaderboard_disable_', '');
-        const categories = await getCategories(guildId);
-        if (!categories[categoryId]) return;
-        const cat = categories[categoryId];
-
         let config = await getLeaderboardConfig(guildId) || {};
-        const oldChan = config[cat.dbId];
-        const oldTitleMsg = config[cat.titleMsgId];
-        const oldMsg = config[cat.msgId];
+        const categories = await getCategories(guildId);
 
-        if (oldChan) {
-            try {
-                const chan = await interaction.guild.channels.fetch(oldChan).catch(() => null);
-                if (chan) {
-                    if (oldTitleMsg) {
-                        const titleMsg = await chan.messages.fetch(oldTitleMsg).catch(() => null);
-                        if (titleMsg) await titleMsg.delete().catch(() => {});
+        for (const cat of Object.values(categories)) {
+            const chanId = config[cat.dbId];
+            if (chanId) {
+                try {
+                    const chan = interaction.guild?.channels?.cache?.get(chanId) || await interaction.guild?.channels?.fetch(chanId).catch(() => null);
+                    if (chan) {
+                        if (config[cat.titleMsgId]) {
+                            const titleMsg = await chan.messages.fetch(config[cat.titleMsgId]).catch(() => null);
+                            if (titleMsg) await titleMsg.delete().catch(() => {});
+                        }
+                        if (config[cat.msgId]) {
+                            const cardMsg = await chan.messages.fetch(config[cat.msgId]).catch(() => null);
+                            if (cardMsg) await cardMsg.delete().catch(() => {});
+                        }
                     }
-                    if (oldMsg) {
-                        const msg = await chan.messages.fetch(oldMsg).catch(() => null);
-                        if (msg) await msg.delete().catch(() => {});
-                    }
-                }
-            } catch {}
+                } catch (_) {}
+            }
+            config[cat.dbId] = null;
+            config[cat.titleMsgId] = null;
+            config[cat.msgId] = null;
         }
 
-        config[cat.dbId] = null;
-        config[cat.titleMsgId] = null;
-        config[cat.msgId] = null;
         await setLeaderboardConfig(guildId, config);
 
-        if (oldChan) {
-            const logName = getUserLogName(interaction);
-            sendLog(interaction.guild, 'audit', 'red', '📊 Leaderboard Disabled', 
-                `**Admin:** \`${logName}\`\n` +
-                `**Action:** Disabled the **${cat.name}** leaderboard.`
-            );
-        }
+        const logName = getUserLogName(interaction);
+        sendLog(interaction.guild, 'audit', 'red', '📊 Leaderboard Disabled', 
+            `**Admin:** \`${logName}\`\n` +
+            `**Action:** Disabled all leaderboards and cleared channel configurations.`
+        );
 
-        return handleLeaderboardSettings(interaction, null, config);
+        return handleLeaderboardSettings(interaction, config);
     } catch (error) {
-        sysError('Leaderboard disable failed', error, { user: interaction.user.id, guild: interaction.guildId });
-        return handleInteractionError(interaction, error, 'Leaderboard Disable');
+        sysError('Leaderboard disable all failed', error, { user: interaction.user.id, guild: interaction.guildId });
+        return handleInteractionError(interaction, error, 'Leaderboard Disable All');
     }
+}
+
+// Backwards-compatible aliases
+export const handleLeaderboardRefresh = handleLeaderboardBatchSendOrRefresh;
+export const handleLeaderboardDisable = handleLeaderboardDisableAll;
+export async function handleLeaderboardMenuAction(interaction) {
+    return handleLeaderboardSettings(interaction);
+}
+export async function handleLeaderboardCategorySelect(interaction) {
+    return handleLeaderboardSettings(interaction);
 }

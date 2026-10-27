@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { PermissionFlagsBits } from 'discord.js';
 import { setMockPool } from '../src/storage/postgres.js';
 import { LOG_CATEGORIES, handleLogsSettings, handleLogMenuAction, handleLogChannelSelect, handleLogDisable } from '../src/commands/settings/logs.js';
-import { getCategories, handleLeaderboardSettings, handleLeaderboardMenuAction, handleLeaderboardChannelSelect, handleLeaderboardDisable, handleLeaderboardRefresh } from '../src/commands/settings/leaderboards.js';
+import { getCategories, handleLeaderboardSettings, handleLeaderboardMenuAction, handleLeaderboardChannelSelect, handleLeaderboardDisable, handleLeaderboardRefresh, handleLeaderboardBatchSendOrRefresh, handleLeaderboardDisableAll } from '../src/commands/settings/leaderboards.js';
 import { checkChannelPermissions } from '../src/utils/logger.js';
 
 console.log('--- Starting 4-Menu / 3-Option Layout & Logic Verification ---');
@@ -231,7 +231,7 @@ console.log('✅ Logs Action (Disable): Successfully disables category from drop
 // -------------------------------------------------------------
 // Test 2: Leaderboard Configuration Layout & Menus
 // -------------------------------------------------------------
-console.log('Testing Leaderboard Configuration: 4 Select Menus with 3 options + Only Back button...');
+console.log('Testing Leaderboard Configuration: 4 Direct Channel Select Menus + Send/Refresh, Disable All, Back buttons...');
 
 let leaderboardDispatchedMessages = [];
 validChannel.send = async (payload) => {
@@ -299,73 +299,78 @@ await handleLeaderboardSettings(mockLbInteraction);
 // Verify exactly 5 action rows
 assert.strictEqual(lastRenderedPayload.components.length, 5, 'Leaderboard must have exactly 5 action rows');
 
-// Verify Rows 1-4 are Select Menus, each with exactly 3 options
+// Verify Rows 1-4 are Direct Channel Select Menus
 for (let i = 0; i < 4; i++) {
     const row = lastRenderedPayload.components[i];
     const menu = row.components[0];
-    assert(menu.data.custom_id.startsWith('lb_menu_'), `Row ${i + 1} must be an lb_menu_ select menu`);
-    assert.strictEqual(menu.options.length, 3, `Row ${i + 1} select menu must have exactly 3 options`);
-    assert.strictEqual(menu.options[0].data.value, 'channel', 'Option 1 must be Select A Channel');
-    assert.strictEqual(menu.options[0].data.emoji.name, '💬', 'Option 1 emoji must be 💬');
-    assert(!menu.options[0].data.description, 'Option 1 must have no description');
-    assert.strictEqual(menu.options[1].data.value, 'refresh', 'Option 2 must be Force Refresh');
-    assert(!menu.options[1].data.description, 'Option 2 must have no description');
-    assert.strictEqual(menu.options[2].data.value, 'disable', 'Option 3 must be Disable');
-    assert.strictEqual(menu.options[2].data.emoji.name, '❌', 'Option 3 emoji must be ❌');
-    assert(!menu.options[2].data.description, 'Option 3 must have no description');
-    assert(!menu.data.placeholder.includes('<:'), 'Placeholder must not contain raw emoji IDs');
+    assert(menu.data.custom_id.startsWith('lb_channel_'), `Row ${i + 1} must be an lb_channel_ direct channel select menu`);
+    assert.strictEqual(menu.data.type, 8, `Row ${i + 1} select menu must be ChannelSelect (type 8)`);
+    assert(menu.data.placeholder.includes('Select'), `Placeholder should indicate selection prompt when unconfigured`);
 }
 
-// Verify Row 5 has ONLY the Back button
+// Verify Row 5 has 3 buttons: [Send/Refresh], [Disable All], [Back]
 const lbRow5 = lastRenderedPayload.components[4];
-assert.strictEqual(lbRow5.components.length, 1, 'Row 5 must have ONLY 1 button');
-assert.strictEqual(lbRow5.components[0].data.label, 'Back', 'Row 5 button must be Back');
-console.log('✅ Leaderboard Configuration UI: Exactly 4 select menus with 3 options each and ONLY the Back button on Row 5.');
+assert.strictEqual(lbRow5.components.length, 3, 'Row 5 must have 3 buttons');
+assert.strictEqual(lbRow5.components[0].data.label, 'Send', 'Button 1 must be Send initially');
+assert.strictEqual(lbRow5.components[0].data.disabled, true, 'Send button must be disabled when no channels are configured');
+assert.strictEqual(lbRow5.components[1].data.label, 'Disable', 'Button 2 must be Disable');
+assert.strictEqual(lbRow5.components[1].data.disabled, true, 'Disable button must be disabled when no channels are configured');
+assert.strictEqual(lbRow5.components[2].data.label, 'Back', 'Button 3 must be Back');
+console.log('✅ Leaderboard Configuration UI: Exactly 4 direct channel menus and [Send], [Disable], [Back] on Row 5.');
 
-// Test Leaderboard Action: Select A Channel
-mockLbInteraction.customId = 'lb_menu_coins';
-mockLbInteraction.values = ['channel'];
-await handleLeaderboardMenuAction(mockLbInteraction);
-assert.strictEqual(lastRenderedPayload.components.length, 2, 'Channel picker view must have 2 rows');
-assert(lastRenderedPayload.components[0].components[0].data.custom_id.startsWith('lb_set_channel_'), 'Row 1 must be Channel Select Menu');
-assert.strictEqual(lastRenderedPayload.components[1].components[0].data.label, 'Back', 'Row 2 must be Back button');
-
-// Assign Channel
+// Test 2.1: Assign Channel on First Click (Without immediate auto-sending)
 sentFollowUps = [];
-mockLbInteraction.customId = 'lb_set_channel_coins';
+mockLbInteraction.customId = 'lb_channel_coins_111111';
 mockLbInteraction.values = [VALID_CHAN_1];
 await handleLeaderboardChannelSelect(mockLbInteraction);
 assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on channel assignment');
 assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1, 'DB must store coins_channel_id');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, '900000000000000001', 'DB must store coins_title_message_id');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, '900000000000000002', 'DB must store coins_message_id');
-assert.strictEqual(leaderboardDispatchedMessages[0].content.startsWith('> # '), true, 'Title message must start with > #');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'Must NOT auto-send title immediately upon selecting channel');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Must NOT auto-send card immediately upon selecting channel');
 assert(lastRenderedPayload.embeds[0].data.description.includes(`<#${VALID_CHAN_1}>`), 'Embed must reflect assigned channel');
-assert.strictEqual(lastRenderedPayload.components.length, 5, 'Must return back to 5 action rows');
-assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
-console.log('✅ Leaderboard Action (Select A Channel): Opens channel picker, dispatches decoupled title and card, saves to DB, returns to 4-menu view.');
+assert.strictEqual(lastRenderedPayload.components[4].components[0].data.label, 'Send', 'Row 5 Button 1 must be Send when messages are not yet dispatched');
+assert.strictEqual(lastRenderedPayload.components[4].components[0].data.disabled, false, 'Send button must be enabled once a channel is set');
+console.log('✅ Leaderboard Channel Assignment: Saves channel to DB with zero immediate message dispatch, enabling [Send].');
 
-// Test Leaderboard Action: Force Refresh (with dynamic nonce customId)
+// Test 2.2: Batch Send via [Send] Button
 sentFollowUps = [];
-mockLbInteraction.customId = 'lb_menu_coins_777777777';
-mockLbInteraction.values = ['refresh'];
-await handleLeaderboardMenuAction(mockLbInteraction);
-assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on force refresh');
-assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
-console.log('✅ Leaderboard Action (Force Refresh): Successfully triggers role and message synchronization without sending feedback messages.');
+mockLbInteraction.customId = 'lb_action_send_refresh';
+mockLbInteraction.values = [];
+await handleLeaderboardBatchSendOrRefresh(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, VALID_CHAN_1);
+assert.notStrictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'Title message must be dispatched');
+assert.notStrictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Card message must be dispatched');
+assert.strictEqual(leaderboardDispatchedMessages[0].content.startsWith('> # '), true, 'Title message must start with > #');
+assert.strictEqual(lastRenderedPayload.components[4].components[0].data.label, 'Refresh', 'Row 5 Button 1 must dynamically flip to Refresh once messages are active');
+console.log('✅ Leaderboard Batch Send: Atomically dispatches title and card messages, dynamically flipping button to [Refresh].');
 
-// Test Leaderboard Action: Disable (with dynamic nonce customId)
+// Test 2.3: Re-selecting the same channel toggles it off (Per-Category Disable)
 sentFollowUps = [];
-mockLbInteraction.customId = 'lb_menu_coins_666666666';
-mockLbInteraction.values = ['disable'];
-await handleLeaderboardMenuAction(mockLbInteraction);
-assert.strictEqual(sentFollowUps.length, 0, 'No feedback message on disable');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'DB coins_channel_id must be null');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'DB coins_title_message_id must be null');
-assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'DB coins_message_id must be null');
-assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must show Not Set');
-assert(lastRenderedPayload.components[0].components[0].data.custom_id.split('_').length >= 3, 'Must have dynamic nonce to clear selection');
-console.log('✅ Leaderboard Action (Disable): Successfully deletes old Discord message and nullifies DB config without sending feedback messages.');
+mockLbInteraction.customId = 'lb_channel_coins_222222';
+mockLbInteraction.values = [VALID_CHAN_1]; // Same channel selected again
+await handleLeaderboardChannelSelect(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'Re-selecting same channel must toggle off and unset DB channel');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_title_message_id, null, 'Old title message ID must be cleared');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_message_id, null, 'Old card message ID must be cleared');
+assert(lastRenderedPayload.embeds[0].data.description.includes('Total Coins**\n↳ *Not Set*'), 'Embed must reflect category reset to Not Set');
+console.log('✅ Leaderboard Single Category Removal: Selecting the same channel again unsets it and cleans up messages.');
+
+// Test 2.4: Disable All Action Button
+// Assign activity channel first
+mockLbInteraction.customId = 'lb_channel_activity_333333';
+mockLbInteraction.values = [VALID_CHAN_1];
+await handleLeaderboardChannelSelect(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.daily_channel_id, VALID_CHAN_1);
+
+// Now click [Disable All]
+sentFollowUps = [];
+mockLbInteraction.customId = 'lb_action_disable_all';
+await handleLeaderboardDisableAll(mockLbInteraction);
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.daily_channel_id, null, 'Disable All must unset daily_channel_id');
+assert.strictEqual(mockStorage.leaderboard_config.get(GUILD_SNOWFLAKE)?.coins_channel_id, null, 'Disable All must unset coins_channel_id');
+assert.strictEqual(lastRenderedPayload.components[4].components[0].data.disabled, true, 'Send button disabled when all cleared');
+assert.strictEqual(lastRenderedPayload.components[4].components[1].data.disabled, true, 'Disable button disabled when all cleared');
+console.log('✅ Leaderboard Disable All Action: Clears all leaderboard channels and message references from DB.');
 
 console.log('--- ALL VERIFICATIONS PASSED SUCCESSFULLY ---');
 process.exit(0);

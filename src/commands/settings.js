@@ -30,7 +30,9 @@ import {
     handleLeaderboardCategorySelect, 
     handleLeaderboardChannelSelect as handleLeaderboardChannelSelectV2,
     handleLeaderboardRefresh as handleLeaderboardRefreshV2,
-    handleLeaderboardDisable
+    handleLeaderboardDisable,
+    handleLeaderboardBatchSendOrRefresh,
+    handleLeaderboardDisableAll
 } from './settings/leaderboards.js';
 import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
@@ -397,6 +399,7 @@ export async function handleSettingsComponent(interaction) {
             (interaction.customId.startsWith('settings_menu_') && interaction.values?.[0] === 'other_customize');
         const isImmediateMenu =
             interaction.customId.startsWith('lb_menu_') ||
+            interaction.customId.startsWith('lb_channel_') ||
             interaction.customId === 'settings_leaderboards';
         if (!isModal && !needsModal && !isImmediateMenu && !interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate().catch(() => {});
@@ -1087,18 +1090,18 @@ export async function handleSettingsComponent(interaction) {
             return;
         }
 
-        if (customId.startsWith('lb_set_channel_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('lb_assign_')) {
+        if (customId.startsWith('lb_channel_') || customId.startsWith('lb_set_channel_') || customId.startsWith('leaderboard_channel_') || customId.startsWith('lb_assign_')) {
             await handleLeaderboardChannelSelectV2(interaction);
             return;
         }
 
-        if (customId.startsWith('lb_disable_') || customId.startsWith('leaderboard_disable_')) {
-            await handleLeaderboardDisable(interaction);
+        if (customId === 'lb_action_send_refresh' || customId === 'lb_refresh' || customId === 'leaderboard_refresh') {
+            await handleLeaderboardBatchSendOrRefresh(interaction);
             return;
         }
 
-        if (customId === 'lb_refresh' || customId === 'leaderboard_refresh') {
-            await handleLeaderboardRefreshV2(interaction);
+        if (customId === 'lb_action_disable_all' || customId.startsWith('lb_disable_') || customId.startsWith('leaderboard_disable_')) {
+            await handleLeaderboardDisableAll(interaction);
             return;
         }
 
