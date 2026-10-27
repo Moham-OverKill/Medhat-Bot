@@ -461,4 +461,86 @@ test('Leaderboard Message Sequence and Startup Cleanup Integration', async (t) =
         assert.equal(res.cleanedCount, 3, 'Should clean 3 orphaned headers on guild cleanup');
         assert.equal(channel._messages.size, 0, 'Channel should be completely cleaned');
     });
+
+    await t.test('updateLeaderboards should edit card in-place every hour, leave title untouched, and send zero new messages', async () => {
+        const channel = createMockDiscordChannel({
+            id: 'chan_hourly_inplace',
+            permissions: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.EmbedLinks,
+                PermissionFlagsBits.AttachFiles,
+                PermissionFlagsBits.ReadMessageHistory
+            ],
+            botId: BOT_ID
+        });
+
+        const titleId = channel._nextSnowflake();
+        const cardId = channel._nextSnowflake();
+
+        let titleEditCalled = 0;
+        let titleDeleteCalled = 0;
+        let cardEditCalled = 0;
+        let cardDeleteCalled = 0;
+        let channelSendCalled = 0;
+
+        const titleMsg = {
+            id: titleId,
+            content: '> # ⭐ MVP CHAMPIONS',
+            author: { id: BOT_ID },
+            edit: async () => { titleEditCalled++; },
+            delete: async () => { titleDeleteCalled++; }
+        };
+
+        const cardMsg = {
+            id: cardId,
+            content: '',
+            attachments: [{ name: 'daily_coins_leaderboard.png' }],
+            author: { id: BOT_ID },
+            edit: async () => { cardEditCalled++; },
+            delete: async () => { cardDeleteCalled++; }
+        };
+
+        channel._messages.set(titleId, titleMsg);
+        channel._messages.set(cardId, cardMsg);
+
+        const originalSend = channel.send;
+        channel.send = async (...args) => {
+            channelSendCalled++;
+            return originalSend(...args);
+        };
+
+        const guildId = 'guild_inplace_test';
+        mockDb.leaderboard_config.set(guildId, {
+            guild_id: guildId,
+            daily_channel_id: channel.id,
+            daily_title_message_id: titleId,
+            daily_message_id: cardId
+        });
+
+        const client = {
+            user: { id: BOT_ID },
+            guilds: {
+                cache: new Map([
+                    [guildId, {
+                        id: guildId,
+                        channels: {
+                            cache: new Map([[channel.id, channel]]),
+                            fetch: async () => channel
+                        },
+                        members: { cache: new Map(), fetch: async () => null }
+                    }]
+                ]),
+                fetch: async () => null
+            }
+        };
+
+        await updateLeaderboards(client, guildId);
+
+        assert.equal(channelSendCalled, 0, 'Must NOT send any new messages to the channel');
+        assert.equal(titleEditCalled, 0, 'Must NOT edit the title message');
+        assert.equal(titleDeleteCalled, 0, 'Must NOT delete the title message');
+        assert.equal(cardDeleteCalled, 0, 'Must NOT delete the card message');
+        assert.equal(cardEditCalled, 1, 'MUST edit the card message in-place');
+    });
 });
