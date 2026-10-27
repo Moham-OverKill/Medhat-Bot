@@ -170,18 +170,39 @@ export async function showQuestsSchedule(interaction) {
       )
       .setColor('#3498DB');
 
-    // Dropdown for Quests Per Refresh (1-10)
+    // Dropdown for Quests Per Refresh -- dynamically sized to current pool capacity.
+    // Options are generated only for reachable pool sizes (1 to min(totalQuests, 10)).
+    // Edge case: if the saved setting exceeds the current pool, a warning option is
+    // appended and marked as active until the admin selects a valid number.
+    const maxOptions = totalQuests > 0 ? Math.min(totalQuests, 10) : 1;
+    const perRefreshOptions = Array.from({ length: maxOptions }, (_, i) => ({
+      label: `${i + 1} Quest${i === 0 ? '' : 's'}`,
+      value: `${i + 1}`,
+      emoji: '🎯',
+      default: perRefresh === (i + 1) && perRefresh <= totalQuests
+    }));
+
+    if (totalQuests > 0 && perRefresh > totalQuests) {
+      perRefreshOptions.forEach(o => { o.default = false; });
+      perRefreshOptions.push({
+        label: `${perRefresh} Quests (exceeds current pool)`,
+        value: `${perRefresh}`,
+        emoji: '⚠️',
+        default: true
+      });
+    } else if (totalQuests === 0) {
+      perRefreshOptions[0] = {
+        label: '1 Quest (no quests in pool)',
+        value: '1',
+        emoji: '⚠️',
+        default: true
+      };
+    }
+
     const perRefreshMenu = new StringSelectMenuBuilder()
       .setCustomId('quests_setting_per_refresh')
       .setPlaceholder('Quests per Refresh...')
-      .addOptions(
-        Array.from({ length: 10 }, (_, i) => ({
-          label: `${i + 1} Quest${i === 0 ? '' : 's'}${totalQuests > 0 && (i + 1) > totalQuests ? ' (exceeds current pool)' : ''}`,
-          value: `${i + 1}`,
-          emoji: '🎯',
-          default: perRefresh === (i + 1)
-        }))
-      );
+      .addOptions(perRefreshOptions);
 
     // Dropdown for Refreshes Per Day (1x, 2x, 4x)
     const refreshesMenu = new StringSelectMenuBuilder()
