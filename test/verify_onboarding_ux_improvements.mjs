@@ -6,6 +6,7 @@ import { setMockPool } from '../src/storage/postgres.js';
 // Import target modules
 import {
   handleCreateItemStart,
+  openCreatePackModal,
   handleCreateRoleSelect,
   getShopSetupPayload,
   handleCreateItemModalSubmit
@@ -74,18 +75,35 @@ describe('Onboarding & Mobile UX Streamlining Suite', () => {
 
     const nameInput = modalShown.components[0].components[0];
     assert.equal(nameInput.data.custom_id, 'item_name');
-    assert.equal(nameInput.data.label, 'What do you want to create?');
+    assert.equal(nameInput.data.label, 'Item Name');
+    assert.equal(nameInput.data.placeholder, 'Sword');
     assert.equal(nameInput.data.required, true);
 
     // 2. Refreshes message behind modal so menu doesn't stay stuck on "Create Item"
     assert.ok(webhookEdited, 'Must refresh source message to reset select menu');
 
-    // 3. Submitting the modal auto-provisions role and opens Tab 1 (Details) with "Change Role" placeholder
+    // 2b. Verify Pack creation modal labels and placeholders
+    let packModalShown = null;
+    await openCreatePackModal({
+      showModal: async (m) => { packModalShown = m; return m; },
+      webhook: { editMessage: async () => {} }
+    });
+    assert.ok(packModalShown, 'openCreatePackModal must show modal');
+    assert.equal(packModalShown.data.title, 'Create Item Pack');
+    const packJson = packModalShown.toJSON();
+    const packLabelComp = packJson.components[0];
+    assert.equal(packLabelComp.label, 'Pack Name', 'Pack input label must be Pack Name');
+    assert.equal(packLabelComp.component.placeholder, 'Cool Bundle!', 'Pack placeholder must be Cool Bundle!');
+
+    // 3. Submitting the modal auto-provisions role and mutates existing message via deferUpdate
     let createdRole = null;
     let editReplyPayload = null;
+    let deferredUpdateCalled = false;
+    let deferredReplyCalled = false;
     const submitInteraction = {
       deferred: false,
       replied: false,
+      message: { id: 'source_message_111' },
       guildId: '123456789012345678',
       user: { id: 'admin1', tag: 'Admin#0001', username: 'Admin' },
       member: {
@@ -119,7 +137,14 @@ describe('Onboarding & Mobile UX Streamlining Suite', () => {
       fields: {
         getTextInputValue: (id) => 'VIP Legend'
       },
-      deferReply: async () => {},
+      deferUpdate: async () => {
+        deferredUpdateCalled = true;
+        submitInteraction.deferred = true;
+      },
+      deferReply: async () => {
+        deferredReplyCalled = true;
+        submitInteraction.deferred = true;
+      },
       editReply: async (payload) => {
         editReplyPayload = payload;
         return payload;
@@ -166,6 +191,9 @@ describe('Onboarding & Mobile UX Streamlining Suite', () => {
       assert.equal(createdRole.name, 'VIP Legend');
       assert.ok(insertedItem, 'Item must be inserted into database');
       assert.equal(insertedItem.is_tradable, true, 'New item must be tradable by default');
+
+      assert.equal(deferredUpdateCalled, true, 'Must deferUpdate to mutate existing embed');
+      assert.equal(deferredReplyCalled, false, 'Must not deferReply to avoid duplicate ephemeral messages');
 
       // Verify Tab 1 (Details) renders "Change Role" in the role select menu
       assert.ok(editReplyPayload, 'Tab 1 Details must be rendered in editReply');

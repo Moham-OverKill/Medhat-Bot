@@ -471,9 +471,9 @@ export async function handleCreateItemStart(interaction) {
 
     const nameInput = new TextInputBuilder()
       .setCustomId('item_name')
-      .setLabel('What do you want to create?')
+      .setLabel('Item Name')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Enter item name…')
+      .setPlaceholder('Sword')
       .setRequired(true)
       .setMaxLength(100);
 
@@ -491,20 +491,24 @@ export async function handleCreateItemStart(interaction) {
  */
 export async function handleCreateItemModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (interaction.message) {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    }
   }
   try {
     // Permission guard
     if (!interaction.guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return interaction.editReply({
+      return interaction.followUp({
         content: "❌ The bot is missing the **Manage Roles** permission. Please grant it or select an existing role instead.",
-        components: []
+        flags: MessageFlags.Ephemeral
       });
     }
 
     const itemName = interaction.fields.getTextInputValue('item_name')?.trim();
     if (!itemName) {
-      return interaction.editReply({ content: '❌ Item name cannot be empty.', components: [] });
+      return interaction.followUp({ content: '❌ Item name cannot be empty.', flags: MessageFlags.Ephemeral });
     }
 
     // Create the Discord role
@@ -517,9 +521,9 @@ export async function handleCreateItemModalSubmit(interaction) {
       });
     } catch (roleErr) {
       sysError('Auto role creation failed', roleErr, { guild: interaction.guildId, user: interaction.user.id });
-      return interaction.editReply({
+      return interaction.followUp({
         content: `❌ Failed to create role: ${roleErr.message}`,
-        components: []
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -528,7 +532,7 @@ export async function handleCreateItemModalSubmit(interaction) {
     const conflictCheck = await validateRoleConflict(interaction.guild, newRole, 'ITEM_ROLE');
     if (!conflictCheck.valid) {
       await newRole.delete('Auto-role conflict — rolling back').catch(() => {});
-      return interaction.editReply({ content: `❌ ${conflictCheck.error}`, components: [] });
+      return interaction.followUp({ content: `❌ ${conflictCheck.error}`, flags: MessageFlags.Ephemeral });
     }
 
     // Commit to DB: tradable (unlocked), common, no category
@@ -1068,11 +1072,13 @@ export async function openCreatePackModal(interaction) {
 
   const nameInput = new TextInputBuilder()
     .setCustomId('item_name')
+    .setLabel('Pack Name')
     .setStyle(TextInputStyle.Short)
+    .setPlaceholder('Cool Bundle!')
     .setRequired(true);
 
   const nameLabel = new LabelBuilder()
-    .setLabel('Name')
+    .setLabel('Pack Name')
     .setTextInputComponent(nameInput);
 
   modal.addLabelComponents(nameLabel);
