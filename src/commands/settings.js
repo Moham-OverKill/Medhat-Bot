@@ -78,7 +78,7 @@ export async function showMainMenu(interaction) {
 
     const nonce = Date.now();
 
-    // Row 1: SHOP Select Menu (Coins, Items, Market, Economy)
+    // Row 1: SHOP Select Menu (Coins, Items, Post, Chests, Economy)
     const shopSelect = new StringSelectMenuBuilder()
         .setCustomId(`settings_menu_market_${nonce}`)
         .setPlaceholder('🛒 Shop')
@@ -99,9 +99,9 @@ export async function showMainMenu(interaction) {
                 emoji: resolveComponentEmoji(lootBoxEmoji, interaction.guild, '🎁')
             },
             {
-                label: 'Market',
-                value: 'market_market',
-                emoji: '🛒'
+                label: 'Post',
+                value: 'market_post',
+                emoji: '📢'
             },
             {
                 label: 'Economy',
@@ -427,13 +427,9 @@ export async function handleSettingsComponent(interaction) {
                     const { handleLootBoxesPage } = await import('./shop-setup.js');
                     return handleLootBoxesPage(interaction);
                 }
-                case 'market_market':
-                case 'market_coming_soon': {
-                    await showMainMenu(interaction);
-                    return interaction.followUp({
-                        content: 'Coming soon.',
-                        flags: MessageFlags.Ephemeral
-                    });
+                case 'market_post': {
+                    const { handleShopPostGate } = await import('./shop-setup.js');
+                    return handleShopPostGate(interaction);
                 }
                 case 'market_economy':
                     return handleEconomySettings(interaction);

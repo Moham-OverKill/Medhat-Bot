@@ -783,9 +783,9 @@ export async function handleShopBuyButton(interaction) {
 
         if (canShowModal) {
           const placeholderText = maxAllowed !== null ? String(maxAllowed) : '1';
-          const inputLabel = (hasClaimLimit && remainingClaims !== null)
+          const inputLabel = maxAllowed !== null
             ? `Enter quantity (Max ${maxAllowed})`
-            : (maxAllowed !== null ? `Enter quantity (Max ${maxAllowed})` : 'Enter the amount you want to buy');
+            : 'Enter the amount you want to buy';
 
           // Show quantity modal
           const modal = new ModalBuilder()
@@ -797,10 +797,10 @@ export async function handleShopBuyButton(interaction) {
             .setCustomId('buy_quantity')
             .setLabel(inputLabel.slice(0, 45))
             .setPlaceholder(placeholderText)
-            .setMinLength(1)
+            .setMinLength(0)
             .setMaxLength(maxLen)
             .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+            .setRequired(false);
 
           modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
           try {
@@ -1103,7 +1103,10 @@ export async function handleShopBuyModalSubmit(interaction) {
     const overridePrice = (overridePriceStr !== null && overridePriceStr !== '') ? parseInt(overridePriceStr) : null;
 
     const rawQty = interaction.fields?.getTextInputValue('buy_quantity');
-    const qty = parseInt(rawQty, 10);
+    // Default to 1 if the user submitted a blank input
+    const qty = (rawQty === undefined || rawQty === null || rawQty.trim() === '')
+      ? 1
+      : parseInt(rawQty.trim(), 10);
 
     if (isNaN(qty) || qty < 1) {
       const errEmbed = new EmbedBuilder()
