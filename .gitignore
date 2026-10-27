@@ -15,3 +15,7 @@ Thumbs.db
 data/
 *.db
 *.sqlite
+
+# Railway local configuration
+.railway/
+
