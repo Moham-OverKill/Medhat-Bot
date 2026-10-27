@@ -181,7 +181,7 @@ export async function applyRichestRole(client, guildId) {
         const config = await getGuildConfig(guildId);
         if (!config?.richest_role_enabled || !config?.richest_role_id) return;
 
-        const guild = await client.guilds.fetch(guildId).catch(() => null);
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
         if (!guild) return;
 
         const role = await validateRole(guild, config.richest_role_id);
@@ -240,7 +240,7 @@ export async function applyStreakRole(client, guildId) {
         const config = await getGuildConfig(guildId);
         if (!config?.streak_role_enabled || !config?.streak_role_id) return;
 
-        const guild = await client.guilds.fetch(guildId).catch(() => null);
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
         if (!guild) return;
 
         const role = await validateRole(guild, config.streak_role_id);

@@ -26,7 +26,7 @@ export async function runTagRewardsCycle(client, guildId, options = {}) {
       return { success: false, paidCount: 0, totalCoins: 0, error: 'Tag rewards disabled or reward amount is 0' };
     }
 
-    const guildObj = await client.guilds.fetch(guildId).catch(() => null);
+    const guildObj = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guildObj) {
       sysLog('Tag Rewards Skipped', { guild: guildId, detail: 'Guild not found by client' });
       return { success: false, paidCount: 0, totalCoins: 0, error: 'Guild not accessible' };

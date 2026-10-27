@@ -853,6 +853,35 @@ client.on(Events.GuildChannelDelete, async (channel) => {
         invalidateFilterCache(guild.id);
         sysLog('Config Updated', { guild: guild.id, detail: 'Deleted linked channel resource' });
       }
+
+      // Clean up leaderboard channel references if configured
+      try {
+        const { getLeaderboardConfig, setLeaderboardConfig } = await import('./commands/leaderboard.js');
+        const lbConfig = await getLeaderboardConfig(guild.id);
+        if (lbConfig) {
+          let lbUpdated = false;
+          const lbFields = [
+            { chan: 'daily_channel_id', title: 'daily_title_message_id', msg: 'daily_message_id' },
+            { chan: 'coins_channel_id', title: 'coins_title_message_id', msg: 'coins_message_id' },
+            { chan: 'streak_channel_id', title: 'streak_title_message_id', msg: 'streak_message_id' },
+            { chan: 'level_channel_id', title: 'level_title_message_id', msg: 'level_message_id' }
+          ];
+          for (const f of lbFields) {
+            if (lbConfig[f.chan] === channel.id) {
+              lbConfig[f.chan] = null;
+              lbConfig[f.title] = null;
+              lbConfig[f.msg] = null;
+              lbUpdated = true;
+            }
+          }
+          if (lbUpdated) {
+            await setLeaderboardConfig(guild.id, lbConfig);
+            logger.info('SERVER', `Pruned deleted leaderboard channel ${channel.id} from guild ${guild.id}`);
+          }
+        }
+      } catch (lbErr) {
+        // Non-blocking
+      }
     } catch (error) {
       sysError('Channel Deletion Cleanup Failed', error, { guild: channel.guild?.id });
     }
@@ -1092,7 +1121,9 @@ client.on('guildDelete', async (guild) => {
     try {
       const { cancelMvpTimer } = await import('./mvp/award.js');
       cancelMvpTimer(guild.id);
-      sysLog('Guild Left', { guild: guild.id, detail: 'Canceled timers (configuration preserved)' });
+      const { deleteLeaderboardConfig } = await import('./commands/leaderboard.js');
+      await deleteLeaderboardConfig(guild.id).catch(() => {});
+      sysLog('Guild Left', { guild: guild.id, detail: 'Canceled timers and pruned leaderboard configuration' });
     } catch (error) {
       sysError('Guild Leave Cleanup Failed', error, { guild: guild.id });
     }
@@ -1112,6 +1143,8 @@ client.on('guildMemberRemove', async (member) => {
       await disableUserNotificationsOnLeave(member.guild.id, member.id);
       const { removeServerAdmin } = await import('./storage/admins.js');
       await removeServerAdmin(member.guild.id, member.id);
+      const { markMemberDeparted } = await import('./commands/leaderboard.js');
+      markMemberDeparted(member.guild.id, member.id);
     } catch (error) {
       sysError('Member Leave Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
     }
@@ -1127,6 +1160,8 @@ client.on('guildMemberAdd', async (member) => {
       if (!isDatabaseReady()) return;
       const { removeServerAdmin } = await import('./storage/admins.js');
       await removeServerAdmin(member.guild.id, member.id);
+      const { clearMemberDeparted } = await import('./commands/leaderboard.js');
+      clearMemberDeparted(member.guild.id, member.id);
     } catch (error) {
       sysError('Member Join Stale Admin Cleanup Failed', error, { user: member.id, guild: member.guild?.id });
     }
