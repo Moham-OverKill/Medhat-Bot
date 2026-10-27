@@ -1,7 +1,7 @@
 import { getGuildConfig } from '../storage/config.js';
 import { query } from '../storage/postgres.js';
 import { updateBalance } from '../economy/service.js';
-import { sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { logger, sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { COIN_EMOJI } from '../shared.js';
 
 /**
@@ -14,6 +14,7 @@ import { COIN_EMOJI } from '../shared.js';
  * @returns {Promise<{success: boolean, paidCount: number, totalCoins: number, error?: string}>}
  */
 export async function runTagRewardsCycle(client, guildId, options = {}) {
+  const cycleStart = performance.now();
   try {
     const config = await getGuildConfig(guildId);
     if (!config) return { success: false, paidCount: 0, totalCoins: 0, error: 'No configuration found' };
@@ -85,7 +86,12 @@ export async function runTagRewardsCycle(client, guildId, options = {}) {
       }
     }
 
-    sysLog('Tag Rewards Scan Complete', { guild: guildId, paidMembersCount: paidUsersCount });
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('CRON:TAGS', `Tag rewards scan completed in ${durationMs}ms`, {
+      guildId,
+      paidMembersCount: paidUsersCount,
+      durationMs
+    });
 
     if (paidUsersCount > 0) {
       sendLog(guildObj, 'economy', 'green', '🏷️ Daily Tag Rewards Distributed', 

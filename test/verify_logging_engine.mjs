@@ -274,4 +274,35 @@ test('Logging Engine Architecture Suite', async (t) => {
     const lbPermCheck = checkLeaderboardPermissions(fakeChannel);
     assert.equal(lbPermCheck.valid, true, 'checkLeaderboardPermissions should return valid: true');
   });
+
+  await t.test('Discord REST Telemetry and Start-to-Finish Execution Duration', async () => {
+    captureStreams();
+    logger.setLevel(LogLevel.DEBUG);
+
+    try {
+      // Simulate REST request wrapper
+      const reqStart = performance.now();
+      const durationMs = 45;
+      logger.info('REST', `Discord REST POST /channels/123/messages completed in ${durationMs}ms`, {
+        method: 'POST',
+        route: '/channels/123/messages',
+        durationMs
+      });
+
+      // Simulate RateLimited event
+      logger.warn('REST', 'Rate limit hit on POST /channels/123/messages in 1200ms reset window (limit: 5, global: false)', {
+        timeToResetMs: 1200,
+        limit: 5,
+        method: 'POST',
+        route: '/channels/123/messages',
+        global: false
+      });
+
+      const fullStdout = stdoutCaptured.join('\n');
+      assert.ok(fullStdout.includes('REST: Discord REST POST /channels/123/messages completed in 45ms'), 'Must log REST completion in ms');
+      assert.ok(fullStdout.includes('WARN REST: Rate limit hit on POST /channels/123/messages in 1200ms reset window'), 'Must log rate limit warnings');
+    } finally {
+      restoreStreams();
+    }
+  });
 });

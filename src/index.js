@@ -7,7 +7,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
   dns.setDefaultResultOrder('ipv4first');
 }
 
-import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options } from 'discord.js';
+import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options, RESTEvents } from 'discord.js';
 import { createServer } from 'http';
 import crypto from 'crypto';
 import os from 'os';
@@ -137,6 +137,66 @@ export const client = new Client({
     }
   }
 });
+
+// ============================================
+// DISCORD REST API TELEMETRY & OBSERVABILITY
+// ============================================
+if (client.rest) {
+  client.rest.on(RESTEvents.RateLimited, (data) => {
+    logger.warn('REST', `Rate limit hit on ${data.method} ${data.route || data.url} in ${data.timeToReset}ms reset window (limit: ${data.limit}, global: ${data.global})`, {
+      timeToResetMs: data.timeToReset,
+      limit: data.limit,
+      method: data.method,
+      route: data.route,
+      global: data.global,
+      scope: data.scope
+    });
+  });
+
+  client.rest.on(RESTEvents.InvalidRequestWarning, (data) => {
+    logger.error('REST', `Discord Invalid Request Warning: ${data.count} invalid requests (remaining window: ${data.remainingTime}ms)`, {
+      count: data.count,
+      remainingTime: data.remainingTime
+    });
+  });
+
+  if (typeof client.rest.request === 'function') {
+    const origRestRequest = client.rest.request.bind(client.rest);
+    client.rest.request = async (options) => {
+      const reqStart = performance.now();
+      const method = (options?.method || 'GET').toUpperCase();
+      const route = options?.fullRoute || options?.route || options?.url || 'unknown';
+      try {
+        const res = await origRestRequest(options);
+        const durationMs = Math.round(performance.now() - reqStart);
+        if (durationMs > 1000) {
+          logger.warn('REST', `Slow Discord REST ${method} ${route} completed in ${durationMs}ms`, {
+            method,
+            route,
+            durationMs
+          });
+        } else {
+          logger.debug('REST', `Discord REST ${method} ${route} completed in ${durationMs}ms`, {
+            method,
+            route,
+            durationMs
+          });
+        }
+        return res;
+      } catch (err) {
+        const durationMs = Math.round(performance.now() - reqStart);
+        logger.warn('REST', `Discord REST ${method} ${route} failed after ${durationMs}ms`, {
+          method,
+          route,
+          durationMs,
+          status: err?.status,
+          code: err?.code
+        });
+        throw err;
+      }
+    };
+  }
+}
 
 let keepAliveServer = null;
 let shuttingDown = false;
@@ -990,13 +1050,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await handleSlashCommand(interaction);
       const duration = Math.round(performance.now() - cmdStart);
       if (duration > 1500) {
-        logger.warn('DISPATCH', `Slow Command Execution: ${fullCmdName}`, {
+        logger.warn('DISPATCH', `Slow Command Execution: ${fullCmdName} completed in ${duration}ms`, {
           durationMs: duration,
           user: interaction.user.id,
           guildId: interaction.guildId
         });
       } else {
-        logger.info('DISPATCH', `${fullCmdName} completed successfully (${duration}ms)`, {
+        logger.info('DISPATCH', `${fullCmdName} completed in ${duration}ms`, {
           durationMs: duration,
           user: interaction.user.id,
           guildId: interaction.guildId
@@ -1005,7 +1065,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (error) {
       const duration = Math.round(performance.now() - cmdStart);
       if (error.code !== 10062) {
-        logger.error('DISPATCH', `Command Execution Failed: ${fullCmdName}`, {
+        logger.error('DISPATCH', `Command Execution Failed: ${fullCmdName} after ${duration}ms`, {
           durationMs: duration,
           user: interaction.user.id,
           guildId: interaction.guildId

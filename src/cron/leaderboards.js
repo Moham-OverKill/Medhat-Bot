@@ -1,4 +1,4 @@
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 import { updateLeaderboards, cleanupAllLeaderboardChannels } from '../commands/leaderboard.js';
 import { loadGuildConfigs } from '../storage/config.js';
 import { getTimeUntilNextCairoHour, getCairoHour } from '../utils/time.js';
@@ -48,6 +48,7 @@ export async function startLeaderboardScheduler(client) {
  * On midnight (Cairo hour 0): voice flush BEFORE KotH, activity reset AFTER.
  */
 async function runHourlyRefresh(client, isStartup = false) {
+    const cycleStart = performance.now();
     const isMidnight = !isStartup && getCairoHour() === 0;
     const todayStr = (await import('../utils/time.js')).getTodayCairo();
 
@@ -167,5 +168,6 @@ async function runHourlyRefresh(client, isStartup = false) {
         });
     }
     
-    sysLog('Leaderboard Hourly Refresh Complete', { detail: `Processed ${guildIds.length} guild(s)` });
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('CRON', `Leaderboard hourly refresh completed in ${durationMs}ms`, { guildCount: guildIds.length, durationMs });
 }

@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas';
 import { performance } from 'node:perf_hooks';
-import { sysWarn, sysLog } from '../utils/logger.js';
+import { logger, sysWarn, sysLog } from '../utils/logger.js';
 import {
   fontStack,
   boldFontStack,
@@ -497,11 +497,11 @@ export async function renderLeaderboardCard({
   }
 
   const buffer = await canvas.encode('png');
-  const duration = Math.round(performance.now() - renderStart);
-  if (duration > 500) {
-    sysWarn('Slow Leaderboard Card Render', { category, count, duration });
+  const durationMs = Math.round(performance.now() - renderStart);
+  if (durationMs > 500) {
+    logger.warn('RENDER', `Slow leaderboard card rendered in ${durationMs}ms`, { category, count, durationMs });
   } else {
-    sysLog('Leaderboard Card Rendered', { category, count, duration });
+    logger.info('RENDER', `Leaderboard card rendered in ${durationMs}ms`, { category, count, durationMs });
   }
 
   return buffer;
