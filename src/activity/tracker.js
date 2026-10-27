@@ -3,7 +3,12 @@ import { sanitizeError, runInGuildContext } from '../shared.js';
 import { logger, sysLog, sysError } from '../utils/logger.js';
 import { recordWeeklyMessages, isWeeklySummaryActiveForGuild } from '../cron/weeklySummary.js';
 import { configCache as masterConfigCache } from '../storage/config.js';
-import { isDailyLeaderboardActive } from '../commands/leaderboard.js';
+import {
+  isDailyLeaderboardActive,
+  departedGuildMembersCache,
+  DEPARTED_MEMBER_TTL,
+  markMemberDeparted
+} from '../commands/leaderboard.js';
 
 // ============================================
 // TEXT CHAT: ANTI-SPAM & LENGTH SCALING CONFIGURATION
@@ -404,11 +409,23 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
 
     if (guildObj && result.rows.length > 0) {
       // Warm up member cache targeted only for candidate top active users
+      // Skip members already in cache or confirmed departed within TTL
+      const now = Date.now();
       const missingUids = result.rows
         .map(r => r.user_id)
-        .filter(uid => uid && !guildObj.members.cache.has(uid));
+        .filter(uid => {
+          if (!uid || guildObj.members.cache.has(uid)) return false;
+          const departedAt = departedGuildMembersCache.get(`${guildId}:${uid}`);
+          if (departedAt && (now - departedAt) < DEPARTED_MEMBER_TTL) return false;
+          return true;
+        });
       if (missingUids.length > 0) {
         await guildObj.members.fetch({ user: missingUids }).catch(() => null);
+        for (const uid of missingUids) {
+          if (!guildObj.members.cache.has(uid)) {
+            markMemberDeparted(guildId, uid);
+          }
+        }
       }
     }
 
@@ -417,16 +434,14 @@ export async function getTopActiveUsers(guildId, limit = 1, guildObj = null) {
 
       if (guildObj) {
         // Fast in-memory lookup from warm cache
-        let member = guildObj.members.cache.get(row.user_id);
+        const member = guildObj.members.cache.get(row.user_id);
         if (!member) {
-          member = await guildObj.members.fetch(row.user_id).catch(() => null);
-        }
-        if (!member) {
+          markMemberDeparted(guildId, row.user_id);
           // User left the server — zero out daily activity points so they don't clog leaderboard slots, but preserve battlepass_xp
           await pool.query('UPDATE user_activity SET message_count = 0, voice_minutes = 0 WHERE guild_id = $1 AND user_id = $2', [guildId, row.user_id]).catch(() => {});
           continue;
         }
-        if (member.user.bot) continue;
+        if (member.user?.bot) continue;
       }
 
       users.push({

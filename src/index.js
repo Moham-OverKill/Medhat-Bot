@@ -1248,13 +1248,25 @@ client.on(Events.Debug, (msg) => {
   if (!client.isReady()) {
     // During startup handshake, log all non-sensitive gateway and REST activity
     if (!msg.includes('Provided token')) {
-      sysLog('Gateway Startup Debug', { detail: msg });
+      logger.info('STARTUP', `Gateway Startup Debug: ${msg}`);
     }
     return;
   }
+
+  // Heartbeat analysis
+  if (msg.includes('Heartbeat acknowledged')) {
+    const latMatch = msg.match(/latency of (\d+)ms/);
+    const lat = latMatch ? parseInt(latMatch[1], 10) : null;
+    if (lat !== null && lat > 250) {
+      logger.warn('GATEWAY', `High WebSocket latency detected (${lat}ms)`, { pingMs: lat });
+    } else {
+      logger.debug('GATEWAY', msg, lat !== null ? { pingMs: lat } : undefined);
+    }
+    return;
+  }
+
   if (
     msg.includes('[WS =>') ||
-    msg.includes('Heartbeat') ||
     msg.includes('Identify') ||
     msg.includes('Session') ||
     msg.includes('429') ||
@@ -1262,9 +1274,71 @@ client.on(Events.Debug, (msg) => {
     msg.includes('Waiting for') ||
     msg.includes('Invalid session')
   ) {
-    sysLog('Gateway Debug', { detail: msg });
+    logger.debug('GATEWAY', msg);
   }
 });
+
+// Gateway Shard Lifecycle Events
+client.on(Events.ShardDisconnect, (event, shardId) => {
+  logger.warn('GATEWAY', `Shard ${shardId} disconnected from Discord`, {
+    shardId,
+    code: event?.code,
+    reason: event?.reason || 'No reason provided'
+  });
+});
+
+client.on(Events.ShardReconnecting, (shardId) => {
+  logger.info('GATEWAY', `Shard ${shardId} reconnecting to Discord gateway`, { shardId });
+});
+
+client.on(Events.ShardResume, (shardId, replayedEvents) => {
+  logger.info('GATEWAY', `Shard ${shardId} resumed connection (${replayedEvents} events replayed)`, {
+    shardId,
+    replayedEvents
+  });
+});
+
+client.on(Events.ShardError, (error, shardId) => {
+  logger.error('GATEWAY', `Shard ${shardId} encountered WebSocket error`, { shardId }, error);
+});
+
+// ============================================
+// SYSTEM RESOURCE & EVENT LOOP HEALTH WATCHDOG
+// ============================================
+const MAX_OLD_SPACE_MB = 384;
+const MEMORY_WARN_THRESHOLD_MB = Math.round(MAX_OLD_SPACE_MB * 0.80); // 307 MB (80%)
+
+let lastLoopCheck = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  const lagMs = Math.round(now - lastLoopCheck - 1000);
+  lastLoopCheck = now;
+  if (lagMs > 200) {
+    logger.warn('SYSTEM', `Event loop lag spike detected (${lagMs}ms)`, { lagMs });
+  }
+}, 1000).unref();
+
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapUsedMb = Math.round(mem.heapUsed / (1024 * 1024));
+  const heapTotalMb = Math.round(mem.heapTotal / (1024 * 1024));
+  const rssMb = Math.round(mem.rss / (1024 * 1024));
+
+  if (heapUsedMb >= MEMORY_WARN_THRESHOLD_MB) {
+    logger.warn('SYSTEM', `High memory pressure detected (${heapUsedMb}MB / ${MAX_OLD_SPACE_MB}MB)`, {
+      heapUsedMb,
+      heapTotalMb,
+      rssMb,
+      percent: Math.round((heapUsedMb / MAX_OLD_SPACE_MB) * 100)
+    });
+  } else {
+    logger.debug('SYSTEM', 'System resource health check', {
+      heapUsedMb,
+      heapTotalMb,
+      rssMb
+    });
+  }
+}, 60000).unref();
 
 // Diagnostic warning if gateway handshake takes longer than 60s (non-fatal, avoids reboot loops)
 const GATEWAY_LOGIN_WARN_MS = 60000;

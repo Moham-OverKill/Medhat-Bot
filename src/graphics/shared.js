@@ -2,7 +2,7 @@ import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sysError, sysWarn, sysLog } from '../utils/logger.js';
+import { logger, sysError, sysWarn, sysLog } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -614,7 +614,10 @@ export async function fetchImageSafe(rawUrl) {
         signal: AbortSignal.timeout(4000)
       });
     } catch (netErr) {
-      sysWarn('Image Primary Fetch Network Error', { url: url.slice(0, 120), error: netErr?.message });
+      logger.warn('RENDER', 'External image fetch network error', {
+        url: typeof url === 'string' ? url.slice(0, 100) : 'unknown',
+        error: netErr?.message
+      });
     }
 
     // Twemoji fallback CDN if cdnjs fails
@@ -641,6 +644,10 @@ export async function fetchImageSafe(rawUrl) {
           }
         } catch (_) {}
       }
+      logger.warn('RENDER', 'External image asset unavailable, falling back to placeholder', {
+        url: typeof url === 'string' ? url.slice(0, 100) : 'unknown',
+        status: res?.status || 'Network Error'
+      });
       return null;
     }
 
@@ -653,7 +660,11 @@ export async function fetchImageSafe(rawUrl) {
     }
     imageCache.set(url, { img, timestamp: now });
     return img;
-  } catch (_) {
+  } catch (err) {
+    logger.warn('RENDER', 'External image decode failed, falling back to placeholder', {
+      url: typeof url === 'string' ? url.slice(0, 100) : 'buffer',
+      error: err?.message || String(err)
+    });
     return null;
   }
 }

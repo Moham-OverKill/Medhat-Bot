@@ -189,6 +189,13 @@ export async function handleInteractionError(interaction, error, context = 'Acti
   const targetRole = options.targetRole;
 
   if (isPermissionError) {
+    logger.warn('PERMISSIONS', `Permission error encountered: ${rawErrorMessage}`, {
+      code: errorCode,
+      channelId: targetChannel?.id,
+      roleId: targetRole?.id || targetRole,
+      guildId: interaction?.guildId,
+      context
+    });
     embed.setTitle('Missing Permissions');
 
     let channelDiag = null;
