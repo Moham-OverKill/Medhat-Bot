@@ -118,6 +118,28 @@ test('Logging Engine Architecture Suite', async (t) => {
     }
   });
 
+  await t.test('Stack traces must only route to stderr for ERROR/FATAL with real Error objects', () => {
+    captureStreams();
+    logger.setLevel(LogLevel.DEBUG);
+
+    try {
+      // 1. Warning with string error context (e.g. departed guild during hourly refresh)
+      logger.warn('CONFIG', 'Departed guild detected', { guildId: '123', error: 'Unknown Guild' });
+      assert.equal(stderrCaptured.length, 0, 'WARN with error string context must NEVER write to stderr');
+      assert.equal(stdoutCaptured.length, 1, 'WARN must be written to stdout');
+      assert.ok(stdoutCaptured[0].includes('Departed guild detected: Unknown Guild'));
+
+      // 2. Error with real Error object
+      const sampleErr = new Error('Database connection timed out');
+      logger.error('DATABASE', 'Query execution failed', sampleErr);
+      assert.ok(stderrCaptured.length >= 2, 'ERROR with real Error must write log line and stack trace to stderr');
+      assert.ok(stderrCaptured[0].includes('Query execution failed: Database connection timed out'));
+      assert.ok(stderrCaptured[1].includes('at '), 'Stack trace frames should be emitted to stderr');
+    } finally {
+      restoreStreams();
+    }
+  });
+
   await t.test('Log level threshold should suppress lower severity logs', () => {
     captureStreams();
     logger.setLevel(LogLevel.WARN);
