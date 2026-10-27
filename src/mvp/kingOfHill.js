@@ -50,7 +50,7 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
       return;
     }
 
-    const guildObj = await client.guilds.fetch(guildId).catch(() => null);
+    const guildObj = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guildObj) return;
 
     // === STEP 2: GUARD — Load MVP role (graceful degradation) ===

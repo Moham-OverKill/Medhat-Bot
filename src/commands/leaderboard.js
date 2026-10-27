@@ -61,6 +61,38 @@ export const data = new SlashCommandBuilder()
 // In-memory cache for leaderboard configurations to prevent redundant DB reads during activity tracking
 export const leaderboardConfigCache = new Map();
 
+// In-memory cache for departed guild members to eliminate 404 (Unknown Member) and 429 rate limit errors
+// Key: `${guildId}:${userId}` -> timestamp (ms)
+export const departedGuildMembersCache = new Map();
+export const DEPARTED_MEMBER_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+// In-memory cache for external Discord user profiles (username and avatar)
+// Key: `userId` -> { username: string, avatarUrl: string | null, fetchedAt: number }
+export const externalUserProfileCache = new Map();
+export const EXTERNAL_USER_PROFILE_TTL = 12 * 60 * 60 * 1000; // 12 hours
+
+/**
+ * Mark a member as departed from a guild
+ */
+export function markMemberDeparted(guildId, userId) {
+    if (!guildId || !userId) return;
+    departedGuildMembersCache.set(`${guildId}:${userId}`, Date.now());
+    if (departedGuildMembersCache.size > 10000) {
+        const cutoff = Date.now() - DEPARTED_MEMBER_TTL;
+        for (const [key, ts] of departedGuildMembersCache.entries()) {
+            if (ts < cutoff) departedGuildMembersCache.delete(key);
+        }
+    }
+}
+
+/**
+ * Clear a member from departed cache (e.g. upon re-joining)
+ */
+export function clearMemberDeparted(guildId, userId) {
+    if (!guildId || !userId) return;
+    departedGuildMembersCache.delete(`${guildId}:${userId}`);
+}
+
 /**
  * Preload all leaderboard configurations into memory on startup
  */
@@ -165,6 +197,21 @@ export async function setLeaderboardConfig(guildId, config) {
 }
 
 /**
+ * Delete leaderboard configuration from database and cache (used when guild is departed or configuration is removed)
+ */
+export async function deleteLeaderboardConfig(guildId) {
+    if (!guildId) return;
+    leaderboardConfigCache.delete(guildId);
+    try {
+        const pool = getPool();
+        await pool.query('DELETE FROM leaderboard_config WHERE guild_id = $1', [guildId]);
+        sysLog('Leaderboard Config Pruned', { guildId, detail: 'Stale configuration purged from database' });
+    } catch (err) {
+        sysWarn('Failed to delete leaderboard config from database', { guildId, error: err.message });
+    }
+}
+
+/**
  * Helper to fetch usernames for leaderboard data
  * Resolves user IDs to display names (or username) for clean text rendering
  */
@@ -176,13 +223,27 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return slicedData.map(d => ({ ...d, displayName: d.username || 'Unknown' }));
 
+    const now = Date.now();
+
     // Warm up member cache targeted for displayed leaderboard entries
+    // Skip members already in guild member cache or confirmed departed within TTL
     const targetUids = slicedData
         .map(item => item[userIdKey] || item.userId)
-        .filter(uid => uid && !guild.members.cache.has(uid));
+        .filter(uid => {
+            if (!uid || guild.members.cache.has(uid)) return false;
+            const departedAt = departedGuildMembersCache.get(`${guildId}:${uid}`);
+            if (departedAt && (now - departedAt) < DEPARTED_MEMBER_TTL) return false;
+            return true;
+        });
 
     if (targetUids.length > 0) {
         await guild.members.fetch({ user: targetUids }).catch(() => null);
+        // Any requested user that was not returned by bulk fetch is confirmed departed
+        for (const uid of targetUids) {
+            if (!guild.members.cache.has(uid)) {
+                markMemberDeparted(guildId, uid);
+            }
+        }
     }
 
     const enriched = await Promise.all(slicedData.map(async (item) => {
@@ -190,23 +251,65 @@ async function enrichUserData(client, guildId, data, userIdKey = 'user_id') {
         let name = item.username || 'Unknown';
         let avatarUrl = null;
         let roleColor = null;
-        try {
-            const member = guild.members.cache.get(uid) || await guild.members.fetch(uid).catch(() => null);
-            if (member) {
-                // Prioritize user's Discord username over nickname as requested, with fallback
-                name = member.user?.username || member.displayName || item.username || 'Unknown User';
-                avatarUrl = member.displayAvatarURL({ extension: 'png', size: 256 });
-                if (member.displayHexColor && member.displayHexColor !== '#000000') {
-                    roleColor = member.displayHexColor;
-                }
-            } else {
-                const user = await client.users.fetch(uid).catch(() => null);
-                name = user?.username || user?.displayName || item.username || 'Unknown User';
-                avatarUrl = user?.displayAvatarURL({ extension: 'png', size: 256 }) || null;
+
+        // Fast path: member is present in the guild cache
+        const member = guild.members.cache.get(uid);
+        if (member) {
+            // Prioritize user's Discord username over nickname as requested, with fallback
+            name = member.user?.username || member.displayName || item.username || 'Unknown User';
+            avatarUrl = member.displayAvatarURL({ extension: 'png', size: 256 });
+            if (member.displayHexColor && member.displayHexColor !== '#000000') {
+                roleColor = member.displayHexColor;
             }
-        } catch {
-            name = item.username || 'Unknown User';
+        } else {
+            // Member is absent from guild cache -> confirmed departed from this guild
+            markMemberDeparted(guildId, uid);
+
+            // Check client.users cache first (0 network calls)
+            const cachedUser = client.users.cache.get(uid);
+            if (cachedUser) {
+                name = cachedUser.username || cachedUser.displayName || item.username || 'Unknown User';
+                avatarUrl = cachedUser.displayAvatarURL({ extension: 'png', size: 256 });
+            } else {
+                // Check in-memory external profile cache (0 network calls)
+                const profile = externalUserProfileCache.get(uid);
+                if (profile && (now - profile.fetchedAt) < EXTERNAL_USER_PROFILE_TTL) {
+                    name = profile.username || item.username || 'Unknown User';
+                    avatarUrl = profile.avatarUrl;
+                } else {
+                    // Fetch global user profile once and cache to prevent repeated REST calls
+                    try {
+                        const user = await client.users.fetch(uid).catch(() => null);
+                        if (user) {
+                            name = user.username || user.displayName || item.username || 'Unknown User';
+                            avatarUrl = user.displayAvatarURL({ extension: 'png', size: 256 });
+                            externalUserProfileCache.set(uid, {
+                                username: name,
+                                avatarUrl,
+                                fetchedAt: now
+                            });
+                        } else {
+                            name = item.username || 'Unknown User';
+                            avatarUrl = null;
+                            externalUserProfileCache.set(uid, {
+                                username: name,
+                                avatarUrl: null,
+                                fetchedAt: now
+                            });
+                        }
+                    } catch {
+                        name = item.username || 'Unknown User';
+                        avatarUrl = null;
+                        externalUserProfileCache.set(uid, {
+                            username: name,
+                            avatarUrl: null,
+                            fetchedAt: now
+                        });
+                    }
+                }
+            }
         }
+
         // Sanitize and normalize name: collapse multiple spaces, trim, and normalize special font glyphs
         const sanitizedName = normalizeDisplayName(name);
         return {
@@ -870,7 +973,19 @@ export async function cleanupGuildLeaderboards(client, guildId) {
     const config = await getLeaderboardConfig(guildId);
     if (!config) return { cleanedCount: 0 };
 
-    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    let guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+        try {
+            guild = await client.guilds.fetch(guildId);
+        } catch (err) {
+            if (err?.code === 10004 || err?.status === 404) {
+                sysWarn('Pruning stale leaderboard config for departed guild during cleanup', { guild: guildId, error: err.message });
+                await deleteLeaderboardConfig(guildId);
+                return { cleanedCount: 0 };
+            }
+            return { cleanedCount: 0 };
+        }
+    }
     if (!guild) return { cleanedCount: 0 };
 
     const channelKeys = [
@@ -894,7 +1009,24 @@ export async function cleanupGuildLeaderboards(client, guildId) {
     let configUpdated = false;
 
     for (const [cid, types] of channelsMap.entries()) {
-        const channel = guild.channels.cache.get(cid) || await guild.channels.fetch(cid).catch(() => null);
+        let channel = guild.channels.cache.get(cid);
+        if (!channel) {
+            try {
+                channel = await guild.channels.fetch(cid);
+            } catch (err) {
+                if (err?.code === 10003 || err?.status === 404) {
+                    sysWarn('Pruning stale leaderboard channel config during cleanup', { guild: guildId, channel: cid });
+                    for (const t of types) {
+                        config[t.configChannel] = null;
+                        config[t.configTitleMsg] = null;
+                        config[t.configMsg] = null;
+                    }
+                    configUpdated = true;
+                    continue;
+                }
+                continue;
+            }
+        }
         if (!channel) continue;
 
         const res = await cleanLeaderboardChannel(channel, client, types, config, guildId);
@@ -1044,7 +1176,19 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         const config = await getLeaderboardConfig(guildId);
         if (!config) return;
 
-        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+        let guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            try {
+                guild = await client.guilds.fetch(guildId);
+            } catch (err) {
+                if (err?.code === 10004 || err?.status === 404) {
+                    sysWarn('Pruning stale leaderboard config for departed guild during sync', { guild: guildId, error: err.message });
+                    await deleteLeaderboardConfig(guildId);
+                    return;
+                }
+                return;
+            }
+        }
         if (!guild) return;
 
         const channelKeys = [
@@ -1074,7 +1218,24 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         let configChangedOverall = false;
 
         for (const [cid, typesForChannel] of channelGroups.entries()) {
-            const channel = guild.channels.cache.get(cid) || await guild.channels.fetch(cid).catch(() => null);
+            let channel = guild.channels.cache.get(cid);
+            if (!channel) {
+                try {
+                    channel = await guild.channels.fetch(cid);
+                } catch (err) {
+                    if (err?.code === 10003 || err?.status === 404) {
+                        sysWarn('Pruning stale leaderboard channel config for deleted channel', { guild: guildId, channel: cid });
+                        for (const t of typesForChannel) {
+                            config[t.configChannel] = null;
+                            config[t.configTitleMsg] = null;
+                            config[t.configMsg] = null;
+                        }
+                        configChangedOverall = true;
+                        continue;
+                    }
+                    continue;
+                }
+            }
             if (!channel) continue;
 
             // STEP 1: Verify all required permissions upfront before sending or editing anything
@@ -1181,10 +1342,10 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                     let cardPayload;
                     if (t.type === 'daily_coins') {
                         const { getTopActiveUsers } = await import('../activity/tracker.js');
-                        const rawData = await getTopActiveUsers(guildId, 50, guild);
+                        const rawData = activityData || await getTopActiveUsers(guildId, 50, guild);
                         const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
                         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
-                        const liveMvpRecipients = rawData.slice(0, winnersCount).map(u => u.userId);
+                        const liveMvpRecipients = (mvpRecipients && mvpRecipients.length > 0) ? mvpRecipients : rawData.slice(0, winnersCount).map(u => u.userId);
                         cardPayload = await buildLeaderboardMessagePayload({
                             category: 'daily_coins',
                             data: enrichedData,

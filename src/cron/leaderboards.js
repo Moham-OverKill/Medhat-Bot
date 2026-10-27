@@ -57,7 +57,27 @@ async function runHourlyRefresh(client, isStartup = false) {
     });
     
     const configs = await loadGuildConfigs();
-    const guildIds = Object.keys(configs);
+    const candidateGuildIds = Object.keys(configs || {});
+    const { deleteLeaderboardConfig } = await import('../commands/leaderboard.js');
+
+    // Filter to guilds where client is currently present to avoid redundant REST calls and 404s
+    const guildIds = [];
+    for (const gid of candidateGuildIds) {
+        if (client.guilds?.cache?.has?.(gid)) {
+            guildIds.push(gid);
+        } else {
+            // Not in cache; check if the guild is still accessible before dispatching
+            try {
+                const g = await client.guilds.fetch(gid);
+                if (g) guildIds.push(gid);
+            } catch (err) {
+                if (err?.code === 10004 || err?.status === 404) {
+                    sysWarn('Departed guild detected during hourly refresh; pruning stale leaderboard config', { guild: gid });
+                    await deleteLeaderboardConfig(gid).catch(() => {});
+                }
+            }
+        }
+    }
     
     // ── MIDNIGHT STEP 1: Flush voice time so final minutes are counted for KotH ──
     if (isMidnight) {

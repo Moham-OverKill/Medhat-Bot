@@ -290,7 +290,7 @@ function resolveNextAward(config, { nowMs = Date.now(), force = false } = {}) {
  * will abort the whole cycle.
  */
 export async function runMvpCycle(client, guildId) {
-  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return;
 
   sysLog('MVP Daily Cycle Triggered', { guild: guildId });
@@ -802,7 +802,7 @@ export async function awardMvp(client, guildId, options = {}) {
   }
 
   // ========== STEP 1: FETCH CONFIG ==========
-  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) {
     sysError('Award Ceremony Blocked', 'Guild not found', { guild: guildId });
     return { winners: [], error: 'Guild not found' };
@@ -1042,7 +1042,7 @@ export async function reconcileMvpHolders(client, guildId) {
   const config = await getGuildConfig(guildId);
   if (!config?.mvpRoleId) return { removedCount: 0, remainingCount: 0 };
 
-  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return { removedCount: 0, remainingCount: 0 };
 
   const role = await guild.roles.fetch(config.mvpRoleId).catch(() => null);
