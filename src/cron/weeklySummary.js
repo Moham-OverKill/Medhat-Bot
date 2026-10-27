@@ -382,6 +382,23 @@ export async function dispatchWeeklyActivitySummaries(client) {
     const records = queryResult.rows;
     let dispatchedCount = 0;
 
+    // Bulk pre-warm member cache per guild to avoid individual fetch rate limits
+    const uncachedByGuild = new Map();
+    for (const record of records) {
+      if (!record.guild_id || !record.user_id) continue;
+      const guild = client.guilds.cache.get(record.guild_id);
+      if (guild && !guild.members.cache.has(record.user_id)) {
+        if (!uncachedByGuild.has(record.guild_id)) uncachedByGuild.set(record.guild_id, []);
+        uncachedByGuild.get(record.guild_id).push(record.user_id);
+      }
+    }
+    for (const [guildId, uids] of uncachedByGuild.entries()) {
+      const guild = client.guilds.cache.get(guildId);
+      if (guild && uids.length > 0) {
+        await guild.members.fetch({ user: uids }).catch(() => null);
+      }
+    }
+
     for (const record of records) {
       // Guard: Skip users with zero activity across all tracked metrics
       const totalActivity =
@@ -399,8 +416,7 @@ export async function dispatchWeeklyActivitySummaries(client) {
       if (!guild) continue;
 
       // Verify the user is still in the server
-      const isMember = guild.members.cache.has(record.user_id) ||
-        await guild.members.fetch(record.user_id).then(() => true).catch(() => false);
+      const isMember = guild.members.cache.has(record.user_id);
       if (!isMember) continue;
 
       const user = await client.users.fetch(record.user_id).catch(() => null);

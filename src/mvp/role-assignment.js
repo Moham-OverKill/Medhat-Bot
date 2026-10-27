@@ -146,18 +146,21 @@ async function validateRole(guild, roleId) {
  */
 async function resolveValidGuildWinners(guild, candidates, targetCount) {
     const validMembers = [];
+    // Bulk warm up candidates not in cache to avoid sequential REST member fetches
+    const uncachedIds = candidates
+        .map(c => typeof c === 'string' ? c : c?.user_id)
+        .filter(id => id && !guild.members.cache.has(id));
+    if (uncachedIds.length > 0) {
+        await guild.members.fetch({ user: uncachedIds }).catch(() => null);
+    }
+
     for (const candidate of candidates) {
         if (validMembers.length >= targetCount) break;
         const userId = typeof candidate === 'string' ? candidate : candidate.user_id;
         if (!userId) continue;
 
         try {
-            const cachedMember = guild.members.cache.get(userId);
-            const member = cachedMember || await guild.members.fetch(userId).catch(() => null);
-            if (!cachedMember) {
-                // Yield 50ms between uncached API fetches to keep Discord REST buckets healthy
-                await sleep(50);
-            }
+            const member = guild.members.cache.get(userId);
             if (member && !member.user.bot) {
                 validMembers.push(member);
             }
