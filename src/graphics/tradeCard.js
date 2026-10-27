@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas';
 import { performance } from 'node:perf_hooks';
-import { sysWarn, sysLog } from '../utils/logger.js';
+import { logger, sysWarn, sysLog } from '../utils/logger.js';
 import { COIN_NAME } from '../shared.js';
 import {
   fontStack,
@@ -804,12 +804,12 @@ export async function renderTradeCard({
   });
 
   const buffer = await canvas.encode('png');
-  const duration = Math.round(performance.now() - renderStart);
+  const durationMs = Math.round(performance.now() - renderStart);
   const detailStr = `Status: ${status} | Direction: ${direction} | H: ${baseHeight}px`;
-  if (duration > 500) {
-    sysWarn('Slow Trade Card Render', { detail: detailStr, duration });
+  if (durationMs > 500) {
+    logger.warn('RENDER', `Slow trade card rendered in ${durationMs}ms`, { detail: detailStr, durationMs });
   } else {
-    sysLog('Trade Card Rendered', { detail: detailStr, duration });
+    logger.info('RENDER', `Trade card rendered in ${durationMs}ms`, { detail: detailStr, durationMs });
   }
 
   return buffer;

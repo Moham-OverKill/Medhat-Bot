@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas';
 import { performance } from 'node:perf_hooks';
-import { sysWarn, sysLog } from '../utils/logger.js';
+import { logger, sysWarn, sysLog } from '../utils/logger.js';
 import crypto from 'node:crypto';
 import { COIN_NAME } from '../shared.js';
 import {
@@ -429,11 +429,11 @@ export async function generateProfileCard(profileData) {
   ctx.fillText(xpDetailed, barX + barWidth - 4, textY);
 
   const buffer = await canvas.encode('png');
-  const duration = Math.round(performance.now() - renderStart);
-  if (duration > 500) {
-    sysWarn('Slow Profile Card Render', { detail: `@${username}`, duration });
+  const durationMs = Math.round(performance.now() - renderStart);
+  if (durationMs > 500) {
+    logger.warn('RENDER', `Slow profile card rendered in ${durationMs}ms for @${username}`, { user: username, durationMs });
   } else {
-    sysLog('Profile Card Rendered', { detail: `@${username}`, duration });
+    logger.info('RENDER', `Profile card rendered in ${durationMs}ms for @${username}`, { user: username, durationMs });
   }
 
   if (profileCardBufferCache.size >= PROFILE_BUFFER_CACHE_MAX) {

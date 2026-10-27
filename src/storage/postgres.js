@@ -46,9 +46,16 @@ function instrumentClientQuery(originalQuery) {
                         upperSql.startsWith('ROLLBACK');
 
     if (isTxControl) {
-      if (upperSql.startsWith('BEGIN')) logger.debug('DATABASE', 'BEGIN TRANSACTION');
-      else if (upperSql.startsWith('COMMIT')) logger.debug('DATABASE', 'COMMIT TRANSACTION');
-      else if (upperSql.startsWith('ROLLBACK')) logger.debug('DATABASE', 'ROLLBACK TRANSACTION');
+      if (upperSql.startsWith('BEGIN')) {
+        this._txStart = performance.now();
+        logger.debug('DATABASE', 'BEGIN TRANSACTION');
+      } else if (upperSql.startsWith('COMMIT')) {
+        const txDuration = this._txStart ? Math.round(performance.now() - this._txStart) : null;
+        logger.debug('DATABASE', `COMMIT TRANSACTION${txDuration !== null ? ` completed in ${txDuration}ms` : ''}`);
+      } else if (upperSql.startsWith('ROLLBACK')) {
+        const txDuration = this._txStart ? Math.round(performance.now() - this._txStart) : null;
+        logger.warn('DATABASE', `ROLLBACK TRANSACTION${txDuration !== null ? ` executed after ${txDuration}ms` : ''}`);
+      }
     }
 
     try {
@@ -67,13 +74,13 @@ function instrumentClientQuery(originalQuery) {
           });
         }
 
-        logger.info('DATABASE', `DB Change ${mutationType}: ${cleanSql}`, {
+        logger.info('DATABASE', `DB Change ${mutationType}: ${cleanSql} in ${durationMs}ms`, {
           affectedRows: rowCount,
           durationMs,
           ...(paramsSummary ? { params: paramsSummary } : {})
         });
       } else if (!isTxControl && durationMs > SLOW_QUERY_THRESHOLD_MS) {
-        logger.warn('DATABASE', 'Slow Database Query Detected', {
+        logger.warn('DATABASE', `Slow Database Query Detected (${durationMs}ms): ${cleanSql}`, {
           durationMs,
           sql: cleanSql,
           rowCount: result?.rowCount

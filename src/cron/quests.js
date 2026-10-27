@@ -4,7 +4,7 @@ import { getPool } from '../storage/postgres.js';
 import { getQuests, resetGuildQuestProgress } from '../quests/quests.js';
 import { syncQuestChannelCache } from '../activity/index.js';
 import { getCairoHour, getTodayCairo } from '../utils/time.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 
 export function startQuestScheduler(client) {
   // Reliable node-cron running at minute 0 of every hour in Africa/Cairo timezone
@@ -27,6 +27,7 @@ export function startQuestScheduler(client) {
  * Scheduled task to rotate quests for all guilds independently
  */
 async function checkQuests(client, forceCheck = false) {
+  const cycleStart = performance.now();
   const configs = await loadGuildConfigs();
   const currentCairoHour = getCairoHour();
   const todayCairo = getTodayCairo();
@@ -140,6 +141,13 @@ async function checkQuests(client, forceCheck = false) {
       sysError('Batch Quest Notification Dispatch Failed', dmErr);
     }
   }
+
+  const durationMs = Math.round(performance.now() - cycleStart);
+  logger.info('CRON:QUESTS', `Quest rotation check completed in ${durationMs}ms`, {
+    rotatedCount: rotatedGuilds.length,
+    forceCheck,
+    durationMs
+  });
 }
 
 /**

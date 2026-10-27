@@ -3,7 +3,7 @@ import { getTopActiveUsers } from '../activity/tracker.js';
 import { getActiveMvps, setActiveMvps } from '../storage/activeMvps.js';
 import { setMvpCache } from './mvpCache.js';
 import { updateBalance } from '../economy/service.js';
-import { sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { logger, sendLog, sysLog, sysWarn, sysError } from '../utils/logger.js';
 import { COIN_EMOJI, executeWithRetry, hasAnyDangerousPermission } from '../shared.js';
 import { query } from '../storage/postgres.js';
 
@@ -32,6 +32,7 @@ function acquireKothLock(guildId) {
  * @param {string} guildId
  */
 export async function runKingOfHillCycle(client, guildId, options = {}) {
+  const cycleStart = performance.now();
   const { payCoins = true } = options;
   const lock = acquireKothLock(guildId);
   if (!lock) {
@@ -239,9 +240,13 @@ export async function runKingOfHillCycle(client, guildId, options = {}) {
       sendLog(guildObj, 'economy', 'orange', '⚔️ MVP Hourly Cycle', logLines.join('\n'));
     }
 
-    sysLog('KotH Cycle Complete', {
-      guild: guildId,
-      detail: `Crowned: ${crowned.length} | Dethroned: ${dethroned.length} | Paid: ${paid.length}`
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('MVP', `KotH cycle for guild ${guildId} completed in ${durationMs}ms`, {
+      guildId,
+      crowned: crowned.length,
+      dethroned: dethroned.length,
+      paid: paid.length,
+      durationMs
     });
 
   } catch (error) {

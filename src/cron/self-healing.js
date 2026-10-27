@@ -1,6 +1,6 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 import { refreshShopMessageUI } from '../commands/bank.js';
 import { publishOrUpdateHub } from '../commands/interface.js';
 import { getColorRoles } from '../storage/colors.js';
@@ -324,11 +324,13 @@ export function startStartupSelfHealing(client) {
     if (isSelfHealingRunning) return;
     isSelfHealingRunning = true;
     try {
+      const healStart = performance.now();
       sysLog('Startup Self-Healing Initiated', { detail: 'Scanning shop posts, community hub interfaces, and color panels' });
       await healShopPosts(client);
       await healHubInterfaces(client);
       await healColorPanels(client);
-      sysLog('Startup Self-Healing Complete', { detail: 'All posted shop items, community hub interfaces, and color panels verified and synchronized' });
+      const durationMs = Math.round(performance.now() - healStart);
+      logger.info('SERVER', `Startup self-healing completed in ${durationMs}ms`, { durationMs });
     } catch (err) {
       sysError('Startup Self-Healing Failed', err);
     } finally {

@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { EmbedBuilder } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 
 export const EMOJI_INCREASE = '<:increase:1561015241981169715>';
 export const EMOJI_DECREASE = '<:decrease:1561015251028287629>';
@@ -345,6 +345,7 @@ export async function recordWeeklyXp(guildId, userId, username = null, xp = 0) {
  * and resets weekly activity counts.
  */
 export async function dispatchWeeklyActivitySummaries(client) {
+  const cycleStart = performance.now();
   sysLog('Weekly Activity Summary Dispatch Started', { detail: 'Beginning weekly activity DM notifications' });
 
   try {
@@ -467,8 +468,11 @@ export async function dispatchWeeklyActivitySummaries(client) {
       clientDb.release();
     }
 
-    sysLog('Weekly Activity Summary Dispatch Complete', {
-      detail: `Successfully sent ${dispatchedCount} DM summaries out of ${records.length} opted-in users. Activity ledger reset.`
+    const durationMs = Math.round(performance.now() - cycleStart);
+    logger.info('CRON:SUMMARY', `Weekly activity summary dispatch completed in ${durationMs}ms`, {
+      dispatchedCount,
+      totalOptedIn: records.length,
+      durationMs
     });
   } catch (error) {
     sysError('Weekly Activity Summary Dispatch Failed', error);

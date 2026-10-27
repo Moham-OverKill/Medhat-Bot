@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
-import { sendLog, sysWarn, sysError, sysLog, checkLeaderboardPermissions } from '../utils/logger.js';
+import { logger, sendLog, sysWarn, sysError, sysLog, checkLeaderboardPermissions } from '../utils/logger.js';
 import { renderLeaderboardCard, LEADERBOARD_THEMES } from '../graphics/leaderboardCard.js';
 import { normalizeDisplayName } from '../graphics/shared.js';
 
@@ -1038,6 +1038,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         return;
     }
     leaderboardUpdateLocks.add(guildId);
+    const syncStart = performance.now();
 
     try {
         const config = await getLeaderboardConfig(guildId);
@@ -1271,6 +1272,9 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
         if (configChangedOverall) {
             await setLeaderboardConfig(guildId, config);
         }
+
+        const durationMs = Math.round(performance.now() - syncStart);
+        logger.info('SERVER', `Leaderboard synchronization for guild ${guildId} completed in ${durationMs}ms`, { guildId, durationMs });
     } finally {
         leaderboardUpdateLocks.delete(guildId);
     }
