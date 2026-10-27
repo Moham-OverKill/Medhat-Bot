@@ -3,6 +3,7 @@ import { sanitizeError, runInGuildContext } from '../shared.js';
 import { logger, sysLog, sysError } from '../utils/logger.js';
 import { recordWeeklyMessages, isWeeklySummaryActiveForGuild } from '../cron/weeklySummary.js';
 import { configCache as masterConfigCache } from '../storage/config.js';
+import { isActivityIgnored } from '../middleware/organize.js';
 import {
   isDailyLeaderboardActive,
   departedGuildMembersCache,
@@ -292,7 +293,6 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   // 1. Check if channel is ignored for activity
   if (channelId) {
     try {
-      const { isActivityIgnored } = await import('../middleware/organize.js');
       if (await isActivityIgnored(guildId, channelId)) return false;
     } catch {}
   }
@@ -739,8 +739,6 @@ export async function voicePointsTick(client) {
   const now = Date.now();
 
   try {
-    const { isActivityIgnored } = await import('../middleware/organize.js');
-
     // 1. SELF-HEALING SWEEP: Scan voice channels to resume valid users who were paused
     for (const [guildId, guild] of client.guilds.cache) {
       if (!isTrackingRequiredForGuild(guildId)) continue;
@@ -790,7 +788,14 @@ export async function voicePointsTick(client) {
           return;
         }
 
-        let member = guild.members.cache.get(row.user_id);
+        // Fast in-memory voice presence pre-check from guild voiceStates cache
+        const voiceState = guild.voiceStates.cache.get(row.user_id);
+        if (!voiceState || !voiceState.channelId) {
+          await pauseVoiceTracking(guild, row.user_id, row.username, voiceState || null);
+          return;
+        }
+
+        let member = voiceState.member || guild.members.cache.get(row.user_id);
         if (!member) {
           const departedAt = departedGuildMembersCache.get(`${row.guild_id}:${row.user_id}`);
           if (departedAt && (Date.now() - departedAt) < DEPARTED_MEMBER_TTL) {
@@ -806,13 +811,13 @@ export async function voicePointsTick(client) {
           }
         }
 
-        const voiceState = member.voice;
-        if (!voiceState || !voiceState.channel) {
+        const voiceChannel = voiceState.channel || guild.channels.cache.get(voiceState.channelId);
+        if (!voiceChannel) {
           await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
           return;
         }
 
-        if (await isActivityIgnored(row.guild_id, voiceState.channel.id)) {
+        if (await isActivityIgnored(row.guild_id, voiceState.channelId)) {
           await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
           return;
         }
@@ -846,13 +851,13 @@ export async function voicePointsTick(client) {
           return;
         }
 
-        if (noAfk && guild.afkChannelId && voiceState.channel.id === guild.afkChannelId) {
+        if (noAfk && guild.afkChannelId && voiceChannel.id === guild.afkChannelId) {
           await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
           return;
         }
 
         if (minHumans) {
-          if (countActiveVoiceHumans(voiceState.channel) < 2) {
+          if (countActiveVoiceHumans(voiceChannel) < 2) {
             await pauseVoiceTracking(guild, row.user_id, row.username, voiceState);
             return;
           }

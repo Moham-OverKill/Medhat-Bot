@@ -548,8 +548,14 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
     if (req === 'REQUIRE_BOOSTER') {
       // Check premiumSince (native booster status) or the guild booster role
       const boosterRoleId = member.guild?.roles?.premiumSubscriberRole?.id;
-      const isBooster = (member.premiumSince !== null && member.premiumSince !== undefined) ||
-        (boosterRoleId && member.roles.cache.has(boosterRoleId));
+      const hasBoosterRole = boosterRoleId && (
+        member.roles?.cache?.has
+          ? member.roles.cache.has(boosterRoleId)
+          : (Array.isArray(member._roles)
+              ? member._roles.includes(boosterRoleId)
+              : (Array.isArray(member.roles) ? member.roles.includes(boosterRoleId) : false))
+      );
+      const isBooster = (member.premiumSince !== null && member.premiumSince !== undefined) || hasBoosterRole;
       if (!isBooster) {
         missingBooster = true;
       }
@@ -559,7 +565,12 @@ export async function checkPrerequisites(member, guildId, requiredItems, client 
     // 1a. Legacy booster format: "booster:<roleId>"
     if (typeof req === 'string' && req.startsWith('booster:')) {
       const roleId = req.split(':')[1];
-      if (!member.roles.cache.has(roleId)) {
+      const hasRole = member.roles?.cache?.has
+        ? member.roles.cache.has(roleId)
+        : (Array.isArray(member._roles)
+            ? member._roles.includes(roleId)
+            : (Array.isArray(member.roles) ? member.roles.includes(roleId) : false));
+      if (!hasRole) {
         missingBooster = true;
       }
       continue;

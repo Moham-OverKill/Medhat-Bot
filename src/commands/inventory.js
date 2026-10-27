@@ -13,8 +13,8 @@ export async function handleInventoryCommand(interaction) {
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
 
-  let member = interaction.member;
-  if ((!member || !member.roles?.cache) && interaction.guild) {
+  let member = interaction.member || interaction.guild?.members.cache.get(userId);
+  if (!member && interaction.guild) {
     member = await interaction.guild.members.fetch(userId).catch(() => interaction.member);
   }
 
