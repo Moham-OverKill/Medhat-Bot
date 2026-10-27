@@ -1142,15 +1142,17 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
       // Strictly bound to legitimate earned level based on accumulated XP
       const reachedLevel = xpLevel;
 
-      // 1. Purge ghost/unearned claims above legitimate earned level
-      await pool.query(
-        `DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed > $3`,
-        [guildId, uid, reachedLevel]
-      );
-      await pool.query(
-        `DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND level > $3`,
-        [guildId, uid, reachedLevel]
-      );
+      // 1. Purge ghost/unearned claims above legitimate earned level only if maxClaimLevel exceeded reachedLevel
+      if (maxClaimLevel > reachedLevel) {
+        await pool.query(
+          `DELETE FROM user_pass_claims WHERE guild_id = $1 AND user_id = $2 AND level_claimed > $3`,
+          [guildId, uid, reachedLevel]
+        );
+        await pool.query(
+          `DELETE FROM user_pass_reward_claims WHERE guild_id = $1 AND user_id = $2 AND level > $3`,
+          [guildId, uid, reachedLevel]
+        );
+      }
 
       if (reachedLevel <= 0) {
         if (userId) {
@@ -1223,19 +1225,29 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             missingReconciledCount++;
           }
 
-          // Ensure ledger records are synchronized
-          await pool.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (guild_id, user_id, reward_id)
-             DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
-            [guildId, uid, br.level, br.reward_id, targetQty]
-          );
-          await pool.query(
-            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [uid, guildId, br.level]
-          );
+          // Ensure ledger records are synchronized only if missing
+          const claimRewardKey = `${uid}_${br.reward_id}`;
+          const currentClaimQty = claimedRewardMap.get(claimRewardKey) || 0;
+          if (currentClaimQty < targetQty) {
+            await pool.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
+              [guildId, uid, br.level, br.reward_id, targetQty]
+            );
+            claimedRewardMap.set(claimRewardKey, targetQty);
+          }
+
+          const claimLevelKey = `${uid}_${br.level}`;
+          if (!claimedLegacyLevels.has(claimLevelKey)) {
+            await pool.query(
+              `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+               VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+              [uid, guildId, br.level]
+            );
+            claimedLegacyLevels.add(claimLevelKey);
+          }
 
         } else if (br.reward_type === 'chest' && br.loot_box_id) {
           if (!br.valid_box_id) continue;
@@ -1338,19 +1350,29 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             missingReconciledCount++;
           }
 
-          // Ensure ledger records are synchronized
-          await pool.query(
-            `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (guild_id, user_id, reward_id)
-             DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
-            [guildId, uid, br.level, br.reward_id, targetQty]
-          );
-          await pool.query(
-            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [uid, guildId, br.level]
-          );
+          // Ensure ledger records are synchronized only if missing
+          const claimRewardKey = `${uid}_${br.reward_id}`;
+          const currentClaimQty = claimedRewardMap.get(claimRewardKey) || 0;
+          if (currentClaimQty < targetQty) {
+            await pool.query(
+              `INSERT INTO user_pass_reward_claims (guild_id, user_id, level, reward_id, quantity_claimed)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (guild_id, user_id, reward_id)
+               DO UPDATE SET quantity_claimed = GREATEST(user_pass_reward_claims.quantity_claimed, EXCLUDED.quantity_claimed)`,
+              [guildId, uid, br.level, br.reward_id, targetQty]
+            );
+            claimedRewardMap.set(claimRewardKey, targetQty);
+          }
+
+          const claimLevelKey = `${uid}_${br.level}`;
+          if (!claimedLegacyLevels.has(claimLevelKey)) {
+            await pool.query(
+              `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+               VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+              [uid, guildId, br.level]
+            );
+            claimedLegacyLevels.add(claimLevelKey);
+          }
         }
       }
 
@@ -1457,11 +1479,15 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
           missingReconciledCount++;
         }
 
-        await pool.query(
-          `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
-           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-          [uid, guildId, bc.level]
-        );
+        const legacyLevelKey = `${uid}_${bc.level}`;
+        if (!claimedLegacyLevels.has(legacyLevelKey)) {
+          await pool.query(
+            `INSERT INTO user_pass_claims (user_id, guild_id, level_claimed)
+             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+            [uid, guildId, bc.level]
+          );
+          claimedLegacyLevels.add(legacyLevelKey);
+        }
       }
 
       if (userId && missingReconciledCount > 0) {

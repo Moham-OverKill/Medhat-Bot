@@ -121,18 +121,55 @@ function serializeContext(context) {
   }
 }
 
+let currentLogSec = 0;
+let logsInCurrentSec = 0;
+let throttledLogsInSec = 0;
+let throttleNoticeEmitted = false;
+const MAX_LOGS_PER_SECOND = 40;
+
 /**
  * Write log entry to deployment stdout / stderr stream
  */
 function writeLog(level, moduleName, message, context = null, error = null) {
   if (level < currentLogLevel) return;
 
+  const supportsColor = !process.env.NO_COLOR && (process.stdout.isTTY || process.env.FORCE_COLOR);
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  if (nowSec !== currentLogSec) {
+    if (throttledLogsInSec > 0) {
+      const ts = formatTimestamp();
+      const infoColor = supportsColor ? ANSI.INFO : '';
+      const reset = supportsColor ? ANSI.RESET : '';
+      process.stdout.write(`${ts} ${infoColor}INFO${reset} LOGGER: Log rate stabilized (${throttledLogsInSec} verbose logs throttled in previous second)\n`);
+    }
+    currentLogSec = nowSec;
+    logsInCurrentSec = 0;
+    throttledLogsInSec = 0;
+    throttleNoticeEmitted = false;
+  }
+
+  // Throttle DEBUG, INFO, WARN if exceeding safety limit (40/sec) to protect container stdout
+  if (level < LogLevel.ERROR) {
+    if (logsInCurrentSec >= MAX_LOGS_PER_SECOND) {
+      throttledLogsInSec++;
+      if (!throttleNoticeEmitted) {
+        throttleNoticeEmitted = true;
+        const ts = formatTimestamp();
+        const warnColor = supportsColor ? ANSI.WARN : '';
+        const reset = supportsColor ? ANSI.RESET : '';
+        process.stdout.write(`${ts} ${warnColor}WARN${reset} LOGGER: High-frequency log throttling active (>40 logs/sec limit to protect deployment)\n`);
+      }
+      return;
+    }
+    logsInCurrentSec++;
+  }
+
   const levelName = LOG_LEVEL_NAMES[level] || 'INFO';
   const timestamp = formatTimestamp();
   const cleanModule = (moduleName || 'SYSTEM').toUpperCase().replace(/[\s_]+/g, '-');
   let cleanMsg = typeof message === 'string' ? stripLog(message) : String(message);
 
-  const supportsColor = !process.env.NO_COLOR && (process.stdout.isTTY || process.env.FORCE_COLOR);
   const color = supportsColor ? (ANSI[levelName] || ANSI.INFO) : '';
   const reset = supportsColor ? ANSI.RESET : '';
   const gray = supportsColor ? ANSI.GRAY : '';
@@ -190,6 +227,12 @@ export const logger = {
     } else if (typeof level === 'number') {
       currentLogLevel = level;
     }
+  },
+  _resetRateLimit: () => {
+    currentLogSec = 0;
+    logsInCurrentSec = 0;
+    throttledLogsInSec = 0;
+    throttleNoticeEmitted = false;
   },
   debug: (module, message, context) => writeLog(LogLevel.DEBUG, module, message, context),
   info: (module, message, context) => writeLog(LogLevel.INFO, module, message, context),
