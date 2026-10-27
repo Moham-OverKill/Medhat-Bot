@@ -167,7 +167,7 @@ import { handleNotificationsComponent } from '../commands/notifications.js';
 import { sanitizeError, runInGuildContext, wrapInteractionSafety, safeDeferReply } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
 import { handleInteractionError } from '../utils/errors.js';
-import { logSystemEvent, sysLog, sysError } from '../utils/logger.js';
+import { logger, logSystemEvent, sysLog, sysError } from '../utils/logger.js';
 
 let handlersSetup = false;
 
@@ -275,23 +275,25 @@ export function setupComponentHandlers(client) {
         getGuildConfig(interaction.guildId).catch(() => {});
       }
 
+      const compStart = performance.now();
+
       // --- 0. INTERACTION WATCHDOG & TIMEOUT SHIELD ---
       // Discord enforces a 3.0s hard timeout. At 2.0s, trigger emergency deferral for non-modal components.
       const watchdog = setTimeout(async () => {
         if (!interaction.deferred && !interaction.replied) {
           const detail = interaction.isCommand?.() ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
           if (!isModalOpener(interaction)) {
-            sysLog('Interaction Watchdog Safety Triggered', {
-              user: interaction.user?.tag || interaction.user?.id,
+            logger.warn('COMPONENT', 'Interaction Watchdog Safety Triggered: applying emergency deferral', {
+              userId: interaction.user?.id,
               guildId: interaction.guildId,
-              detail: `Interaction "${detail}" not acknowledged within 2.0s. Applying emergency deferral.`
+              detail
             });
             await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
           } else {
-            sysLog('Latency Notice', {
-              user: interaction.user?.tag || interaction.user?.id,
+            logger.debug('MODAL', 'Modal interaction pending acknowledgment at 2.0s', {
+              userId: interaction.user?.id,
               guildId: interaction.guildId,
-              detail: `Modal interaction "${detail}" pending acknowledgment at 2.0s.`
+              detail
             });
           }
         }
@@ -304,10 +306,9 @@ export function setupComponentHandlers(client) {
       if (actionKey) {
         if (inFlightUserActions.has(actionKey)) {
           clearTimeout(watchdog);
-          sysLog('In-Flight Action Deduplication', {
-            user: interaction.user?.id,
-            guild: interaction.guildId,
-            detail: `Ignored duplicate concurrent click for "${customId}"`
+          logger.debug('COMPONENT', `Ignored duplicate concurrent click for "${customId}"`, {
+            userId: interaction.user?.id,
+            guildId: interaction.guildId
           });
           if (!interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate().catch(() => {});
@@ -320,15 +321,24 @@ export function setupComponentHandlers(client) {
     try {
       // 1. --- INTERACTION WATCHTOWER ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
-        const type = interaction.isButton() ? 'Button' :
-          interaction.isAnySelectMenu() ? 'Menu' :
-            interaction.isModalSubmit() ? 'Modal' : 'Interaction';
-
-        sysLog(`${type} Clicked`, {
-          user: interaction.user,
-          guild: interaction.guild,
-          detail: `CustomID: ${interaction.customId}`
-        });
+        if (interaction.isButton()) {
+          logger.info('COMPONENT', `Button clicked: ${interaction.customId}`, {
+            userId: interaction.user?.id,
+            guildId: interaction.guildId,
+            channelId: interaction.channelId
+          });
+        } else if (interaction.isAnySelectMenu()) {
+          logger.info('COMPONENT', `Menu selected: ${interaction.customId}`, {
+            values: interaction.values,
+            userId: interaction.user?.id,
+            guildId: interaction.guildId
+          });
+        } else if (interaction.isModalSubmit()) {
+          logger.info('MODAL', `Modal submitted: ${interaction.customId}`, {
+            userId: interaction.user?.id,
+            guildId: interaction.guildId
+          });
+        }
       }
       // --- SECURITY GUARDRAIL: CONTINUOUS ADMIN VERIFICATION (ZERO TRUST) ---
       if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
@@ -914,10 +924,24 @@ export function setupComponentHandlers(client) {
         inFlightUserActions.delete(actionKey);
       }
       clearTimeout(watchdog);
+      if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
+        const durationMs = Math.round(performance.now() - compStart);
+        const moduleType = interaction.isModalSubmit() ? 'MODAL' : 'COMPONENT';
+        logger.info(moduleType, `${interaction.customId || 'Interaction'} completed in ${durationMs}ms`, {
+          durationMs,
+          userId: interaction?.user?.id,
+          guildId: interaction?.guildId
+        });
+      }
     }
   });
 });
 
   handlersSetup = true;
-  sysLog('Infrastructure Audit', { detail: 'Component handlers set up' });
+  logger.info('STARTUP', 'Registered component handlers and modal listeners', {
+    prefixHandlers: [
+      'settings_*', 'shop_*', 'bank_*', 'inventory_*', 'mvp_*',
+      'quests_*', 'rewards_*', 'colors_*', 'trade_*', 'pass_*', 'admin_*'
+    ]
+  });
 }

@@ -30,7 +30,7 @@ import { loadAllLeaderboardConfigs } from './commands/leaderboard.js';
 import { setupComponentHandlers } from './components/handlers.js';
 import { sanitizeError, formatGuildForLog, runInGuildContext, wrapInteractionSafety, safeDeferReply } from './shared.js';
 import { handleInteractionError } from './utils/errors.js';
-import { sendLog, logSystemEvent, sysLog, sysWarn, sysError } from './utils/logger.js';
+import { logger, sendLog, logSystemEvent, sysLog, sysWarn, sysError } from './utils/logger.js';
 import { updateBotPresence, startPresenceRotation } from './cron/presence.js';
 import { cleanupGhostItems, cleanupDeletedRole, runDependencySweep, healAllActiveTemporaryItemsOnStartup } from './economy/shop.js';
 import { initializeTradeJanitor } from './commands/trade.js';
@@ -42,19 +42,45 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Use formatGuildForLog from shared.js for consistent guild logging
 
 // ============================================
+// RUNTIME ENVIRONMENT AUDIT
+// ============================================
+logger.info('STARTUP', 'Runtime environment initialized', {
+  nodeVersion: process.version,
+  platform: os.platform(),
+  arch: os.arch(),
+  pid: process.pid,
+  envMode: process.env.NODE_ENV || 'development',
+  execFlags: process.execArgv.join(' ') || 'none'
+});
+
+logger.info('STARTUP', 'Environment variable verification', {
+  DISCORD_TOKEN: process.env.DISCORD_TOKEN ? 'CONFIRMED (****)' : 'MISSING',
+  DATABASE_URL: process.env.DATABASE_URL ? 'CONFIRMED (****)' : (process.env.DB_HOST ? 'CONFIRMED (Host/User)' : 'MISSING'),
+  PORT: process.env.PORT || 3000,
+  TOPGG_WEBHOOK_PASSWORD: process.env.TOPGG_WEBHOOK_PASSWORD ? 'CONFIRMED (****)' : 'NOT_CONFIGURED'
+});
+
+// ============================================
 // GLOBAL ERROR HANDLERS (CRASH PREVENTION)
 // ============================================
 process.on('unhandledRejection', (reason, promise) => {
-  sysError('Unhandled Promise Rejection', reason);
+  logger.error('SYSTEM', 'Unhandled Promise Rejection', {
+    memory: process.memoryUsage(),
+    uptimeSeconds: Math.round(process.uptime())
+  }, reason);
 });
 
 process.on('uncaughtException', (error) => {
-  sysError('Uncaught Exception', error);
+  logger.fatal('SYSTEM', 'Uncaught Exception detected - initiating safe shutdown', {
+    memory: process.memoryUsage(),
+    uptimeSeconds: Math.round(process.uptime())
+  }, error);
+  shutdown('UNCAUGHT_EXCEPTION', { exitCode: 1 });
 });
 
 process.on('warning', (warning) => {
   if (warning.name === 'ExperimentalWarning') return;
-  sysLog('Process Warning', { name: warning.name, message: warning.message });
+  logger.warn('SYSTEM', `Process Warning: ${warning.name}`, { detail: warning.message });
 });
 
 export const client = new Client({
@@ -336,10 +362,17 @@ keepAliveServer.listen(keepalivePort, '0.0.0.0', () => {
 });
 
 client.once(Events.ClientReady, async () => {
-  sysLog('Client Ready', {
-    tag: 'STARTUP',
-    user: client.user.id,
-    detail: `Serving ${client.guilds.cache.size} guilds | WebSocket Ping: ${client.ws.ping}ms`
+  const readyBenchStart = performance.now();
+  const totalCachedMembers = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || g.members?.cache?.size || 0), 0);
+  const totalCachedChannels = client.channels.cache.size;
+
+  logger.info('GATEWAY', `Connected to Discord Gateway (Shard ${client.shard?.ids?.[0] ?? 0})`, {
+    tag: client.user.tag,
+    botId: client.user.id,
+    guilds: client.guilds.cache.size,
+    cachedMembers: totalCachedMembers,
+    cachedChannels: totalCachedChannels,
+    wsPingMs: client.ws.ping
   });
 
   try {
@@ -424,6 +457,12 @@ client.once(Events.ClientReady, async () => {
     }).catch(() => {});
 
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
+    const totalBootMs = Math.round(performance.now() - startupContext.startedAt);
+    logger.info('STARTUP', `Bot fully booted and operational in ${totalBootMs}ms`, {
+      totalBootMs,
+      guilds: client.guilds.cache.size,
+      nodeVersion: process.version
+    });
 
     const initMem = process.memoryUsage();
     sysLog('[CLEAN] Memory Optimization Active', { 
@@ -916,13 +955,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const subCmd = interaction.options?.getSubcommand(false);
     const fullCmdName = subCmd ? `/${cmdName} ${subCmd}` : `/${cmdName}`;
 
+    logger.info('DISPATCH', `Command received: ${fullCmdName}`, {
+      user: `${interaction.user.username} (${interaction.user.id})`,
+      guildId: interaction.guildId || 'DM',
+      channelId: interaction.channelId
+    });
+
     // Active 2000ms watchdog for slash commands to prevent Discord's 3.0s hard timeout
     const watchdog = setTimeout(async () => {
       if (!interaction.deferred && !interaction.replied) {
-        sysLog('Slash Command Watchdog Safety Triggered', {
+        logger.warn('DISPATCH', 'Slash command watchdog safety triggered: applying emergency deferral', {
           user: interaction.user?.tag || interaction.user?.id,
           guildId: interaction.guildId,
-          detail: `Command "${fullCmdName}" not acknowledged within 2.0s. Applying emergency deferral.`
+          command: fullCmdName
         });
         await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
       }
@@ -931,9 +976,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // Check if bot is fully ready
     if (!depsState.storage) {
       clearTimeout(watchdog);
-      sysWarn(`Command Deferred During Startup: ${fullCmdName}`, {
+      logger.warn('DISPATCH', `Command deferred during startup: ${fullCmdName}`, {
         user: interaction.user.id,
-        guild: interaction.guildId
+        guildId: interaction.guildId
       });
       return interaction.reply({
         content: 'The bot is currently starting up and connecting to the database. Please try again in a few seconds.',
@@ -945,28 +990,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await handleSlashCommand(interaction);
       const duration = Math.round(performance.now() - cmdStart);
       if (duration > 1500) {
-        sysWarn(`Slow Command Execution: ${fullCmdName}`, {
+        logger.warn('DISPATCH', `Slow Command Execution: ${fullCmdName}`, {
+          durationMs: duration,
           user: interaction.user.id,
-          guild: interaction.guildId,
-          duration
+          guildId: interaction.guildId
         });
       } else {
-        sysLog(`Command Executed: ${fullCmdName}`, {
-          tag: 'COMMAND',
+        logger.info('DISPATCH', `${fullCmdName} completed successfully (${duration}ms)`, {
+          durationMs: duration,
           user: interaction.user.id,
-          guild: interaction.guildId,
-          duration
+          guildId: interaction.guildId
         });
       }
     } catch (error) {
       const duration = Math.round(performance.now() - cmdStart);
-      // Only log if it's not a standard Discord timeout/unknown interaction error bubbling up
       if (error.code !== 10062) {
-        sysError(`Command Execution Failed: ${fullCmdName}`, error, {
+        logger.error('DISPATCH', `Command Execution Failed: ${fullCmdName}`, {
+          durationMs: duration,
           user: interaction.user.id,
-          guild: interaction.guildId,
-          duration
-        });
+          guildId: interaction.guildId
+        }, error);
       }
 
       await handleInteractionError(interaction, error, fullCmdName);
@@ -984,6 +1027,7 @@ if (!process.env.DISCORD_TOKEN) {
 
 // Guild leave handler - cancel timers only, preserve configuration permanently
 client.on('guildDelete', async (guild) => {
+    logger.info('EVENT', `Removed from guild: ${guild.name || guild.id}`, { guildId: guild.id });
   return runInGuildContext(guild.id, async () => {
     try {
       const { cancelMvpTimer } = await import('./mvp/award.js');
@@ -997,6 +1041,7 @@ client.on('guildDelete', async (guild) => {
 
 // Deactivate inventory records and disable notification settings when a member leaves the server while the bot is online
 client.on('guildMemberRemove', async (member) => {
+    logger.info('EVENT', 'Member departed server', { userId: member.id, guildId: member.guild?.id });
   return runInGuildContext(member.guild?.id, async () => {
     try {
       const { isDatabaseReady } = await import('./storage/postgres.js');
@@ -1015,6 +1060,7 @@ client.on('guildMemberRemove', async (member) => {
 
 // Ensure any stale admin whitelist entries are purged if a departed user rejoins
 client.on('guildMemberAdd', async (member) => {
+    logger.info('EVENT', 'Member joined server', { userId: member.id, guildId: member.guild?.id });
   return runInGuildContext(member.guild?.id, async () => {
     try {
       const { isDatabaseReady } = await import('./storage/postgres.js');
@@ -1071,6 +1117,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
 // Sync slash commands when the bot joins a new server
 client.on('guildCreate', async (guild) => {
+    logger.info('EVENT', `Joined guild: ${guild.name}`, { guildId: guild.id, memberCount: guild.memberCount, ownerId: guild.ownerId });
   try {
     const { syncGuildSlashCommands } = await import('./commands/register.js');
     await syncGuildSlashCommands(guild.id, client);

@@ -1,6 +1,6 @@
 import { EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { sanitizeError } from '../shared.js';
-import { sysLog, sysError } from './logger.js';
+import { logger, sysLog, sysError } from './logger.js';
 
 /**
  * Create a standardized error embed
@@ -145,11 +145,23 @@ export async function handleInteractionError(interaction, error, context = 'Acti
     rawErrorMessage.includes('has not been sent or deferred');
 
   if (!isLifecycleError) {
-    sysError('Interaction Audit Failure', error, { 
-      user: interaction?.user?.id, 
-      guild: interaction?.guildId, 
-      detail: context 
-    });
+    if (error?.name === 'DiscordAPIError' || errorCode) {
+      logger.error('DISCORD_REST', `DiscordAPIError[${errorCode || 'UNKNOWN'}]: ${rawErrorMessage}`, {
+        code: errorCode,
+        status: error?.status,
+        method: error?.method,
+        url: error?.url,
+        userId: interaction?.user?.id,
+        guildId: interaction?.guildId,
+        context
+      }, error);
+    } else {
+      logger.error('INTERACTION', 'Interaction Handler Failure', {
+        userId: interaction?.user?.id,
+        guildId: interaction?.guildId,
+        context
+      }, error);
+    }
   }
 
   if (!interaction || isLifecycleError) return;

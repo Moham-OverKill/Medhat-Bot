@@ -12,7 +12,7 @@ import { handleInviteCommand } from './invite.js';
 import { handleItemsCommand } from './items.js';
 import { handleProfileCommand } from './profile.js';
 import { getGuildConfig } from '../storage/config.js';
-import { sysLog, sysError } from '../utils/logger.js';
+import { logger, sysLog, sysError } from '../utils/logger.js';
 
 export async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
@@ -21,10 +21,9 @@ export async function handleSlashCommand(interaction) {
     await getGuildConfig(interaction.guildId).catch(() => {});
   }
 
-  sysLog('Command Executed', {
-    user: interaction.user,
-    guild: interaction.guild,
-    detail: `Name: /${commandName}`
+  logger.debug('DISPATCH', `Routing /${commandName} to internal command module`, {
+    userId: interaction.user.id,
+    guildId: interaction.guildId
   });
 
   // Top-Level Admin Slash Command Security Gate (Zero Trust Multi-Tenant Pre-Check)

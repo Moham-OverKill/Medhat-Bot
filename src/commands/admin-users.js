@@ -16,7 +16,7 @@ import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, sortItemsByRarity, formatInventoryItemLine, safeTruncate, COIN_EMOJI, parseSelectEmoji, safeSetButtonEmoji, getItemRarityEmoji, isBackDisabled } from '../shared.js';
 import { getShopCategories, getUserInventory, syncInventoryWithDiscord, getSynthesizedInventory, getItemImage, getShopItems } from '../economy/shop.js';
 import { getLootBoxes, getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../economy/lootbox.js';
-import { sendLog, sysLog, sysError } from '../utils/logger.js';
+import { logger, sendLog, sysLog, sysError } from '../utils/logger.js';
 import { buildPaginatedSelectMenu } from '../utils/paginator.js';
 import { handleInteractionError } from '../utils/errors.js';
 
@@ -2094,7 +2094,7 @@ export async function handleAdminUserComponent(interaction) {
             }
         }
     } catch (error) {
-        console.error('CRITICAL ADMIN ERROR DETAILS:', error);
+        logger.error('ADMIN', 'Critical admin error details', { customId: interaction?.customId, userId: interaction?.user?.id }, error);
         await handleInteractionError(interaction, error, 'Admin user component handler');
     }
 }
