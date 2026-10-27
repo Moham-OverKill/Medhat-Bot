@@ -895,8 +895,17 @@ export function setupComponentHandlers(client) {
         return;
       } else {
         // --- SAFETY NET: LOG UNHANDLED ---
-        if (customId && !customId.startsWith('shop_main') && !customId.startsWith('bank_')) {
-          sysLog('Unhandled Interaction', { detail: `ID: "${customId}" | Type: ${interaction.type}` });
+        logger.warn('COMPONENT', `Unhandled component interaction: "${customId}"`, {
+          customId,
+          type: interaction.type,
+          userId: interaction.user?.id,
+          guildId: interaction.guildId
+        });
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.reply({
+            content: '⚠️ This button or action is no longer active or could not be recognized.',
+            flags: MessageFlags.Ephemeral
+          }).catch(() => {});
         }
       }
 
