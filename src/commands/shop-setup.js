@@ -459,123 +459,37 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
 
 /**
  * Handles "Create Item" selection from the Shop Setup menu.
- * Renders Tab 1 (Details) in an uninitialized state (item = null).
- * The role picker is shown immediately; selecting a role commits the item to the DB.
- * An "Auto-Create Role" button is also provided for users without an existing role.
+ * Immediately opens a modal prompting for the item name ("What do you want to create?").
+ * Also refreshes the source message in the background so the select menu never gets stuck
+ * on "Create Item" if the administrator cancels or taps outside the modal.
  */
 export async function handleCreateItemStart(interaction) {
-  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  try {
-    const embed = new EmbedBuilder()
-      .setTitle('Create Item')
-      .setColor('#95A5A6')
-      .setDescription(
-        'Role: None (Required)\n' +
-        'Category: None\n\n' +
-        'Select an existing role below, or click **Auto-Create Role** to have the bot create one automatically.'
-      );
-
-    // Tab row — all tabs except Details are disabled until role is selected
-    const tabRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_item_tab_details_new')
-        .setLabel('Details')
-        .setEmoji('ℹ️')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId('shop_item_appearance_btn_new')
-        .setLabel('Appearance')
-        .setEmoji('🖼️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId('shop_item_tab_config_new')
-        .setLabel('Config')
-        .setEmoji('⚙️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId('shop_item_tab_users_new')
-        .setLabel('Users')
-        .setEmoji('👥')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    // Role select menu — triggers creation on selection
-    const roleRow = new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId('shop_create_role_select')
-        .setPlaceholder('Select an existing role…')
-    );
-
-    // Category select disabled until role selected
-    const catOptions = [{ label: 'No Category', value: 'null', emoji: '🏷️' }];
-    const catRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('shop_assign_cat_select_create')
-        .setPlaceholder('Category (Select role first)')
-        .setDisabled(true)
-        .addOptions(catOptions)
-    );
-
-    // Nav row — Back (left) and Auto-Create Role (right)
-    const navRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('shop_admin_home')
-        .setLabel('Back')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('shop_create_item_auto_role')
-        .setLabel('Auto-Create Role')
-        .setEmoji('✨')
-        .setStyle(ButtonStyle.Success)
-    );
-
-    await interaction.editReply({
-      content: null,
-      embeds: [embed],
-      files: [],
-      attachments: [],
-      components: [tabRow, roleRow, catRow, navRow]
-    });
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'create item start');
-  }
-}
-
-/**
- * Opens a modal prompting for the item name, which the bot uses to auto-create
- * a Discord role and commit the new shop item to the database.
- */
-export async function handleCreateItemAutoRoleModal(interaction) {
   try {
     const modal = new ModalBuilder()
-      .setCustomId('shop_create_item_auto_role_modal')
-      .setTitle('Auto-Create Item Role');
+      .setCustomId(`shop_create_item_modal_${Date.now()}`)
+      .setTitle('Create Item');
 
     const nameInput = new TextInputBuilder()
       .setCustomId('item_name')
-      .setLabel('Item Name')
+      .setLabel('What do you want to create?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. VIP Member')
+      .setPlaceholder('Enter item name…')
       .setRequired(true)
       .setMaxLength(100);
 
     modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
     await interaction.showModal(modal);
+    await refreshShopSetupMessage(interaction);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'auto-create item role modal open');
+    await handleInteractionError(interaction, error, 'create item modal open');
   }
 }
 
 /**
- * Handles modal submission for auto-role item creation.
- * Creates a Discord role with the provided name, then commits the item to the DB.
+ * Handles modal submission for item creation.
+ * Creates a Discord role with the provided name, then commits the item to the DB with is_tradable = true.
  */
-export async function handleCreateItemAutoRoleSubmit(interaction) {
+export async function handleCreateItemModalSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   }
@@ -599,7 +513,7 @@ export async function handleCreateItemAutoRoleSubmit(interaction) {
       newRole = await interaction.guild.roles.create({
         name: itemName,
         permissions: [],
-        reason: `Auto-created item role by ${interaction.user.tag}`
+        reason: `Auto-created item role for ${itemName} by ${interaction.user.tag}`
       });
     } catch (roleErr) {
       sysError('Auto role creation failed', roleErr, { guild: interaction.guildId, user: interaction.user.id });
@@ -637,7 +551,7 @@ export async function handleCreateItemAutoRoleSubmit(interaction) {
       null         // color
     );
 
-    sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created (Auto-Role)',
+    sendLog(interaction.guild, 'shop', 'green', '🛍️ Item Created',
       `Admin <@${interaction.user.id}> created item **${newItem.name}** (ID: ${newItem.id}) with auto-created role <@&${newRole.id}> — Rarity: Common, Status: Tradable`);
 
     // Re-render Tab 1 fully initialized for the new item
@@ -655,11 +569,14 @@ export async function handleCreateItemAutoRoleSubmit(interaction) {
       member: interaction.member,
       memberPermissions: interaction.memberPermissions
     };
-    await handleEditItemSelect(mock, `✅ Item **${newItem.name}** created with role <@&${newRole.id}>!`);
+    await handleEditItemSelect(mock, `✅ Item **${newItem.name}** created!`);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'auto-create item role submit');
+    await handleInteractionError(interaction, error, 'create item modal submit');
   }
 }
+
+// Backwards compatibility alias
+export const handleCreateItemAutoRoleSubmit = handleCreateItemModalSubmit;
 
 /**
  * Handles role selection during item creation flow (shop_create_role_select).
@@ -4607,7 +4524,7 @@ export async function handleEditItemSelect(interaction, successHeader = null, op
       const roleRow = new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId(`shop_item_role_swap_${itemId}`)
-          .setPlaceholder('Swap role…')
+          .setPlaceholder('Change Role')
       );
 
       // Row 3: Category select

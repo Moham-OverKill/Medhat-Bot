@@ -130,7 +130,7 @@ import {
   handleDurationModalSubmit,
   handleToggleItemLock,
   handleCreateItemStart,
-  handleCreateItemAutoRoleModal,
+  handleCreateItemModalSubmit,
   handleCreateItemAutoRoleSubmit
 } from '../commands/shop-setup.js';
 import { handleEconomySettings } from '../commands/settings/economy.js';
@@ -229,7 +229,7 @@ function isModalOpener(interaction) {
     customId === 'shop_post_payout_btn' ||
     customId.startsWith('shop_item_appearance_btn_') ||
     customId.startsWith('shop_item_duration_btn_') ||
-    customId === 'shop_create_item_auto_role' ||
+    (customId.startsWith('shop_menu_items') && firstValue === 'shop_action_create_item') ||
     customId.startsWith('admin_user_balance_') ||
     customId.startsWith('admin_user_streak_') ||
     customId.startsWith('admin_user_level_') ||
@@ -445,8 +445,8 @@ export function setupComponentHandlers(client) {
           await handleInterfaceModal(interaction);
         } else if (interaction.customId.startsWith('shop_buy_qty_modal_')) {
           await handleShopBuyModalSubmit(interaction);
-        } else if (interaction.customId === 'shop_create_item_auto_role_modal') {
-          await handleCreateItemAutoRoleSubmit(interaction);
+        } else if (interaction.customId === 'shop_create_item_modal' || interaction.customId.startsWith('shop_create_item_modal_') || interaction.customId === 'shop_create_item_auto_role_modal') {
+          await handleCreateItemModalSubmit(interaction);
         } else if (interaction.customId.startsWith('bank_inv_drop_qty_')) {
           await handleInventoryDropModalSubmit(interaction);
         } else if (interaction.customId.startsWith('pass_')) {
@@ -682,8 +682,6 @@ export function setupComponentHandlers(client) {
       // Shop Setup Button Routing
       else if (customId === 'shop_admin_add' || customId === 'shop_setup_add') {
         await handleShopAdminAdd(interaction);
-      } else if (customId === 'shop_create_item_auto_role') {
-        await handleCreateItemAutoRoleModal(interaction);
       } else if (customId === 'shop_new_save' || customId.startsWith('shop_new_save_')) {
         await handleNewItemSave(interaction);
       } else if (customId === 'shop_new_cancel' || customId.startsWith('shop_new_cancel_')) {
