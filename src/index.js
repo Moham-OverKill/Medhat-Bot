@@ -788,15 +788,23 @@ client.on(Events.GuildRoleDelete, async (role) => {
       const { removeServerAdminRole } = await import('./storage/admins.js');
       const adminRoleRemoved = await removeServerAdminRole(guild.id, role.id);
 
-      // 4. Audit Log
-      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted || adminRoleRemoved) {
+      // 4. Cleanup Leveling role rewards, XP boosters, and booster roles
+      const { query } = await import('./storage/postgres.js');
+      const bpRoleRes = await query('UPDATE battlepass_config SET reward_role_id = NULL WHERE reward_role_id = $1 AND guild_id = $2', [role.id, guild.id]).catch(() => ({ rowCount: 0 }));
+      const xpBoostRes = await query('DELETE FROM role_xp_boosters WHERE role_id = $1 AND guild_id = $2', [role.id, guild.id]).catch(() => ({ rowCount: 0 }));
+      const boosterRes = await query('DELETE FROM booster_roles WHERE role_id = $1 AND guild_id = $2', [role.id, guild.id]).catch(() => ({ rowCount: 0 }));
+
+      // 5. Audit Log
+      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted || adminRoleRemoved || bpRoleRes.rowCount > 0 || xpBoostRes.rowCount > 0 || boosterRes.rowCount > 0) {
         sendLog(guild, 'audit', 'crimson', '🛡️ Real-Time Ghost Cleanup', 
           `Role **@${role.name}** was deleted from the server. Maintenance initiated:\n` +
           `• **Shop Items Deactivated:** ${stats.itemsRemoved}\n` +
           `• **History Preserved:** ${stats.inventoryRemoved} inventory entries updated\n` +
           `• **Prerequisites Healed:** YES (Scrubbed deleted item IDs)\n` +
           `• **Color Roles Removed:** ${(normalCleanup.deleted || boosterCleanup.deleted) ? 'Yes' : 'No'}\n` +
-          `• **Admin Role Purged:** ${adminRoleRemoved ? 'Yes' : 'No'}`
+          `• **Admin Role Purged:** ${adminRoleRemoved ? 'Yes' : 'No'}\n` +
+          `• **Level Reward Role Cleared:** ${bpRoleRes.rowCount > 0 ? 'Yes' : 'No'}\n` +
+          `• **XP Boosters Purged:** ${xpBoostRes.rowCount > 0 ? 'Yes' : 'No'}`
         );
       }
     } catch (error) {

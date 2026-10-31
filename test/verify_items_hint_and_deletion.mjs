@@ -422,5 +422,46 @@ test('handleDeleteItemSelect formats concise confirmation embed with role mentio
   assert.ok(!embed.description.includes('Deleting this item will:'), 'Must omit "Deleting this item will:" header');
   assert.ok(embed.description.includes(`• Remove <@&${roleId}> from all members holding it`), 'Must inline role mention cleanly in list');
   assert.ok(embed.description.includes("• Remove this item from everyone's inventory"));
+  assert.ok(embed.description.includes('• Remove this item from level rewards'));
   assert.ok(embed.description.includes('• Remove all active shop posts for this item'));
+});
+
+test('deleteShopItem executes self-healing cleanups across levels, loot boxes, and packs', async () => {
+  const { deleteShopItem } = await import('../src/economy/shop.js');
+  const guildId = '111111111111111111';
+  const itemId = 42;
+
+  const queriesRun = [];
+  setMockPool({
+    query: async (sql, params) => {
+      queriesRun.push({ sql, params });
+      if (sql.includes('FROM shop_posts')) {
+        return { rows: [{ message_id: 'msg123' }], rowCount: 1 };
+      }
+      if (sql.includes('FROM shop_items WHERE guild_id = $1 AND item_type = \'pack\'')) {
+        return {
+          rows: [{ id: 99, contents: JSON.stringify([10, 42, 20]) }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  });
+
+  const res = await deleteShopItem(itemId, guildId);
+  assert.equal(res, true);
+
+  // Check 1: Level rewards multi-reward purge
+  assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM battlepass_rewards WHERE shop_item_id = $1')), 'Must purge from battlepass_rewards');
+  // Check 2: Level rewards legacy single column
+  assert.ok(queriesRun.some(q => q.sql.includes('UPDATE battlepass_config SET reward_item_id = NULL')), 'Must nullify reward_item_id');
+  // Check 3: Loot box items purge
+  assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM loot_box_items')), 'Must purge from loot_box_items');
+  // Check 4: Pack contents scrubbed
+  assert.ok(queriesRun.some(q => q.sql.includes('UPDATE shop_items SET contents = $1')), 'Must scrub item from pack contents');
+  // Check 5: Active shop posts cleaned
+  assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM shop_posts')), 'Must delete shop posts');
+  // Check 6: Inventories & item record deleted
+  assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM user_inventory')), 'Must delete user inventory');
+  assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM shop_items WHERE id = $1')), 'Must delete shop item');
 });
