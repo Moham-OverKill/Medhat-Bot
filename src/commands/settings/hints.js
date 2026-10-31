@@ -4,52 +4,54 @@ export const SETTINGS_HINTS = {
   coins: {
     title: 'HINT: Coins',
     description:
-      'Configure how members earn currency across your server.\n\n' +
-      '📅 **Daily:** Recurring currency allowance members can claim every 24 hours. Configurable streak scaling and booster multipliers encourage daily retention.\n\n' +
-      '🎯 **Quests:** Activity-based challenges (messages, voice time, invites) that reward coins upon completion. Members track active tasks using `/quest`.\n\n' +
-      '🏷️ **Tag:** Automatic passive coin payouts for members who add your server tag to their Discord profile.\n\n' +
-      '🗳️ **Vote:** Automatic bonus coins rewarded when members vote for Medhat on Top.gg via `/vote`.\n\n' +
-      '🖼️ **Appearance:** Customize the currency name and emoji across all shop posts, embeds, and member balances.\n\n' +
-      '💸 **Give Coins:** Manual admin grant to distribute coins directly to any member for events or giveaways.'
+      'Choose how members get coins in your server.\n\n' +
+      '📅 **Daily:** Free coins members can claim every day. Claiming multiple days in a row gives bigger streak bonuses.\n\n' +
+      '🎯 **Quests:** Simple tasks (like chatting or voice) that give coins when finished. Members check tasks with `/quest`.\n\n' +
+      '🏷️ **Tag:** Gives free coins to members who put your server tag on their profile.\n\n' +
+      '🗳️ **Vote:** Gives free coins to members who vote for Medhat on Top.gg using `/vote`.\n\n' +
+      '🖼️ **Appearance:** Change the coin name and emoji for your server.\n\n' +
+      '💸 **Give Coins:** Give free coins to any member right now.'
   },
   items: {
     title: 'HINT: Items',
     description:
-      'The central catalog for all server rewards, role cosmetics, and inventory items.\n\n' +
-      '⚠️ **Setup Order:** You must create items here first before you can use them as level rewards in **Leveling** or prize drops in **Chests**.\n\n' +
-      '📁 **Categories (Stack vs Swap):** Categories control how items are equipped. Use **Single (Swap)** for color roles or exclusive badges where members should only hold one active at a time. Use **Multi (Stack)** for perks that stack together.\n\n' +
-      '🏷️ **Items:** Individual purchasable roles or perks. You can configure rarity, permanent or temporary durations, and required prerequisites.\n\n' +
-      '📦 **Packs:** Bundle multiple created items together into a single discounted package.\n\n' +
-      '📢 **Publishing:** Creating items here adds them to your server catalog. To make them purchasable in chat channels, publish them via the **Post** menu.'
+      'Create items and roles for your server.\n\n' +
+      '⚠️ **Create Items First:** You need to create items here before you can use them as level rewards in **Leveling** or prize drops in **Chests**.\n\n' +
+      '📁 **Categories (Swap vs Stack):** Categories group your items together:\n' +
+      '• **Single (Swap):** Equipping one item removes the old one. Best for color roles so members only have one color active.\n' +
+      '• **Multi (Stack):** Members can equip and keep multiple items at the same time.\n\n' +
+      '🏷️ **Items:** Roles or rewards you sell. You can set them to last forever or expire after some time.\n\n' +
+      '📦 **Packs:** Bundle multiple items together into one buyable package.\n\n' +
+      '📢 **Put in Shop:** Creating an item here does not put it in chat yet. Go to the **Post** page to post it in a channel for members to buy.'
   },
   chests: {
     title: 'HINT: Chests',
     description:
-      'Create randomized loot boxes that reward coins and items when unboxed.\n\n' +
-      '⚠️ **Item Dependency:** Chests pull their item rewards directly from your catalog. Make sure you have created items in the **Items** menu before setting up drop tables.\n\n' +
-      '➕ **Create:** Build a new chest tier, define the minimum/maximum coin prize range, and configure drop weights for each item rarity tier.\n\n' +
-      '🖼️ **Appearance:** Set the chest name, closed chest icon, and animated open graphic.\n\n' +
-      '📦 **Chests:** Members open their chests from `/inventory` to reveal random rewards, or trade unopened chests via `/trade`.\n\n' +
-      '📢 **Distribution:** Once created, you can publish chests to shop channels via **Post**, or set them as milestone rewards in the **Leveling** system.'
+      'Create mystery boxes that give random rewards when opened.\n\n' +
+      '⚠️ **Needs Items:** Chests give out items from your server. Make sure you create items in the **Items** page first.\n\n' +
+      '➕ **Create:** Make a new chest, set how many coins it can give, and set the chance for each item rarity.\n\n' +
+      '🖼️ **Appearance:** Pick the chest name, closed chest picture, and open animation.\n\n' +
+      '📦 **Opening:** Members open their chests in `/inventory` to get rewards, or trade them with `/trade`.\n\n' +
+      '📢 **How to Give:** You can sell chests in chat channels using the **Post** page, or give them as rewards in **Leveling**.'
   },
   post: {
     title: 'HINT: Post',
     description:
-      'Publish items and chests from your catalog into Discord channels for members to buy.\n\n' +
-      '⚠️ **Storefront Rule:** Items and chests created in settings are hidden until you post them to a channel.\n\n' +
-      '➕ **New Post:** Select an item, pack, or chest from your catalog, set the price and stock quantity, and post it to any channel with an interactive Buy button.\n\n' +
-      '📝 **Edit Post:** Update live shop messages to change prices, restock inventory, or edit descriptions without deleting the post.\n\n' +
-      '🛒 **Storefront:** Members click Buy directly on the message to purchase, or browse all active posts using `/items`.'
+      'Put items and chests into chat channels so members can buy them.\n\n' +
+      '⚠️ **Important:** Items and chests are not in the shop until you post them to a channel here.\n\n' +
+      '➕ **New Post:** Pick an item or chest, set the coin price and stock limit, and send it to any channel you want.\n\n' +
+      '📝 **Edit Post:** Change the price, restock, or edit a shop post you already made without deleting it.\n\n' +
+      '🛒 **Buying:** Members click the Buy button on your post to purchase. They can also use `/items` to see everything for sale.'
   },
   economy: {
     title: 'HINT: Economy',
     description:
-      'Monitor your server’s financial health, currency flow, and inflation.\n\n' +
-      '💰 **Total Server Wealth:** The combined coin balance of all member accounts in your server.\n\n' +
-      '🖨️ **Printed (Faucets):** Coins generated into circulation through chat activity, voice channels, daily claims, quests, and votes.\n\n' +
-      '🔥 **Burned (Sinks):** Coins permanently removed from circulation through shop purchases, chest unboxings, and trade fees.\n\n' +
-      '🏷️ **Prices:** Quickly inspect and adjust prices across all active shop items to manage server inflation.\n\n' +
-      '📅 **Timeframes:** Toggle between Daily, Weekly, and Monthly filters to analyze your economic net flow over time.'
+      'See all the money moving around in your server.\n\n' +
+      '💰 **Total Wealth:** All coins owned by every member in your server added together.\n\n' +
+      '🖨️ **Printed:** New coins given to members from chatting, talking in voice, daily claims, quests, and votes.\n\n' +
+      '🔥 **Burned:** Coins spent by members in your shop or on chest openings and removed from the server.\n\n' +
+      '🏷️ **Prices:** Check and change your shop prices anytime.\n\n' +
+      '📅 **Time Buttons:** Click Day, Week, or Month to see stats for that time period.'
   }
 };
 
