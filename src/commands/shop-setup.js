@@ -2988,7 +2988,7 @@ export async function handleDeleteItemSelect(interaction) {
       .setColor(0xE74C3C);
 
     const roleMention = role
-      ? `<@&${role.id}> (\`${role.name}\`)`
+      ? `<@&${role.id}>`
       : (targetRoleId ? `\`${targetRoleId}\`` : 'None');
 
     embed.setDescription(
