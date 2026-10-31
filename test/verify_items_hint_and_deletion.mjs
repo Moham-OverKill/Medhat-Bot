@@ -9,19 +9,23 @@ import {
 } from '../src/commands/shop-setup.js';
 
 test('getSettingsHint for items generates correct title and plain English content with dynamic chest name', () => {
-  const customHint = getSettingsHint('items', 'Treasure Crates');
+  const customHint = getSettingsHint('items', 'Treasure Crates', '📦');
   assert.equal(customHint.title, 'HINT: Items');
-  assert.ok(customHint.description.includes('Treasure Crates'), 'Should dynamically contain custom chest name');
-  assert.ok(customHint.description.includes('⚠️ **Create Items First:**'), 'Should contain setup order advisory');
-  assert.ok(customHint.description.includes('📁 **Categories (Swap vs Stack):**'), 'Should contain categories explanation');
+  assert.ok(customHint.description.includes('**[📦 Treasure Crates]**'), 'Should dynamically contain custom chest name and emoji');
+  assert.ok(customHint.description.includes('⚠️ **Create First:**'), 'Should contain setup order advisory');
+  assert.ok(customHint.description.includes('🏷️ **Item Roles:**'), 'Should contain item roles explanation');
+  assert.ok(customHint.description.includes('⚙️ **Configuration:**'), 'Should contain configuration explanation');
+  assert.ok(customHint.description.includes('📁 **Categories:**'), 'Should contain categories explanation');
   assert.ok(customHint.description.includes('Single (Swap)'), 'Should explain swap mode');
   assert.ok(customHint.description.includes('Multi (Stack)'), 'Should explain stack mode');
   assert.ok(customHint.description.includes('📦 **Packs:**'), 'Should contain packs explanation');
-  assert.ok(customHint.description.includes('📢 **Put in Shop:**'), 'Should contain post explanation');
+  assert.ok(customHint.description.includes("✅ **What's Next?:**"), 'Should contain next steps explanation');
+  assert.ok(customHint.description.includes('**[📢 Post]**'), 'Should reference Post button');
+  assert.ok(customHint.description.includes('**[⭐ Levels]**'), 'Should reference Levels button');
   assert.ok(customHint.description.includes('🗑️ **Editing & Deleting:**'), 'Should contain deletion explanation');
 
   const defaultHint = getSettingsHint('items');
-  assert.ok(defaultHint.description.includes('Chests'), 'Should default to Chests');
+  assert.ok(defaultHint.description.includes('**[🎁 Chests]**'), 'Should default to Chests');
 });
 
 test('getSettingsHint for other pages', () => {

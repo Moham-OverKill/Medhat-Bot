@@ -1,7 +1,8 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
-import { getLootBoxCategoryName } from '../../economy/lootbox.js';
+import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
 
-export function getSettingsHint(pageKey, lootBoxName = 'Chests') {
+export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = '🎁') {
+  const boxTag = `**[${lootBoxEmoji} ${lootBoxName}]**`;
   const hints = {
     coins: {
       title: 'HINT: Coins',
@@ -18,25 +19,25 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests') {
       title: 'HINT: Items',
       description:
         'This is where all your server items are stored and managed.\n\n' +
-        `⚠️ **Create Items First:** We strongly recommend creating your items here before setting up other features. You need items created first so you can add them as level rewards in **Leveling** or prizes inside **${lootBoxName}**.\n\n` +
-        '🏷️ **Items:** When you create an item, a Discord role is created and attached to it. When members equip an item in `/inventory`, they get that role. If they unequip, drop, sell, or trade the item, the role is removed automatically.\n\n' +
-        '🛡️ **Trade & Duration:** Make an item **Untradable** if you want an exclusive reward that members cannot trade or get from other users. You can also set a **Duration** (like 7 days or 30 days) for temporary items, such as an XP boost role.\n\n' +
-        '📁 **Categories (Swap vs Stack):** Categories organize your items and control how roles behave:\n' +
-        '• **Single (Swap):** Equipping an item removes the previous one. Best for **Colors** or **Role Icons** so roles switch smoothly without clashing or overwriting each other.\n' +
+        `⚠️ **Create First:** It is recommended to create items here before setting up other features. You can then add items as level rewards or XP boosters in **[⭐ Levels]**, or as prizes inside ${boxTag}.\n\n` +
+        '🏷️ **Item Roles:** When you create an item, a Discord role is created and attached to it. When members equip an item using `/inventory`, they get that role. If they unequip, drop, sell, or trade the item, the role is removed automatically, unless they still own more copies of the item.\n\n' +
+        `⚙️ **Configuration:** You can make an item Untradable if you want it to be exclusive so it cannot be traded or won in ${boxTag}. You can also set a Duration (like 7 days or 30 days) for temporary items, such as XP boost items or VIP.\n\n` +
+        '📁 **Categories:** Organize your items and control how roles behave:\n' +
+        '• **Single (Swap):** Equipping an item removes the previous one. Best for Colors or Role Icons so roles switch smoothly without clashing or overwriting each other.\n' +
         '• **Multi (Stack):** Members can equip and wear multiple items from this category at the same time.\n\n' +
-        '📦 **Packs:** Bundle multiple items together into one discounted package so members can buy everything in one click. Great for special offers and limited-time sales.\n\n' +
-        '📢 **Put in Shop:** Creating items here adds them to your storage, but members cannot buy them yet. Go to the **Post** page to post items in channels for members to buy.\n\n' +
-        '🗑️ **Editing & Deleting:** You can edit any item anytime (change name, image, or see who holds it). When deleting an item, you can choose to delete only the item or delete both the item and its connected Discord role.'
+        '📦 **Packs:** Bundle multiple items together into one package so members can buy everything in one click. Great for special offers, limited-time sales, and discounts.\n\n' +
+        `✅ **What's Next?:** Creating items here adds them to your storage, but members cannot buy them yet. Go to **[📢 Post]** to post items in channels for members to buy, add them as level rewards in **[⭐ Levels]**, or set them to "tradable" so they can be found in ${boxTag}.\n\n` +
+        "🗑️ **Editing & Deleting:** You can edit any item anytime (change name, image, or see who holds it). When deleting an item, it will be removed from everyone's inventory and the role will be removed from all users. You can choose to keep the role or delete it with the item when confirming the deletion."
     },
     chests: {
       title: `HINT: ${lootBoxName}`,
       description:
         'Create mystery boxes that give random rewards when opened.\n\n' +
-        `⚠️ **Needs Items:** ${lootBoxName} give out items from your server. Make sure you create items in the **Items** page first.\n\n` +
+        `⚠️ **Needs Items:** ${lootBoxName} give out items from your server. Make sure you create items in the **[🏷️ Items]** page first.\n\n` +
         '➕ **Create:** Make a new chest, set how many coins it can give, and set the chance for each item rarity.\n\n' +
         '🖼️ **Appearance:** Pick the chest name, closed chest picture, and open animation.\n\n' +
         `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` to get rewards, or trade them with \`/trade\`.\n\n` +
-        `📢 **How to Give:** You can sell ${lootBoxName.toLowerCase()} in chat channels using the **Post** page, or give them as rewards in **Leveling**.`
+        `📢 **How to Give:** You can sell ${lootBoxName.toLowerCase()} in chat channels using the **[📢 Post]** page, or give them as rewards in **[⭐ Levels]**.`
     },
     post: {
       title: 'HINT: Post',
@@ -74,7 +75,8 @@ export async function handleSettingsHint(interaction) {
   const parts = interaction.customId.split('_');
   const pageKey = parts[2]; // e.g. 'coins', 'items', 'chests', 'post', 'economy'
   const lootBoxName = await getLootBoxCategoryName(interaction.guildId).catch(() => 'Chests');
-  const hint = getSettingsHint(pageKey, lootBoxName);
+  const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId).catch(() => '🎁');
+  const hint = getSettingsHint(pageKey, lootBoxName, lootBoxEmoji);
 
   if (!hint) {
     const payload = {
