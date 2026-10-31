@@ -2928,6 +2928,34 @@ export async function handleDeleteItemCategorySelect(interaction) {
   await handleDeleteItemStart(interaction);
 }
 
+async function stripItemRoleFromHolders(guild, itemId, targetRoleId, itemName) {
+  if (!guild || !targetRoleId) return;
+  try {
+    const holders = await query(
+      `SELECT DISTINCT user_id FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
+      [itemId, guild.id]
+    );
+    if (!holders.rows || holders.rows.length === 0) return;
+    const roleIds = String(targetRoleId).split(/[,\s]+/).filter(Boolean);
+    const holderIds = holders.rows.map(r => r.user_id);
+    const fetchedMembers = await guild.members.fetch({ user: holderIds }).catch(() => null);
+    if (!fetchedMembers) return;
+    const stripPromises = [];
+    for (const member of fetchedMembers.values()) {
+      for (const rid of roleIds) {
+        if (member.roles.cache.has(rid)) {
+          stripPromises.push(
+            member.roles.remove(rid, `Item Deleted: ${itemName}`).catch(() => null)
+          );
+        }
+      }
+    }
+    await Promise.allSettled(stripPromises);
+  } catch (err) {
+    console.error('Error stripping item role from holders on item deletion:', err);
+  }
+}
+
 export async function handleDeleteItemSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
@@ -2959,43 +2987,36 @@ export async function handleDeleteItemSelect(interaction) {
       .setTitle(`Delete Item: ${itemName}`)
       .setColor(0xE74C3C);
 
-    if (role) {
-      embed.setDescription(
-        `Are you sure you want to delete **${itemName}**?\n\n` +
-        `**Connected Role:** <@&${role.id}> (\`${role.name}\`)\n\n` +
-        `Choose what you want to do:\n` +
-        `• **Delete Item Only:** Removes the item from the shop, packs, and inventories, but keeps the Discord role on your server.\n` +
-        `• **Delete Both:** Removes the item from the shop and permanently deletes the Discord role from your server.`
-      );
-    } else {
-      const roleNotice = targetRoleId
-        ? `\`${targetRoleId}\` (not found on server)`
-        : 'None';
-      embed.setDescription(
-        `Are you sure you want to delete **${itemName}**?\n\n` +
-        `**Connected Role:** ${roleNotice}\n\n` +
-        `Choose what you want to do:\n` +
-        `• **Delete Item Only:** Removes the item from the shop, packs, and member inventories.`
-      );
-    }
+    const roleMention = role
+      ? `<@&${role.id}> (\`${role.name}\`)`
+      : (targetRoleId ? `\`${targetRoleId}\`` : 'None');
+
+    embed.setDescription(
+      `Are you sure you want to delete **${itemName}**?\n\n` +
+      `⚠️ **Deleting this item will:**\n` +
+      `• Remove this item from all member inventories\n` +
+      `• Remove the connected role from all members currently holding it\n` +
+      `• Remove any active shop posts for this item\n\n` +
+      `**Connected Role:** ${roleMention}`
+    );
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`shop_item_del_only_${itemId}`)
-        .setLabel('Delete Item Only')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('🏷️'),
-      new ButtonBuilder()
-        .setCustomId(`shop_item_del_both_${itemId}`)
-        .setLabel(role ? 'Delete Both (Item & Role)' : 'Delete Both (No Role)')
-        .setStyle(ButtonStyle.Danger)
-        .setEmoji('🗑️')
-        .setDisabled(!role),
       new ButtonBuilder()
         .setCustomId('shop_item_del_cancel')
         .setLabel('Cancel')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('✖️')
+        .setEmoji('✖️'),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_del_only_${itemId}`)
+        .setLabel('Delete Item')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🗑️'),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_del_both_${itemId}`)
+        .setLabel('Delete Item + Role')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🗑️')
+        .setDisabled(!role)
     );
 
     return await interaction.editReply({
@@ -3021,6 +3042,11 @@ export async function handleDeleteItemConfirmOnly(interaction) {
     }
 
     const itemName = item.name || 'Unknown Item';
+
+    // Strip role from all users who have the item
+    await stripItemRoleFromHolders(interaction.guild, itemId, item.role_id, itemName);
+
+    // Delete item from database, user_inventory, and shop posts
     await deleteShopItem(itemId, interaction.guildId);
 
     sendLog(
@@ -3036,7 +3062,7 @@ export async function handleDeleteItemConfirmOnly(interaction) {
     const context = {
       action: 'delete_item',
       folder: existing?.folder || 'root',
-      message: `✅ Item **${itemName}** deleted (kept role).`
+      message: `✅ Item **${itemName}** deleted.`
     };
     pendingAdminBrowser.set(adminKey, context);
     await renderAdminBrowser(interaction, context);
@@ -3060,6 +3086,9 @@ export async function handleDeleteItemConfirmBoth(interaction) {
     const targetRoleId = (item.role_id && /^\d{17,20}$/.test(String(item.role_id).trim()))
       ? String(item.role_id).trim()
       : null;
+
+    // Strip role from all users who have the item
+    await stripItemRoleFromHolders(interaction.guild, itemId, targetRoleId, itemName);
 
     let roleDeleted = false;
     let roleName = '';
@@ -3089,6 +3118,7 @@ export async function handleDeleteItemConfirmBoth(interaction) {
       }
     }
 
+    // Delete item from database, user_inventory, and shop posts
     await deleteShopItem(itemId, interaction.guildId);
 
     const roleLogNotice = roleDeleted
