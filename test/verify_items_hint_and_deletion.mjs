@@ -28,6 +28,8 @@ test('getSettingsHint for other pages', () => {
   const coinsHint = getSettingsHint('coins');
   assert.equal(coinsHint.title, 'HINT: Coins');
   assert.ok(coinsHint.description.includes('📅 **Daily:**'));
+  assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily coins'));
+  assert.ok(coinsHint.description.includes('🗳️ **Vote:** Gives daily coins'));
 
   const chestsHint = getSettingsHint('chests', 'Mystery Boxes');
   assert.equal(chestsHint.title, 'HINT: Mystery Boxes');

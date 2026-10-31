@@ -9,8 +9,8 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests') {
         'Choose how members get coins in your server.\n\n' +
         '📅 **Daily:** Free coins members can claim every day. Claiming multiple days in a row gives bigger streak bonuses.\n\n' +
         '🎯 **Quests:** Simple tasks (like chatting or voice) that give coins when finished. Members check tasks with `/quest`.\n\n' +
-        '🏷️ **Tag:** Gives free coins to members who put your server tag on their profile.\n\n' +
-        '🗳️ **Vote:** Gives free coins to members who vote for Medhat on Top.gg using `/vote`.\n\n' +
+        '🏷️ **Tag:** Gives daily coins to members who put your server tag on their profile.\n\n' +
+        '🗳️ **Vote:** Gives daily coins to members who vote for Medhat on Top.gg using `/vote`.\n\n' +
         '🖼️ **Appearance:** Change the coin name and emoji for your server.\n\n' +
         '💸 **Give Coins:** Give free coins to any member right now.'
     },
