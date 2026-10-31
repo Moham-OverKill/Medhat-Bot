@@ -2936,12 +2936,37 @@ async function stripItemRoleFromHolders(guild, itemId, targetRoleId, itemName) {
       [itemId, guild.id]
     );
     if (!holders.rows || holders.rows.length === 0) return;
+
     const roleIds = String(targetRoleId).split(/[,\s]+/).filter(Boolean);
     const holderIds = holders.rows.map(r => r.user_id);
-    const fetchedMembers = await guild.members.fetch({ user: holderIds }).catch(() => null);
-    if (!fetchedMembers) return;
+
+    // Filter out users who still own another item that grants this same role
+    const checkedHolders = [];
+    for (const uid of holderIds) {
+      const stillOwns = await query(
+        `SELECT 1 FROM user_inventory ui
+         JOIN shop_items si ON ui.shop_item_id = si.id
+         WHERE ui.guild_id = $1 AND ui.user_id = $2 AND si.role_id = ANY($3::text[]) AND si.id != $4
+         LIMIT 1`,
+        [guild.id, uid, roleIds, itemId]
+      );
+      if (!stillOwns.rows || stillOwns.rows.length === 0) {
+        checkedHolders.push(uid);
+      }
+    }
+
+    if (checkedHolders.length === 0) return;
+
+    // Targeted fetch for uncached members only (Rule 5.3)
+    const uncachedIds = checkedHolders.filter(uid => !guild.members.cache.has(uid));
+    if (uncachedIds.length > 0) {
+      await guild.members.fetch({ user: uncachedIds }).catch(() => null);
+    }
+
     const stripPromises = [];
-    for (const member of fetchedMembers.values()) {
+    for (const uid of checkedHolders) {
+      const member = guild.members.cache.get(uid);
+      if (!member) continue;
       for (const rid of roleIds) {
         if (member.roles.cache.has(rid)) {
           stripPromises.push(
@@ -2953,6 +2978,170 @@ async function stripItemRoleFromHolders(guild, itemId, targetRoleId, itemName) {
     await Promise.allSettled(stripPromises);
   } catch (err) {
     console.error('Error stripping item role from holders on item deletion:', err);
+  }
+}
+
+/**
+ * Rigorously validates whether a role associated with a shop item can be safely deleted.
+ * Protects against:
+ * 1. Cross-guild leakage / tenant mixups
+ * 2. @everyone role
+ * 3. Managed / bot integration roles (e.g. Nitro Boost, bot integrations)
+ * 4. Administrative, moderation, or elevated permission roles
+ * 5. Configured bot administrator roles (server_admin_roles)
+ * 6. Server booster roles (booster_roles and premiumSubscriberRole)
+ * 7. System reward roles (MVP, Richest, Streak)
+ * 8. Leveling / Battlepass reward roles (battlepass_config)
+ * 9. Roles shared with other shop items in the same guild
+ * 10. Bot permission or hierarchy deficiencies
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {string|import('discord.js').Role} roleOrId
+ * @param {number|string} [itemId]
+ * @returns {Promise<{ canDelete: boolean, reason?: string, role?: import('discord.js').Role }>}
+ */
+export async function validateRoleDeletable(guild, roleOrId, itemId) {
+  if (!guild || !guild.id) {
+    return { canDelete: false, reason: 'Guild context missing.' };
+  }
+  if (!roleOrId) {
+    return { canDelete: false, reason: 'No role attached to this item.' };
+  }
+
+  const roleId = typeof roleOrId === 'object' && roleOrId?.id
+    ? String(roleOrId.id).trim()
+    : String(roleOrId).trim();
+
+  if (!/^\d{17,20}$/.test(roleId)) {
+    return { canDelete: false, reason: 'Invalid Discord role snowflake.' };
+  }
+
+  // 1. Fetch role and verify strict guild tenancy
+  const role = (typeof roleOrId === 'object' && roleOrId?.name)
+    ? roleOrId
+    : (guild.roles?.cache?.get(roleId) || await guild.roles?.fetch(roleId).catch(() => null));
+
+  if (!role) {
+    return { canDelete: false, reason: 'Role does not exist in Discord.' };
+  }
+
+  if (role.guild?.id && role.guild.id !== guild.id) {
+    return { canDelete: false, reason: 'Security Violation: Role belongs to a different server.' };
+  }
+
+  // 2. Block @everyone
+  if (role.id === guild.id) {
+    return { canDelete: false, reason: 'Cannot delete @everyone role.', role };
+  }
+
+  // 3. Block managed / bot integration roles
+  if (role.managed) {
+    return { canDelete: false, reason: 'Cannot delete managed or bot integration role.', role };
+  }
+
+  // 4. Block roles with dangerous administrative / moderation permissions
+  if (hasAnyDangerousPermission(role)) {
+    return { canDelete: false, reason: 'Role holds administrative or moderation permissions.', role };
+  }
+
+  // 5. Block configured Bot Admin Roles
+  const adminCheck = await query(
+    'SELECT 1 FROM server_admin_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+    [guild.id, role.id]
+  );
+  if (adminCheck.rows && adminCheck.rows.length > 0) {
+    return { canDelete: false, reason: 'Role is configured as a Bot Administrator role.', role };
+  }
+
+  // 6. Block Server Booster roles
+  if (guild.roles?.premiumSubscriberRole?.id === role.id) {
+    return { canDelete: false, reason: 'Role is the official Server Booster role.', role };
+  }
+  const boosterCheck = await query(
+    'SELECT 1 FROM booster_roles WHERE guild_id = $1 AND role_id = $2 LIMIT 1',
+    [guild.id, role.id]
+  );
+  if (boosterCheck.rows && boosterCheck.rows.length > 0) {
+    return { canDelete: false, reason: 'Role is configured as a Server Booster role.', role };
+  }
+
+  // 7. Block System Reward roles (MVP, Richest, Streaks)
+  const config = await getGuildConfig(guild.id).catch(() => null) || {};
+  if (config.mvpRoleId === role.id) {
+    return { canDelete: false, reason: 'Role is configured as the MVP reward role.', role };
+  }
+  if (config.richest_role_id === role.id) {
+    return { canDelete: false, reason: 'Role is configured as the Top Richest reward role.', role };
+  }
+  if (config.streak_role_id === role.id) {
+    return { canDelete: false, reason: 'Role is configured as the Daily Streak reward role.', role };
+  }
+
+  // 8. Block Leveling / Battlepass reward roles
+  const bpCheck = await query(
+    'SELECT level FROM battlepass_config WHERE guild_id = $1 AND reward_role_id = $2 LIMIT 1',
+    [guild.id, role.id]
+  );
+  if (bpCheck.rows && bpCheck.rows.length > 0) {
+    return { canDelete: false, reason: `Role is configured as a Level ${bpCheck.rows[0].level} reward role.`, role };
+  }
+
+  // 9. Block if shared by ANY other shop item in this guild
+  const numItemId = parseInt(itemId, 10);
+  const sharedCheck = await query(
+    `SELECT id, name FROM shop_items WHERE guild_id = $1 AND role_id = $2 ${!isNaN(numItemId) ? 'AND id != $3' : ''} LIMIT 1`,
+    !isNaN(numItemId) ? [guild.id, role.id, numItemId] : [guild.id, role.id]
+  );
+  if (sharedCheck.rows && sharedCheck.rows.length > 0) {
+    return { canDelete: false, reason: `Role is also linked to another item ("${sharedCheck.rows[0].name}").`, role };
+  }
+
+  // 10. Check bot permissions and hierarchy
+  const botMember = guild.members?.me || await guild.members?.fetchMe().catch(() => null);
+  if (!botMember || !botMember.permissions?.has(PermissionFlagsBits.ManageRoles)) {
+    return { canDelete: false, reason: 'Bot lacks Manage Roles permission.', role };
+  }
+  if (botMember.roles?.highest && botMember.roles.highest.position <= role.position) {
+    return { canDelete: false, reason: 'Bot role is lower than or equal to this role in server hierarchy.', role };
+  }
+
+  return { canDelete: true, role };
+}
+
+/**
+ * Safely executes role deletion with multi-layer verification.
+ * Guarantees that only valid, non-protected roles belonging to this exact guild are deleted.
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {string|import('discord.js').Role} roleOrId
+ * @param {number|string} itemId
+ * @param {string} itemName
+ * @param {string} userTag
+ * @param {string} userId
+ * @returns {Promise<{ success: boolean, reason?: string, role?: import('discord.js').Role }>}
+ */
+export async function safelyDeleteConnectedRole(guild, roleOrId, itemId, itemName, userTag, userId) {
+  const check = await validateRoleDeletable(guild, roleOrId, itemId);
+  if (!check.canDelete) {
+    sysLog('Shop Role Deletion Prevented', {
+      detail: check.reason,
+      guild: guild?.id,
+      roleId: typeof roleOrId === 'object' ? roleOrId?.id : roleOrId,
+      itemId
+    });
+    return { success: false, reason: check.reason, role: check.role };
+  }
+
+  try {
+    await check.role.delete(`Shop item deleted: "${itemName}" (ID: ${itemId}) by ${userTag} (${userId})`);
+    return { success: true, role: check.role };
+  } catch (err) {
+    sysError('Shop Role Deletion Discord Error', err, {
+      guild: guild?.id,
+      roleId: check.role?.id,
+      itemId
+    });
+    return { success: false, reason: err.message || 'Discord API error', role: check.role };
   }
 }
 
@@ -2979,8 +3168,11 @@ export async function handleDeleteItemSelect(interaction) {
       : null;
 
     let role = null;
+    let canDeleteRole = false;
     if (targetRoleId) {
-      role = interaction.guild.roles.cache.get(targetRoleId) || await interaction.guild.roles.fetch(targetRoleId).catch(() => null);
+      const check = await validateRoleDeletable(interaction.guild, targetRoleId, itemId);
+      role = check.role || interaction.guild.roles.cache.get(targetRoleId) || await interaction.guild.roles.fetch(targetRoleId).catch(() => null);
+      canDeleteRole = check.canDelete;
     }
 
     const embed = new EmbedBuilder()
@@ -3016,7 +3208,7 @@ export async function handleDeleteItemSelect(interaction) {
         .setLabel('Delete Item + Role')
         .setStyle(ButtonStyle.Danger)
         .setEmoji('🗑️')
-        .setDisabled(!role)
+        .setDisabled(!canDeleteRole)
     );
 
     return await interaction.editReply({
@@ -3062,7 +3254,7 @@ export async function handleDeleteItemConfirmOnly(interaction) {
     const context = {
       action: 'delete_item',
       folder: existing?.folder || 'root',
-      message: `✅ Item **${itemName}** deleted.`
+      message: `✅ Deleted item **${itemName}** (kept Discord role).`
     };
     pendingAdminBrowser.set(adminKey, context);
     await renderAdminBrowser(interaction, context);
@@ -3090,53 +3282,52 @@ export async function handleDeleteItemConfirmBoth(interaction) {
     // Strip role from all users who have the item
     await stripItemRoleFromHolders(interaction.guild, itemId, targetRoleId, itemName);
 
-    let roleDeleted = false;
-    let roleName = '';
-
+    // Safely delete connected role with multi-layer security verification
+    let delResult = { success: false, reason: 'No role attached', role: null };
     if (targetRoleId) {
-      const role = interaction.guild.roles.cache.get(targetRoleId) || await interaction.guild.roles.fetch(targetRoleId).catch(() => null);
-      if (
-        role &&
-        role.guild.id === interaction.guildId &&
-        role.id !== interaction.guild.id &&
-        !role.managed
-      ) {
-        roleName = role.name;
-        const botMember = interaction.guild.members.me;
-        if (
-          botMember &&
-          botMember.permissions.has(PermissionFlagsBits.ManageRoles) &&
-          botMember.roles.highest.position > role.position
-        ) {
-          try {
-            await role.delete(`Shop item deleted: ${itemName} by ${interaction.user.tag}`);
-            roleDeleted = true;
-          } catch (roleErr) {
-            console.error('Failed to delete role:', roleErr);
-          }
-        }
-      }
+      delResult = await safelyDeleteConnectedRole(
+        interaction.guild,
+        targetRoleId,
+        itemId,
+        itemName,
+        interaction.user.tag,
+        interaction.user.id
+      );
     }
 
     // Delete item from database, user_inventory, and shop posts
     await deleteShopItem(itemId, interaction.guildId);
 
-    const roleLogNotice = roleDeleted
-      ? ` and deleted role **@${roleName}**`
-      : (targetRoleId ? ` (role could not be deleted)` : '');
-    sendLog(
-      interaction.guild,
-      'shop',
-      'red',
-      '🗑️ Item & Role Deleted',
-      `Admin **<@${interaction.user.id}>** deleted item **${itemName}**${roleLogNotice}.`
-    );
+    const roleName = delResult.role?.name || '';
+    if (delResult.success) {
+      sendLog(
+        interaction.guild,
+        'shop',
+        'red',
+        '🗑️ Item & Role Deleted',
+        `Admin **<@${interaction.user.id}>** deleted item **${itemName}** and deleted Discord role **@${roleName}**.`
+      );
+    } else {
+      const roleNotice = delResult.role
+        ? ` (Discord role @${roleName} was kept: ${delResult.reason})`
+        : '';
+      sendLog(
+        interaction.guild,
+        'shop',
+        'red',
+        '🗑️ Item Deleted',
+        `Admin **<@${interaction.user.id}>** deleted item **${itemName}** from the Shop${roleNotice}.`
+      );
+    }
 
     const adminKey = getAdminBrowserKey(interaction);
     const existing = pendingAdminBrowser.get(adminKey);
-    const successMsg = roleDeleted
+    const successMsg = delResult.success
       ? `✅ Deleted item **${itemName}** and its Discord role (@${roleName}).`
-      : `✅ Deleted item **${itemName}** (role was not deleted).`;
+      : (delResult.role
+          ? `✅ Deleted item **${itemName}** (the Discord role @${roleName} was kept: ${delResult.reason}).`
+          : `✅ Deleted item **${itemName}**.`);
+
     const context = {
       action: 'delete_item',
       folder: existing?.folder || 'root',
