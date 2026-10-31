@@ -32,31 +32,31 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
     chests: {
       title: `HINT: ${lootBoxName}`,
       description:
-        'Create mystery boxes that give random rewards when opened.\n\n' +
-        `⚠️ **Needs Items:** ${lootBoxName} give out items from your server. Make sure you create items in the **[🏷️ Items]** page first.\n\n` +
-        '➕ **Create:** Make a new chest, set how many coins it can give, and set the chance for each item rarity.\n\n' +
-        '🖼️ **Appearance:** Pick the chest name, closed chest picture, and open animation.\n\n' +
-        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` to get rewards, or trade them with \`/trade\`.\n\n` +
-        `📢 **How to Give:** You can sell ${lootBoxName.toLowerCase()} in chat channels using the **[📢 Post]** page, or give them as rewards in **[⭐ Levels]**.`
+        `Create mystery boxes that give random rewards and coins when opened.\n\n` +
+        `⚠️ **Create Items First:** ${lootBoxName} give out rewards from your items catalog. Make sure you create your items in **[🏷️ Items]** first so they can be won as prizes here.\n\n` +
+        `➕ **Create:** Make a new ${lootBoxName.toLowerCase().replace(/s$/, '')}, set the minimum and maximum coin rewards, and set the chance percentage for each item rarity.\n\n` +
+        `🖼️ **Appearance:** Choose the category name, emoji, closed box picture, and animated open GIF for your ${lootBoxName.toLowerCase()}.\n\n` +
+        `📦 **How Members Open:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` to receive their random prizes, or trade them to other members using \`/trade\`.\n\n` +
+        `✅ **What's Next?:** Creating ${lootBoxName.toLowerCase()} adds them to your server, but members cannot get them yet. Go to **[📢 Post]** to sell them in chat channels, or add them as level rewards in **[⭐ Levels]**.`
     },
     post: {
       title: 'HINT: Post',
       description:
-        `Put items and ${lootBoxName.toLowerCase()} into chat channels so members can buy them.\n\n` +
-        `⚠️ **Important:** Items and ${lootBoxName.toLowerCase()} are not in the shop until you post them to a channel here.\n\n` +
-        '➕ **New Post:** Pick an item or chest, set the coin price and stock limit, and send it to any channel you want.\n\n' +
-        '📝 **Edit Post:** Change the price, restock, or edit a shop post you already made without deleting it.\n\n' +
-        '🛒 **Buying:** Members click the Buy button on your post to purchase. They can also use `/items` to see everything for sale.'
+        `Put items, packs, and ${lootBoxName.toLowerCase()} into chat channels so members can buy them.\n\n` +
+        `⚠️ **Important:** Anything created in **[🏷️ Items]** or ${boxTag} stays in storage until you post it to a channel here.\n\n` +
+        `➕ **New Post:** Pick an item or ${lootBoxName.toLowerCase().replace(/s$/, '')}, select the channel, set the price and stock limit, and send the buyable post into chat.\n\n` +
+        `📝 **Edit Post:** Paste the message link of any shop post you already made to change its price, restock quantities, or update settings without deleting the message.\n\n` +
+        `🛒 **How Members Buy:** Members click the Buy button directly on the post in chat. They can also use \`/items\` to browse everything currently available in your shop.`
     },
     economy: {
       title: 'HINT: Economy',
       description:
-        'See all the money moving around in your server.\n\n' +
-        '💰 **Total Wealth:** All coins owned by every member in your server added together.\n\n' +
-        '🖨️ **Printed:** New coins given to members from chatting, talking in voice, daily claims, quests, and votes.\n\n' +
-        `🔥 **Burned:** Coins spent by members in your shop or on ${lootBoxName.toLowerCase()} openings and removed from the server.\n\n` +
-        '🏷️ **Prices:** Check and change your shop prices anytime.\n\n' +
-        '📅 **Time Buttons:** Click Day, Week, or Month to see stats for that time period.'
+        'Track and monitor all coins moving across your server.\n\n' +
+        '💰 **Total Wealth:** The total sum of all coins currently held by all members in your server combined.\n\n' +
+        '🖨️ **Printed (New Coins):** Coins created and given out from chatting in text channels, spending time in voice, daily claims, quests, and votes.\n\n' +
+        `🔥 **Burned (Spent Coins):** Coins removed from the server when members buy shop items, purchase ${lootBoxName.toLowerCase()}, or pay trade taxes.\n\n` +
+        '🏷️ **Prices:** View and adjust the coin prices across all your shop items in one place.\n\n' +
+        '📅 **Time Filters:** Click **Per Day**, **Per Week**, or **Per Month** to see your server economy stats over different time periods.'
     }
   };
 
