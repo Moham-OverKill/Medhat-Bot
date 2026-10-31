@@ -11,7 +11,6 @@ import { notificationsCommand } from './notifications.js';
 import { inviteCommand } from './invite.js';
 import { itemsCommand } from './items.js';
 import { profileCommand } from './profile.js';
-import { helpCommand } from './help.js';
 import { getGuildConfig } from '../storage/config.js';
 import { getPool } from '../storage/postgres.js';
 import { getQuests } from '../quests/quests.js';
@@ -27,7 +26,6 @@ const BASE_COMMANDS = [
   inviteCommand.toJSON(),
   itemsCommand.toJSON(),
   profileCommand.toJSON(),
-  helpCommand.toJSON()
 ];
 const QUEST_COMMAND_JSON = questCommand.toJSON();
 const LEVEL_COMMAND_JSON = levelCommand.toJSON();

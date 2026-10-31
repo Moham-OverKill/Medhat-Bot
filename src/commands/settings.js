@@ -217,7 +217,7 @@ export async function showCoinsSubMenu(interaction) {
             .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
             .setCustomId('settings_hint_coins')
-            .setEmoji('💡')
+            .setEmoji('❔')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_coins_customize')
