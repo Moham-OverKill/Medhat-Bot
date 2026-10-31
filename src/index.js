@@ -906,8 +906,85 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       } catch (lbErr) {
         // Non-blocking
       }
+
+      // Clean up server interface channel references if configured
+      try {
+        const { getInterfaceConfig, saveInterfaceConfig } = await import('./commands/interface.js');
+        const ifConfig = await getInterfaceConfig(guild.id);
+        let ifDirty = false;
+        if (ifConfig.target_channel_id === channel.id) {
+          ifConfig.target_channel_id = null;
+          ifConfig.message_id = null;
+          ifDirty = true;
+        }
+        if (ifConfig.admin_target_channel_id === channel.id) {
+          ifConfig.admin_target_channel_id = null;
+          ifConfig.admin_message_id = null;
+          ifDirty = true;
+        }
+        if (ifDirty) {
+          await saveInterfaceConfig(guild.id, ifConfig);
+          logger.info('SERVER', `Cleared interface configuration for deleted channel ${channel.id}`);
+        }
+      } catch (ifErr) {
+        // Non-blocking
+      }
     } catch (error) {
       sysError('Channel Deletion Cleanup Failed', error, { guild: channel.guild?.id });
+    }
+  });
+});
+
+// Real-time Self Healing for Interface Messages
+client.on(Events.MessageDelete, async (message) => {
+  if (!message.guild) return;
+  return runInGuildContext(message.guild.id, async () => {
+    try {
+      const { getInterfaceConfig, saveInterfaceConfig } = await import('./commands/interface.js');
+      const config = await getInterfaceConfig(message.guild.id);
+      let dirty = false;
+      if (config.message_id && config.message_id === message.id) {
+        config.message_id = null;
+        dirty = true;
+      }
+      if (config.admin_message_id && config.admin_message_id === message.id) {
+        config.admin_message_id = null;
+        dirty = true;
+      }
+      if (dirty) {
+        await saveInterfaceConfig(message.guild.id, config);
+        logger.info('SERVER', `Cleared deleted interface message ID ${message.id} for guild ${message.guild.id}`);
+      }
+    } catch (err) {
+      // Non-blocking
+    }
+  });
+});
+
+client.on(Events.MessageDeleteBulk, async (messages) => {
+  const first = messages.first?.() || messages.values?.().next?.()?.value;
+  if (!first || !first.guild) return;
+  return runInGuildContext(first.guild.id, async () => {
+    try {
+      const { getInterfaceConfig, saveInterfaceConfig } = await import('./commands/interface.js');
+      const config = await getInterfaceConfig(first.guild.id);
+      let dirty = false;
+      for (const msg of messages.values()) {
+        if (config.message_id && config.message_id === msg.id) {
+          config.message_id = null;
+          dirty = true;
+        }
+        if (config.admin_message_id && config.admin_message_id === msg.id) {
+          config.admin_message_id = null;
+          dirty = true;
+        }
+      }
+      if (dirty) {
+        await saveInterfaceConfig(first.guild.id, config);
+        logger.info('SERVER', `Cleared bulk deleted interface message ID(s) for guild ${first.guild.id}`);
+      }
+    } catch (err) {
+      // Non-blocking
     }
   });
 });

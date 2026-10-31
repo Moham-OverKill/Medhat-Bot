@@ -1825,8 +1825,25 @@ export async function showInterfaceSettings(interaction) {
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
 
+  let isPublished = false;
+  if (config.target_channel_id && config.message_id) {
+    const channel = interaction.guild?.channels.cache.get(config.target_channel_id) ||
+      await interaction.guild?.channels.fetch(config.target_channel_id).catch(() => null);
+    if (channel?.isTextBased?.()) {
+      const existingMsg = await channel.messages.fetch(config.message_id).catch(() => null);
+      if (existingMsg) {
+        isPublished = true;
+      } else {
+        config.message_id = null;
+        await saveInterfaceConfig(guildId, config).catch(() => {});
+      }
+    } else {
+      config.message_id = null;
+      await saveInterfaceConfig(guildId, config).catch(() => {});
+    }
+  }
+
   const currentChannel = config.target_channel_id ? `<#${config.target_channel_id}>` : '*Not Set*';
-  const isPublished = Boolean(config.target_channel_id && config.message_id);
 
   let statusText = '`🔴 Disabled`';
   if (config.is_enabled) {
@@ -1860,7 +1877,7 @@ export async function showInterfaceSettings(interaction) {
     channelSelect.setDefaultChannels([config.target_channel_id]);
   }
 
-  // Row 1: [ Back ] | [ Enable / Disable ] | [ Setup ] (single button row)
+  // Row 1: [ Back ] | [ Enable / Disable ] | [ Setup ] | [ Send / Update ]
   const backBtn = new ButtonBuilder()
     .setCustomId('settings_home')
     .setLabel('Back')
@@ -1886,7 +1903,14 @@ export async function showInterfaceSettings(interaction) {
     .setEmoji('🛠️')
     .setStyle(ButtonStyle.Secondary);
 
-  const buttonRow = new ActionRowBuilder().addComponents(backBtn, toggleBtn, setupBtn);
+  const publishBtn = new ButtonBuilder()
+    .setCustomId('interface_publish_btn')
+    .setLabel(isPublished ? 'Update' : 'Send')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!config.target_channel_id);
+
+  const buttonRow = new ActionRowBuilder().addComponents(backBtn, toggleBtn, setupBtn, publishBtn);
 
   const components = [
     new ActionRowBuilder().addComponents(channelSelect),
@@ -1968,7 +1992,7 @@ export async function showAdminInterfaceSettings(interaction) {
     channelSelect.setDefaultChannels([config.admin_target_channel_id]);
   }
 
-  // Row 1: [ Back ] | [ Enable / Disable ] | [ Setup ] (single button row)
+  // Row 1: [ Back ] | [ Enable / Disable ] | [ Setup ] | [ Send / Update ]
   const backBtn = new ButtonBuilder()
     .setCustomId('settings_home')
     .setLabel('Back')
@@ -1994,7 +2018,14 @@ export async function showAdminInterfaceSettings(interaction) {
     .setEmoji('🛠️')
     .setStyle(ButtonStyle.Secondary);
 
-  const buttonRow = new ActionRowBuilder().addComponents(backBtn, toggleBtn, setupBtn);
+  const publishBtn = new ButtonBuilder()
+    .setCustomId('admin_interface_publish_btn')
+    .setLabel(isPublished ? 'Update' : 'Send')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!config.admin_target_channel_id);
+
+  const buttonRow = new ActionRowBuilder().addComponents(backBtn, toggleBtn, setupBtn, publishBtn);
 
   const components = [
     new ActionRowBuilder().addComponents(channelSelect),
@@ -2076,9 +2107,7 @@ export async function showAdminInterfaceSetup(interaction) {
     rows.push(row);
   }
 
-  // 3. Navigation, Reset & Update row: [ Back ] | [ Reset ] | [ Update ]
-  const isPublished = Boolean(config.admin_target_channel_id && config.admin_message_id);
-
+  // 3. Navigation & Reset row: [ Back ] | [ Reset ]
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('admin_interface_back_to_main')
@@ -2089,13 +2118,7 @@ export async function showAdminInterfaceSetup(interaction) {
       .setCustomId('admin_interface_reset_defaults')
       .setLabel('Reset')
       .setEmoji('🔃')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('admin_interface_publish_btn')
-      .setLabel(isPublished ? 'Update' : 'Publish')
-      .setEmoji('🔄')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!config.admin_target_channel_id)
   );
   rows.push(navRow);
 
@@ -2257,11 +2280,18 @@ export async function showInterfaceSetup(interaction) {
     .setColor(0x5865F2)
     .setImage(`attachment://${previewName}`);
 
-  // 2. Build 3 rows of 4 slot buttons
+  // 2. Build 3 rows of slot buttons (3 columns for 3x3 layout, or 4 if a 4th column is configured)
+  const hasCol4 = Boolean(
+    (slots[3] && slots[3] !== 'empty') ||
+    (slots[7] && slots[7] !== 'empty') ||
+    (slots[11] && slots[11] !== 'empty')
+  );
+  const colCount = hasCol4 ? 4 : 3;
+
   const rows = [];
   for (let r = 0; r < 3; r++) {
     const row = new ActionRowBuilder();
-    for (let c = 0; c < 4; c++) {
+    for (let c = 0; c < colCount; c++) {
       const idx = r * 4 + c;
       const slotId = slots[idx];
       const meta = getShortcutMeta(slotId);
@@ -2282,9 +2312,7 @@ export async function showInterfaceSetup(interaction) {
     rows.push(row);
   }
 
-  // 3. Navigation, Reset & Update row: [ Back ] | [ Reset ] | [ Update ]
-  const isPublished = Boolean(config.target_channel_id && config.message_id);
-
+  // 3. Navigation & Reset row: [ Back ] | [ Reset ]
   const navRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('interface_back_to_main')
@@ -2295,13 +2323,7 @@ export async function showInterfaceSetup(interaction) {
       .setCustomId('interface_reset_defaults')
       .setLabel('Reset')
       .setEmoji('🔃')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('interface_publish_btn')
-      .setLabel(isPublished ? 'Update' : 'Publish')
-      .setEmoji('🔄')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!config.target_channel_id)
   );
   rows.push(navRow);
 
