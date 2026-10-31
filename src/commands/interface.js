@@ -150,17 +150,29 @@ export const SHORTCUT_REGISTRY = {
 
 export const DEFAULT_SHORTCUT_ORDER = [
   'level',
-  'quests',
-  'daily',
-  'empty',
+  'profile',
   'inventory',
+  'empty',
+  'daily',
+  'quests',
   'vote',
+  'empty',
+  'items',
   'notifications',
-  'empty',
-  'empty',
-  'empty',
-  'empty',
+  'invite',
   'empty'
+];
+
+export const DEFAULT_SLOT_COLORS = [
+  '#636e72', '#636e72', '#636e72', '#000000',
+  '#43b581', '#43b581', '#43b581', '#000000',
+  '#29b6f6', '#29b6f6', '#29b6f6', '#000000'
+];
+
+export const DEFAULT_SLOT_BUTTON_COLORS = [
+  'secondary', 'secondary', 'secondary', 'secondary',
+  'success', 'success', 'success', 'secondary',
+  'primary', 'primary', 'primary', 'secondary'
 ];
 
 export const ADMIN_SHORTCUT_REGISTRY = {
@@ -311,9 +323,9 @@ export const ADMIN_SHORTCUT_REGISTRY = {
 };
 
 export const DEFAULT_ADMIN_SHORTCUT_ORDER = [
-  'colors', 'levels', 'roles', 'empty',
-  'coins', 'shop', 'economy', 'empty',
-  'users', 'anticheat', 'automod', 'empty'
+  'colors', 'levels', 'roles', 'leaderboard',
+  'coins', 'shop', 'chests', 'post',
+  'users', 'anticheat', 'automod', 'embed'
 ];
 
 export const DEFAULT_ADMIN_SLOT_COLORS = [
@@ -363,30 +375,22 @@ export function normalizeAdminShortcutOrder(order) {
 }
 
 export function normalizeShortcutOrder(order) {
+  if (!Array.isArray(order) || order.length === 0) {
+    return [...DEFAULT_SHORTCUT_ORDER];
+  }
+
+  // Detect legacy 6-slot orders and migrate cleanly
+  if (order.length === 6 && order[0] === 'level' && order[3] === 'inventory') {
+    return [...DEFAULT_SHORTCUT_ORDER];
+  }
+
   const result = new Array(12).fill('empty');
-  if (Array.isArray(order) && order.length > 0) {
-    if (order.length === 6 && order[0] === 'level' && order[3] === 'inventory') {
-      result[0] = order[0] || 'level';
-      result[1] = order[1] || 'quests';
-      result[2] = order[2] || 'daily';
-      result[3] = 'empty';
-      result[4] = order[3] || 'inventory';
-      result[5] = order[4] || 'vote';
-      result[6] = order[5] || 'notifications';
-      result[7] = 'empty';
+  for (let i = 0; i < Math.min(order.length, 12); i++) {
+    const id = order[i];
+    if (id && SHORTCUT_REGISTRY[id]) {
+      result[i] = id;
     } else {
-      for (let i = 0; i < Math.min(order.length, 12); i++) {
-        const id = order[i];
-        if (id && SHORTCUT_REGISTRY[id]) {
-          result[i] = id;
-        } else {
-          result[i] = 'empty';
-        }
-      }
-    }
-  } else {
-    for (let i = 0; i < 12; i++) {
-      result[i] = DEFAULT_SHORTCUT_ORDER[i];
+      result[i] = 'empty';
     }
   }
   return result;
@@ -464,7 +468,7 @@ function getContrastColor(hex) {
 export function normalizeSlotColors(raw, defaultColors = null) {
   const defaults = Array.isArray(defaultColors) && defaultColors.length === 12
     ? defaultColors
-    : new Array(12).fill('#000000');
+    : [...DEFAULT_SLOT_COLORS];
   const result = [...defaults];
   if (Array.isArray(raw)) {
     for (let i = 0; i < Math.min(raw.length, 12); i++) {
@@ -493,7 +497,7 @@ export const DISCORD_BUTTON_COLORS = [
 export function normalizeSlotButtonColors(raw, defaultBtnColors = null) {
   const defaults = Array.isArray(defaultBtnColors) && defaultBtnColors.length === 12
     ? defaultBtnColors
-    : new Array(12).fill('secondary');
+    : [...DEFAULT_SLOT_BUTTON_COLORS];
   const result = [...defaults];
   const valid = new Set(['secondary', 'primary', 'success', 'danger']);
   if (Array.isArray(raw)) {
@@ -940,18 +944,42 @@ export async function getInterfaceConfig(guildId) {
         rawAdminBtnColors.length === 0
       );
 
+      const rawShortcuts = row.shortcut_order;
+      const isLegacyShortcuts = Array.isArray(rawShortcuts) && (
+        (rawShortcuts.length === 6 && rawShortcuts[0] === 'level' && rawShortcuts[3] === 'inventory') ||
+        (rawShortcuts.length === 12 && rawShortcuts[0] === 'level' && rawShortcuts[1] === 'quests' && rawShortcuts[2] === 'daily' && rawShortcuts[3] === 'empty' && rawShortcuts[4] === 'inventory' && rawShortcuts[5] === 'vote' && rawShortcuts[6] === 'notifications')
+      );
+
+      const rawAdminOrder = row.admin_shortcut_order;
+      const isLegacyAdminOrder = Array.isArray(rawAdminOrder) && (
+        rawAdminOrder.length === 12 &&
+        rawAdminOrder[0] === 'colors' &&
+        rawAdminOrder[1] === 'levels' &&
+        rawAdminOrder[2] === 'roles' &&
+        rawAdminOrder[3] === 'empty' &&
+        rawAdminOrder[4] === 'coins' &&
+        rawAdminOrder[5] === 'shop' &&
+        rawAdminOrder[6] === 'economy' &&
+        rawAdminOrder[7] === 'empty'
+      );
+
+      const rawColors = row.slot_colors;
+      const isLegacyColors = !Array.isArray(rawColors) || rawColors.length === 0 || rawColors.every(c => c === '#000000');
+      const rawBtnColors = row.slot_button_colors;
+      const isLegacyBtnColors = !Array.isArray(rawBtnColors) || rawBtnColors.length === 0 || rawBtnColors.every(c => c === 'secondary');
+
       return {
         guild_id: row.guild_id,
         is_enabled: Boolean(row.is_enabled),
-        shortcut_order: normalizeShortcutOrder(row.shortcut_order),
-        slot_colors: normalizeSlotColors(row.slot_colors),
-        slot_button_colors: normalizeSlotButtonColors(row.slot_button_colors),
+        shortcut_order: isLegacyShortcuts ? [...DEFAULT_SHORTCUT_ORDER] : normalizeShortcutOrder(row.shortcut_order),
+        slot_colors: isLegacyColors ? [...DEFAULT_SLOT_COLORS] : normalizeSlotColors(rawColors, DEFAULT_SLOT_COLORS),
+        slot_button_colors: isLegacyBtnColors ? [...DEFAULT_SLOT_BUTTON_COLORS] : normalizeSlotButtonColors(rawBtnColors, DEFAULT_SLOT_BUTTON_COLORS),
         target_channel_id: row.target_channel_id || null,
         message_id: row.message_id || null,
         admin_is_enabled: Boolean(row.admin_is_enabled ?? true),
         admin_target_channel_id: row.admin_target_channel_id || null,
         admin_message_id: row.admin_message_id || null,
-        admin_shortcut_order: normalizeAdminShortcutOrder(row.admin_shortcut_order),
+        admin_shortcut_order: isLegacyAdminOrder ? [...DEFAULT_ADMIN_SHORTCUT_ORDER] : normalizeAdminShortcutOrder(row.admin_shortcut_order),
         admin_slot_colors: isLegacyAdminColors ? [...DEFAULT_ADMIN_SLOT_COLORS] : normalizeSlotColors(rawAdminColors, DEFAULT_ADMIN_SLOT_COLORS),
         admin_slot_button_colors: isLegacyAdminBtnColors ? [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS] : normalizeSlotButtonColors(rawAdminBtnColors, DEFAULT_ADMIN_SLOT_BUTTON_COLORS)
       };
@@ -966,8 +994,8 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
-      slot_colors: new Array(12).fill('#000000'),
-      slot_button_colors: new Array(12).fill('secondary'),
+      slot_colors: [...DEFAULT_SLOT_COLORS],
+      slot_button_colors: [...DEFAULT_SLOT_BUTTON_COLORS],
       target_channel_id: fallbackChannel,
       message_id: fallbackMessage,
       admin_is_enabled: true,
@@ -983,8 +1011,8 @@ export async function getInterfaceConfig(guildId) {
       guild_id: guildId,
       is_enabled: true,
       shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
-      slot_colors: new Array(12).fill('#000000'),
-      slot_button_colors: new Array(12).fill('secondary'),
+      slot_colors: [...DEFAULT_SLOT_COLORS],
+      slot_button_colors: [...DEFAULT_SLOT_BUTTON_COLORS],
       target_channel_id: null,
       message_id: null,
       admin_is_enabled: true,
@@ -2002,13 +2030,14 @@ export async function showAdminInterfaceSetup(interaction) {
 
   // 1. Generate real-time preview of the layout
   const bannerBuffer = await generateAdminInterfaceBanner(slots, { slotColors, guildId });
-  const attachment = new AttachmentBuilder(bannerBuffer, { name: 'admin_preview.png' });
+  const previewName = `admin_preview_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(bannerBuffer, { name: previewName });
 
   const embed = new EmbedBuilder()
     .setTitle('Dashboard Setup')
     .setDescription('Click any slot button below to assign or clear a module. The preview image updates in real time.')
     .setColor(0x5865F2)
-    .setImage('attachment://admin_preview.png');
+    .setImage(`attachment://${previewName}`);
 
   // 2. Build 3 rows of 4 slot buttons
   const rows = [];
@@ -2219,13 +2248,14 @@ export async function showInterfaceSetup(interaction) {
 
   // 1. Generate real-time preview of the layout
   const bannerBuffer = await generateInterfaceBanner(slots, { slotColors });
-  const attachment = new AttachmentBuilder(bannerBuffer, { name: 'preview.png' });
+  const previewName = `preview_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(bannerBuffer, { name: previewName });
 
   const embed = new EmbedBuilder()
     .setTitle('Shortcuts Setup')
     .setDescription('Click any slot button below to assign or clear a feature. The preview image updates in real time.')
     .setColor(0x5865F2)
-    .setImage('attachment://preview.png');
+    .setImage(`attachment://${previewName}`);
 
   // 2. Build 3 rows of 4 slot buttons
   const rows = [];
@@ -2670,8 +2700,8 @@ export async function handleInterfaceComponent(interaction) {
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
       const config = await getInterfaceConfig(guildId);
       config.shortcut_order = [...DEFAULT_SHORTCUT_ORDER];
-      config.slot_colors = new Array(12).fill('#000000');
-      config.slot_button_colors = new Array(12).fill('secondary');
+      config.slot_colors = [...DEFAULT_SLOT_COLORS];
+      config.slot_button_colors = [...DEFAULT_SLOT_BUTTON_COLORS];
       await saveInterfaceConfig(guildId, config);
 
       return showInterfaceSetup(interaction);
