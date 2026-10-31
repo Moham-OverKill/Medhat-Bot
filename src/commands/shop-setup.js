@@ -3184,14 +3184,13 @@ export async function handleDeleteItemSelect(interaction) {
       : (targetRoleId ? `\`${targetRoleId}\`` : null);
 
     const roleLine = roleMention
-      ? `• Remove ${roleMention} from all members holding it\n`
-      : '• Remove the connected role from all members currently holding it\n';
+      ? `• Removes ${roleMention} from all members holding it\n`
+      : '';
 
     embed.setDescription(
-      `⚠️ **Deleting this item will:**\n` +
-      `• Remove this item from all member inventories\n` +
+      `• Removes this item from everyone's inventory\n` +
       roleLine +
-      `• Remove any active shop posts for this item`
+      `• Removes all active shop posts for this item`
     );
 
     const row = new ActionRowBuilder().addComponents(
