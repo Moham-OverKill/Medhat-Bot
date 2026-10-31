@@ -419,7 +419,8 @@ test('handleDeleteItemSelect formats concise confirmation embed with role mentio
   assert.equal(embed.title, 'Delete Item: Warrior Blade');
   assert.ok(!embed.description.includes('Are you sure you want to delete'), 'Must omit redundant "Are you sure" preamble');
   assert.ok(!embed.description.includes('Connected Role:'), 'Must omit redundant "Connected Role:" footer');
-  assert.ok(embed.description.includes(`• Remove <@&${roleId}> from all members holding it`), 'Must inline role mention cleanly in list');
-  assert.ok(embed.description.includes('• Remove this item from all member inventories'));
-  assert.ok(embed.description.includes('• Remove any active shop posts for this item'));
+  assert.ok(!embed.description.includes('Deleting this item will:'), 'Must omit "Deleting this item will:" header');
+  assert.ok(embed.description.includes(`• Removes <@&${roleId}> from all members holding it`), 'Must inline role mention cleanly in list');
+  assert.ok(embed.description.includes("• Removes this item from everyone's inventory"));
+  assert.ok(embed.description.includes('• Removes all active shop posts for this item'));
 });
