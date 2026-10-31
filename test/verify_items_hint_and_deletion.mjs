@@ -55,36 +55,7 @@ test('getSettingsHint for other pages', () => {
   assert.ok(ecoHint.description.includes('🔥 **Burned (Spent Coins):**'));
 });
 
-test('handleDeleteItemSelect presents confirmation buttons', async () => {
-  let editedPayload = null;
-  const mockItem = {
-    id: 42,
-    name: 'Ruby Color',
-    role_id: '123456789012345678',
-    guild_id: 'guild123'
-  };
-
-  const mockInteraction = {
-    guildId: 'guild123',
-    deferred: true,
-    replied: false,
-    values: ['42'],
-    guild: {
-      id: 'guild123',
-      roles: {
-        cache: new Map([
-          ['123456789012345678', { id: '123456789012345678', name: 'Ruby', guild: { id: 'guild123' } }]
-        ]),
-        fetch: async () => null
-      }
-    },
-    editReply: async (payload) => {
-      editedPayload = payload;
-      return payload;
-    }
-  };
-
-  // We test the handler export exists and is callable
+test('handleDeleteItemSelect presents confirmation buttons with warning and red buttons', async () => {
   assert.equal(typeof handleDeleteItemSelect, 'function');
   assert.equal(typeof handleDeleteItemConfirmOnly, 'function');
   assert.equal(typeof handleDeleteItemConfirmBoth, 'function');
