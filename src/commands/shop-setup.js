@@ -300,7 +300,7 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
     ]);
   const rowPacks = new ActionRowBuilder().addComponents(packsSelect);
 
-  // Row 4: Back only (Post is accessible via the main /settings Shop dropdown)
+  // Row 4: Back and Hint
   const rowButtons = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
@@ -308,7 +308,11 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
         .setLabel('Back')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(isBackDisabled(interaction))
+        .setDisabled(isBackDisabled(interaction)),
+      new ButtonBuilder()
+        .setCustomId('settings_hint_items')
+        .setEmoji('💡')
+        .setStyle(ButtonStyle.Secondary)
     );
 
   return { content: null, embeds: [embed], files: [], attachments: [], components: [rowCategories, rowItems, rowPacks, rowButtons] };
@@ -424,7 +428,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
       components.push(new ActionRowBuilder().addComponents(select));
     }
 
-    // 2. Action Buttons: Back, Config, Create
+    // 2. Action Buttons: Back, Hint, Appearance, Create
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('settings_back')
@@ -432,6 +436,10 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(isBackDisabled(interaction)),
+      new ButtonBuilder()
+        .setCustomId('settings_hint_chests')
+        .setEmoji('💡')
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
         .setLabel('Appearance')
@@ -5463,6 +5471,10 @@ export async function handleShopPostGate(interaction) {
           .setCustomId(`settings_back:${sessionId}`)
           .setLabel('Back')
           .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('settings_hint_post')
+          .setEmoji('💡')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(`shop_post_edit_layout:${sessionId}`)

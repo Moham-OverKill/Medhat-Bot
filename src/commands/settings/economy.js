@@ -314,6 +314,10 @@ async function showEconomyDashboard(interaction, view) {
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(isBackDisabled(interaction)),
         new ButtonBuilder()
+            .setCustomId('settings_hint_economy')
+            .setEmoji('💡')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
             .setCustomId('eco_prices')
             .setLabel('Prices')
             .setEmoji('🏷️')

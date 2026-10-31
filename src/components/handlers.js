@@ -1,5 +1,6 @@
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { handleSettingsComponent } from '../commands/settings.js';
+import { handleSettingsHint } from '../commands/settings/hints.js';
 import { handleMvpComponent } from '../commands/mvp.js';
 import { handleRewardsComponent, handleRewardsModal } from '../commands/rewards.js';
 import { handleColorButton, handleColorsComponent, handleRoleSelection, handleColorsCommand } from '../commands/colors.js';
@@ -529,6 +530,12 @@ export function setupComponentHandlers(client) {
           const { handleInterfaceComponent } = await import('../commands/interface.js');
           await handleInterfaceComponent(interaction);
         }
+        return;
+      }
+
+      // SETTINGS HINTS (Private ephemeral tips for beginners)
+      if (customId.startsWith('settings_hint_')) {
+        await handleSettingsHint(interaction);
         return;
       }
 
