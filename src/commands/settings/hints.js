@@ -7,7 +7,7 @@ export const SETTINGS_HINTS = {
       'Set up ways for your server members to earn free coins.\n\n' +
       '📅 **Daily:** Free coins members can claim every 24 hours. They can check their coins with `/bank`.\n\n' +
       '🎯 **Quests:** Fun challenges members can complete to earn coins. They can check active tasks with `/quest`.\n\n' +
-      '🏷️ **Tag:** Reward members who add your official Discord server tag to their profile.\n\n' +
+      '🏷️ **Tag:** Reward members who add your server tag to their profile.\n\n' +
       '🗳️ **Vote:** Free bonus coins given to members who vote for Medhat on Top.gg using `/vote`.\n\n' +
       '🖼️ **Appearance:** Change what your server coins are called and what icon they use.\n\n' +
       '💸 **Give Coins:** Instantly send free coins to any member.'
