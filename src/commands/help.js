@@ -37,9 +37,7 @@ export async function handleHelpCommand(interaction) {
       .setColor(0x5865F2)
       .setDescription('Quick directory of available commands on this server:')
       .addFields(
-        { name: '🌐 `/interface`', value: 'Interactive community dashboard and server hub', inline: false },
         { name: '🏦 `/bank`', value: 'Access personal balance and transaction history', inline: false },
-        { name: '🎁 `/daily`', value: 'Claim your daily coin reward and streak bonus', inline: false },
         { name: '🎒 `/inventory`', value: 'View, equip, and manage your items', inline: false },
         { name: '📦 `/items`', value: `Browse server items and available ${lootBoxCatName}`, inline: false },
         { name: '🤝 `/trade`', value: 'Trade coins and items with other server members', inline: false },

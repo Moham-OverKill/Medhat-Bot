@@ -132,19 +132,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
   });
 
   describe('Dynamic Slash Command Registration Gating', () => {
-    it('should omit /daily command when daily_enabled is false', async () => {
-      configCache.set(guildId, {
-        daily_enabled: false,
-        quests_enabled: false,
-        battlepass_enabled: false
-      });
-
-      const commands = await buildGuildCommands(guildId);
-      const hasDaily = commands.some(c => c.name === 'daily');
-      assert.equal(hasDaily, false, '/daily command must NOT be registered when daily is disabled');
-    });
-
-    it('should include /daily command when daily_enabled is true', async () => {
+    it('should never register /daily as a slash command (interface-only claim)', async () => {
       configCache.set(guildId, {
         daily_enabled: true,
         quests_enabled: false,
@@ -153,7 +141,7 @@ describe('Daily Configuration UI Rework & Gating Test Suite', () => {
 
       const commands = await buildGuildCommands(guildId);
       const hasDaily = commands.some(c => c.name === 'daily');
-      assert.equal(hasDaily, true, '/daily command MUST be registered when daily is enabled');
+      assert.equal(hasDaily, false, '/daily command must NOT be registered as a slash command');
     });
   });
 
