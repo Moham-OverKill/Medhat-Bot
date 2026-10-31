@@ -13,7 +13,7 @@ export const SETTINGS_HINTS = {
       '💸 **Give Coins:** Manual admin grant to distribute coins directly to any member for events or giveaways.'
   },
   items: {
-    title: 'HINT: Items & Roles',
+    title: 'HINT: Items',
     description:
       'The central catalog for all server rewards, role cosmetics, and inventory items.\n\n' +
       '⚠️ **Setup Order:** You must create items here first before you can use them as level rewards in **Leveling** or prize drops in **Chests**.\n\n' +
@@ -23,7 +23,7 @@ export const SETTINGS_HINTS = {
       '📢 **Publishing:** Creating items here adds them to your server catalog. To make them purchasable in chat channels, publish them via the **Post** menu.'
   },
   chests: {
-    title: 'HINT: Chests & Mystery Boxes',
+    title: 'HINT: Chests',
     description:
       'Create randomized loot boxes that reward coins and items when unboxed.\n\n' +
       '⚠️ **Item Dependency:** Chests pull their item rewards directly from your catalog. Make sure you have created items in the **Items** menu before setting up drop tables.\n\n' +
@@ -33,7 +33,7 @@ export const SETTINGS_HINTS = {
       '📢 **Distribution:** Once created, you can publish chests to shop channels via **Post**, or set them as milestone rewards in the **Leveling** system.'
   },
   post: {
-    title: 'HINT: Post to Shop',
+    title: 'HINT: Post',
     description:
       'Publish items and chests from your catalog into Discord channels for members to buy.\n\n' +
       '⚠️ **Storefront Rule:** Items and chests created in settings are hidden until you post them to a channel.\n\n' +
@@ -42,7 +42,7 @@ export const SETTINGS_HINTS = {
       '🛒 **Storefront:** Members click Buy directly on the message to purchase, or browse all active posts using `/items`.'
   },
   economy: {
-    title: 'HINT: Economy Stats',
+    title: 'HINT: Economy',
     description:
       'Monitor your server’s financial health, currency flow, and inflation.\n\n' +
       '💰 **Total Server Wealth:** The combined coin balance of all member accounts in your server.\n\n' +
