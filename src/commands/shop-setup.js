@@ -311,7 +311,7 @@ export async function getShopSetupPayload(guild, guildId, interaction = null) {
         .setDisabled(isBackDisabled(interaction)),
       new ButtonBuilder()
         .setCustomId('settings_hint_items')
-        .setEmoji('💡')
+        .setEmoji('❔')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -438,7 +438,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setDisabled(isBackDisabled(interaction)),
       new ButtonBuilder()
         .setCustomId('settings_hint_chests')
-        .setEmoji('💡')
+        .setEmoji('❔')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('shop_lb_rename_cat')
@@ -5474,7 +5474,7 @@ export async function handleShopPostGate(interaction) {
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('settings_hint_post')
-          .setEmoji('💡')
+          .setEmoji('❔')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(`shop_post_edit_layout:${sessionId}`)

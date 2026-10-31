@@ -69,12 +69,7 @@ export async function handleSlashCommand(interaction) {
     case 'profile':
       await handleProfileCommand(interaction);
       break;
-    case 'help': {
-      const { handleHelpCommand } = await import('./help.js');
-      await handleHelpCommand(interaction);
-      break;
-    }
-        default:
+            default:
       await interaction.reply({
         content: '❌ Unknown command',
         flags: MessageFlags.Ephemeral

@@ -19,7 +19,7 @@ export const SETTINGS_HINTS = {
       '• **Categories:** Folders to keep your items organized (example: Colors, Special Roles).\n' +
       '• **Items:** Things people can buy (usually Discord roles that give colors or cool names).\n' +
       '• **Packs:** A bundle box that gives more than one item together in one purchase.\n\n' +
-      '💡 *Note:* Creating an item here puts it in your storage room. To actually put it in a channel for people to buy, go to the **Post** page next!'
+      '❔ *Note:* Creating an item here puts it in your storage room. To actually put it in a channel for people to buy, go to the **Post** page next!'
   },
   chests: {
     title: 'HINT: Chests & Mystery Boxes',
