@@ -1130,11 +1130,18 @@ async function awardCoinReward(guildId, userId, amount, guildName) {
   }
 }
 
+let cairoMidnightTimeout = null;
+
 /**
  * Global streak reset scheduler (Relocated from index.js)
  * Resets stale streaks globally at Cairo midnight
  */
 export async function scheduleCairoMidnightReset(client) {
+  if (cairoMidnightTimeout) {
+    clearTimeout(cairoMidnightTimeout);
+    cairoMidnightTimeout = null;
+  }
+
   const { getTimeUntilCairoMidnight } = await import('../utils/time.js');
   let msUntilMidnight = getTimeUntilCairoMidnight();
   
@@ -1144,17 +1151,33 @@ export async function scheduleCairoMidnightReset(client) {
     msUntilMidnight = 60000; 
   }
 
-  setTimeout(async () => {
-    sysLog('Global Reset Sequence Starting', { detail: 'Cairo Midnight Triggered' });
+  cairoMidnightTimeout = setTimeout(async () => {
+    cairoMidnightTimeout = null;
+
+    const { getTodayCairo } = await import('../utils/time.js');
+    const { acquireDailyResetLock } = await import('../storage/postgres.js');
+    const todayCairo = getTodayCairo();
+
+    // Atomic idempotency lock: guarantees exact-once execution per Cairo calendar day across all instances
+    const acquired = await acquireDailyResetLock('cairo_midnight_streak_reset', todayCairo);
+    if (!acquired) {
+      sysLog('Cairo Midnight Sequence Skipped', {
+        detail: `Daily reset already completed for ${todayCairo} (idempotent lock held)`
+      });
+      scheduleCairoMidnightReset(client);
+      return;
+    }
+
+    sysLog('Global Reset Sequence Starting', { detail: `Cairo Midnight Triggered for ${todayCairo}` });
     
     // 1. Reset streaks globally
     await resetCairoStaleStreaks();
     
-    // 2. Dispatch Opt-in Daily Claim Reminders (Universal single DM per user)
+    // 2. Dispatch Opt-in Daily Claim Reminders (Universal single DM per user, strictly for unclaimed users)
     try {
-      const { getAllUniqueUsersForNotification, NOTIFICATION_KEYS } = await import('../storage/notifications.js');
+      const { getUnclaimedDailyNotificationUsers } = await import('../storage/notifications.js');
 
-      const userIds = await getAllUniqueUsersForNotification(NOTIFICATION_KEYS.DAILY_CLAIM);
+      const userIds = await getUnclaimedDailyNotificationUsers(todayCairo);
       if (userIds.length > 0) {
         const dmEmbed = new EmbedBuilder()
           .setTitle('Daily Reward Available!')
@@ -1167,6 +1190,7 @@ export async function scheduleCairoMidnightReset(client) {
             if (user) await user.send({ embeds: [dmEmbed] }).catch(() => {});
           })
         );
+        sysLog('Daily Claim Reminder Dispatched', { detail: `Sent to ${userIds.length} unclaimed users for ${todayCairo}` });
       }
     } catch (dmErr) {
       sysError('Daily Claim Reminder Dispatch Failed', dmErr);

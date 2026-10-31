@@ -1703,6 +1703,15 @@ async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_image_host_threads_guild ON image_host_threads(guild_id);
     `);
 
+    // Global Cron Locks Table — Atomic Cross-Container Idempotency for Scheduled Tasks
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS global_cron_locks (
+        job_name VARCHAR(64) PRIMARY KEY,
+        last_run_date VARCHAR(32) NOT NULL,
+        last_run_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
     const ifaceMigrated = await pool.query(
       `SELECT 1 FROM bot_migrations WHERE migration_name = 'populate_server_interface_config_v1'`
@@ -2072,4 +2081,31 @@ export async function isDowntimeGracePeriodActive() {
   } catch (_) {}
   return false;
 }
+
+/**
+ * Attempt to acquire an atomic daily lock for a named cron job on a specific date (e.g. Cairo date 'YYYY-MM-DD').
+ * Returns true if this worker successfully claimed the run for the specified date, or false if already executed today.
+ * @param {string} jobName
+ * @param {string} targetDate e.g. '2026-10-31'
+ * @returns {Promise<boolean>}
+ */
+export async function acquireDailyResetLock(jobName, targetDate) {
+  try {
+    const res = await pool.query(
+      `INSERT INTO global_cron_locks (job_name, last_run_date, last_run_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (job_name) DO UPDATE
+       SET last_run_date = EXCLUDED.last_run_date,
+           last_run_at = NOW()
+       WHERE global_cron_locks.last_run_date != EXCLUDED.last_run_date
+       RETURNING job_name;`,
+      [jobName, targetDate]
+    );
+    return res.rows.length > 0;
+  } catch (err) {
+    sysError('Daily Reset Lock Acquisition Error', err, { jobName, targetDate });
+    return false;
+  }
+}
+
 
