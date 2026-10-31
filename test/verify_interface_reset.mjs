@@ -16,7 +16,11 @@ import {
   handleHubShortcut,
   handleAdminHubComponent,
   getInterfaceConfig,
-  saveInterfaceConfig
+  saveInterfaceConfig,
+  showInterfaceSettings,
+  showAdminInterfaceSettings,
+  showInterfaceSetup,
+  showAdminInterfaceSetup
 } from '../src/commands/interface.js';
 import { ButtonStyle } from 'discord.js';
 
@@ -333,5 +337,130 @@ describe('Interface Reset & Canonical Default Overlay Test Suite', () => {
         assert.fail(`Admin button ${btnId} threw an unexpected error: ${err.message}`);
       }
     }
+  });
+
+  it('13. showInterfaceSettings preserves 4-button row [Back] [Disable/Enable] [Setup] [Send/Update] and self-heals deleted messages', async () => {
+    let payload = null;
+    let savedConfig = null;
+
+    const mockInteraction = {
+      guildId: validGuildId,
+      deferred: true,
+      replied: false,
+      guild: {
+        id: validGuildId,
+        channels: {
+          cache: new Map(),
+          fetch: async () => ({
+            isTextBased: () => true,
+            messages: {
+              // Simulate message was deleted from Discord
+              fetch: async () => null
+            }
+          })
+        }
+      },
+      editReply: async (p) => { payload = p; return p; }
+    };
+
+    setMockPool({
+      query: async (sql, params) => {
+        if (sql.includes('INSERT INTO server_interface_config') || sql.includes('UPDATE server_interface_config')) {
+          savedConfig = params;
+          return { rows: [{ guild_id: validGuildId }] };
+        }
+        return {
+          rows: [{
+            guild_id: validGuildId,
+            is_enabled: true,
+            target_channel_id: '999888777666555444',
+            message_id: '111222333444555666'
+          }]
+        };
+      }
+    });
+
+    await showInterfaceSettings(mockInteraction);
+
+    assert.ok(payload);
+    assert.equal(payload.components.length, 2, 'Must have channel select + button row');
+    const buttonRow = payload.components[1].components;
+    assert.equal(buttonRow.length, 4, 'Must have strictly 4 buttons');
+    assert.equal(buttonRow[0].data.label, 'Back');
+    assert.equal(buttonRow[1].data.label, 'Disable');
+    assert.equal(buttonRow[2].data.label, 'Setup');
+    assert.equal(buttonRow[3].data.label, 'Send', 'Button must revert to Send when message is deleted');
+    assert.equal(buttonRow[3].data.custom_id, 'interface_publish_btn');
+  });
+
+  it('14. showInterfaceSetup has strictly 2 bottom buttons [Back] [Reset] and renders 3x3 slot buttons', async () => {
+    let payload = null;
+
+    const mockInteraction = {
+      guildId: validGuildId,
+      deferred: true,
+      replied: false,
+      guild: { id: validGuildId },
+      editReply: async (p) => { payload = p; return p; }
+    };
+
+    setMockPool({
+      query: async () => ({
+        rows: [{
+          guild_id: validGuildId,
+          shortcut_order: [...DEFAULT_SHORTCUT_ORDER],
+          slot_colors: [...DEFAULT_SLOT_COLORS],
+          slot_button_colors: [...DEFAULT_SLOT_BUTTON_COLORS]
+        }]
+      })
+    });
+
+    await showInterfaceSetup(mockInteraction);
+
+    assert.ok(payload);
+    assert.equal(payload.components.length, 4, '3 slot rows + 1 navigation row');
+    // Each slot row must have strictly 3 buttons (matching 3x3 layout)
+    assert.equal(payload.components[0].components.length, 3, 'Row 1 must have 3 buttons');
+    assert.equal(payload.components[1].components.length, 3, 'Row 2 must have 3 buttons');
+    assert.equal(payload.components[2].components.length, 3, 'Row 3 must have 3 buttons');
+
+    // Bottom row has strictly Back and Reset
+    const navRow = payload.components[3].components;
+    assert.equal(navRow.length, 2, 'Bottom nav row must have strictly 2 buttons');
+    assert.equal(navRow[0].data.label, 'Back');
+    assert.equal(navRow[1].data.label, 'Reset');
+  });
+
+  it('15. showAdminInterfaceSetup has strictly 2 bottom buttons [Back] [Reset]', async () => {
+    let payload = null;
+
+    const mockInteraction = {
+      guildId: validGuildId,
+      deferred: true,
+      replied: false,
+      guild: { id: validGuildId },
+      editReply: async (p) => { payload = p; return p; }
+    };
+
+    setMockPool({
+      query: async () => ({
+        rows: [{
+          guild_id: validGuildId,
+          admin_shortcut_order: [...DEFAULT_ADMIN_SHORTCUT_ORDER],
+          admin_slot_colors: [...DEFAULT_ADMIN_SLOT_COLORS],
+          admin_slot_button_colors: [...DEFAULT_ADMIN_SLOT_BUTTON_COLORS]
+        }]
+      })
+    });
+
+    await showAdminInterfaceSetup(mockInteraction);
+
+    assert.ok(payload);
+    assert.equal(payload.components.length, 4, '3 slot rows + 1 navigation row');
+    // Bottom row has strictly Back and Reset
+    const navRow = payload.components[3].components;
+    assert.equal(navRow.length, 2, 'Bottom nav row must have strictly 2 buttons');
+    assert.equal(navRow[0].data.label, 'Back');
+    assert.equal(navRow[1].data.label, 'Reset');
   });
 });

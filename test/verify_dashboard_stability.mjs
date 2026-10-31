@@ -175,7 +175,7 @@ describe('Admin Dashboard Stability & Ephemeral Message Invariants Suite', () =>
     assert.equal(followUpCalled, true, 'Must fall back cleanly to followUp when editReply throws 10008');
   });
 
-  it('4. Main Dashboard Settings view strictly preserves 3-button layout [Back] [Disable/Enable] [Setup]', async () => {
+  it('4. Main Dashboard Settings view strictly preserves 4-button layout [Back] [Disable/Enable] [Setup] [Send/Update]', async () => {
     let payload = null;
 
     const mockInteraction = {
@@ -201,9 +201,10 @@ describe('Admin Dashboard Stability & Ephemeral Message Invariants Suite', () =>
     assert.ok(payload);
     assert.equal(payload.components.length, 2, 'Must have exactly 2 component rows (channel select + button row)');
     const buttonRow = payload.components[1].components;
-    assert.equal(buttonRow.length, 3, 'Must have strictly 3 buttons: Back, Toggle, Setup (no extra buttons)');
+    assert.equal(buttonRow.length, 4, 'Must have strictly 4 buttons: Back, Toggle, Setup, Send/Update');
     assert.equal(buttonRow[0].data.label, 'Back');
     assert.equal(buttonRow[1].data.label, 'Disable');
     assert.equal(buttonRow[2].data.label, 'Setup');
+    assert.equal(buttonRow[3].data.label, 'Send');
   });
 });
