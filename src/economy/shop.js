@@ -505,21 +505,98 @@ export async function deleteShopItem(itemId, guildId = null) {
       return false;
     }
 
-    await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
-    await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, String(guildId)]);
+    const gId = String(guildId);
 
-    // Cleanup associated shop posts and drop claims
+    // 1. Purge from Level / Battlepass Rewards (Multi-rewards and single reward)
     try {
-      const postRes = await query('SELECT message_id FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+      await query('DELETE FROM battlepass_rewards WHERE shop_item_id = $1 AND guild_id = $2', [numId, gId]);
+      await query('UPDATE battlepass_config SET reward_item_id = NULL WHERE reward_item_id = $1 AND guild_id = $2', [numId, gId]);
+    } catch (e) {
+      logSystemError(`Failed to clean level rewards for deleted item ${numId}: ${sanitizeError(e)}`);
+    }
+
+    // 2. Purge from Loot Boxes / Chests
+    try {
+      await query(
+        `DELETE FROM loot_box_items lbi
+         USING loot_boxes lb
+         WHERE lbi.loot_box_id = lb.id AND lbi.shop_item_id = $1 AND lb.guild_id = $2`,
+        [numId, gId]
+      );
+    } catch (e) {
+      logSystemError(`Failed to clean loot boxes for deleted item ${numId}: ${sanitizeError(e)}`);
+    }
+
+    // 3. Purge from Pack Contents
+    try {
+      const packsResult = await query(
+        `SELECT id, contents FROM shop_items WHERE guild_id = $1 AND item_type = 'pack' AND contents IS NOT NULL`,
+        [gId]
+      );
+      for (const pack of packsResult.rows) {
+        let contents = pack.contents;
+        if (typeof contents === 'string') {
+          try { contents = JSON.parse(contents); } catch (_) { contents = []; }
+        }
+        if (!Array.isArray(contents)) continue;
+        const filtered = contents.filter(id => id !== numId);
+        if (filtered.length !== contents.length) {
+          await query(`UPDATE shop_items SET contents = $1 WHERE id = $2`, [JSON.stringify(filtered), pack.id]);
+        }
+      }
+    } catch (e) {
+      logSystemError(`Failed to clean packs for deleted item ${numId}: ${sanitizeError(e)}`);
+    }
+
+    // 4. Scrub from other items' prerequisites
+    try {
+      await scrubPrerequisiteFromGuild(gId, numId);
+    } catch (e) {
+      logSystemError(`Failed to scrub prerequisites for deleted item ${numId}: ${sanitizeError(e)}`);
+    }
+
+    // 5. Cancel pending trades involving this item
+    try {
+      const pendingTrades = await query(
+        `SELECT id, sender_items, target_items FROM trades WHERE guild_id = $1 AND status = 'pending'`,
+        [gId]
+      );
+      for (const trade of pendingTrades.rows) {
+        let sItems = trade.sender_items;
+        let tItems = trade.target_items;
+        if (typeof sItems === 'string') { try { sItems = JSON.parse(sItems); } catch (_) { sItems = []; } }
+        if (typeof tItems === 'string') { try { tItems = JSON.parse(tItems); } catch (_) { tItems = []; } }
+        const hasItem = (Array.isArray(sItems) && sItems.some(i => i.id === numId || i.itemId === numId)) ||
+                        (Array.isArray(tItems) && tItems.some(i => i.id === numId || i.itemId === numId));
+        if (hasItem) {
+          await query(`UPDATE trades SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [trade.id]);
+        }
+      }
+    } catch (e) {
+      logSystemError(`Failed to cancel trades for deleted item ${numId}: ${sanitizeError(e)}`);
+    }
+
+    // 6. Purge dropped items in chat
+    try {
+      await query('DELETE FROM dropped_items WHERE shop_item_id = $1 AND guild_id = $2', [numId, gId]);
+    } catch (_) {}
+
+    // 7. Cleanup associated shop posts and drop claims
+    try {
+      const postRes = await query('SELECT message_id FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, gId]);
       if (postRes.rows.length > 0) {
         const msgIds = postRes.rows.map(r => r.message_id);
         await query('DELETE FROM shop_drop_claims WHERE message_id = ANY($1)', [msgIds]);
-        await query('DELETE FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, String(guildId)]);
+        await query('DELETE FROM shop_posts WHERE item_id = $1 AND guild_id = $2', [numId, gId]);
       }
     } catch (_) {}
 
+    // 8. Delete from user_inventory and shop_items
+    await query('DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2', [numId, gId]);
+    await query('DELETE FROM shop_items WHERE id = $1 AND guild_id = $2', [numId, gId]);
+
     invalidateShopCache(guildId);
-    sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}`, guild: String(guildId) });
+    sysLog('Shop Item Deleted', { detail: `ItemID: ${numId}`, guild: gId });
     return true;
   } catch (error) {
     logSystemError(`Failed to delete shop item: ${sanitizeError(error)}`);

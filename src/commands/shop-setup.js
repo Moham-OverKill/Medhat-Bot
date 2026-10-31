@@ -3190,6 +3190,7 @@ export async function handleDeleteItemSelect(interaction) {
     embed.setDescription(
       `• Remove this item from everyone's inventory\n` +
       roleLine +
+      `• Remove this item from level rewards\n` +
       `• Remove all active shop posts for this item`
     );
 
