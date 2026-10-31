@@ -162,11 +162,13 @@ import {
   handleLevelModal,
   handleAdminSetQuantity,
   handleAdminGiveModal,
-  handleAdminRemoveModal
+  handleAdminRemoveModal,
+  handleAdminUserComponent
 } from '../commands/admin-users.js';
 import { handleOrganizeComponent } from '../commands/settings/organize.js';
-import { handleInterfaceModal, handleHubShortcut, handleAdminHubComponent } from '../commands/interface.js';
-import { handlePassModal } from '../commands/settings/pass.js';
+import { handleInterfaceModal, handleHubShortcut, handleAdminHubComponent, handleInterfaceComponent } from '../commands/interface.js';
+import { handlePassModal, handlePassSetup, handlePassComponent } from '../commands/settings/pass.js';
+import { handleRoleRewardsComponent } from '../commands/settings/role-rewards.js';
 import { handleEmbedModal, handleEmbedComponent } from '../commands/settings/embeds.js';
 import { handleLevelTabButton } from '../commands/pass.js';
 import { handleHelpSelect, handleHelpStepNavigation } from '../commands/help.js';
@@ -250,6 +252,7 @@ function isModalOpener(interaction) {
     customId === 'settings_vote_reward' ||
     customId === 'settings_tag_reward' ||
     customId === 'settings_customize' ||
+    customId === 'admin_hub_customize' ||
     customId === 'settings_coins_customize' ||
     (customId.startsWith('settings_menu_') && firstValue === 'other_customize') ||
     customId === 'organize_set_reactions' ||
@@ -286,26 +289,31 @@ export function setupComponentHandlers(client) {
       const compStart = performance.now();
 
       // --- 0. INTERACTION WATCHDOG & TIMEOUT SHIELD ---
-      // Discord enforces a 3.0s hard timeout. At 2.0s, trigger emergency deferral for non-modal components.
+      // Discord enforces a 3.0s hard timeout. At 1.0s, trigger emergency deferral with correct semantics.
       const watchdog = setTimeout(async () => {
         if (!interaction.deferred && !interaction.replied) {
           const detail = interaction.isCommand?.() ? `/${interaction.commandName}` : (interaction.customId || 'unidentified');
           if (!isModalOpener(interaction)) {
-            logger.warn('COMPONENT', 'Interaction Watchdog Safety Triggered: applying emergency deferral', {
+            logger.debug('COMPONENT', 'Interaction Watchdog Safety Triggered: applying early deferral', {
               userId: interaction.user?.id,
               guildId: interaction.guildId,
               detail
             });
-            await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
+            const isPublicCardShortcut = customId && (customId.startsWith('hub_btn_') || customId.startsWith('admin_hub_'));
+            if (isPublicCardShortcut) {
+              await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
+            } else {
+              await interaction.deferUpdate().catch(() => {});
+            }
           } else {
-            logger.debug('MODAL', 'Modal interaction pending acknowledgment at 2.0s', {
+            logger.debug('MODAL', 'Modal interaction pending acknowledgment at 1.0s', {
               userId: interaction.user?.id,
               guildId: interaction.guildId,
               detail
             });
           }
         }
-      }, 2000);
+      }, 1000);
 
       const customId = interaction.customId;
       const isMutating = isStateMutatingAction(customId);
@@ -494,7 +502,6 @@ export function setupComponentHandlers(client) {
 
       // PASS / LEVELS DASHBOARD
       if (customId === 'settings_pass' || customId.startsWith('pass_')) {
-        const { handlePassSetup, handlePassComponent } = await import('../commands/settings/pass.js');
         if (customId === 'settings_pass') {
           await handlePassSetup(interaction);
         } else {
@@ -505,21 +512,18 @@ export function setupComponentHandlers(client) {
 
       // ADMIN USERS & ADMIN MANAGEMENT
       if (customId.startsWith('admin_user_') || customId.startsWith('admin_manage_')) {
-        const { handleAdminUserComponent } = await import('../commands/admin-users.js');
         await handleAdminUserComponent(interaction);
         return;
       }
 
       // ORGANIZE / AUTOMOD
       if (customId.startsWith('organize_')) {
-        const { handleOrganizeComponent } = await import('../commands/settings/organize.js');
         await handleOrganizeComponent(interaction);
         return;
       }
 
       // ROLE REWARDS
       if (customId.startsWith('role_rewards_')) {
-        const { handleRoleRewardsComponent } = await import('../commands/settings/role-rewards.js');
         await handleRoleRewardsComponent(interaction);
         return;
       }
@@ -527,10 +531,8 @@ export function setupComponentHandlers(client) {
       // INTERFACE / DASHBOARD SHORTCUTS
       if (customId.startsWith('interface_') || customId.startsWith('admin_interface_')) {
         if (interaction.isModalSubmit && interaction.isModalSubmit()) {
-          const { handleInterfaceModal } = await import('../commands/interface.js');
           await handleInterfaceModal(interaction);
         } else {
-          const { handleInterfaceComponent } = await import('../commands/interface.js');
           await handleInterfaceComponent(interaction);
         }
         return;

@@ -507,6 +507,11 @@ export async function auditAndPruneDepartedAdmins(client) {
  * @returns {Promise<boolean>} true if allowed, false if hard-denied
  */
 export async function verifyAdminAccess(interaction) {
+  // Pre-verified by interaction dispatcher guardrail (0ms)
+  if (interaction?._adminVerified === true) {
+    return true;
+  }
+
   const guildId = interaction.guildId;
   const userId = interaction.user?.id;
 
