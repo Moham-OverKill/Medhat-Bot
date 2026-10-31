@@ -794,8 +794,23 @@ client.on(Events.GuildRoleDelete, async (role) => {
       const xpBoostRes = await query('DELETE FROM role_xp_boosters WHERE role_id = $1 AND guild_id = $2', [role.id, guild.id]).catch(() => ({ rowCount: 0 }));
       const boosterRes = await query('DELETE FROM booster_roles WHERE role_id = $1 AND guild_id = $2', [role.id, guild.id]).catch(() => ({ rowCount: 0 }));
 
-      // 5. Audit Log
-      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted || adminRoleRemoved || bpRoleRes.rowCount > 0 || xpBoostRes.rowCount > 0 || boosterRes.rowCount > 0) {
+      // 5. Cleanup Server Reward Roles (MVP, Richest, Streaks)
+      const { getGuildConfig, setGuildConfig } = await import('./storage/config.js');
+      const cfg = await getGuildConfig(guild.id).catch(() => null);
+      let configRolesCleaned = false;
+      if (cfg) {
+        const updates = {};
+        if (cfg.mvpRoleId === role.id) updates.mvpRoleId = null;
+        if (cfg.richest_role_id === role.id) updates.richest_role_id = null;
+        if (cfg.streak_role_id === role.id) updates.streak_role_id = null;
+        if (Object.keys(updates).length > 0) {
+          await setGuildConfig(guild.id, updates).catch(() => {});
+          configRolesCleaned = true;
+        }
+      }
+
+      // 6. Audit Log
+      if (stats.itemsRemoved > 0 || normalCleanup.deleted || boosterCleanup.deleted || adminRoleRemoved || bpRoleRes.rowCount > 0 || xpBoostRes.rowCount > 0 || boosterRes.rowCount > 0 || configRolesCleaned) {
         sendLog(guild, 'audit', 'crimson', '🛡️ Real-Time Ghost Cleanup', 
           `Role **@${role.name}** was deleted from the server. Maintenance initiated:\n` +
           `• **Shop Items Deactivated:** ${stats.itemsRemoved}\n` +
@@ -804,7 +819,8 @@ client.on(Events.GuildRoleDelete, async (role) => {
           `• **Color Roles Removed:** ${(normalCleanup.deleted || boosterCleanup.deleted) ? 'Yes' : 'No'}\n` +
           `• **Admin Role Purged:** ${adminRoleRemoved ? 'Yes' : 'No'}\n` +
           `• **Level Reward Role Cleared:** ${bpRoleRes.rowCount > 0 ? 'Yes' : 'No'}\n` +
-          `• **XP Boosters Purged:** ${xpBoostRes.rowCount > 0 ? 'Yes' : 'No'}`
+          `• **XP Boosters Purged:** ${xpBoostRes.rowCount > 0 ? 'Yes' : 'No'}\n` +
+          `• **Server Reward Unbound:** ${configRolesCleaned ? 'Yes' : 'No'}`
         );
       }
     } catch (error) {

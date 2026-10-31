@@ -2345,6 +2345,22 @@ export async function cleanupDeletedRole(guildId, roleId) {
       await scrubPrerequisiteFromGuild(guildId, itemId);
     }
 
+    // 5. Purge from Level Rewards & Loot Boxes for deactivated items
+    try {
+      await query('DELETE FROM battlepass_rewards WHERE shop_item_id = ANY($1)', [itemIds]);
+      await query('DELETE FROM loot_box_items WHERE shop_item_id = ANY($1)', [itemIds]);
+    } catch (_) {}
+
+    // 6. Cleanup associated shop posts
+    try {
+      const postRes = await query('SELECT message_id FROM shop_posts WHERE item_id = ANY($1) AND guild_id = $2', [itemIds, guildId]);
+      if (postRes.rows.length > 0) {
+        const msgIds = postRes.rows.map(r => r.message_id);
+        await query('DELETE FROM shop_drop_claims WHERE message_id = ANY($1)', [msgIds]);
+        await query('DELETE FROM shop_posts WHERE item_id = ANY($1) AND guild_id = $2', [itemIds, guildId]);
+      }
+    } catch (_) {}
+
     sysLog('Role Deletion Purge', { guild: guildId, detail: `RoleID: ${roleId} | Purged: ${shopResult.rowCount} items | Reason: Role deleted` });
 
     // Discord Log (Bulk)
