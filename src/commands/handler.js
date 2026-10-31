@@ -2,7 +2,6 @@ import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { handleSettingsCommand } from './settings.js';
 import { handleBankCommand } from './bank.js';
 import { handleInventoryCommand } from './inventory.js';
-import { handleItemMassCommand } from './item-mass.js';
 import { execute as handleQuestCommand } from './quest.js';
 import { handleTradeCommand } from './trade.js';
 import { handleVoteCommand } from './vote.js';
@@ -27,7 +26,7 @@ export async function handleSlashCommand(interaction) {
   });
 
   // Top-Level Admin Slash Command Security Gate (Zero Trust Multi-Tenant Pre-Check)
-  const adminCommands = ['settings', 'mass'];
+  const adminCommands = ['settings'];
   if (adminCommands.includes(commandName)) {
     const { verifyAdminAccess } = await import('../storage/admins.js');
     const hasAccess = await verifyAdminAccess(interaction);
@@ -44,10 +43,7 @@ export async function handleSlashCommand(interaction) {
     case 'inventory':
       await handleInventoryCommand(interaction);
       break;
-    case 'mass':
-      await handleItemMassCommand(interaction);
-      break;
-    case 'quest':
+        case 'quest':
       await handleQuestCommand(interaction);
       break;
     case 'trade':
@@ -78,12 +74,7 @@ export async function handleSlashCommand(interaction) {
       await handleHelpCommand(interaction);
       break;
     }
-    case 'daily': {
-      const { handleDailyCommand } = await import('./daily.js');
-      await handleDailyCommand(interaction);
-      break;
-    }
-    default:
+        default:
       await interaction.reply({
         content: '❌ Unknown command',
         flags: MessageFlags.Ephemeral

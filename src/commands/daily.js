@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { MessageFlags, EmbedBuilder } from 'discord.js';
 import { claimDaily } from '../economy/service.js';
 import { getGuildConfig } from '../storage/config.js';
 import { createErrorEmbed, handleInteractionError } from '../utils/errors.js';
@@ -8,9 +8,6 @@ import { getUserDisplayName, getUserLogName, COIN_EMOJI } from '../shared.js';
 import { getCoinThumbnailUrl } from './bank.js';
 import { sendLog } from '../utils/logger.js';
 
-export const dailyCommand = new SlashCommandBuilder()
-  .setName('daily')
-  .setDescription('Claim your daily currency reward');
 
 /**
  * Shared daily claim executor for slash command and interface button
@@ -78,12 +75,4 @@ export async function executeDailyClaim(interaction) {
     );
 
   return interaction.editReply({ files: [], content: '', embeds: [claimEmbed], components: [] });
-}
-
-export async function handleDailyCommand(interaction) {
-  try {
-    await executeDailyClaim(interaction);
-  } catch (error) {
-    await handleInteractionError(interaction, error, 'Daily command');
-  }
 }

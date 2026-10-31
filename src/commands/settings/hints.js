@@ -5,7 +5,7 @@ export const SETTINGS_HINTS = {
     title: 'HINT: Coins',
     description: 
       'This is where you give your server members coins when they are active.\n\n' +
-      '• **Daily:** Members can type `/daily` to get free coins every day.\n' +
+      '• **Daily:** Free coins members can claim every 24 hours from your server interface.\n' +
       '• **Quests:** Simple missions members can do to win coins.\n' +
       '• **Tag:** Free coins given to members who add your server name in their Discord profile status.\n' +
       '• **Vote:** Free coins given when members vote for your server online.\n' +
