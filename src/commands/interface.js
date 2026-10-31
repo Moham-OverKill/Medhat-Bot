@@ -2280,18 +2280,11 @@ export async function showInterfaceSetup(interaction) {
     .setColor(0x5865F2)
     .setImage(`attachment://${previewName}`);
 
-  // 2. Build 3 rows of slot buttons (3 columns for 3x3 layout, or 4 if a 4th column is configured)
-  const hasCol4 = Boolean(
-    (slots[3] && slots[3] !== 'empty') ||
-    (slots[7] && slots[7] !== 'empty') ||
-    (slots[11] && slots[11] !== 'empty')
-  );
-  const colCount = hasCol4 ? 4 : 3;
-
+  // 2. Build 3 rows of 4 slot buttons (12 slots total, consistent with dashboard interface)
   const rows = [];
   for (let r = 0; r < 3; r++) {
     const row = new ActionRowBuilder();
-    for (let c = 0; c < colCount; c++) {
+    for (let c = 0; c < 4; c++) {
       const idx = r * 4 + c;
       const slotId = slots[idx];
       const meta = getShortcutMeta(slotId);
