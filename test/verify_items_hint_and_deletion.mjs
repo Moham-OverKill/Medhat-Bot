@@ -357,3 +357,69 @@ test('safelyDeleteConnectedRole guards role deletion and only deletes when valid
   assert.ok(deleteReason.includes('Sword'), 'Delete reason must include item name');
   assert.ok(deleteReason.includes('User#1234'), 'Delete reason must include user tag');
 });
+
+test('handleDeleteItemSelect formats concise confirmation embed with role mentioned inline', async () => {
+  const guildId = '111111111111111111';
+  const roleId = '333333333333333333';
+  const itemId = 42;
+
+  let replyPayload = null;
+  const mockInteraction = {
+    guildId,
+    deferred: true,
+    replied: false,
+    values: [String(itemId)],
+    guild: {
+      id: guildId,
+      roles: {
+        cache: new Map([[roleId, {
+          id: roleId,
+          name: 'Warrior',
+          guild: { id: guildId },
+          managed: false,
+          permissions: { has: () => false },
+          position: 10
+        }]]),
+        fetch: async () => null
+      },
+      members: {
+        me: {
+          permissions: { has: (perm) => perm === PermissionFlagsBits.ManageRoles },
+          roles: { highest: { position: 50 } }
+        }
+      }
+    },
+    editReply: async (payload) => {
+      replyPayload = payload;
+      return payload;
+    }
+  };
+
+  setMockPool({
+    query: async (sql, params) => {
+      if (sql.includes('FROM shop_items')) {
+        return {
+          rows: [{
+            id: itemId,
+            guild_id: guildId,
+            name: 'Warrior Blade',
+            role_id: roleId
+          }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  });
+
+  await handleDeleteItemSelect(mockInteraction);
+
+  assert.ok(replyPayload, 'editReply must be called');
+  const embed = replyPayload.embeds[0].data;
+  assert.equal(embed.title, 'Delete Item: Warrior Blade');
+  assert.ok(!embed.description.includes('Are you sure you want to delete'), 'Must omit redundant "Are you sure" preamble');
+  assert.ok(!embed.description.includes('Connected Role:'), 'Must omit redundant "Connected Role:" footer');
+  assert.ok(embed.description.includes(`• Remove <@&${roleId}> from all members holding it`), 'Must inline role mention cleanly in list');
+  assert.ok(embed.description.includes('• Remove this item from all member inventories'));
+  assert.ok(embed.description.includes('• Remove any active shop posts for this item'));
+});
