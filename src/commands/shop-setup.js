@@ -693,7 +693,8 @@ export async function handleRoleSwapSelect(interaction) {
     }
 
     const oldRoleId = item.role_id;
-    await updateShopItem(itemId, { role_id: role.id }, interaction.guildId);
+    await updateShopItem(itemId, { role_id: role.id, is_active: true }, interaction.guildId);
+    await query('UPDATE user_inventory SET is_active = true WHERE shop_item_id = $1 AND guild_id = $2', [itemId, interaction.guildId]).catch(() => {});
     sendLog(interaction.guild, 'shop', 'blue', '🔄 Item Role Swapped',
       `Admin <@${interaction.user.id}> swapped role for **${item.name}** (ID: ${itemId}).\n**Role:** <@&${oldRoleId}> ➡️ <@&${role.id}>`);
 
