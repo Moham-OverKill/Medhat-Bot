@@ -393,7 +393,7 @@ describe('Interface Reset & Canonical Default Overlay Test Suite', () => {
     assert.equal(buttonRow[3].data.custom_id, 'interface_publish_btn');
   });
 
-  it('14. showInterfaceSetup has strictly 2 bottom buttons [Back] [Reset] and renders 3x3 slot buttons', async () => {
+  it('14. showInterfaceSetup has strictly 2 bottom buttons [Back] [Reset] and renders 12 slot buttons (3 rows of 4)', async () => {
     let payload = null;
 
     const mockInteraction = {
@@ -419,10 +419,10 @@ describe('Interface Reset & Canonical Default Overlay Test Suite', () => {
 
     assert.ok(payload);
     assert.equal(payload.components.length, 4, '3 slot rows + 1 navigation row');
-    // Each slot row must have strictly 3 buttons (matching 3x3 layout)
-    assert.equal(payload.components[0].components.length, 3, 'Row 1 must have 3 buttons');
-    assert.equal(payload.components[1].components.length, 3, 'Row 2 must have 3 buttons');
-    assert.equal(payload.components[2].components.length, 3, 'Row 3 must have 3 buttons');
+    // Each slot row must have 4 buttons (3 configured features + 1 empty slot '+' allowing expansion)
+    assert.equal(payload.components[0].components.length, 4, 'Row 1 must have 4 buttons');
+    assert.equal(payload.components[1].components.length, 4, 'Row 2 must have 4 buttons');
+    assert.equal(payload.components[2].components.length, 4, 'Row 3 must have 4 buttons');
 
     // Bottom row has strictly Back and Reset
     const navRow = payload.components[3].components;
