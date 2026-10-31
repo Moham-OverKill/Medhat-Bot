@@ -204,6 +204,14 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     emoji: '🛒',
     buttonCustomId: 'admin_hub_shop'
   },
+  post: {
+    id: 'post',
+    name: 'Post',
+    label: 'POST',
+    description: 'Post items in channels for members to buy',
+    emoji: '📢',
+    buttonCustomId: 'admin_hub_post'
+  },
   chests: {
     id: 'chests',
     name: 'Chests',
@@ -1677,6 +1685,10 @@ export async function handleAdminHubComponent(interaction) {
     case 'admin_hub_shop': {
       const { handleShopSetup } = await import('./shop-setup.js');
       return handleShopSetup(interaction);
+    }
+    case 'admin_hub_post': {
+      const { handleShopPostGate } = await import('./shop-setup.js');
+      return handleShopPostGate(interaction);
     }
     case 'admin_hub_chests':
     case 'admin_hub_lootboxes': {

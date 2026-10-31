@@ -250,37 +250,19 @@ describe('Unified Appearance UI Standardization Suite', () => {
     assert.equal(modalShown.data.title, 'Appearance');
   });
 
-  it('7. Shop Item Creation Wizard: Tab bar emojis disabled placeholder', async () => {
-    let payload = null;
+  it('7. Shop Item Creation Wizard: Open create item modal', async () => {
+    let modalShown = null;
     const mockInteraction = {
       guildId: validGuildId,
-      deferred: true,
+      deferred: false,
       replied: false,
-      editReply: async (p) => { payload = p; return p; }
+      showModal: async (m) => { modalShown = m; return m; },
+      editReply: async (p) => p,
+      message: { edit: async () => {} }
     };
     await handleCreateItemStart(mockInteraction);
-    assert.ok(payload && payload.components);
-    const tabRow = payload.components[0].components;
-
-    const detailsBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_details_new');
-    assert.ok(detailsBtn);
-    assert.equal(detailsBtn.data.label, 'Details');
-    assert.equal(detailsBtn.data.emoji.name, 'ℹ️');
-
-    const appBtn = tabRow.find(b => b.data.custom_id === 'shop_item_appearance_btn_new');
-    assert.ok(appBtn, 'shop_item_appearance_btn_new button must exist');
-    assert.equal(appBtn.data.label, 'Appearance');
-    assert.equal(appBtn.data.emoji.name, '🖼️');
-
-    const configBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_config_new');
-    assert.ok(configBtn);
-    assert.equal(configBtn.data.label, 'Config');
-    assert.equal(configBtn.data.emoji.name, '⚙️');
-
-    const usersBtn = tabRow.find(b => b.data.custom_id === 'shop_item_tab_users_new');
-    assert.ok(usersBtn);
-    assert.equal(usersBtn.data.label, 'Users');
-    assert.equal(usersBtn.data.emoji.name, '👥');
+    assert.ok(modalShown);
+    assert.equal(modalShown.data.title, 'Create Item');
   });
 
   it('8. Post Item Wizard: Appearance button and Post appearance modal title', async () => {
@@ -315,7 +297,7 @@ describe('Unified Appearance UI Standardization Suite', () => {
 
     await handleShopPostStart(mockInteraction);
     assert.ok(payload && payload.components);
-    const btnRow = payload.components[2].components;
+    const btnRow = payload.components.find(r => r.components.some(b => b.data.custom_id?.startsWith('shop_post_appearance_btn')))?.components;
     const appBtn = btnRow.find(b => b.data.custom_id.startsWith('shop_post_appearance_btn'));
     assert.ok(appBtn, 'shop_post_appearance_btn button must exist');
     assert.equal(appBtn.data.label, 'Appearance');
