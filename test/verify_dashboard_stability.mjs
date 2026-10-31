@@ -207,4 +207,57 @@ describe('Admin Dashboard Stability & Ephemeral Message Invariants Suite', () =>
     assert.equal(buttonRow[2].data.label, 'Setup');
     assert.equal(buttonRow[3].data.label, 'Send');
   });
+
+  it('5. verifyAdminAccess must bypass database and return true immediately if _adminVerified is true', async () => {
+    const { verifyAdminAccess } = await import('../src/storage/admins.js');
+    let queryRun = false;
+    setMockPool({
+      query: async () => {
+        queryRun = true;
+        return { rows: [] };
+      }
+    });
+
+    const mockInteraction = {
+      _adminVerified: true,
+      guildId: validGuildId,
+      user: { id: validUserId }
+    };
+
+    const hasAccess = await verifyAdminAccess(mockInteraction);
+    assert.equal(hasAccess, true, 'Must grant access when pre-verified');
+    assert.equal(queryRun, false, 'Must NOT query database when _adminVerified is true');
+  });
+
+  it('6. Setup panels showInterfaceSetup and showAdminInterfaceSetup must acknowledge interaction instantly via deferUpdate', async () => {
+    const { showInterfaceSetup, showAdminInterfaceSetup } = await import('../src/commands/interface.js');
+
+    let shortcutDeferred = false;
+    const shortcutMock = {
+      guildId: validGuildId,
+      deferred: false,
+      replied: false,
+      deferUpdate: async () => { shortcutDeferred = true; },
+      editReply: async () => {}
+    };
+
+    setMockPool({
+      query: async () => ({ rows: [] })
+    });
+
+    await showInterfaceSetup(shortcutMock);
+    assert.equal(shortcutDeferred, true, 'showInterfaceSetup must call deferUpdate when unacknowledged');
+
+    let adminDeferred = false;
+    const adminMock = {
+      guildId: validGuildId,
+      deferred: false,
+      replied: false,
+      deferUpdate: async () => { adminDeferred = true; },
+      editReply: async () => {}
+    };
+
+    await showAdminInterfaceSetup(adminMock);
+    assert.equal(adminDeferred, true, 'showAdminInterfaceSetup must call deferUpdate when unacknowledged');
+  });
 });

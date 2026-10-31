@@ -2053,6 +2053,9 @@ export async function showAdminInterfaceSettings(interaction) {
  * @param {import('discord.js').Interaction} interaction 
  */
 export async function showAdminInterfaceSetup(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeAdminShortcutOrder(config.admin_shortcut_order);
@@ -2135,6 +2138,9 @@ export async function showAdminInterfaceSetup(interaction) {
  * @param {number} slotIndex 
  */
 export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeAdminShortcutOrder(config.admin_shortcut_order);
@@ -2263,6 +2269,9 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
  * @param {import('discord.js').Interaction} interaction 
  */
 export async function showInterfaceSetup(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeShortcutOrder(config.shortcut_order);
@@ -2333,6 +2342,9 @@ export async function showInterfaceSetup(interaction) {
  * @param {number} slotIndex 
  */
 export async function showInterfaceSlotAssign(interaction, slotIndex) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate().catch(() => {});
+  }
   const guildId = interaction.guildId;
   const config = await getInterfaceConfig(guildId);
   const slots = normalizeShortcutOrder(config.shortcut_order);
