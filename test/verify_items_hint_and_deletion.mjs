@@ -35,9 +35,24 @@ test('getSettingsHint for other pages', () => {
   assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily coins'));
   assert.ok(coinsHint.description.includes('🗳️ **Vote:** Gives daily coins'));
 
-  const chestsHint = getSettingsHint('chests', 'Mystery Boxes');
+  const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁');
   assert.equal(chestsHint.title, 'HINT: Mystery Boxes');
-  assert.ok(chestsHint.description.includes('Mystery Boxes'));
+  assert.ok(chestsHint.description.includes('⚠️ **Create Items First:**'));
+  assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
+  assert.ok(chestsHint.description.includes('**[📢 Post]**'));
+  assert.ok(chestsHint.description.includes('**[⭐ Levels]**'));
+
+  const postHint = getSettingsHint('post', 'Chests', '🎁');
+  assert.equal(postHint.title, 'HINT: Post');
+  assert.ok(postHint.description.includes('➕ **New Post:**'));
+  assert.ok(postHint.description.includes('📝 **Edit Post:**'));
+  assert.ok(postHint.description.includes('**[🏷️ Items]**'));
+
+  const ecoHint = getSettingsHint('economy', 'Chests', '🎁');
+  assert.equal(ecoHint.title, 'HINT: Economy');
+  assert.ok(ecoHint.description.includes('💰 **Total Wealth:**'));
+  assert.ok(ecoHint.description.includes('🖨️ **Printed (New Coins):**'));
+  assert.ok(ecoHint.description.includes('🔥 **Burned (Spent Coins):**'));
 });
 
 test('handleDeleteItemSelect presents confirmation buttons', async () => {
