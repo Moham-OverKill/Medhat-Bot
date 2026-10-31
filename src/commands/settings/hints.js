@@ -4,47 +4,48 @@ export const SETTINGS_HINTS = {
   coins: {
     title: 'HINT: Coins',
     description: 
-      'This is where you give your server members coins when they are active.\n\n' +
-      '• **Daily:** Free coins members can claim every 24 hours from your server interface.\n' +
-      '• **Quests:** Simple missions members can do to win coins.\n' +
-      '• **Tag:** Free coins given to members who add your server name in their Discord profile status.\n' +
-      '• **Vote:** Free coins given when members vote for your server online.\n' +
-      '• **Appearance:** Change what coins look like and what they are called in your server.\n' +
-      '• **Give Coins:** Instantly give free coins to any member right now.'
+      'This is where you set up ways for your server members to earn free coins.\n\n' +
+      '• **Daily:** Free coins members can claim once every 24 hours. They can check their balance anytime with `/bank`.\n' +
+      '• **Quests:** Fun challenges members can complete to win coins. Members check their tasks with `/quest`.\n' +
+      '• **Tag:** Gives free coins to anyone who puts your server name in their Discord profile status.\n' +
+      '• **Vote:** Free bonus coins given when members vote for your bot online using `/vote`.\n' +
+      '• **Appearance:** Change what your coins are called and what icon they use (like Gold, Stars, or Credits).\n' +
+      '• **Give Coins:** Instantly give free coins to any member with one click.'
   },
   items: {
     title: 'HINT: Items & Roles',
     description:
-      'This is your storage room where you create things for members to buy.\n\n' +
-      '• **Categories:** Folders to keep your items organized (example: Colors, Special Roles).\n' +
-      '• **Items:** Things people can buy (usually Discord roles that give colors or cool names).\n' +
-      '• **Packs:** A bundle box that gives more than one item together in one purchase.\n\n' +
-      '❔ *Note:* Creating an item here puts it in your storage room. To actually put it in a channel for people to buy, go to the **Post** page next!'
+      'This is your storage room. You create the rewards you want to sell here.\n\n' +
+      '• **Categories:** Folders to keep your items tidy (like "Colors" or "VIP Roles").\n' +
+      '• **Items:** The rewards people can buy (usually Discord roles that give cool colors or names). Members browse your catalog with `/items` and view what they own with `/inventory`.\n' +
+      '• **Packs:** Bundle boxes that sell multiple items together as one package.\n\n' +
+      '❔ *Important:* Creating an item here puts it in your storage room. To display it in a channel so members can buy it, go to the **Post** page next!'
   },
   chests: {
     title: 'HINT: Chests & Mystery Boxes',
     description:
-      'Mystery surprise boxes that give random coins or items when members open them.\n\n' +
-      '• **Create:** Make a new mystery box and choose what prizes are hidden inside.\n' +
+      'Mystery surprise boxes! When members open them, they win random coins or items.\n\n' +
+      '• **Create:** Make a new mystery box and pick what prizes and chances are hidden inside.\n' +
       '• **Appearance:** Change what the chest looks like and what it is called.\n' +
-      '• Members can open chests they buy or win to get surprise rewards!'
+      '• **Opening Chests:** Members view and open their chests using `/inventory` to reveal their rewards. Members can also trade them with `/trade`.'
   },
   post: {
     title: 'HINT: Post to Shop',
     description:
-      'This is where you display your items inside a channel so members can see and buy them.\n\n' +
-      '• **New Post:** Pick an item or chest from your storage room, set a price on it, and send it to any channel you want.\n' +
-      '• **Edit Post:** Change the price, stock, or channel of a shop message you already sent before.'
+      'This is where you put your items into chat channels so members can see and buy them.\n\n' +
+      '• **New Post:** Pick an item or chest from your storage room, set the coin price, and send it directly into any channel you choose.\n' +
+      '• **Edit Post:** Change the price, stock quantity, or channel of a shop message you already posted.\n' +
+      '• **Buying:** Members click the Buy button on your shop message. They can also check the full shop list anytime with `/items`.'
   },
   economy: {
     title: 'HINT: Economy Stats',
     description:
       'This screen shows you all the money moving around inside your server.\n\n' +
-      '• **Total Wealth:** All coins owned by every member in your server added together.\n' +
-      '• **Printed:** New coins created and given to members.\n' +
+      '• **Total Wealth:** All coins currently owned by every member combined.\n' +
+      '• **Printed:** New coins given out through chatting, talking in voice channels, quests, or daily claims.\n' +
       '• **Burned:** Coins spent by members in the shop and removed from the server.\n' +
-      '• **Time Buttons:** Click Per Day, Per Week, or Per Month to see stats across different times.\n' +
-      '• **Prices:** Change or inspect item prices quickly.'
+      '• **Prices:** Inspect and quickly adjust the prices of your shop items.\n' +
+      '• **Time Buttons:** Click Day, Week, or Month to see how active your server economy was over time.'
   }
 };
 
