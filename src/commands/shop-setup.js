@@ -1793,14 +1793,16 @@ export async function handleShopPostStart(interaction) {
     }
   }
 
-  // Channel Select (Channel Select Menu - Required to publish, disabled when editing existing post)
-  const channelSelect = new ChannelSelectMenuBuilder()
-    .setCustomId(`shop_post_channel_select:${sessionId}`)
-    .setPlaceholder(state.isEditing ? '📢 Channel (Locked for existing post)' : '📢 Select Channel (Required)')
-    .setChannelTypes([ChannelType.GuildText, ChannelType.GuildAnnouncement])
-    .setDisabled(state.isEditing === true);
-  if (state.channelId) {
-    channelSelect.setDefaultChannels([state.channelId]);
+  // Channel Select (Channel Select Menu - Required to publish, only shown when creating a new post)
+  let channelSelect = null;
+  if (!state.isEditing) {
+    channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId(`shop_post_channel_select:${sessionId}`)
+      .setPlaceholder('📢 Select Channel (Required)')
+      .setChannelTypes([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
+    if (state.channelId) {
+      channelSelect.setDefaultChannels([state.channelId]);
+    }
   }
 
   // Seller Select (User Select - Optional, disabled for packs and loot boxes)
@@ -1907,8 +1909,8 @@ export async function handleShopPostStart(interaction) {
   const components = [];
   if (!state.isEditing) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
+    if (channelSelect) components.push(new ActionRowBuilder().addComponents(channelSelect));
   }
-  components.push(new ActionRowBuilder().addComponents(channelSelect));
   components.push(new ActionRowBuilder().addComponents(userSelect));
   components.push(configRow);
   components.push(actionRow);
