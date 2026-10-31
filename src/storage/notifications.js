@@ -130,6 +130,37 @@ export async function getUsersForNotification(guildId, key) {
  * @param {string} key
  * @returns {Promise<string[]>}
  */
+/**
+ * Retrieve unique user IDs across all guilds who have enabled daily claim notifications
+ * but have NOT yet claimed their daily reward for the specified Cairo calendar date.
+ * Excludes users who already claimed today.
+ * @param {string} todayCairoDate e.g. 'YYYY-MM-DD'
+ * @returns {Promise<string[]>}
+ */
+export async function getUnclaimedDailyNotificationUsers(todayCairoDate) {
+  if (!todayCairoDate) return [];
+
+  try {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT DISTINCT n.user_id
+       FROM user_notification_settings n
+       WHERE n.notif_daily_claim = TRUE
+         AND NOT EXISTS (
+           SELECT 1
+           FROM user_balances b
+           WHERE b.user_id = n.user_id
+             AND (b.last_daily AT TIME ZONE 'Africa/Cairo')::date = $1::date
+         );`,
+      [todayCairoDate]
+    );
+    return result.rows.map(r => r.user_id);
+  } catch (error) {
+    sysError('Fetch Unclaimed Daily Users Failed', error, { todayCairoDate });
+    return [];
+  }
+}
+
 export async function getAllUniqueUsersForNotification(key) {
   if (!Object.values(NOTIFICATION_KEYS).includes(key)) {
     return [];
