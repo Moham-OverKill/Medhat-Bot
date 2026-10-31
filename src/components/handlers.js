@@ -37,6 +37,9 @@ import {
   handleDeleteItemStart,
   handleDeleteItemCategorySelect,
   handleDeleteItemSelect,
+  handleDeleteItemConfirmOnly,
+  handleDeleteItemConfirmBoth,
+  handleDeleteItemCancel,
   handleShopAdminAdd,
   handleShopAdminEdit,
   handleShopAdminDelete,
@@ -824,6 +827,12 @@ export function setupComponentHandlers(client) {
         await handleDeleteItemCategorySelect(interaction);
       } else if (customId === 'shop_select_item_delete') {
         await handleDeleteItemSelect(interaction);
+      } else if (customId.startsWith('shop_item_del_only_')) {
+        await handleDeleteItemConfirmOnly(interaction);
+      } else if (customId.startsWith('shop_item_del_both_')) {
+        await handleDeleteItemConfirmBoth(interaction);
+      } else if (customId === 'shop_item_del_cancel') {
+        await handleDeleteItemCancel(interaction);
       } else if (customId === 'shop_delete_category_start') {
         await handleDeleteCategoryStart(interaction);
       } else if (customId === 'shop_select_cat_delete_confirm') {

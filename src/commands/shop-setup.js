@@ -2931,24 +2931,204 @@ export async function handleDeleteItemCategorySelect(interaction) {
 export async function handleDeleteItemSelect(interaction) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    const itemId = parseInt(interaction.values[0]);
+    const itemId = parseInt(interaction.values?.[0] || interaction.customId?.split('_')?.pop(), 10);
+    if (isNaN(itemId)) {
+      const context = { action: 'delete_item', folder: 'root', message: '❌ Invalid item ID.' };
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
+      return await renderAdminBrowser(interaction, context);
+    }
 
-    // 1. Get name for feedback BEFORE deleting
     const item = await getShopItem(itemId, interaction.guildId);
-    const itemName = item ? item.name : 'Unknown Item';
+    if (!item) {
+      const context = { action: 'delete_item', folder: 'root', message: '❌ Item not found.' };
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
+      return await renderAdminBrowser(interaction, context);
+    }
 
-    // 2. Delete
-    await deleteShopItem(itemId, interaction.guildId);
+    const itemName = item.name || 'Unknown Item';
+    const targetRoleId = (item.role_id && /^\d{17,20}$/.test(String(item.role_id).trim()))
+      ? String(item.role_id).trim()
+      : null;
 
-    // Standardized Shop Admin Log
-    sendLog(interaction.guild, 'shop', 'red', '🗑️ Item Deleted', `Admin **<@${interaction.user.id}>** deleted item **${itemName}** from the Shop.`);
+    let role = null;
+    if (targetRoleId) {
+      role = interaction.guild.roles.cache.get(targetRoleId) || await interaction.guild.roles.fetch(targetRoleId).catch(() => null);
+    }
 
-    // 3. Return to Browser with Success Message
-    const context = { action: 'delete_item', folder: 'root', message: `✅ Item **${itemName}** deleted.` };
-    pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
-    await renderAdminBrowser(interaction, context);
+    const embed = new EmbedBuilder()
+      .setTitle(`Delete Item: ${itemName}`)
+      .setColor(0xE74C3C);
+
+    if (role) {
+      embed.setDescription(
+        `Are you sure you want to delete **${itemName}**?\n\n` +
+        `**Connected Role:** <@&${role.id}> (\`${role.name}\`)\n\n` +
+        `Choose what you want to do:\n` +
+        `• **Delete Item Only:** Removes the item from the shop, packs, and inventories, but keeps the Discord role on your server.\n` +
+        `• **Delete Both:** Removes the item from the shop and permanently deletes the Discord role from your server.`
+      );
+    } else {
+      const roleNotice = targetRoleId
+        ? `\`${targetRoleId}\` (not found on server)`
+        : 'None';
+      embed.setDescription(
+        `Are you sure you want to delete **${itemName}**?\n\n` +
+        `**Connected Role:** ${roleNotice}\n\n` +
+        `Choose what you want to do:\n` +
+        `• **Delete Item Only:** Removes the item from the shop, packs, and member inventories.`
+      );
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`shop_item_del_only_${itemId}`)
+        .setLabel('Delete Item Only')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🏷️'),
+      new ButtonBuilder()
+        .setCustomId(`shop_item_del_both_${itemId}`)
+        .setLabel(role ? 'Delete Both (Item & Role)' : 'Delete Both (No Role)')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🗑️')
+        .setDisabled(!role),
+      new ButtonBuilder()
+        .setCustomId('shop_item_del_cancel')
+        .setLabel('Cancel')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✖️')
+    );
+
+    return await interaction.editReply({
+      embeds: [embed],
+      components: [row],
+      files: [],
+      attachments: []
+    });
   } catch (error) {
     await handleInteractionError(interaction, error, 'shop delete item select');
+  }
+}
+
+export async function handleDeleteItemConfirmOnly(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    const itemId = parseInt(interaction.customId.replace('shop_item_del_only_', ''), 10);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) {
+      const context = { action: 'delete_item', folder: 'root', message: '❌ Item not found.' };
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
+      return await renderAdminBrowser(interaction, context);
+    }
+
+    const itemName = item.name || 'Unknown Item';
+    await deleteShopItem(itemId, interaction.guildId);
+
+    sendLog(
+      interaction.guild,
+      'shop',
+      'red',
+      '🗑️ Item Deleted',
+      `Admin **<@${interaction.user.id}>** deleted item **${itemName}** from the Shop (kept Discord role).`
+    );
+
+    const adminKey = getAdminBrowserKey(interaction);
+    const existing = pendingAdminBrowser.get(adminKey);
+    const context = {
+      action: 'delete_item',
+      folder: existing?.folder || 'root',
+      message: `✅ Item **${itemName}** deleted (kept role).`
+    };
+    pendingAdminBrowser.set(adminKey, context);
+    await renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop delete item confirm only');
+  }
+}
+
+export async function handleDeleteItemConfirmBoth(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    const itemId = parseInt(interaction.customId.replace('shop_item_del_both_', ''), 10);
+    const item = await getShopItem(itemId, interaction.guildId);
+    if (!item) {
+      const context = { action: 'delete_item', folder: 'root', message: '❌ Item not found.' };
+      pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
+      return await renderAdminBrowser(interaction, context);
+    }
+
+    const itemName = item.name || 'Unknown Item';
+    const targetRoleId = (item.role_id && /^\d{17,20}$/.test(String(item.role_id).trim()))
+      ? String(item.role_id).trim()
+      : null;
+
+    let roleDeleted = false;
+    let roleName = '';
+
+    if (targetRoleId) {
+      const role = interaction.guild.roles.cache.get(targetRoleId) || await interaction.guild.roles.fetch(targetRoleId).catch(() => null);
+      if (
+        role &&
+        role.guild.id === interaction.guildId &&
+        role.id !== interaction.guild.id &&
+        !role.managed
+      ) {
+        roleName = role.name;
+        const botMember = interaction.guild.members.me;
+        if (
+          botMember &&
+          botMember.permissions.has(PermissionFlagsBits.ManageRoles) &&
+          botMember.roles.highest.position > role.position
+        ) {
+          try {
+            await role.delete(`Shop item deleted: ${itemName} by ${interaction.user.tag}`);
+            roleDeleted = true;
+          } catch (roleErr) {
+            console.error('Failed to delete role:', roleErr);
+          }
+        }
+      }
+    }
+
+    await deleteShopItem(itemId, interaction.guildId);
+
+    const roleLogNotice = roleDeleted
+      ? ` and deleted role **@${roleName}**`
+      : (targetRoleId ? ` (role could not be deleted)` : '');
+    sendLog(
+      interaction.guild,
+      'shop',
+      'red',
+      '🗑️ Item & Role Deleted',
+      `Admin **<@${interaction.user.id}>** deleted item **${itemName}**${roleLogNotice}.`
+    );
+
+    const adminKey = getAdminBrowserKey(interaction);
+    const existing = pendingAdminBrowser.get(adminKey);
+    const successMsg = roleDeleted
+      ? `✅ Deleted item **${itemName}** and its Discord role (@${roleName}).`
+      : `✅ Deleted item **${itemName}** (role was not deleted).`;
+    const context = {
+      action: 'delete_item',
+      folder: existing?.folder || 'root',
+      message: successMsg
+    };
+    pendingAdminBrowser.set(adminKey, context);
+    await renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop delete item confirm both');
+  }
+}
+
+export async function handleDeleteItemCancel(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    const adminKey = getAdminBrowserKey(interaction);
+    const existing = pendingAdminBrowser.get(adminKey);
+    const context = { action: 'delete_item', folder: existing?.folder || 'root', message: null };
+    pendingAdminBrowser.set(adminKey, context);
+    await renderAdminBrowser(interaction, context);
+  } catch (error) {
+    await handleInteractionError(interaction, error, 'shop delete item cancel');
   }
 }
 
