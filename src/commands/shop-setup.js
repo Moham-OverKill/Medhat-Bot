@@ -3181,15 +3181,17 @@ export async function handleDeleteItemSelect(interaction) {
 
     const roleMention = role
       ? `<@&${role.id}>`
-      : (targetRoleId ? `\`${targetRoleId}\`` : 'None');
+      : (targetRoleId ? `\`${targetRoleId}\`` : null);
+
+    const roleLine = roleMention
+      ? `• Remove ${roleMention} from all members holding it\n`
+      : '• Remove the connected role from all members currently holding it\n';
 
     embed.setDescription(
-      `Are you sure you want to delete **${itemName}**?\n\n` +
       `⚠️ **Deleting this item will:**\n` +
       `• Remove this item from all member inventories\n` +
-      `• Remove the connected role from all members currently holding it\n` +
-      `• Remove any active shop posts for this item\n\n` +
-      `**Connected Role:** ${roleMention}`
+      roleLine +
+      `• Remove any active shop posts for this item`
     );
 
     const row = new ActionRowBuilder().addComponents(
