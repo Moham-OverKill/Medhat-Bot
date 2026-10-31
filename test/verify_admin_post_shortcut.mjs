@@ -256,7 +256,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     const channelRow = editReplyPayload.components[1];
     const channelSelect = channelRow.components[0];
     assert.ok(channelSelect.data.custom_id.startsWith('shop_post_channel_select'), 'Must be channel select');
-    assert.equal(channelSelect.data.disabled, false, 'Channel select must be enabled in creation mode');
+    assert.equal(Boolean(channelSelect.data.disabled), false, 'Channel select must be enabled in creation mode');
     assert.ok(channelSelect.data.channel_types.includes(ChannelType.GuildText), 'Must support GuildText');
 
     // Action row (last row): Publish button must be disabled because channelId is null
@@ -265,7 +265,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     assert.ok(publishBtn, 'Publish button must exist');
     assert.equal(publishBtn.data.disabled, true, 'Publish button must be disabled when channelId is null');
 
-    // Subtest 7B: Editing mode
+    // Subtest 7B: Editing mode - channel select menu is completely hidden
     await setPendingPostSession(sessionId, {
       itemId: 101,
       channelId: validChannelId,
@@ -274,14 +274,14 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     });
 
     await handleShopPostStart(mockInteractionCreate);
-    assert.equal(editReplyPayload.components.length, 4, 'Must have 4 ActionRows in editing mode');
+    assert.equal(editReplyPayload.components.length, 3, 'Must have 3 ActionRows in editing mode (no item select, no channel select)');
 
-    const editChannelRow = editReplyPayload.components[0];
-    const editChannelSelect = editChannelRow.components[0];
-    assert.ok(editChannelSelect.data.custom_id.startsWith('shop_post_channel_select'));
-    assert.equal(editChannelSelect.data.disabled, true, 'Channel select must be disabled in editing mode');
+    const hasChannelSelect = editReplyPayload.components.some(row =>
+      row.components.some(c => c.data?.custom_id?.startsWith('shop_post_channel_select'))
+    );
+    assert.equal(hasChannelSelect, false, 'Channel select menu must be completely hidden when editing an existing post');
 
-    const editActionRow = editReplyPayload.components[3];
+    const editActionRow = editReplyPayload.components[2];
     const updateBtn = editActionRow.components.find(c => c.data.label === 'Update');
     assert.ok(updateBtn, 'Update button must exist in editing mode');
     assert.equal(updateBtn.data.disabled, false, 'Update button must be enabled in editing mode');
