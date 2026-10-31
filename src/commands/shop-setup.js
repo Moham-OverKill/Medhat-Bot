@@ -1531,7 +1531,7 @@ export async function handleShopPostStart(interaction) {
   
   // Enforce defaults for missing keys (critical for Post-Publish re-render)
   state.itemId = state.itemId ?? null;
-  state.channelId = state.channelId || interaction.channelId;
+  state.channelId = state.channelId ?? (state.fromAdminHub ? null : (interaction.channelId || null));
   state.sellerId = state.sellerId ?? null;
   state.imageUrl = state.imageUrl ?? null;
   state.description = state.description ?? null;
@@ -1623,15 +1623,16 @@ export async function handleShopPostStart(interaction) {
     const intervalLabel = formatIntervalHuman(state.restockIntervalSeconds);
     const timerStr = intervalLabel ? `Every \`${intervalLabel}\`` : '`No Restock` Timer';
 
-    const claimStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
-      ? `• \`${state.claimLimit.toLocaleString()}\` Per User`
-      : '• `No limit` per user';
+    const channelMention = state.channelId ? `<#${state.channelId}>` : '#channel';
+    const claimLimitStr = (state.claimLimit !== null && state.claimLimit !== undefined && state.claimLimit > 0)
+      ? `\`${state.claimLimit.toLocaleString()}\` Per User`
+      : '`No limit` per user';
 
-    const bullet1 = `• Post ${targetMention} for ${priceDisplay}`;
-    const bullet2 = `• ${stockStr} • ${timerStr}`;
-    const bullet3 = claimStr;
+    const line1 = `Post ${targetMention} In ${channelMention}`;
+    const line2 = `for ${priceDisplay} with ${stockStr}`;
+    const line3 = `${timerStr} - ${claimLimitStr}`;
 
-    statusDesc = `${bullet1}\n${bullet2}\n${bullet3}`;
+    statusDesc = `${line1}\n${line2}\n${line3}`;
 
     if (state.description) {
       statusDesc += `\n\n> ${state.description.replace(/\n/g, '\n> ')}`;
@@ -1792,6 +1793,16 @@ export async function handleShopPostStart(interaction) {
     }
   }
 
+  // Channel Select (Channel Select Menu - Required to publish, disabled when editing existing post)
+  const channelSelect = new ChannelSelectMenuBuilder()
+    .setCustomId(`shop_post_channel_select:${sessionId}`)
+    .setPlaceholder(state.isEditing ? '📢 Channel (Locked for existing post)' : '📢 Select Channel (Required)')
+    .setChannelTypes([ChannelType.GuildText, ChannelType.GuildAnnouncement])
+    .setDisabled(state.isEditing === true);
+  if (state.channelId) {
+    channelSelect.setDefaultChannels([state.channelId]);
+  }
+
   // Seller Select (User Select - Optional, disabled for packs and loot boxes)
   const isServerManaged = isPack || (selectedItem && selectedItem.item_type === 'loot_box');
   const userSelect = new UserSelectMenuBuilder()
@@ -1897,6 +1908,7 @@ export async function handleShopPostStart(interaction) {
   if (!state.isEditing) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
   }
+  components.push(new ActionRowBuilder().addComponents(channelSelect));
   components.push(new ActionRowBuilder().addComponents(userSelect));
   components.push(configRow);
   components.push(actionRow);
@@ -2354,8 +2366,13 @@ export async function handleShopPostReset(interaction) {
   const sessionId = getPostSessionId(interaction);
   const prev = await getPendingPostSession(sessionId);
   await deletePendingPostSession(sessionId);
+  const fromAdminHub = Boolean(prev?.fromAdminHub);
   if (prev?.fromGateway) {
-    await setPendingPostSession(sessionId, { fromGateway: true, channelId: interaction.channelId });
+    await setPendingPostSession(sessionId, {
+      fromGateway: true,
+      fromAdminHub,
+      channelId: fromAdminHub ? null : (interaction.channelId || null)
+    });
   }
   await handleShopPostStart(interaction);
 }
@@ -5854,7 +5871,9 @@ export async function handlePackRemoveContentSelect(interaction) {
 export async function handleShopPostGate(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
+    const fromAdminHub = isBackDisabled(interaction);
     await deletePendingPostSession(sessionId);
+    await setPendingPostSession(sessionId, { fromAdminHub });
 
     if (!interaction.deferred && !interaction.replied) {
       if (interaction.isMessageComponent && interaction.isMessageComponent()) {
@@ -5872,10 +5891,11 @@ export async function handleShopPostGate(interaction) {
     const row = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
-          .setCustomId(`settings_back:${sessionId}`)
+          .setCustomId('settings_back')
           .setLabel('Back')
           .setEmoji('⬅️')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(fromAdminHub),
         new ButtonBuilder()
           .setCustomId('settings_hint_post')
           .setEmoji('❔')
@@ -5901,11 +5921,13 @@ export async function handleShopPostGate(interaction) {
 export async function handleShopPostNewLayout(interaction) {
   try {
     const sessionId = getPostSessionId(interaction);
+    const prev = await getPendingPostSession(sessionId);
+    const fromAdminHub = Boolean(prev?.fromAdminHub || isBackDisabled(interaction));
     
     // Initialize/Reset session state for New Post
     await setPendingPostSession(sessionId, {
       itemId: null,
-      channelId: null,
+      channelId: fromAdminHub ? null : (interaction.channelId || null),
       sellerId: null,
       payout: null,
       stock: null,
@@ -5917,7 +5939,8 @@ export async function handleShopPostNewLayout(interaction) {
       isEditing: false,
       stockConfigured: false,
       stockModified: false,
-      fromGateway: true
+      fromGateway: true,
+      fromAdminHub
     });
 
     await handleShopPostStart(interaction);

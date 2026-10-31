@@ -897,7 +897,7 @@ export function isBackDisabled(interaction) {
     for (const row of components) {
       if (Array.isArray(row.components)) {
         for (const comp of row.components) {
-          if ((comp.customId === "settings_back" || comp.customId === "settings_home") && comp.disabled) {
+          if ((comp.customId === "settings_back" || comp.customId === "settings_home" || (typeof comp.customId === "string" && comp.customId.startsWith("settings_back"))) && comp.disabled) {
             return true;
           }
         }
