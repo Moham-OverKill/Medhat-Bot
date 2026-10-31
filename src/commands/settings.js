@@ -207,7 +207,7 @@ export async function showCoinsSubMenu(interaction) {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    // Row 2: Back, Customize, Give Coins
+    // Row 2: Back, Hint, Customize, Give Coins
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('settings_home')
@@ -215,6 +215,10 @@ export async function showCoinsSubMenu(interaction) {
             .setEmoji('⬅️')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(isBackDisabled(interaction)),
+        new ButtonBuilder()
+            .setCustomId('settings_hint_coins')
+            .setEmoji('💡')
+            .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId('settings_coins_customize')
             .setLabel('Appearance')
@@ -384,6 +388,12 @@ export async function handleSettingsComponent(interaction) {
         if (customId.startsWith('role_rewards_')) {
             const { handleRoleRewardsComponent } = await import('./settings/role-rewards.js');
             await handleRoleRewardsComponent(interaction);
+            return;
+        }
+
+        if (customId.startsWith('settings_hint_')) {
+            const { handleSettingsHint } = await import('./settings/hints.js');
+            await handleSettingsHint(interaction);
             return;
         }
 
