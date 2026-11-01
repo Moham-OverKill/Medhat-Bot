@@ -676,16 +676,21 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 
       // Get parent ID for threads/posts (Robust lookup)
       let parentId = reaction.message.channel?.parentId;
+      let resolvedChannel = reaction.message.channel;
       if (!parentId && reaction.message.guild) {
           // Attempt cache lookup
           const cached = reaction.message.guild.channels.cache.get(channelId);
           if (cached?.parentId) {
               parentId = cached.parentId;
+              resolvedChannel = cached;
           } else {
               // Proactive fetch for threads (needed for Forum/Media visibility)
               try {
                 const fetched = await client.channels.fetch(channelId).catch(() => null);
-                if (fetched?.parentId) parentId = fetched.parentId;
+                if (fetched?.parentId) {
+                  parentId = fetched.parentId;
+                  resolvedChannel = fetched;
+                }
               } catch (err) {}
           }
       }
@@ -698,7 +703,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
       if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
 
       const { checkReactionQuest } = await import('./activity/index.js');
-      await checkReactionQuest(reaction, user);
+      await checkReactionQuest(reaction, user, resolvedChannel);
     } catch (error) {
       // STOP SILENT FAIL: Log for debugging if quest tracking crashes
       sysError('Reaction Quest Failure', error, { guild: reaction.message?.guildId, user: user?.id });
@@ -739,14 +744,19 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
       if (!channelId) return;
 
       let parentId = reaction.message.channel?.parentId;
+      let resolvedChannel = reaction.message.channel;
       if (!parentId && reaction.message.guild) {
           const cached = reaction.message.guild.channels.cache.get(channelId);
           if (cached?.parentId) {
               parentId = cached.parentId;
+              resolvedChannel = cached;
           } else {
               try {
                 const fetched = await client.channels.fetch(channelId).catch(() => null);
-                if (fetched?.parentId) parentId = fetched.parentId;
+                if (fetched?.parentId) {
+                  parentId = fetched.parentId;
+                  resolvedChannel = fetched;
+                }
               } catch (err) {}
           }
       }
@@ -758,7 +768,7 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
       if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
 
       const { checkReactionRemoveQuest } = await import('./activity/index.js');
-      await checkReactionRemoveQuest(reaction, user);
+      await checkReactionRemoveQuest(reaction, user, resolvedChannel);
     } catch (error) {
       sysError('Reaction Remove Quest Failure', error, { guild: reaction.message?.guildId, user: user?.id });
     }

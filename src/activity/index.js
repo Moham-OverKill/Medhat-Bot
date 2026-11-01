@@ -22,9 +22,9 @@ export function getDiscordClient() {
 
 // Cache for quest data
 // guildId -> Array of active quest objects
-const activeQuestsCache = new Map();
+export const activeQuestsCache = new Map();
 // guildId -> Map of questId -> Set of userIds who already completed it today
-const completedQuestsCache = new Map();
+export const completedQuestsCache = new Map();
 
 let client = null;
 let tickInterval = null;
@@ -584,8 +584,9 @@ async function checkQuestProgress(message) {
     // 3. Dual-Logic Action Type Qualification
     let qualifies = false;
 
+    const isPostQuest = (quest.channel_type === 'media' || quest.channel_type === 'forum') || inPostChannel;
     if (quest.action_type === 'send_messages') {
-      if (inPostChannel) {
+      if (isPostQuest) {
         // POST CHANNEL: Only comments qualify (NOT the new-post starter message)
         qualifies = !isThreadStarter && (content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasMedia);
       } else {
@@ -593,7 +594,7 @@ async function checkQuestProgress(message) {
         qualifies = content.length >= MIN_MESSAGE_LENGTH || hasSticker || hasMedia;
       }
     } else if (quest.action_type === 'upload_images') {
-      if (inPostChannel) {
+      if (isPostQuest) {
         // POST CHANNEL: New post starter message with media qualifies
         qualifies = isThreadStarter && hasMedia;
       } else {
@@ -703,12 +704,11 @@ export async function syncQuestChannelCache(guildId) {
 /**
  * Check reaction-based quest progress.
  */
-export async function checkReactionQuest(reaction, user) {
+export async function checkReactionQuest(reaction, user, channelOverride = null) {
   if (!user || user.bot) return;
 
   const guildId = reaction.message?.guildId;
   if (!guildId) return;
-
 
   let quests = activeQuestsCache.get(guildId);
   if (quests === undefined) {
@@ -725,7 +725,8 @@ export async function checkReactionQuest(reaction, user) {
   if (!quests || quests.length === 0) return;
 
   const channelId = reaction.message.channelId;
-  let parentId = reaction.message.channel?.parentId;
+  const reactChannel = channelOverride || reaction.message.channel;
+  let parentId = reactChannel?.parentId;
   
   if (!parentId && reaction.message.guild) {
     const cached = reaction.message.guild.channels.cache.get(channelId);
@@ -740,33 +741,24 @@ export async function checkReactionQuest(reaction, user) {
 
   const userId = user.id;
 
-  // ── Dual-Logic: Determine if this reaction is on the Original Post ─────────
-  let inPostChannel = false;
-  let isOriginalPost = false;
-  
-  try {
-    const reactChannel = reaction.message.channel;
-    inPostChannel = await isPostChannel(reactChannel);
-    const isThread = reactChannel.isThread?.() || false;
-    isOriginalPost = inPostChannel
-      ? (isThread && (
-          reaction.message.id === reactChannel.id ||
-          (reactChannel.starterMessageId && reaction.message.id === reactChannel.starterMessageId) ||
-          (!reaction.message.reference && reactChannel.ownerId === reaction.message.author?.id)
-        ))
-      : true; // Normal channels: any message qualifies
-  } catch (err) {
-    sysError('Reaction Parse Error (Quest Engine)', err, { user: userId, guild: guildId });
-    return; // Fast fail
-  }
-  // ──────────────────────────────────────────────────────────────────────────
-
   for (const quest of quests) {
     if (quest.action_type !== 'react_images') continue;
     if (quest.channel_id !== channelId && quest.channel_id !== parentId) continue;
 
-    // POST CHANNEL: Only reactions on the Original Post count
-    if (inPostChannel && !isOriginalPost) continue;
+    // POST CHANNEL CHECK:
+    // Determine whether this quest is targeted at a Forum or Media post channel.
+    // Relies primarily on quest.channel_type with channel inspection fallback.
+    const isPostQuest = quest.channel_type === 'media' || quest.channel_type === 'forum' ||
+      (reactChannel && await isPostChannel(reactChannel));
+
+    if (isPostQuest) {
+      // In Forum/Media post channels, only reactions on the Original Post count (NOT comments/replies).
+      // The original post's message ID matches the thread/channel ID, or starterMessageId.
+      const isOriginalPost = reaction.message.id === channelId ||
+        (reactChannel?.starterMessageId && reaction.message.id === reactChannel.starterMessageId);
+
+      if (!isOriginalPost) continue;
+    }
     
     const guildCompletions = completedQuestsCache.get(guildId);
     if (guildCompletions?.get(quest.id)?.has(userId)) continue;
@@ -794,7 +786,7 @@ export async function checkReactionQuest(reaction, user) {
 /**
  * Check reaction removal for quest decrement (with anti-exploit locks).
  */
-export async function checkReactionRemoveQuest(reaction, user) {
+export async function checkReactionRemoveQuest(reaction, user, channelOverride = null) {
   if (!user || user.bot) return;
 
   const guildId = reaction.message?.guildId;
@@ -815,7 +807,8 @@ export async function checkReactionRemoveQuest(reaction, user) {
   if (!quests || quests.length === 0) return;
 
   const channelId = reaction.message.channelId;
-  let parentId = reaction.message.channel?.parentId;
+  const reactChannel = channelOverride || reaction.message.channel;
+  let parentId = reactChannel?.parentId;
   
   if (!parentId && reaction.message.guild) {
     const cached = reaction.message.guild.channels.cache.get(channelId);
@@ -830,33 +823,24 @@ export async function checkReactionRemoveQuest(reaction, user) {
 
   const userId = user.id;
 
-  // ── Dual-Logic: Determine if this reaction was on the Original Post ─────────
-  let inPostChannel = false;
-  let isOriginalPost = false;
-  
-  try {
-    const reactChannel = reaction.message.channel;
-    inPostChannel = await isPostChannel(reactChannel);
-    const isThread = reactChannel.isThread?.() || false;
-    isOriginalPost = inPostChannel
-      ? (isThread && (
-          reaction.message.id === reactChannel.id ||
-          (reactChannel.starterMessageId && reaction.message.id === reactChannel.starterMessageId) ||
-          (!reaction.message.reference && reactChannel.ownerId === reaction.message.author?.id)
-        ))
-      : true; // Normal channels: any message qualifies
-  } catch (err) {
-    sysError('Reaction Remove Parse Error (Quest Engine)', err, { user: userId, guild: guildId });
-    return; // Fast fail
-  }
-  // ──────────────────────────────────────────────────────────────────────────
-
   for (const quest of quests) {
     if (quest.action_type !== 'react_images') continue;
     if (quest.channel_id !== channelId && quest.channel_id !== parentId) continue;
 
-    // POST CHANNEL: Only reactions on the Original Post count
-    if (inPostChannel && !isOriginalPost) continue;
+    // POST CHANNEL CHECK:
+    // Determine whether this quest is targeted at a Forum or Media post channel.
+    // Relies primarily on quest.channel_type with channel inspection fallback.
+    const isPostQuest = quest.channel_type === 'media' || quest.channel_type === 'forum' ||
+      (reactChannel && await isPostChannel(reactChannel));
+
+    if (isPostQuest) {
+      // In Forum/Media post channels, only reactions on the Original Post count (NOT comments/replies).
+      // The original post's message ID matches the thread/channel ID, or starterMessageId.
+      const isOriginalPost = reaction.message.id === channelId ||
+        (reactChannel?.starterMessageId && reaction.message.id === reactChannel.starterMessageId);
+
+      if (!isOriginalPost) continue;
+    }
     
     const guildCompletions = completedQuestsCache.get(guildId);
     // Rule 2: If quest already completed/claimed, lock it permanently (do NOT decrement)

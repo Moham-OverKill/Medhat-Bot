@@ -298,7 +298,7 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
     if (justCompleted) {
       Promise.all([
         import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
-        import('../index.js').then(m => m.client || null).catch(() => null)
+        import('../activity/index.js').then(({ getDiscordClient }) => getDiscordClient()).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
           const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
@@ -334,7 +334,8 @@ export async function incrementProgressAndPayout(guildId, userId, quest, amount 
  */
 async function triggerQuestLog(guildId, userId, quest) {
     try {
-        const { client } = await import('../index.js');
+        const { getDiscordClient } = await import('../activity/index.js');
+        const client = getDiscordClient();
         if (client) {
             const guild = client.guilds.cache.get(guildId);
             if (guild) {
@@ -404,6 +405,14 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
       return { progress: currentProgress, completed: false, justCompleted: false, alreadyTracked: true };
     }
 
+    // Check if this message was ALREADY counted towards this quest today (via another emoji)
+    const existingMsg = await client.query(
+      `SELECT 1 FROM quest_reaction_events
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 AND message_id = $5 LIMIT 1`,
+      [guildId, userId, quest.id, date, messageId]
+    );
+    const isFirstReactionOnMessage = existingMsg.rows.length === 0;
+
     // 3. Record reaction event in ledger
     await client.query(
       `INSERT INTO quest_reaction_events (guild_id, user_id, quest_id, quest_date, message_id, emoji)
@@ -411,6 +420,14 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
        ON CONFLICT (guild_id, user_id, quest_id, quest_date, message_id, emoji) DO NOTHING`,
       [guildId, userId, quest.id, date, messageId, emojiKey]
     );
+
+    // If this message was ALREADY counted towards this quest today, record the reaction in the ledger
+    // but DO NOT increment quest progress (each distinct message/post counts exactly once).
+    if (!isFirstReactionOnMessage) {
+      await client.query("COMMIT");
+      client.release();
+      return { progress: currentProgress, completed: false, justCompleted: false, messageAlreadyCounted: true };
+    }
 
     const newProgress = currentProgress + 1;
     const justCompleted = newProgress >= requiredCount;
@@ -469,7 +486,7 @@ export async function recordReactionAndIncrement(guildId, userId, quest, message
       triggerQuestLog(guildId, userId, quest).catch(() => {});
       Promise.all([
         import('../storage/config.js').then(({ getGuildConfig }) => getGuildConfig(guildId)),
-        import('../index.js').then(m => m.client || null).catch(() => null)
+        import('../activity/index.js').then(({ getDiscordClient }) => getDiscordClient()).catch(() => null)
       ])
         .then(([cfg, discordClient]) => {
           const rawQuestXp = parseInt(cfg?.battlepass_quest_xp ?? 150, 10);
@@ -554,6 +571,20 @@ export async function removeReactionAndDecrement(guildId, userId, quest, message
       await client.query('ROLLBACK');
       client.release();
       return { decremented: false, wasTracked: false, progress: currentProgress };
+    }
+
+    // Check if the user STILL has another active reaction on this message today
+    const remainingOnMsg = await client.query(
+      `SELECT 1 FROM quest_reaction_events 
+       WHERE guild_id = $1 AND user_id = $2 AND quest_id = $3 AND quest_date = $4 AND message_id = $5 LIMIT 1`,
+      [guildId, userId, quest.id, date, messageId]
+    );
+
+    if (remainingOnMsg.rows.length > 0) {
+      // User still has another reaction on this message -> message remains counted, do NOT decrement
+      await client.query('COMMIT');
+      client.release();
+      return { decremented: false, hasRemainingReactions: true, progress: currentProgress };
     }
 
     // 3. Rule 1: Floor Protection - Never drop below 0
