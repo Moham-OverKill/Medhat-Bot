@@ -49,10 +49,10 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
       title: 'HINT: Post',
       description:
         `Put items, packs, and ${lootBoxName.toLowerCase()} into chat channels so members can buy them.\n\n` +
-        `⚠️ **Note:** Anything created in **[🏷️ Items]** or ${boxTag} stays in storage until you post it to a channel here.\n\n` +
-        `✝️ **New Post:** Pick an item, pack, or ${lootBoxName.toLowerCase()}, select the channel, set the price and stock, and publish it into chat.\n\n` +
+        `⚠️ **Note:** Anything created in **[🏷️ Items]** or ${boxTag} stays in storage until you post it to a channel here, or add them as level rewards in **[⭐ Levels]**.\n\n` +
+        `➕ **New Post:** Pick an item, pack, or ${lootBoxName.toLowerCase()}, select the channel, configure it, and publish it into chat.\n\n` +
         `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like a daily free ${lootBoxName.toLowerCase()}) or limit purchases per member.\n\n` +
-        '📝 **Edit Post:** Paste the message link of any shop post you already made to edit it.\n\n' +
+        '📝 **Edit Post:** Copy and paste the message link of an already posted item so you can edit its settings later.\n\n' +
         '🛒 **Buying:** Members click the Buy button directly on the post in chat. They can also use `/items` to browse everything currently available in your shop.'
     },
     economy: {

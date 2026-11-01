@@ -5954,7 +5954,7 @@ export async function handleShopPostGate(interaction) {
         new ButtonBuilder()
           .setCustomId(`shop_post_new_layout:${sessionId}`)
           .setLabel('New Post')
-          .setEmoji('✝️')
+          .setEmoji('➕')
           .setStyle(ButtonStyle.Primary)
       );
 
