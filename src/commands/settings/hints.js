@@ -3,6 +3,9 @@ import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/l
 
 export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = '🎁') {
   const boxTag = `**[${lootBoxEmoji} ${lootBoxName}]**`;
+  const singularName = lootBoxName.toLowerCase().endsWith('boxes')
+    ? lootBoxName.toLowerCase().slice(0, -2)
+    : lootBoxName.toLowerCase().replace(/s$/, '');
   const hints = {
     coins: {
       title: 'HINT: Coins',
@@ -32,9 +35,10 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
     chests: {
       title: `HINT: ${lootBoxName}`,
       description:
-        `Create mystery boxes that give random rewards and coins when opened.\n\n` +
+        `Create ${lootBoxName.toLowerCase()} that give random rewards and coins when opened.\n\n` +
         `⚠️ **Note:** ${lootBoxName} give rewards from your items catalog. Items must be created in **[🏷️ Items]** and set to Tradable so they can be won as prizes here.\n\n` +
-        `⚙️ **Setup:** Set min and max coin rewards, drop chances for each item rarity, and customize the box emoji, picture, and opening GIF.\n\n` +
+        `⚙️ **Setup:** Set min and max coin rewards, drop chances for each item rarity, and choose the emoji with closed and opened ${singularName} pictures.\n\n` +
+        `✏️ **Edit:** Select any ${singularName} from the menu above to edit its settings, rewards, or delete it.\n\n` +
         `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` or trade them with \`/trade\`. Go to **[📢 Post]** to sell them in chat, or add them as level rewards in **[⭐ Levels]**.`
     },
     post: {

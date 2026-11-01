@@ -46,9 +46,17 @@ test('getSettingsHint for other pages', () => {
   assert.ok(chestsHint.description.includes('Tradable'));
   assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
   assert.ok(chestsHint.description.includes('⚙️ **Setup:**'));
+  assert.ok(chestsHint.description.includes('closed and opened mystery box pictures'));
+  assert.ok(chestsHint.description.includes('✏️ **Edit:**'));
+  assert.ok(chestsHint.description.includes('Select any mystery box from the menu above'));
   assert.ok(chestsHint.description.includes('📦 **Opening:**'));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
   assert.ok(chestsHint.description.includes('**[⭐ Levels]**'));
+
+  const defaultChestsHint = getSettingsHint('chests');
+  assert.equal(defaultChestsHint.title, 'HINT: Chests');
+  assert.ok(defaultChestsHint.description.includes('closed and opened chest pictures'));
+  assert.ok(defaultChestsHint.description.includes('Select any chest from the menu above'));
 
   const postHint = getSettingsHint('post', 'Chests', '🎁');
   assert.equal(postHint.title, 'HINT: Post');
