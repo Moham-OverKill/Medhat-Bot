@@ -119,8 +119,8 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     // Components still restricted to 3 rows
     assert.equal(payload.components.length, 3, 'Buttons must remain hidden until channel is configured');
     const itemSelect = payload.components[0].components[0];
-    assert.equal(itemSelect.options[0].data.label, 'Set: Dragon Blade', 'Quick-pick option must say Set: <Item>');
-    assert.equal(itemSelect.options[0].data.emoji.name, '✅');
+    assert.equal(itemSelect.options[0].data.label, 'Dragon Blade', 'Quick-pick option must be clean item name');
+    assert.equal(itemSelect.options[0].data.emoji, undefined, 'Must not have emoji');
 
     const channelSelect = payload.components[1].components[0];
     assert.equal(channelSelect.data.placeholder, '📢 Set Channel');
@@ -158,7 +158,7 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     assert.equal(actionRow[0].data.label, 'Back');
   });
 
-  it('4. State D: Both configured removes all warnings, reveals full summary, switches menus to Change, and reveals all buttons', async () => {
+  it('4. State D: Both configured removes all warnings, reveals full summary, shows plain item name, and reveals all buttons', async () => {
     await setPendingPostSession(sessionId, {
       itemId: 501,
       channelId: channelId,
@@ -179,15 +179,14 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     // Exactly 5 action rows
     assert.equal(payload.components.length, 5, 'Must reveal all 5 component rows');
 
-    // Item select menu switches to Change
+    // Item select menu displays clean item name without emoji or prefix
     const itemSelect = payload.components[0].components[0];
-    assert.equal(itemSelect.data.placeholder, '📦 Change Item');
-    assert.equal(itemSelect.options[0].data.label, 'Change: Dragon Blade');
-    assert.equal(itemSelect.options[0].data.emoji.name, '🔄');
+    assert.equal(itemSelect.options[0].data.label, 'Dragon Blade');
+    assert.equal(itemSelect.options[0].data.emoji, undefined);
 
-    // Channel select menu switches to Change
+    // Channel select menu placeholder remains Set Channel (with Discord channel tag selected)
     const channelSelect = payload.components[1].components[0];
-    assert.equal(channelSelect.data.placeholder, '📢 Change Channel');
+    assert.equal(channelSelect.data.placeholder, '📢 Set Channel');
 
     // Seller select menu
     const sellerSelect = payload.components[2].components[0];

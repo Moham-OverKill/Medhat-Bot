@@ -1675,14 +1675,13 @@ export async function handleShopPostStart(interaction) {
       if (hasUncategorized) itemOptions.push({ label: 'Uncategorized Items', value: 'folder_standalone', emoji: '🏷️' });
       if (hasPacks) itemOptions.push({ label: 'Item Packs', value: 'folder_packs', emoji: '📦' });
       if (hasLootBoxes) itemOptions.push({ label: lootBoxCatName.slice(0, 50), value: 'folder_loot_boxes', emoji: parseSelectEmoji(lootBoxEmoji) });
-      placeholder = isReady ? '📦 Change Item' : '📦 Set Item';
+      placeholder = '📦 Set Item';
       
-      // If an item is already selected, show it as a quick-pick at the top
+      // If an item is already selected, show it as a quick-pick at the top (plain item name, no extra prefix/emoji)
       if (selectedItem) {
         itemOptions.unshift({
-          label: isReady ? `Change: ${selectedItem.name.slice(0, 50)}` : `Set: ${selectedItem.name.slice(0, 50)}`,
+          label: selectedItem.name.slice(0, 100),
           value: selectedItem.id.toString(),
-          emoji: isReady ? '🔄' : '✅',
           default: true
         });
       }
@@ -1792,7 +1791,7 @@ export async function handleShopPostStart(interaction) {
     }
 
     if (state.postStep === 0) {
-      const rootPlaceholder = isReady ? '📦 Change Item' : '📦 Set Item';
+      const rootPlaceholder = '📦 Set Item';
       itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
         .setCustomId(`shop_post_item_select:${sessionId}`)
         .setPlaceholder(rootPlaceholder)
@@ -1803,7 +1802,7 @@ export async function handleShopPostStart(interaction) {
   // Channel Select (Channel Select Menu - Required to publish, only shown when creating a new post)
   let channelSelect = null;
   if (!state.isEditing) {
-    const channelPlaceholder = isReady ? '📢 Change Channel' : '📢 Set Channel';
+    const channelPlaceholder = '📢 Set Channel';
     channelSelect = new ChannelSelectMenuBuilder()
       .setCustomId(`shop_post_channel_select:${sessionId}`)
       .setPlaceholder(channelPlaceholder)
