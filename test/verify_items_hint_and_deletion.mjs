@@ -62,8 +62,14 @@ test('getSettingsHint for other pages', () => {
 
   const postHint = getSettingsHint('post', 'Chests', '🎁');
   assert.equal(postHint.title, 'HINT: Post');
+  assert.ok(postHint.description.includes('⚠️ **Note:**'));
   assert.ok(postHint.description.includes('➕ **New Post:**'));
+  assert.ok(postHint.description.includes('Pick an item, pack, or chest'));
+  assert.ok(postHint.description.includes('⚙️ **Config:**'));
+  assert.ok(postHint.description.includes('daily free chest'));
   assert.ok(postHint.description.includes('📝 **Edit Post:**'));
+  assert.ok(postHint.description.includes('to edit it'));
+  assert.ok(postHint.description.includes('🛒 **Buying:**'));
   assert.ok(postHint.description.includes('**[🏷️ Items]**'));
 
   const ecoHint = getSettingsHint('economy', 'Chests', '🎁');
