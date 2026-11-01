@@ -1561,7 +1561,6 @@ export async function handleShopPostStart(interaction) {
 
   // Validation for button states
   const canPublish = Boolean(state.itemId && state.channelId);
-  const canSetPayout = selectedItem && !isPack && state.sellerId;
 
   // Determine seller display
   let sellerDisplay = 'None (Default)';
@@ -1640,6 +1639,8 @@ export async function handleShopPostStart(interaction) {
       const payoutVal = (state.payout !== null && state.payout !== undefined && state.payout > 0) ? Number(state.payout) : 0;
       const payoutStr = payoutVal > 0 ? `\`${payoutVal.toLocaleString()}\`` : '`None`';
       lines.push(`<@${state.sellerId}> will get ${payoutStr} per sale`);
+    } else if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !isPack) {
+      lines.push(`⚠️ Select a seller to receive \`${Number(state.payout).toLocaleString()}\` per sale`);
     }
 
     statusDesc = lines.join('\n');
@@ -1823,12 +1824,12 @@ export async function handleShopPostStart(interaction) {
   const isServerManaged = isPack || (selectedItem && selectedItem.item_type === 'loot_box');
   const userSelect = new UserSelectMenuBuilder()
     .setCustomId(`shop_post_seller_select:${sessionId}`)
-    .setPlaceholder(isServerManaged ? '👤 Seller disabled for this type' : '👤 Select Seller (Optional)')
+    .setPlaceholder(isServerManaged ? '👤 Seller disabled for this type' : '👤 Select Seller')
     .setDisabled(isServerManaged === true);
   if (state.sellerId && !isServerManaged) userSelect.setDefaultUsers([state.sellerId]);
 
   const isItemSelected = !!state.itemId;
-  const isCustomConfigured = state.stock !== null || state.restockIntervalSeconds !== null || state.claimLimit !== null;
+  const isCustomConfigured = state.stock !== null || state.restockIntervalSeconds !== null || state.claimLimit !== null || state.payout !== null;
 
   const defaultImg = await resolveItemDefaultImage(selectedItem, guildId);
   const isCustomImage = Boolean(state.imageUrl && !isSameImageUrl(state.imageUrl, defaultImg));
@@ -1844,7 +1845,7 @@ export async function handleShopPostStart(interaction) {
                      state.restockIntervalSeconds !== null ||
                      state.autoEquip !== false;
 
-  // Row 3: Parameter & Configuration Buttons ([Appearance] [Config] [Auto Equip] [Payout])
+  // Row 3: Parameter & Configuration Buttons ([Appearance] [Config] [Auto Equip])
   const paramComponents = [
     new ButtonBuilder()
       .setCustomId(`shop_post_appearance_btn:${sessionId}`)
@@ -1866,17 +1867,6 @@ export async function handleShopPostStart(interaction) {
       .setDisabled(!isItemSelected || isServerManaged)
   ];
 
-  // Only show the 💰 Payout button if a seller is selected, otherwise hide it (appears on the right of Auto Equip)
-  if (canSetPayout && isItemSelected && !isServerManaged) {
-    paramComponents.push(
-      new ButtonBuilder()
-        .setCustomId(`shop_post_payout_btn:${sessionId}`)
-        .setLabel('Payout')
-        .setEmoji('💰')
-        .setStyle(state.payout ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    );
-  }
-
   const configRow = new ActionRowBuilder().addComponents(paramComponents);
 
   // External Back button always returns directly to the parent screen (Shop Post list or Shop Admin Home)
@@ -1894,6 +1884,9 @@ export async function handleShopPostStart(interaction) {
     canSubmit = true;
   } else {
     canSubmit = Boolean(state.itemId && state.channelId);
+  }
+  if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !state.sellerId && !isPack) {
+    canSubmit = false;
   }
   confirmBtn.setDisabled(!canSubmit);
 
@@ -1927,7 +1920,9 @@ export async function handleShopPostStart(interaction) {
   }
 
   if (isReady) {
-    components.push(new ActionRowBuilder().addComponents(userSelect));
+    if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !isServerManaged) {
+      components.push(new ActionRowBuilder().addComponents(userSelect));
+    }
     components.push(configRow);
     components.push(actionRow);
   } else {
@@ -2123,7 +2118,6 @@ export async function handleShopPostSellerSelect(interaction) {
   // Clearing seller via Discord's native clear 'x' button or empty values
   if (!selectedUserId || selectedUserId === '0') {
     state.sellerId = null;
-    state.payout = null;
   } else {
     state.sellerId = selectedUserId;
     const maxCap = (state.overridePrice !== null && state.overridePrice !== undefined)
@@ -2327,11 +2321,23 @@ export async function handleShopPostConfigBtn(interaction) {
       intervalInput.setValue(formatSecondsToIntervalString(state.restockIntervalSeconds));
     }
 
+    const payoutInput = new TextInputBuilder()
+      .setCustomId('seller_payout')
+      .setLabel('Seller Payout')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('No Seller')
+      .setRequired(false);
+
+    if (state.payout !== null && state.payout !== undefined && state.payout > 0) {
+      payoutInput.setValue(String(state.payout));
+    }
+
     modal.addComponents(
       new ActionRowBuilder().addComponents(priceInput),
       new ActionRowBuilder().addComponents(stockInput),
       new ActionRowBuilder().addComponents(claimLimitInput),
-      new ActionRowBuilder().addComponents(intervalInput)
+      new ActionRowBuilder().addComponents(intervalInput),
+      new ActionRowBuilder().addComponents(payoutInput)
     );
     await interaction.showModal(modal);
   } catch (error) {
@@ -2573,6 +2579,37 @@ export async function handleShopPostModalSubmit(interaction) {
       } else {
         state.restockIntervalSeconds = submittedInterval;
       }
+
+      // 5. Seller Payout
+      if (customId === 'shop_post_config_modal') {
+        let rawPayout = '';
+        try {
+          rawPayout = (interaction.fields.getTextInputValue('seller_payout') || '').trim().toLowerCase();
+        } catch (_) {}
+
+        if (rawPayout === '' || rawPayout === '0' || rawPayout === 'no seller' || rawPayout === 'none' || rawPayout === 'null' || rawPayout === 'free') {
+          state.payout = null;
+          state.sellerId = null;
+        } else {
+          if (!/^\d+$/.test(rawPayout)) {
+            return interaction.followUp({ content: 'Invalid seller payout. Please enter a valid positive whole number (or leave empty for No Seller).', flags: MessageFlags.Ephemeral });
+          }
+          const parsedPayout = parseInt(rawPayout, 10);
+          if (parsedPayout > 0) {
+            const effectivePrice = state.overridePrice ?? 0;
+            if (effectivePrice === 0) {
+              return interaction.followUp({ content: '❌ Cannot set a seller payout for a Free item. Set an item price first.', flags: MessageFlags.Ephemeral });
+            }
+            if (parsedPayout > effectivePrice) {
+              return interaction.followUp({ content: `❌ Payout cannot exceed the item price (\`${effectivePrice.toLocaleString()}\` Coins).`, flags: MessageFlags.Ephemeral });
+            }
+            state.payout = parsedPayout;
+          } else {
+            state.payout = null;
+            state.sellerId = null;
+          }
+        }
+      }
     } else if (customId === 'shop_post_image_modal') {
       const uploadedFiles = interaction.fields.getUploadedFiles?.('post_image_file');
       const uploadedFile = uploadedFiles?.first?.() || (Array.isArray(uploadedFiles) ? uploadedFiles[0] : null);
@@ -2662,6 +2699,13 @@ export async function handleShopPostPublish(interaction) {
     // Validation
     if (!state || !state.itemId || !state.channelId) {
       return handleInteractionError(interaction, new Error('Validation Failed: Channel and Item required for posting'), 'shop post publish');
+    }
+
+    if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !state.sellerId) {
+      return interaction.followUp({
+        content: '⚠️ Please select a seller for the configured seller payout before publishing.',
+        flags: MessageFlags.Ephemeral
+      });
     }
 
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
@@ -6265,6 +6309,13 @@ export async function handleShopPostUpdate(interaction) {
 
     if (!state || !state.itemId || !state.channelId || !state.messageId || !state.isEditing) {
       return handleInteractionError(interaction, new Error('Validation Failed: Missing required parameters for updating'), 'shop post update');
+    }
+
+    if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !state.sellerId) {
+      return interaction.followUp({
+        content: '⚠️ Please select a seller for the configured seller payout before updating.',
+        flags: MessageFlags.Ephemeral
+      });
     }
 
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();

@@ -274,13 +274,13 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     });
 
     await handleShopPostStart(mockInteractionCreate);
-    assert.equal(editReplyPayload.components.length, 5, 'Must have 5 ActionRows once both item and channel are configured');
-    const fullActionRow = editReplyPayload.components[4];
+    assert.equal(editReplyPayload.components.length, 4, 'Must have 4 ActionRows once both item and channel are configured without payout');
+    const fullActionRow = editReplyPayload.components[3];
     const publishBtn = fullActionRow.components.find(c => c.data.label === 'Publish');
     assert.ok(publishBtn, 'Publish button must exist once configured');
     assert.equal(publishBtn.data.disabled, false, 'Publish button must be enabled once configured');
 
-    // Subtest 7C: Editing mode - channel select menu is completely hidden
+    // Subtest 7C: Editing mode without payout - channel/item selects and seller menu are hidden
     await setPendingPostSession(sessionId, {
       itemId: 101,
       channelId: validChannelId,
@@ -289,14 +289,14 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     });
 
     await handleShopPostStart(mockInteractionCreate);
-    assert.equal(editReplyPayload.components.length, 3, 'Must have 3 ActionRows in editing mode (no item select, no channel select)');
+    assert.equal(editReplyPayload.components.length, 2, 'Must have 2 ActionRows in editing mode without payout');
 
     const hasChannelSelect = editReplyPayload.components.some(row =>
       row.components.some(c => c.data?.custom_id?.startsWith('shop_post_channel_select'))
     );
     assert.equal(hasChannelSelect, false, 'Channel select menu must be completely hidden when editing an existing post');
 
-    const editActionRow = editReplyPayload.components[2];
+    const editActionRow = editReplyPayload.components[1];
     const updateBtn = editActionRow.components.find(c => c.data.label === 'Update');
     assert.ok(updateBtn, 'Update button must exist in editing mode');
     assert.equal(updateBtn.data.disabled, false, 'Update button must be enabled in editing mode');

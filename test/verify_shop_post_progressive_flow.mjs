@@ -6,14 +6,14 @@ import {
   handleShopPostReset,
   handleShopPostSellerSelect,
   handleShopPostModalSubmit,
-  handleShopPostPayoutBtn,
+  handleShopPostConfigBtn,
   setPendingPostSession,
   getPendingPostSession
 } from '../src/commands/shop-setup.js';
 import { setMockPool } from '../src/storage/postgres.js';
 import { configCache } from '../src/storage/config.js';
 
-describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () => {
+describe('Shop Post Progressive Disclosure & Dynamic Seller Payout Suite', () => {
   const guildId = '723544218081034303';
   const userId = '1383486097601859686';
   const channelId = '1232850780134834196';
@@ -58,21 +58,35 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
         channels: { cache: new Map() },
         roles: { cache: new Map() }
       },
-      deferred: true,
-      replied: true,
+      client: {
+        channels: {
+          cache: {
+            get: () => ({
+              type: ChannelType.GuildText,
+              name: 'testing'
+            })
+          }
+        }
+      },
       deferUpdate: async () => {},
-      editReply: async (p) => {
-        payload = p;
-        return p;
+      editReply: async (data) => {
+        payload = data;
+        return data;
+      },
+      followUp: async (data) => {
+        payload = data;
+        return data;
       },
       getPayload: () => payload
     };
   }
 
-  it('1. State A: Initial unconfigured state shows 2 warnings and only Item, Channel, Back buttons', async () => {
+  it('1. State A: Neither Item nor Channel set shows 2 progressive warnings and only Back button', async () => {
     await setPendingPostSession(sessionId, {
       itemId: null,
       channelId: null,
+      fromGateway: true,
+      fromAdminHub: false,
       isEditing: false
     });
 
@@ -81,21 +95,20 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     const payload = interaction.getPayload();
 
     assert.ok(payload);
-    // Embed description must have both warnings
+    assert.ok(payload.embeds && payload.embeds.length > 0);
     const desc = payload.embeds[0].data.description;
-    assert.equal(desc, '⚠️ Set Item\n⚠️ Set Channel');
-    assert.equal(payload.embeds[0].data.thumbnail, undefined, 'No thumbnail when item is unselected');
+    assert.equal(desc, '⚠️ Set Item\n⚠️ Set Channel', 'Must display both progressive warnings');
 
-    // Exactly 3 action rows: Item select, Channel select, Back button row
-    assert.equal(payload.components.length, 3, 'Must have strictly 3 component rows');
+    // Title should be generic
+    assert.equal(payload.embeds[0].data.title, 'Posting an item');
 
+    // Only 3 component rows: Item Select, Channel Select, Action Row (with Back only)
+    assert.equal(payload.components.length, 3, 'Must only show item, channel, and back button');
     const itemSelect = payload.components[0].components[0];
-    assert.equal(itemSelect.data.custom_id, `shop_post_item_select:${sessionId}`);
-    assert.equal(itemSelect.data.placeholder, '📦 Set Item', 'Item menu placeholder must say Set Item');
+    assert.equal(itemSelect.data.placeholder, '📦 Set Item');
 
     const channelSelect = payload.components[1].components[0];
-    assert.equal(channelSelect.data.custom_id, `shop_post_channel_select:${sessionId}`);
-    assert.equal(channelSelect.data.placeholder, '📢 Set Channel', 'Channel menu placeholder must say Set Channel');
+    assert.equal(channelSelect.data.placeholder, '📢 Set Channel');
 
     const actionRow = payload.components[2].components;
     assert.equal(actionRow.length, 1, 'Action row must contain only Back button');
@@ -162,12 +175,14 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     assert.equal(actionRow[0].data.label, 'Back');
   });
 
-  it('4. State D: Both configured removes all warnings, reveals full summary, shows plain item name, and reveals all buttons', async () => {
+  it('4. State D: Both configured without payout hides Seller Menu, shows strictly 3 param buttons, and enables Publish', async () => {
     await setPendingPostSession(sessionId, {
       itemId: 501,
       channelId: channelId,
       overridePrice: 1500,
       stock: null,
+      payout: null,
+      sellerId: null,
       isEditing: false
     });
 
@@ -180,30 +195,27 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     assert.ok(desc.includes(`Post **Dragon Blade** In <#${channelId}>`), 'Must show item target');
     assert.ok(desc.includes('for `1,500` Coins 🪙 with `Unlimited` Stocks'), 'Must show price and stock');
 
-    // Exactly 5 action rows
-    assert.equal(payload.components.length, 5, 'Must reveal all 5 component rows');
+    // Without payout configured, Seller Menu is HIDDEN -> 4 rows total
+    assert.equal(payload.components.length, 4, 'Must show 4 rows (Item, Channel, Param buttons, Action buttons)');
 
     // Item select menu displays clean item name without emoji or prefix
     const itemSelect = payload.components[0].components[0];
     assert.equal(itemSelect.options[0].data.label, 'Dragon Blade');
     assert.equal(itemSelect.options[0].data.emoji, undefined);
 
-    // Channel select menu placeholder remains Set Channel (with Discord channel tag selected)
+    // Channel select menu placeholder remains Set Channel
     const channelSelect = payload.components[1].components[0];
     assert.equal(channelSelect.data.placeholder, '📢 Set Channel');
 
-    // Seller select menu
-    const sellerSelect = payload.components[2].components[0];
-    assert.equal(sellerSelect.data.custom_id, `shop_post_seller_select:${sessionId}`);
-
-    // Config row ([Appearance], [Config], [Auto Equip])
-    const configRow = payload.components[3].components;
+    // Config row strictly has 3 buttons ([Appearance], [Config], [Auto Equip]) - NO Payout button
+    const configRow = payload.components[2].components;
+    assert.equal(configRow.length, 3, 'Param row must have exactly 3 buttons');
     assert.equal(configRow[0].data.label, 'Appearance');
     assert.equal(configRow[1].data.label, 'Config');
     assert.equal(configRow[2].data.label, 'Auto Equip');
 
     // Action row ([Back], [Reset], [Publish])
-    const actionRow = payload.components[4].components;
+    const actionRow = payload.components[3].components;
     assert.equal(actionRow[0].data.label, 'Back');
     assert.equal(actionRow[1].data.label, 'Reset');
     assert.equal(actionRow[2].data.label, 'Publish');
@@ -236,11 +248,13 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     assert.equal(payload.components[2].components[0].data.label, 'Back');
   });
 
-  it('6. Editing mode immediately presents full editor controls without item/channel selects', async () => {
+  it('6. Editing mode presents controls without item/channel selects and hides seller menu when payout is unset', async () => {
     await setPendingPostSession(sessionId, {
       itemId: 501,
       channelId: channelId,
       overridePrice: 1500,
+      payout: null,
+      sellerId: null,
       isEditing: true
     });
 
@@ -248,78 +262,195 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     await handleShopPostStart(interaction);
     const payload = interaction.getPayload();
 
-    // In edit mode: 3 rows (Seller Select, Config Row, Action Row [Back, Update])
-    assert.equal(payload.components.length, 3);
-    const editActionRow = payload.components[2].components;
+    // In edit mode without payout: 2 rows (Config Row, Action Row [Back, Update])
+    assert.equal(payload.components.length, 2);
+    const configRow = payload.components[0].components;
+    assert.equal(configRow.length, 3, 'Param row must have exactly 3 buttons');
+    assert.equal(configRow[0].data.label, 'Appearance');
+    assert.equal(configRow[1].data.label, 'Config');
+    assert.equal(configRow[2].data.label, 'Auto Equip');
+
+    const editActionRow = payload.components[1].components;
     const updateBtn = editActionRow.find(c => c.data.label === 'Update');
     assert.ok(updateBtn, 'Update button must exist in editing mode');
     assert.equal(updateBtn.data.disabled, false);
   });
 
-  it('7. Seller selection renders "@user will get `None` per sale" when payout is not set', async () => {
-    const sellerUserId = '999888777666555444';
-    await setPendingPostSession(sessionId, {
-      itemId: 501,
-      channelId: channelId,
-      sellerId: sellerUserId,
-      payout: null,
-      overridePrice: 1500,
-      isEditing: false
-    });
-
-    const interaction = createMockInteraction();
-    await handleShopPostStart(interaction);
-    const payload = interaction.getPayload();
-
-    const desc = payload.embeds[0].data.description;
-    assert.ok(desc.includes(`<@${sellerUserId}> will get \`None\` per sale`), 'Must display None when payout is unset');
-  });
-
-  it('8. Seller selection renders "@user will get `X` per sale" when payout is set', async () => {
-    const sellerUserId = '999888777666555444';
-    await setPendingPostSession(sessionId, {
-      itemId: 501,
-      channelId: channelId,
-      sellerId: sellerUserId,
-      payout: 250,
-      overridePrice: 1500,
-      isEditing: false
-    });
-
-    const interaction = createMockInteraction();
-    await handleShopPostStart(interaction);
-    const payload = interaction.getPayload();
-
-    const desc = payload.embeds[0].data.description;
-    assert.ok(desc.includes(`<@${sellerUserId}> will get \`250\` per sale`), 'Must display payout value in backticks');
-  });
-
-  it('9. Payout modal displays placeholder "None" and rejects payout exceeding item price or Free items', async () => {
+  it('7. Post Configuration Modal has 5 fields and pre-fills / defaults correctly', async () => {
     let modalShown = null;
     const interaction = {
       _postSessionId: sessionId,
+      guildId,
       showModal: async (m) => { modalShown = m; }
+    };
+
+    // Case A: No payout set -> Seller Payout input defaults to empty with placeholder 'No Seller'
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 1500,
+      payout: null
+    });
+
+    await handleShopPostConfigBtn(interaction);
+    assert.ok(modalShown, 'Modal must be shown');
+    assert.equal(modalShown.components.length, 5, 'Modal must contain exactly 5 ActionRows');
+    const payoutFieldA = modalShown.components[4].components[0];
+    assert.equal(payoutFieldA.data.custom_id, 'seller_payout');
+    assert.equal(payoutFieldA.data.label, 'Seller Payout');
+    assert.equal(payoutFieldA.data.placeholder, 'No Seller');
+    assert.equal(payoutFieldA.data.value, undefined, 'Must be empty when payout is unset');
+
+    // Case B: Payout is configured to 250 -> pre-filled with '250'
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 1500,
+      payout: 250
+    });
+
+    await handleShopPostConfigBtn(interaction);
+    const payoutFieldB = modalShown.components[4].components[0];
+    assert.equal(payoutFieldB.data.value, '250', 'Must pre-fill configured payout amount');
+  });
+
+  it('8. Submitting payout > 0 in Config modal dynamically reveals Seller Menu and requires seller selection', async () => {
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      channelId: channelId,
+      overridePrice: 1500,
+      payout: null,
+      sellerId: null,
+      isEditing: false
+    });
+
+    // Submit Config modal with seller_payout = 300
+    const configModalInteraction = {
+      ...createMockInteraction(),
+      customId: `shop_post_config_modal:${sessionId}`,
+      fields: {
+        getTextInputValue: (field) => {
+          if (field === 'price_input') return '1500';
+          if (field === 'seller_payout') return '300';
+          return '';
+        }
+      }
+    };
+    await handleShopPostModalSubmit(configModalInteraction);
+
+    const state = await getPendingPostSession(sessionId);
+    assert.equal(state.payout, 300, 'Payout must be updated to 300');
+    assert.equal(state.sellerId, null);
+
+    // Re-render post panel
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
+
+    // Now 5 rows: Item Select, Channel Select, Seller UserSelectMenu, Config Row, Action Row
+    assert.equal(payload.components.length, 5, 'Seller menu must now be revealed');
+    const sellerSelect = payload.components[2].components[0];
+    assert.equal(sellerSelect.data.custom_id, `shop_post_seller_select:${sessionId}`);
+    assert.equal(sellerSelect.data.placeholder, '👤 Select Seller');
+
+    // Embed description prompts to select seller, and Publish button is disabled
+    const desc = payload.embeds[0].data.description;
+    assert.ok(desc.includes('⚠️ Select a seller to receive `300` per sale'));
+    const actionRow = payload.components[4].components;
+    const publishBtn = actionRow.find(c => c.data.label === 'Publish');
+    assert.equal(publishBtn.data.disabled, true, 'Publish button must be disabled until seller is selected');
+  });
+
+  it('9. Selecting a seller satisfies the requirement and renders payout confirmation in embed', async () => {
+    const sellerUserId = '999888777666555444';
+    const selectInteraction = {
+      ...createMockInteraction(),
+      values: [sellerUserId]
     };
 
     await setPendingPostSession(sessionId, {
       itemId: 501,
-      overridePrice: 100,
+      channelId: channelId,
+      overridePrice: 1500,
+      payout: 300,
+      sellerId: null,
+      isEditing: false
+    });
+
+    await handleShopPostSellerSelect(selectInteraction);
+
+    const state = await getPendingPostSession(sessionId);
+    assert.equal(state.sellerId, sellerUserId);
+    assert.equal(state.payout, 300);
+
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
+
+    const desc = payload.embeds[0].data.description;
+    assert.ok(desc.includes(`<@${sellerUserId}> will get \`300\` per sale`));
+
+    const actionRow = payload.components[4].components;
+    const publishBtn = actionRow.find(c => c.data.label === 'Publish');
+    assert.equal(publishBtn.data.disabled, false, 'Publish button must be enabled once seller is selected');
+  });
+
+  it('10. Setting payout to 0 or empty in Config modal removes the seller and hides the Seller Menu', async () => {
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      channelId: channelId,
+      overridePrice: 1500,
+      payout: 300,
       sellerId: '999888777666555444',
+      isEditing: false
+    });
+
+    // Admin sets seller_payout to 0 / empty
+    const removePayoutInteraction = {
+      ...createMockInteraction(),
+      customId: `shop_post_config_modal:${sessionId}`,
+      fields: {
+        getTextInputValue: (field) => {
+          if (field === 'price_input') return '1500';
+          if (field === 'seller_payout') return '0';
+          return '';
+        }
+      }
+    };
+    await handleShopPostModalSubmit(removePayoutInteraction);
+
+    const state = await getPendingPostSession(sessionId);
+    assert.equal(state.payout, null, 'Payout must be reset to null');
+    assert.equal(state.sellerId, null, 'Seller must be cleared');
+
+    // Re-render
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
+
+    // Seller menu is gone, back to 4 rows
+    assert.equal(payload.components.length, 4, 'Seller menu must be hidden');
+    const desc = payload.embeds[0].data.description;
+    assert.ok(!desc.includes('will get'), 'No seller payout line in embed');
+  });
+
+  it('11. Config modal rejects payout exceeding price and rejects payout on Free items', async () => {
+    // Validation: Exceeding item price
+    let followUpMsg = null;
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 100,
       payout: null
     });
 
-    await handleShopPostPayoutBtn(interaction);
-    assert.ok(modalShown);
-    const textInput = modalShown.components[0].components[0];
-    assert.equal(textInput.data.placeholder, 'None', 'Modal placeholder must strictly say None');
-
-    // Validation: Exceeding item price
-    let followUpMsg = null;
     const exceedInteraction = {
-      _postSessionId: sessionId,
-      customId: `shop_post_payout_modal:${sessionId}`,
-      fields: { getTextInputValue: () => '150' },
-      deferUpdate: async () => {},
+      ...createMockInteraction(),
+      customId: `shop_post_config_modal:${sessionId}`,
+      fields: {
+        getTextInputValue: (field) => {
+          if (field === 'price_input') return '100';
+          if (field === 'seller_payout') return '150';
+          return '';
+        }
+      },
       followUp: async (f) => { followUpMsg = f; }
     };
     await handleShopPostModalSubmit(exceedInteraction);
@@ -329,82 +460,51 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     await setPendingPostSession(sessionId, {
       itemId: 501,
       overridePrice: 0,
-      sellerId: '999888777666555444',
       payout: null
     });
     followUpMsg = null;
     const freeInteraction = {
-      _postSessionId: sessionId,
-      customId: `shop_post_payout_modal:${sessionId}`,
-      fields: { getTextInputValue: () => '50' },
-      deferUpdate: async () => {},
+      ...createMockInteraction(),
+      customId: `shop_post_config_modal:${sessionId}`,
+      fields: {
+        getTextInputValue: (field) => {
+          if (field === 'price_input') return '0';
+          if (field === 'seller_payout') return '50';
+          return '';
+        }
+      },
       followUp: async (f) => { followUpMsg = f; }
     };
     await handleShopPostModalSubmit(freeInteraction);
     assert.ok(followUpMsg?.content.includes('Cannot set a seller payout for a Free item'));
   });
 
-  it('10. Clearing seller safely resets sellerId and payout without crashing, and allows guild owner as seller', async () => {
-    const ownerId = '111222333444555666';
-    const mockInteraction = {
-      ...createMockInteraction(),
-      guild: { ownerId, channels: { cache: new Map() }, roles: { cache: new Map() } },
-      values: [ownerId]
-    };
-
+  it('12. Clearing seller via native "x" clears sellerId while preserving payout so menu remains visible', async () => {
     await setPendingPostSession(sessionId, {
       itemId: 501,
       channelId: channelId,
       overridePrice: 1000,
-      sellerId: null,
-      payout: null
+      sellerId: '999888777666555444',
+      payout: 200
     });
 
-    // Selecting guild owner is supported and sets seller
-    await handleShopPostSellerSelect(mockInteraction);
-    let state = await getPendingPostSession(sessionId);
-    assert.equal(state.sellerId, ownerId, 'Guild owner must be supported as seller');
-
-    // Clearing seller via Discord native clear (empty values array)
     const clearInteraction = {
-      ...mockInteraction,
+      ...createMockInteraction(),
       values: []
     };
     await handleShopPostSellerSelect(clearInteraction);
-    state = await getPendingPostSession(sessionId);
-    assert.equal(state.sellerId, null, 'Clearing seller must set sellerId to null');
-    assert.equal(state.payout, null, 'Clearing seller must set payout to null');
-  });
 
-  it('11. Changing item price clamps or resets existing seller payout', async () => {
-    await setPendingPostSession(sessionId, {
-      itemId: 501,
-      overridePrice: 500,
-      sellerId: '999888777666555444',
-      payout: 400
-    });
+    const state = await getPendingPostSession(sessionId);
+    assert.equal(state.sellerId, null, 'sellerId must be cleared');
+    assert.equal(state.payout, 200, 'payout must remain configured so menu stays active');
 
-    // Lower price to 200 -> payout clamped to 200
-    const lowerPriceInteraction = {
-      ...createMockInteraction(),
-      customId: `shop_post_price_modal:${sessionId}`,
-      fields: { getTextInputValue: () => '200' }
-    };
-    await handleShopPostModalSubmit(lowerPriceInteraction);
-    let state = await getPendingPostSession(sessionId);
-    assert.equal(state.overridePrice, 200);
-    assert.equal(state.payout, 200, 'Payout must be clamped to new lower price');
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
 
-    // Change price to Free -> payout automatically reset to null
-    const freePriceInteraction = {
-      ...createMockInteraction(),
-      customId: `shop_post_price_modal:${sessionId}`,
-      fields: { getTextInputValue: () => '0' }
-    };
-    await handleShopPostModalSubmit(freePriceInteraction);
-    state = await getPendingPostSession(sessionId);
-    assert.equal(state.overridePrice, 0);
-    assert.equal(state.payout, null, 'Payout must be reset to null when item is made Free');
+    assert.equal(payload.components.length, 5, 'Seller menu remains open');
+    const desc = payload.embeds[0].data.description;
+    assert.ok(desc.includes('⚠️ Select a seller to receive `200` per sale'));
   });
 
   after(() => {
