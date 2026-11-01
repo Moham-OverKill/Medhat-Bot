@@ -221,7 +221,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
       }
     });
 
-    // Subtest 7A: Creation mode
+    // Subtest 7A: Creation mode with channelId = null (progressive disclosure: only Item, Channel, Back)
     await setPendingPostSession(sessionId, {
       itemId: 101,
       channelId: null,
@@ -250,7 +250,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     await handleShopPostStart(mockInteractionCreate);
 
     assert.ok(editReplyPayload, 'Must render shop post staging');
-    assert.equal(editReplyPayload.components.length, 5, 'Must have exactly 5 ActionRows in creation mode');
+    assert.equal(editReplyPayload.components.length, 3, 'Must have exactly 3 ActionRows when channelId is not yet configured');
 
     // Row 1 must be ChannelSelectMenuBuilder
     const channelRow = editReplyPayload.components[1];
@@ -258,14 +258,29 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     assert.ok(channelSelect.data.custom_id.startsWith('shop_post_channel_select'), 'Must be channel select');
     assert.equal(Boolean(channelSelect.data.disabled), false, 'Channel select must be enabled in creation mode');
     assert.ok(channelSelect.data.channel_types.includes(ChannelType.GuildText), 'Must support GuildText');
+    assert.equal(channelSelect.data.placeholder, '📢 Set Channel', 'Must prompt to Set Channel');
 
-    // Action row (last row): Publish button must be disabled because channelId is null
-    const actionRow = editReplyPayload.components[4];
-    const publishBtn = actionRow.components.find(c => c.data.label === 'Publish');
-    assert.ok(publishBtn, 'Publish button must exist');
-    assert.equal(publishBtn.data.disabled, true, 'Publish button must be disabled when channelId is null');
+    // Action row (last row): Back button only when unconfigured
+    const initActionRow = editReplyPayload.components[2];
+    assert.equal(initActionRow.components.length, 1, 'Action row must contain only Back button before channel is set');
+    assert.equal(initActionRow.components[0].data.label, 'Back');
 
-    // Subtest 7B: Editing mode - channel select menu is completely hidden
+    // Subtest 7B: Creation mode with channel configured -> reveals full 5 ActionRows and Publish button
+    await setPendingPostSession(sessionId, {
+      itemId: 101,
+      channelId: validChannelId,
+      fromAdminHub: true,
+      isEditing: false
+    });
+
+    await handleShopPostStart(mockInteractionCreate);
+    assert.equal(editReplyPayload.components.length, 5, 'Must have 5 ActionRows once both item and channel are configured');
+    const fullActionRow = editReplyPayload.components[4];
+    const publishBtn = fullActionRow.components.find(c => c.data.label === 'Publish');
+    assert.ok(publishBtn, 'Publish button must exist once configured');
+    assert.equal(publishBtn.data.disabled, false, 'Publish button must be enabled once configured');
+
+    // Subtest 7C: Editing mode - channel select menu is completely hidden
     await setPendingPostSession(sessionId, {
       itemId: 101,
       channelId: validChannelId,
@@ -354,7 +369,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     }
   });
 
-  it('9. handleShopPostNewLayout defaults channel to null when from admin hub, interaction.channelId when from settings', async () => {
+  it('9. handleShopPostNewLayout initializes channel to null across all origins to ensure progressive warnings', async () => {
     setMockPool({ query: async () => ({ rows: [] }) });
 
     // Hub scenario: Back button disabled
@@ -401,6 +416,6 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     await handleShopPostNewLayout(settingsInteraction);
     const settingsState = await getPendingPostSession(settingsSessionId);
     assert.equal(settingsState.fromAdminHub, false);
-    assert.equal(settingsState.channelId, validChannelId, 'Must default to interaction.channelId when coming from settings');
+    assert.equal(settingsState.channelId, null, 'Must initialize to null when coming from settings to display Set Channel warning');
   });
 });

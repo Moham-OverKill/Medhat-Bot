@@ -1531,7 +1531,7 @@ export async function handleShopPostStart(interaction) {
   
   // Enforce defaults for missing keys (critical for Post-Publish re-render)
   state.itemId = state.itemId ?? null;
-  state.channelId = state.channelId ?? (state.fromAdminHub ? null : (interaction.channelId || null));
+  state.channelId = state.channelId ?? null;
   state.sellerId = state.sellerId ?? null;
   state.imageUrl = state.imageUrl ?? null;
   state.description = state.description ?? null;
@@ -1597,21 +1597,24 @@ export async function handleShopPostStart(interaction) {
     if (previewImg) embed.setThumbnail(previewImg);
   }
 
+  // Check if configuration is ready (both item and channel set, or in edit mode)
+  const isReady = Boolean(state.isEditing || (state.itemId && state.channelId));
+
   // Prioritized status description
   let statusDesc = '';
-  if (selectedItem) {
+  if (isReady) {
     const coinName = await getCurrencyName(guildId);
     const coinEmoji = await getCurrencyEmoji(guildId);
 
     // Only use role mention for single items with a valid Discord snowflake role ID (not packs, not chests)
     const isPackItem = selectedItem && (selectedItem.item_type === 'pack' || selectedItem.is_pack);
     const isChestItem = selectedItem && (selectedItem.item_type === 'loot_box' || Boolean(selectedItem.loot_box_id));
-    const hasNumericRole = selectedItem.role_id && /^\d{17,20}$/.test(String(selectedItem.role_id));
-    const targetMention = (!isPackItem && !isChestItem && hasNumericRole) ? `<@&${selectedItem.role_id}>` : `**${selectedItem.name}**`;
+    const hasNumericRole = selectedItem?.role_id && /^\d{17,20}$/.test(String(selectedItem.role_id));
+    const targetMention = (!isPackItem && !isChestItem && hasNumericRole) ? `<@&${selectedItem.role_id}>` : `**${selectedItem?.name || 'Item'}**`;
 
     const priceVal = (state.overridePrice !== null && state.overridePrice !== undefined)
       ? Number(state.overridePrice)
-      : (selectedItem.price ?? 0);
+      : (selectedItem?.price ?? 0);
     const priceDisplay = priceVal > 0
       ? `\`${priceVal.toLocaleString()}\` ${coinName} ${coinEmoji}`
       : '`Free`';
@@ -1637,12 +1640,16 @@ export async function handleShopPostStart(interaction) {
     if (state.description) {
       statusDesc += `\n\n> ${state.description.replace(/\n/g, '\n> ')}`;
     }
-
-    if (!state.isEditing && !state.channelId) {
-      statusDesc += '\n\n⚠️ *Set a channel to publish*';
-    }
   } else {
-    statusDesc = '⚠️ Set Item';
+    // Before both item and channel are configured, show clean progressive warnings
+    const warnings = [];
+    if (!state.itemId) {
+      warnings.push('⚠️ Set Item');
+    }
+    if (!state.channelId) {
+      warnings.push('⚠️ Set Channel');
+    }
+    statusDesc = warnings.join('\n');
   }
 
   embed.setDescription(statusDesc || null);
@@ -1668,14 +1675,14 @@ export async function handleShopPostStart(interaction) {
       if (hasUncategorized) itemOptions.push({ label: 'Uncategorized Items', value: 'folder_standalone', emoji: '🏷️' });
       if (hasPacks) itemOptions.push({ label: 'Item Packs', value: 'folder_packs', emoji: '📦' });
       if (hasLootBoxes) itemOptions.push({ label: lootBoxCatName.slice(0, 50), value: 'folder_loot_boxes', emoji: parseSelectEmoji(lootBoxEmoji) });
-      placeholder = '📦 Select Item/Pack/Box (Required)';
+      placeholder = isReady ? '📦 Change Item' : '📦 Set Item';
       
       // If an item is already selected, show it as a quick-pick at the top
       if (selectedItem) {
         itemOptions.unshift({
-          label: `Staged: ${selectedItem.name.slice(0, 50)}`,
+          label: isReady ? `Change: ${selectedItem.name.slice(0, 50)}` : `Set: ${selectedItem.name.slice(0, 50)}`,
           value: selectedItem.id.toString(),
-          emoji: '✅',
+          emoji: isReady ? '🔄' : '✅',
           default: true
         });
       }
@@ -1785,10 +1792,10 @@ export async function handleShopPostStart(interaction) {
     }
 
     if (state.postStep === 0) {
-      const placeholder = '📦 Select Item/Pack (Required)';
+      const rootPlaceholder = isReady ? '📦 Change Item' : '📦 Set Item';
       itemSelect = !state.isEditing ? new StringSelectMenuBuilder()
         .setCustomId(`shop_post_item_select:${sessionId}`)
-        .setPlaceholder(placeholder)
+        .setPlaceholder(rootPlaceholder)
         .addOptions(itemOptions) : null;
     }
   }
@@ -1796,9 +1803,10 @@ export async function handleShopPostStart(interaction) {
   // Channel Select (Channel Select Menu - Required to publish, only shown when creating a new post)
   let channelSelect = null;
   if (!state.isEditing) {
+    const channelPlaceholder = isReady ? '📢 Change Channel' : '📢 Set Channel';
     channelSelect = new ChannelSelectMenuBuilder()
       .setCustomId(`shop_post_channel_select:${sessionId}`)
-      .setPlaceholder('📢 Select Channel (Required)')
+      .setPlaceholder(channelPlaceholder)
       .setChannelTypes([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
     if (state.channelId) {
       channelSelect.setDefaultChannels([state.channelId]);
@@ -1911,9 +1919,22 @@ export async function handleShopPostStart(interaction) {
     if (itemSelect) components.push(new ActionRowBuilder().addComponents(itemSelect));
     if (channelSelect) components.push(new ActionRowBuilder().addComponents(channelSelect));
   }
-  components.push(new ActionRowBuilder().addComponents(userSelect));
-  components.push(configRow);
-  components.push(actionRow);
+
+  if (isReady) {
+    components.push(new ActionRowBuilder().addComponents(userSelect));
+    components.push(configRow);
+    components.push(actionRow);
+  } else {
+    // Before both item and channel are configured, show strictly the Back button
+    const initActionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(postBackCustomId)
+        .setLabel('Back')
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(initActionRow);
+  }
 
   await interaction.editReply({
     content: null,
@@ -2373,7 +2394,7 @@ export async function handleShopPostReset(interaction) {
     await setPendingPostSession(sessionId, {
       fromGateway: true,
       fromAdminHub,
-      channelId: fromAdminHub ? null : (interaction.channelId || null)
+      channelId: null
     });
   }
   await handleShopPostStart(interaction);
@@ -5929,7 +5950,7 @@ export async function handleShopPostNewLayout(interaction) {
     // Initialize/Reset session state for New Post
     await setPendingPostSession(sessionId, {
       itemId: null,
-      channelId: fromAdminHub ? null : (interaction.channelId || null),
+      channelId: null,
       sellerId: null,
       payout: null,
       stock: null,
