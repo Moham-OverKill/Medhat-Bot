@@ -42,8 +42,11 @@ test('getSettingsHint for other pages', () => {
 
   const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁');
   assert.equal(chestsHint.title, 'HINT: Mystery Boxes');
-  assert.ok(chestsHint.description.includes('⚠️ **Create Items First:**'));
+  assert.ok(chestsHint.description.includes('⚠️ **Note:**'));
+  assert.ok(chestsHint.description.includes('Tradable'));
   assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
+  assert.ok(chestsHint.description.includes('⚙️ **Setup:**'));
+  assert.ok(chestsHint.description.includes('📦 **Opening:**'));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
   assert.ok(chestsHint.description.includes('**[⭐ Levels]**'));
 

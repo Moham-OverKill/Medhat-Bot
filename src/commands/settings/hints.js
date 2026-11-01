@@ -33,11 +33,9 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
       title: `HINT: ${lootBoxName}`,
       description:
         `Create mystery boxes that give random rewards and coins when opened.\n\n` +
-        `⚠️ **Create Items First:** ${lootBoxName} give out rewards from your items catalog. Make sure you create your items in **[🏷️ Items]** first so they can be won as prizes here.\n\n` +
-        `➕ **Create:** Make a new ${lootBoxName.toLowerCase().replace(/s$/, '')}, set the minimum and maximum coin rewards, and set the chance percentage for each item rarity.\n\n` +
-        `🖼️ **Appearance:** Choose the category name, emoji, closed box picture, and animated open GIF for your ${lootBoxName.toLowerCase()}.\n\n` +
-        `📦 **How Members Open:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` to receive their random prizes, or trade them to other members using \`/trade\`.\n\n` +
-        `✅ **What's Next?:** Creating ${lootBoxName.toLowerCase()} adds them to your server, but members cannot get them yet. Go to **[📢 Post]** to sell them in chat channels, or add them as level rewards in **[⭐ Levels]**.`
+        `⚠️ **Note:** ${lootBoxName} give rewards from your items catalog. Items must be created in **[🏷️ Items]** and set to Tradable so they can be won as prizes here.\n\n` +
+        `⚙️ **Setup:** Set min and max coin rewards, drop chances for each item rarity, and customize the box emoji, picture, and opening GIF.\n\n` +
+        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` or trade them with \`/trade\`. Go to **[📢 Post]** to sell them in chat, or add them as level rewards in **[⭐ Levels]**.`
     },
     post: {
       title: 'HINT: Post',
