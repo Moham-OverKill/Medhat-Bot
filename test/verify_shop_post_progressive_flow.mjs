@@ -432,9 +432,8 @@ describe('Shop Post Progressive Disclosure & Dynamic Seller Payout Suite', () =>
     assert.ok(!desc.includes('will get'), 'No seller payout line in embed');
   });
 
-  it('11. Config modal rejects payout exceeding price and rejects payout on Free items', async () => {
-    // Validation: Exceeding item price
-    let followUpMsg = null;
+  it('11. Config modal allows any seller payout amount, including on Free items and exceeding item price', async () => {
+    // Payout exceeding item price is permitted
     await setPendingPostSession(sessionId, {
       itemId: 501,
       overridePrice: 100,
@@ -450,19 +449,18 @@ describe('Shop Post Progressive Disclosure & Dynamic Seller Payout Suite', () =>
           if (field === 'seller_payout') return '150';
           return '';
         }
-      },
-      followUp: async (f) => { followUpMsg = f; }
+      }
     };
     await handleShopPostModalSubmit(exceedInteraction);
-    assert.ok(followUpMsg?.content.includes('cannot exceed the item price'));
+    let state = await getPendingPostSession(sessionId);
+    assert.equal(state.payout, 150, 'Payout greater than item price must be accepted');
 
-    // Validation: Setting payout for Free item
+    // Payout for Free item is permitted
     await setPendingPostSession(sessionId, {
       itemId: 501,
       overridePrice: 0,
       payout: null
     });
-    followUpMsg = null;
     const freeInteraction = {
       ...createMockInteraction(),
       customId: `shop_post_config_modal:${sessionId}`,
@@ -472,11 +470,11 @@ describe('Shop Post Progressive Disclosure & Dynamic Seller Payout Suite', () =>
           if (field === 'seller_payout') return '50';
           return '';
         }
-      },
-      followUp: async (f) => { followUpMsg = f; }
+      }
     };
     await handleShopPostModalSubmit(freeInteraction);
-    assert.ok(followUpMsg?.content.includes('Cannot set a seller payout for a Free item'));
+    state = await getPendingPostSession(sessionId);
+    assert.equal(state.payout, 50, 'Payout on Free items must be accepted');
   });
 
   it('12. Clearing seller via native "x" clears sellerId while preserving payout so menu remains visible', async () => {

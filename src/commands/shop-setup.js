@@ -2120,13 +2120,6 @@ export async function handleShopPostSellerSelect(interaction) {
     state.sellerId = null;
   } else {
     state.sellerId = selectedUserId;
-    const maxCap = (state.overridePrice !== null && state.overridePrice !== undefined)
-      ? Number(state.overridePrice)
-      : 0;
-
-    if (state.payout !== null && state.payout !== undefined && state.payout > 0) {
-      if (state.payout > maxCap) state.payout = maxCap > 0 ? maxCap : null;
-    }
   }
 
   await setPendingPostSession(sessionId, state);
@@ -2596,13 +2589,6 @@ export async function handleShopPostModalSubmit(interaction) {
           }
           const parsedPayout = parseInt(rawPayout, 10);
           if (parsedPayout > 0) {
-            const effectivePrice = state.overridePrice ?? 0;
-            if (effectivePrice === 0) {
-              return interaction.followUp({ content: '❌ Cannot set a seller payout for a Free item. Set an item price first.', flags: MessageFlags.Ephemeral });
-            }
-            if (parsedPayout > effectivePrice) {
-              return interaction.followUp({ content: `❌ Payout cannot exceed the item price (\`${effectivePrice.toLocaleString()}\` Coins).`, flags: MessageFlags.Ephemeral });
-            }
             state.payout = parsedPayout;
           } else {
             state.payout = null;
@@ -2654,30 +2640,18 @@ export async function handleShopPostModalSubmit(interaction) {
         inputAmount = parseInt(val, 10);
       }
 
-      const effectivePrice = Number(state.overridePrice || 0);
-      if (inputAmount > 0 && effectivePrice === 0) {
-        return interaction.followUp({ content: '❌ Cannot set a seller payout for a Free item. Set an item price first.', flags: MessageFlags.Ephemeral });
-      }
-      if (inputAmount > effectivePrice) {
-        return interaction.followUp({ content: `❌ Payout cannot exceed the item price (\`${effectivePrice.toLocaleString()}\` Coins).`, flags: MessageFlags.Ephemeral });
-      }
-
       state.payout = (inputAmount > 0) ? inputAmount : null;
     } else if (customId === 'shop_post_price_modal') {
       const val = (interaction.fields.getTextInputValue('price_input') || '').trim().toLowerCase();
       
       if (val === '' || val === '0' || val === 'free' || val === 'null' || val === 'none') {
         state.overridePrice = 0;
-        state.payout = null;
       } else {
         const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
         if (newPrice < 0) {
           return interaction.followUp({ content: 'Please enter a valid non-negative whole number (or leave empty for Free).', flags: MessageFlags.Ephemeral });
         }
         state.overridePrice = newPrice;
-        if (state.payout && state.payout > newPrice) {
-          state.payout = newPrice;
-        }
       }
     }
 
