@@ -62,7 +62,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `💰 **Total Wealth:** The total sum of all ${coinName.toLowerCase()} currently held by all members in your server combined.\n\n` +
         `🖨️ **Printed (New ${coinName}):** ${coinName} created and given out from chatting in text channels, spending time in voice, daily claims, quests, and votes.\n\n` +
         `🔥 **Burned (Spent ${coinName}):** ${coinName} removed from the server when members buy shop items, purchase ${lootBoxName.toLowerCase()}, or pay trade taxes.\n\n` +
-        `🏷️ **Prices:** View and adjust the ${coinName.toLowerCase()} prices across all your shop items in one place.\n\n` +
+        `🏷️ **Prices:** View estimated member income benchmarks based on your server reward settings to help you price shop items fairly.\n\n` +
         '📅 **Time Filters:** Click **Per Day**, **Per Week**, or **Per Month** to see your server economy stats over different time periods.'
     }
   };

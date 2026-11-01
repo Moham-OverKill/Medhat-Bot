@@ -81,6 +81,8 @@ test('getSettingsHint for other pages', () => {
   assert.ok(ecoHint.description.includes('🖨️ **Printed (New Diamonds):**'));
   assert.ok(ecoHint.description.includes('🔥 **Burned (Spent Diamonds):**'));
   assert.ok(ecoHint.description.includes('Track and monitor all diamonds moving across your server.'));
+  assert.ok(ecoHint.description.includes('🏷️ **Prices:** View estimated member income benchmarks based on your server reward settings to help you price shop items fairly.'));
+  assert.ok(!ecoHint.description.includes('adjust'), 'Economy hint should not claim to adjust prices');
 });
 
 test('validateRoleDeletable enforces strict security and integrity invariants', async () => {
