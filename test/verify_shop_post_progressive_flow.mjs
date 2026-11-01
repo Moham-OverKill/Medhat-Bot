@@ -4,6 +4,9 @@ import { ChannelType } from 'discord.js';
 import {
   handleShopPostStart,
   handleShopPostReset,
+  handleShopPostSellerSelect,
+  handleShopPostModalSubmit,
+  handleShopPostPayoutBtn,
   setPendingPostSession,
   getPendingPostSession
 } from '../src/commands/shop-setup.js';
@@ -57,6 +60,7 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
       },
       deferred: true,
       replied: true,
+      deferUpdate: async () => {},
       editReply: async (p) => {
         payload = p;
         return p;
@@ -250,6 +254,157 @@ describe('Shop Post Progressive Disclosure & Menu Dynamic Phrasing Suite', () =>
     const updateBtn = editActionRow.find(c => c.data.label === 'Update');
     assert.ok(updateBtn, 'Update button must exist in editing mode');
     assert.equal(updateBtn.data.disabled, false);
+  });
+
+  it('7. Seller selection renders "@user will get `None` per sale" when payout is not set', async () => {
+    const sellerUserId = '999888777666555444';
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      channelId: channelId,
+      sellerId: sellerUserId,
+      payout: null,
+      overridePrice: 1500,
+      isEditing: false
+    });
+
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
+
+    const desc = payload.embeds[0].data.description;
+    assert.ok(desc.includes(`<@${sellerUserId}> will get \`None\` per sale`), 'Must display None when payout is unset');
+  });
+
+  it('8. Seller selection renders "@user will get `X` per sale" when payout is set', async () => {
+    const sellerUserId = '999888777666555444';
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      channelId: channelId,
+      sellerId: sellerUserId,
+      payout: 250,
+      overridePrice: 1500,
+      isEditing: false
+    });
+
+    const interaction = createMockInteraction();
+    await handleShopPostStart(interaction);
+    const payload = interaction.getPayload();
+
+    const desc = payload.embeds[0].data.description;
+    assert.ok(desc.includes(`<@${sellerUserId}> will get \`250\` per sale`), 'Must display payout value in backticks');
+  });
+
+  it('9. Payout modal displays placeholder "None" and rejects payout exceeding item price or Free items', async () => {
+    let modalShown = null;
+    const interaction = {
+      _postSessionId: sessionId,
+      showModal: async (m) => { modalShown = m; }
+    };
+
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 100,
+      sellerId: '999888777666555444',
+      payout: null
+    });
+
+    await handleShopPostPayoutBtn(interaction);
+    assert.ok(modalShown);
+    const textInput = modalShown.components[0].components[0];
+    assert.equal(textInput.data.placeholder, 'None', 'Modal placeholder must strictly say None');
+
+    // Validation: Exceeding item price
+    let followUpMsg = null;
+    const exceedInteraction = {
+      _postSessionId: sessionId,
+      customId: `shop_post_payout_modal:${sessionId}`,
+      fields: { getTextInputValue: () => '150' },
+      deferUpdate: async () => {},
+      followUp: async (f) => { followUpMsg = f; }
+    };
+    await handleShopPostModalSubmit(exceedInteraction);
+    assert.ok(followUpMsg?.content.includes('cannot exceed the item price'));
+
+    // Validation: Setting payout for Free item
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 0,
+      sellerId: '999888777666555444',
+      payout: null
+    });
+    followUpMsg = null;
+    const freeInteraction = {
+      _postSessionId: sessionId,
+      customId: `shop_post_payout_modal:${sessionId}`,
+      fields: { getTextInputValue: () => '50' },
+      deferUpdate: async () => {},
+      followUp: async (f) => { followUpMsg = f; }
+    };
+    await handleShopPostModalSubmit(freeInteraction);
+    assert.ok(followUpMsg?.content.includes('Cannot set a seller payout for a Free item'));
+  });
+
+  it('10. Clearing seller safely resets sellerId and payout without crashing, and allows guild owner as seller', async () => {
+    const ownerId = '111222333444555666';
+    const mockInteraction = {
+      ...createMockInteraction(),
+      guild: { ownerId, channels: { cache: new Map() }, roles: { cache: new Map() } },
+      values: [ownerId]
+    };
+
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      channelId: channelId,
+      overridePrice: 1000,
+      sellerId: null,
+      payout: null
+    });
+
+    // Selecting guild owner is supported and sets seller
+    await handleShopPostSellerSelect(mockInteraction);
+    let state = await getPendingPostSession(sessionId);
+    assert.equal(state.sellerId, ownerId, 'Guild owner must be supported as seller');
+
+    // Clearing seller via Discord native clear (empty values array)
+    const clearInteraction = {
+      ...mockInteraction,
+      values: []
+    };
+    await handleShopPostSellerSelect(clearInteraction);
+    state = await getPendingPostSession(sessionId);
+    assert.equal(state.sellerId, null, 'Clearing seller must set sellerId to null');
+    assert.equal(state.payout, null, 'Clearing seller must set payout to null');
+  });
+
+  it('11. Changing item price clamps or resets existing seller payout', async () => {
+    await setPendingPostSession(sessionId, {
+      itemId: 501,
+      overridePrice: 500,
+      sellerId: '999888777666555444',
+      payout: 400
+    });
+
+    // Lower price to 200 -> payout clamped to 200
+    const lowerPriceInteraction = {
+      ...createMockInteraction(),
+      customId: `shop_post_price_modal:${sessionId}`,
+      fields: { getTextInputValue: () => '200' }
+    };
+    await handleShopPostModalSubmit(lowerPriceInteraction);
+    let state = await getPendingPostSession(sessionId);
+    assert.equal(state.overridePrice, 200);
+    assert.equal(state.payout, 200, 'Payout must be clamped to new lower price');
+
+    // Change price to Free -> payout automatically reset to null
+    const freePriceInteraction = {
+      ...createMockInteraction(),
+      customId: `shop_post_price_modal:${sessionId}`,
+      fields: { getTextInputValue: () => '0' }
+    };
+    await handleShopPostModalSubmit(freePriceInteraction);
+    state = await getPendingPostSession(sessionId);
+    assert.equal(state.overridePrice, 0);
+    assert.equal(state.payout, null, 'Payout must be reset to null when item is made Free');
   });
 
   after(() => {

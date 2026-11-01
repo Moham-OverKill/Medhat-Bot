@@ -1192,7 +1192,7 @@ export async function handleShopBuyModalSubmit(interaction) {
     const isSelfPurchase = sellerId !== '0' && sellerId === userId;
     const hasSeller = sellerId !== '0' && !isSelfPurchase;
     const customPayout = parseInt(payoutStr) || 0;
-    const payoutAmount = hasSeller ? customPayout : 0;
+    const payoutAmount = hasSeller ? (customPayout * qty) : 0;
 
     await purgeUserInventory(userId, guildId, member);
 

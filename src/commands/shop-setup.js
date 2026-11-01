@@ -1635,7 +1635,14 @@ export async function handleShopPostStart(interaction) {
     const line2 = `for ${priceDisplay} with ${stockStr}`;
     const line3 = `${timerStr} - ${claimLimitStr}`;
 
-    statusDesc = `${line1}\n${line2}\n${line3}`;
+    const lines = [line1, line2, line3];
+    if (state.sellerId && !isPack) {
+      const payoutVal = (state.payout !== null && state.payout !== undefined && state.payout > 0) ? Number(state.payout) : 0;
+      const payoutStr = payoutVal > 0 ? `\`${payoutVal.toLocaleString()}\`` : '`None`';
+      lines.push(`<@${state.sellerId}> will get ${payoutStr} per sale`);
+    }
+
+    statusDesc = lines.join('\n');
 
     if (state.description) {
       statusDesc += `\n\n> ${state.description.replace(/\n/g, '\n> ')}`;
@@ -2101,8 +2108,7 @@ export async function handleShopPostChannelSelect(interaction) {
 export async function handleShopPostSellerSelect(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   const sessionId = getPostSessionId(interaction);
-  const selectedUserId = interaction.values[0];
-  const guildOwnerId = interaction.guild.ownerId;
+  const selectedUserId = interaction.values?.[0];
 
   let state = await getPendingPostSession(sessionId);
   if (!state) {
@@ -2114,24 +2120,18 @@ export async function handleShopPostSellerSelect(interaction) {
     };
   }
 
-  // Owner-as-reset logic: selecting guild owner = reset seller to null
-  if (selectedUserId === guildOwnerId) {
+  // Clearing seller via Discord's native clear 'x' button or empty values
+  if (!selectedUserId || selectedUserId === '0') {
     state.sellerId = null;
     state.payout = null;
   } else {
     state.sellerId = selectedUserId;
-    // Use overridePrice (post-time price) for payout cap — item.price may be NULL
-    const priceForCap = state.overridePrice !== null && state.overridePrice !== undefined
+    const maxCap = (state.overridePrice !== null && state.overridePrice !== undefined)
       ? Number(state.overridePrice)
       : 0;
-    const maxCap = Math.floor(priceForCap * 0.5);
 
     if (state.payout !== null && state.payout !== undefined && state.payout > 0) {
-      // Payout already set — clamp if it exceeds max
-      if (state.payout > maxCap) state.payout = maxCap;
-    } else {
-      // Default to 0 (admin can set it manually via Set Payout)
-      state.payout = 0;
+      if (state.payout > maxCap) state.payout = maxCap > 0 ? maxCap : null;
     }
   }
 
@@ -2357,12 +2357,6 @@ export async function handleShopPostPayoutBtn(interaction) {
   
   // Calculate recommended 50%
   try {
-    let suggestedCut = 0;
-      // Suggested cut is based on overridePrice (the post-time price), not the stored null price
-      if (state.itemId && state.overridePrice !== null) {
-        suggestedCut = Math.floor(Number(state.overridePrice) * 0.5);
-      }
-
     const modal = new ModalBuilder()
       .setCustomId(`shop_post_payout_modal:${sessionId}`)
       .setTitle('Seller Payout');
@@ -2371,7 +2365,7 @@ export async function handleShopPostPayoutBtn(interaction) {
       .setCustomId('payout')
       .setLabel('Payout (Per purchase)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('0 = None')
+      .setPlaceholder('None')
       .setValue((state.payout !== null && state.payout !== undefined && state.payout > 0) ? state.payout.toString() : '')
       .setRequired(false);
 
@@ -2614,13 +2608,21 @@ export async function handleShopPostModalSubmit(interaction) {
       const val = (interaction.fields.getTextInputValue('description') || '').trim();
       state.description = val === '' ? null : val;
     } else if (customId === 'shop_post_payout_modal') {
-      const val = (interaction.fields.getTextInputValue('payout') || '').trim();
+      const val = (interaction.fields.getTextInputValue('payout') || '').trim().toLowerCase();
       let inputAmount = 0;
-      if (val !== '') {
+      if (val !== '' && val !== 'none' && val !== '0' && val !== 'null') {
         if (!/^\d+$/.test(val)) {
-          return interaction.followUp({ content: 'Invalid payout. Please enter a valid positive whole number.', flags: MessageFlags.Ephemeral });
+          return interaction.followUp({ content: 'Invalid payout. Please enter a valid positive whole number (or leave empty for None).', flags: MessageFlags.Ephemeral });
         }
         inputAmount = parseInt(val, 10);
+      }
+
+      const effectivePrice = Number(state.overridePrice || 0);
+      if (inputAmount > 0 && effectivePrice === 0) {
+        return interaction.followUp({ content: '❌ Cannot set a seller payout for a Free item. Set an item price first.', flags: MessageFlags.Ephemeral });
+      }
+      if (inputAmount > effectivePrice) {
+        return interaction.followUp({ content: `❌ Payout cannot exceed the item price (\`${effectivePrice.toLocaleString()}\` Coins).`, flags: MessageFlags.Ephemeral });
       }
 
       state.payout = (inputAmount > 0) ? inputAmount : null;
@@ -2629,12 +2631,16 @@ export async function handleShopPostModalSubmit(interaction) {
       
       if (val === '' || val === '0' || val === 'free' || val === 'null' || val === 'none') {
         state.overridePrice = 0;
+        state.payout = null;
       } else {
         const newPrice = /^\d+$/.test(val) ? parseInt(val, 10) : -1;
         if (newPrice < 0) {
           return interaction.followUp({ content: 'Please enter a valid non-negative whole number (or leave empty for Free).', flags: MessageFlags.Ephemeral });
         }
         state.overridePrice = newPrice;
+        if (state.payout && state.payout > newPrice) {
+          state.payout = newPrice;
+        }
       }
     }
 
