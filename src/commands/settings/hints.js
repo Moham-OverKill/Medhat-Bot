@@ -53,7 +53,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `➕ **New Post:** Pick an item, pack, or ${lootBoxName.toLowerCase()}, select the channel, configure it, and publish it into chat.\n\n` +
         `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like a daily free ${lootBoxName.toLowerCase()}) or limit purchases per member.\n\n` +
         '📝 **Edit Post:** Copy and paste the message link of an already posted item so you can edit its settings later.\n\n' +
-        '🛒 **Buying:** Members click the Buy button directly on the post in chat. They can also use `/items` to browse everything currently available in your shop.'
+        '🛒 **Buying:** Members click the Buy button directly on the post in chat.'
     },
     economy: {
       title: 'HINT: Economy',

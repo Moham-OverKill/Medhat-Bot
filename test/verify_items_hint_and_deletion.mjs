@@ -71,7 +71,8 @@ test('getSettingsHint for other pages', () => {
   assert.ok(postHint.description.includes('daily free chests'));
   assert.ok(postHint.description.includes('📝 **Edit Post:**'));
   assert.ok(postHint.description.includes('Copy and paste the message link of an already posted item so you can edit its settings later.'));
-  assert.ok(postHint.description.includes('🛒 **Buying:**'));
+  assert.ok(postHint.description.includes('🛒 **Buying:** Members click the Buy button directly on the post in chat.'));
+  assert.ok(!postHint.description.includes('/items'), 'Should omit redundant /items hint');
   assert.ok(postHint.description.includes('**[🏷️ Items]**'));
 
   const ecoHint = getSettingsHint('economy', 'Chests', '🎁', 'Diamonds', '💎');
