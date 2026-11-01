@@ -40,7 +40,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `⚙️ **Config:** Set min and max ${coinName.toLowerCase()} rewards, and drop chances for each item rarity.\n\n` +
         `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji.\n` +
         `You can also set custom closed and opened images for each one.\n\n` +
-        `✏️ **Edit:** Select from the menu above anytime to edit it later.\n\n` +
+        `✏️ **Edit:** Select from the menu above to edit or delete any ${lootBoxName.toLowerCase()}.\n\n` +
         `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\`\n` +
         `or trade them with \`/trade\`.\n\n` +
         `✅ **What's Next?:** Go to **[📢 Post]** to sell ${lootBoxName.toLowerCase()}\n` +
@@ -52,7 +52,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `Put items, packs, and ${lootBoxName.toLowerCase()} into chat channels so members can buy them.\n\n` +
         `⚠️ **Note:** Anything created in **[🏷️ Items]** or ${boxTag} stays in storage until you post it to a channel here, or add them as level rewards in **[⭐ Levels]**.\n\n` +
         `➕ **New Post:** Pick an item, pack, or ${lootBoxName.toLowerCase()}, select the channel, configure it, and publish it into chat.\n\n` +
-        `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like a daily free ${lootBoxName.toLowerCase()}) or limit purchases per member.\n\n` +
+        `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like daily free ${lootBoxName.toLowerCase()}) or limit purchases per member.\n\n` +
         '📝 **Edit Post:** Copy and paste the message link of an already posted item so you can edit its settings later.\n\n' +
         '🛒 **Buying:** Members click the Buy button directly on the post in chat.'
     },
