@@ -229,7 +229,7 @@ async function handleMessage(message) {
         .catch(() => {});
     }
 
-    const pointAwarded = await addMessagePoint(message.guild, message.author.id, message.author.username, message.content, hasAttachments, message.channel?.id);
+    const pointAwarded = await addMessagePoint(message.guild, message.author.id, message.author.username, message.content, hasAttachments, message.channel?.id, message.member);
 
     // If message was rejected by anti-spam (duplicate message in channel, cooldown, prefix, etc.), do not award quest progress
     if (!pointAwarded) return;

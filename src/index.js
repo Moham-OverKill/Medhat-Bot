@@ -1,10 +1,16 @@
 import './utils/suppress-warnings.js';
 import 'dotenv/config';
 import dns from 'node:dns';
+import net from 'node:net';
 
 // Ensure IPv4 is prioritized in containerized environments where outbound IPv6 is disabled
 if (typeof dns.setDefaultResultOrder === 'function') {
   dns.setDefaultResultOrder('ipv4first');
+}
+if (typeof net.setDefaultAutoSelectFamily === 'function') {
+  net.setDefaultAutoSelectFamily(false);
+} else if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === 'function') {
+  net.setDefaultAutoSelectFamilyAttemptTimeout(250);
 }
 
 import { Client, GatewayIntentBits, MessageFlags, Events, Partials, Options, RESTEvents } from 'discord.js';
@@ -422,6 +428,7 @@ keepAliveServer.listen(keepalivePort, '0.0.0.0', () => {
 });
 
 client.once(Events.ClientReady, async () => {
+  clearGatewayWatchdog();
   const readyBenchStart = performance.now();
   const totalCachedMembers = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || g.members?.cache?.size || 0), 0);
   const totalCachedChannels = client.channels.cache.size;
@@ -1451,24 +1458,62 @@ setInterval(() => {
   }
 }, 60000).unref();
 
-// Diagnostic warning if gateway handshake takes longer than 60s (non-fatal, avoids reboot loops)
-const GATEWAY_LOGIN_WARN_MS = 60000;
-const gatewayWarnTimer = setTimeout(() => {
-  if (client.isReady()) return;
+// ============================================
+// GATEWAY CONNECTION WATCHDOG & SELF-HEALING
+// ============================================
+let gatewayWatchdogTimers = [];
+
+export function clearGatewayWatchdog() {
+  for (const timer of gatewayWatchdogTimers) {
+    clearTimeout(timer);
+  }
+  gatewayWatchdogTimers = [];
+}
+
+const getWsState = () => {
   const wsStatusMap = ['READY', 'CONNECTING', 'RECONNECTING', 'IDLE', 'NEARLY', 'DISCONNECTED', 'WAITING_FOR_GUILDS', 'IDENTIFYING', 'RESUMING'];
-  const wsState = wsStatusMap[client.ws?.status] || `Status(${client.ws?.status})`;
-  sysWarn('Gateway Connection Delayed', {
-    detail: `Handshake pending at ${wsState} after ${GATEWAY_LOGIN_WARN_MS / 1000}s. Discord gateway or REST API may be rate-limited or throttling identify.`
+  return wsStatusMap[client.ws?.status] || `Status(${client.ws?.status})`;
+};
+
+// 30s diagnostic notice
+const timer30s = setTimeout(() => {
+  if (client.isReady()) return;
+  sysWarn('Gateway Handshake Slow', {
+    detail: `Gateway handshake in progress at ${getWsState()} after 30s.`
   });
-}, GATEWAY_LOGIN_WARN_MS);
-if (typeof gatewayWarnTimer.unref === 'function') gatewayWarnTimer.unref();
+}, 30000);
+if (typeof timer30s.unref === 'function') timer30s.unref();
+gatewayWatchdogTimers.push(timer30s);
+
+// 60s escalated warning
+const timer60s = setTimeout(() => {
+  if (client.isReady()) return;
+  sysWarn('Gateway Connection Delayed', {
+    detail: `Handshake pending at ${getWsState()} after 60s. Discord gateway or REST API may be rate-limited or throttling identify. Fail-safe container restart armed at 75s.`
+  });
+}, 60000);
+if (typeof timer60s.unref === 'function') timer60s.unref();
+gatewayWatchdogTimers.push(timer60s);
+
+// 75s circuit breaker: hard restart to prevent zombie containers on Railway
+const timer75s = setTimeout(() => {
+  if (client.isReady()) return;
+  sysError('Gateway Handshake Timeout', new Error('Discord gateway failed to reach READY status within 75s watchdog window'), {
+    wsStatus: getWsState(),
+    uptimeSeconds: Math.round(process.uptime()),
+    detail: 'Terminating container to trigger clean Railway auto-restart.'
+  });
+  process.exit(1);
+}, 75000);
+if (typeof timer75s.unref === 'function') timer75s.unref();
+gatewayWatchdogTimers.push(timer75s);
 
 sysLog('Client Authenticating', { detail: 'Initiating Discord gateway login' });
 client.login(process.env.DISCORD_TOKEN).then(() => {
-  if (gatewayWarnTimer) clearTimeout(gatewayWarnTimer);
+  clearGatewayWatchdog();
   sysLog('Discord Gateway Login Succeeded');
 }).catch((error) => {
-  if (gatewayWarnTimer) clearTimeout(gatewayWarnTimer);
+  clearGatewayWatchdog();
   sysError('Discord Login Critical Failure', error);
   process.exit(1);
 });

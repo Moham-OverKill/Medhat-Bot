@@ -117,7 +117,7 @@ export function calculateLevelFromXp(totalXp, base = 100, increment = 50) {
  * Stacks additively. Returns a multiplier ≥ 1.0.
  * Example: 50% boost → multiplier 1.5
  */
-export async function getMemberXpMultiplier(guildId, userId) {
+export async function getMemberXpMultiplier(guildId, userId, member = null) {
   try {
     const pool = getPool();
     const { getDiscordClient } = await import('../../activity/index.js');
@@ -127,11 +127,12 @@ export async function getMemberXpMultiplier(guildId, userId) {
     const guild = client.guilds?.cache?.get(guildId);
     if (!guild) return 1.0;
 
-    const member = guild.members.cache.get(userId)
-      || await guild.members.fetch(userId).catch(() => null);
-    if (!member) return 1.0;
+    // Prioritize passed-in member object, then fast in-memory cache lookup.
+    // Never trigger a blocking REST guild.members.fetch() on hot chat/voice loops.
+    const targetMember = member || guild.members.cache.get(userId);
+    if (!targetMember) return 1.0;
 
-    const memberRoleIds = [...member.roles.cache.keys()];
+    const memberRoleIds = [...targetMember.roles.cache.keys()];
     if (memberRoleIds.length === 0) return 1.0;
 
     const placeholders = memberRoleIds.map((_, i) => `$${i + 2}`).join(', ');
@@ -158,9 +159,10 @@ export async function getMemberXpMultiplier(guildId, userId) {
  * @param {string} userId
  * @param {string} username
  * @param {number} xpToAdd — base XP points to add before multiplier
- * @param {object} client — Discord client, used to DM or post level-up notification
+ * @param {object} [client=null] — Discord client, used to DM or post level-up notification
+ * @param {object} [member=null] — Cached GuildMember instance to bypass redundant lookups
  */
-export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client = null) {
+export async function awardBattlepassXp(guildId, userId, username, xpToAdd, client = null, member = null) {
   const parsedXp = typeof xpToAdd === 'number' ? xpToAdd : parseFloat(xpToAdd);
   if (!guildId || !userId || !Number.isFinite(parsedXp) || parsedXp <= 0) return;
 
@@ -175,7 +177,7 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
     const pool = getPool();
 
     // Apply role XP multiplier (multiplicative boost)
-    const multiplier = await getMemberXpMultiplier(guildId, userId);
+    const multiplier = await getMemberXpMultiplier(guildId, userId, member);
     const finalXp = Number((sanitizedXp * multiplier).toFixed(2));
     if (!Number.isFinite(finalXp) || finalXp <= 0) return;
 

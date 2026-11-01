@@ -282,7 +282,7 @@ export async function resetGuildActivity(guildId) {
 /**
  * Add message point with strict anti-spam checks and batch buffering
  */
-export async function addMessagePoint(guild, userId, username, messageContent = '', hasAttachments = false, channelId = null) {
+export async function addMessagePoint(guild, userId, username, messageContent = '', hasAttachments = false, channelId = null, member = null) {
   if (!guild || !userId) return false;
   if (!isTrackingRequiredForGuild(guild.id)) return false;
   const guildId = guild.id;
@@ -372,7 +372,7 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       if (msgXp <= 0) return;
       const totalMsgXp = pointsEarned * msgXp;
       return import('../commands/settings/pass-engine.js')
-        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalMsgXp, null));
+        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalMsgXp, null, member));
     })
     .catch(err => {
       import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Msg XP Hook Error', err));
@@ -704,8 +704,9 @@ async function pauseVoiceTracking(guild, userId, username, voiceState = null) {
           const voiceXpRate = Number.isFinite(rawVoiceXp) && rawVoiceXp > 0 ? Math.min(1000, rawVoiceXp) : 0;
           if (voiceXpRate <= 0) return;
           const totalVoiceXp = pointsToAward * voiceXpRate;
+          const voiceMember = voiceState?.member || guild.members.cache.get(userId);
           return import('../commands/settings/pass-engine.js')
-            .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalVoiceXp, null));
+            .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalVoiceXp, null, voiceMember));
         })
         .catch(err => {
           import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Voice XP Hook Error', err));
@@ -905,7 +906,7 @@ export async function voicePointsTick(client) {
               if (voiceXpRate <= 0) return;
               const totalVoiceXp = pointsToAward * voiceXpRate;
               return import('../commands/settings/pass-engine.js')
-                .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, totalVoiceXp, null));
+                .then(({ awardBattlepassXp }) => awardBattlepassXp(row.guild_id, row.user_id, row.username, totalVoiceXp, null, member));
             })
             .catch(err => {
               import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Voice Tick XP Hook Error', err));
