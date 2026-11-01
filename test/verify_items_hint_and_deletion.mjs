@@ -19,7 +19,7 @@ test('getSettingsHint for items generates correct title and plain English conten
   assert.ok(customHint.description.includes('**[📦 Treasure Crates]**'), 'Should dynamically contain custom chest name and emoji');
   assert.ok(customHint.description.includes('⚠️ **Create First:**'), 'Should contain setup order advisory');
   assert.ok(customHint.description.includes('🏷️ **Item Roles:**'), 'Should contain item roles explanation');
-  assert.ok(customHint.description.includes('⚙️ **Configuration:**'), 'Should contain configuration explanation');
+  assert.ok(customHint.description.includes('⚙️ **Config:**'), 'Should contain configuration explanation');
   assert.ok(customHint.description.includes('📁 **Categories:**'), 'Should contain categories explanation');
   assert.ok(customHint.description.includes('Single (Swap)'), 'Should explain swap mode');
   assert.ok(customHint.description.includes('Multi (Stack)'), 'Should explain stack mode');
@@ -45,17 +45,19 @@ test('getSettingsHint for other pages', () => {
   assert.ok(chestsHint.description.includes('⚠️ **Note:**'));
   assert.ok(chestsHint.description.includes('Tradable'));
   assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
-  assert.ok(chestsHint.description.includes('⚙️ **Setup:**'));
-  assert.ok(chestsHint.description.includes('closed and opened mystery box pictures'));
+  assert.ok(chestsHint.description.includes('⚙️ **Config:**'));
+  assert.ok(chestsHint.description.includes('🖼️ **Appearance:**'));
+  assert.ok(chestsHint.description.includes('custom closed and opened pictures'));
   assert.ok(chestsHint.description.includes('✏️ **Edit:**'));
   assert.ok(chestsHint.description.includes('Select any mystery box from the menu above'));
   assert.ok(chestsHint.description.includes('📦 **Opening:**'));
+  assert.ok(chestsHint.description.includes("✅ **What's Next?:**"));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
   assert.ok(chestsHint.description.includes('**[⭐ Levels]**'));
 
   const defaultChestsHint = getSettingsHint('chests');
   assert.equal(defaultChestsHint.title, 'HINT: Chests');
-  assert.ok(defaultChestsHint.description.includes('closed and opened chest pictures'));
+  assert.ok(defaultChestsHint.description.includes('custom closed and opened pictures'));
   assert.ok(defaultChestsHint.description.includes('Select any chest from the menu above'));
 
   const postHint = getSettingsHint('post', 'Chests', '🎁');

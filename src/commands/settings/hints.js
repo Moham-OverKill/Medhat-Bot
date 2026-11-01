@@ -24,7 +24,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         'This is where all your server items are stored and managed.\n\n' +
         `⚠️ **Create First:** It is recommended to create items here before setting up other features. You can then add items as level rewards or XP boosters in **[⭐ Levels]**, or as prizes inside ${boxTag}.\n\n` +
         '🏷️ **Item Roles:** When you create an item, a Discord role is created and attached to it. When members equip an item using `/inventory`, they get that role. If they unequip, drop, sell, or trade the item, the role is removed automatically, unless they still own more copies of the item.\n\n' +
-        `⚙️ **Configuration:** You can make an item Untradable if you want it to be exclusive so it cannot be traded or won in ${boxTag}. You can also set a Duration (like 7 days or 30 days) for temporary items, such as XP boost items or VIP.\n\n` +
+        `⚙️ **Config:** You can make an item Untradable if you want it to be exclusive so it cannot be traded or won in ${boxTag}. You can also set a Duration (like 7 days or 30 days) for temporary items, such as XP boost items or VIP.\n\n` +
         '📁 **Categories:** Organize your items and control how roles behave:\n' +
         '• **Single (Swap):** Equipping an item removes the previous one. Best for Colors or Role Icons so roles switch smoothly without clashing or overwriting each other.\n' +
         '• **Multi (Stack):** Members can equip and wear multiple items from this category at the same time.\n\n' +
@@ -36,10 +36,12 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
       title: `HINT: ${lootBoxName}`,
       description:
         `Create ${lootBoxName.toLowerCase()} that give random rewards and coins when opened.\n\n` +
-        `⚠️ **Note:** ${lootBoxName} give rewards from your items catalog. Items must be created in **[🏷️ Items]** and set to Tradable so they can be won as prizes here.\n\n` +
-        `⚙️ **Setup:** Set min and max coin rewards, drop chances for each item rarity, and choose the emoji with closed and opened ${singularName} pictures.\n\n` +
+        `⚠️ **Note:** Items must be created in **[🏷️ Items]** first and set to Tradable so they can be won as prizes here.\n\n` +
+        `⚙️ **Config:** Set min and max coin rewards, and drop chances for each item rarity.\n\n` +
+        `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji. You can also set custom closed and opened pictures for each one.\n\n` +
         `✏️ **Edit:** Select any ${singularName} from the menu above to edit its settings, rewards, or delete it.\n\n` +
-        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` or trade them with \`/trade\`. Go to **[📢 Post]** to sell them in chat, or add them as level rewards in **[⭐ Levels]**.`
+        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` or trade them with \`/trade\`.\n\n` +
+        `✅ **What's Next?:** Go to **[📢 Post]** to sell ${lootBoxName.toLowerCase()}, or add them as level rewards in **[⭐ Levels]**.`
     },
     post: {
       title: 'HINT: Post',
