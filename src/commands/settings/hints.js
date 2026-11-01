@@ -29,8 +29,8 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         '• **Single (Swap):** Equipping an item removes the previous one. Best for Colors or Role Icons so roles switch smoothly without clashing or overwriting each other.\n' +
         '• **Multi (Stack):** Members can equip and wear multiple items from this category at the same time.\n\n' +
         '📦 **Packs:** Bundle multiple items together into one package so members can buy everything in one click. Great for special offers, limited-time sales, and discounts.\n\n' +
-        `✅ **What's Next?:** Creating items here adds them to your storage, but members cannot buy them yet. Go to **[📢 Post]** to post items in channels for members to buy, add them as level rewards in **[⭐ Levels]**, or set them to "tradable" so they can be found in ${boxTag}.\n\n` +
-        "🗑️ **Editing & Deleting:** You can edit any item anytime (change name, image, or see who holds it). When deleting an item, it will be removed from everyone's inventory and the role will be removed from all users. You can choose to keep the role or delete it with the item when confirming the deletion."
+        "🗑️ **Editing & Deleting:** You can edit any item anytime (change name, image, or see who holds it). When deleting an item, it will be removed from everyone's inventory and the role will be removed from all users. You can choose to keep the role or delete it with the item when confirming the deletion.\n\n" +
+        `✅ **What's Next?:** Creating items here adds them to your storage, but members cannot buy them yet. Go to **[📢 Post]** to post items in channels for members to buy, add them as level rewards in **[⭐ Levels]**, or set them to "tradable" so they can be found in ${boxTag}.`
     },
     chests: {
       title: `HINT: ${lootBoxName}`,
