@@ -43,13 +43,13 @@ test('getSettingsHint for other pages', () => {
   const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁');
   assert.equal(chestsHint.title, 'HINT: Mystery Boxes');
   assert.ok(chestsHint.description.includes('⚠️ **Note:**'));
-  assert.ok(chestsHint.description.includes('Tradable'));
+  assert.ok(chestsHint.description.includes('`Tradable`'));
   assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
   assert.ok(chestsHint.description.includes('⚙️ **Config:**'));
   assert.ok(chestsHint.description.includes('🖼️ **Appearance:**'));
   assert.ok(chestsHint.description.includes('custom closed and opened pictures'));
   assert.ok(chestsHint.description.includes('✏️ **Edit:**'));
-  assert.ok(chestsHint.description.includes('Select any mystery box from the menu above'));
+  assert.ok(chestsHint.description.includes('Select any mystery box from the menu above anytime to edit it later.'));
   assert.ok(chestsHint.description.includes('📦 **Opening:**'));
   assert.ok(chestsHint.description.includes("✅ **What's Next?:**"));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
@@ -58,7 +58,7 @@ test('getSettingsHint for other pages', () => {
   const defaultChestsHint = getSettingsHint('chests');
   assert.equal(defaultChestsHint.title, 'HINT: Chests');
   assert.ok(defaultChestsHint.description.includes('custom closed and opened pictures'));
-  assert.ok(defaultChestsHint.description.includes('Select any chest from the menu above'));
+  assert.ok(defaultChestsHint.description.includes('Select any chest from the menu above anytime to edit it later.'));
 
   const postHint = getSettingsHint('post', 'Chests', '🎁');
   assert.equal(postHint.title, 'HINT: Post');

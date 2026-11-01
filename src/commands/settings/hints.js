@@ -36,12 +36,16 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
       title: `HINT: ${lootBoxName}`,
       description:
         `Create ${lootBoxName.toLowerCase()} that give random rewards and coins when opened.\n\n` +
-        `⚠️ **Note:** Items must be created in **[🏷️ Items]** first and set to Tradable so they can be won as prizes here.\n\n` +
+        `⚠️ **Note:** Items must be created in **[🏷️ Items]** first and set to \`Tradable\`\n` +
+        `so they can be won as prizes here.\n\n` +
         `⚙️ **Config:** Set min and max coin rewards, and drop chances for each item rarity.\n\n` +
-        `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji. You can also set custom closed and opened pictures for each one.\n\n` +
-        `✏️ **Edit:** Select any ${singularName} from the menu above to edit its settings, rewards, or delete it.\n\n` +
-        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\` or trade them with \`/trade\`.\n\n` +
-        `✅ **What's Next?:** Go to **[📢 Post]** to sell ${lootBoxName.toLowerCase()}, or add them as level rewards in **[⭐ Levels]**.`
+        `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji.\n` +
+        `You can also set custom closed and opened pictures for each one.\n\n` +
+        `✏️ **Edit:** Select any ${singularName} from the menu above anytime to edit it later.\n\n` +
+        `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\`\n` +
+        `or trade them with \`/trade\`.\n\n` +
+        `✅ **What's Next?:** Go to **[📢 Post]** to sell ${lootBoxName.toLowerCase()}\n` +
+        `or add them as level rewards in **[⭐ Levels]**.`
     },
     post: {
       title: 'HINT: Post',
