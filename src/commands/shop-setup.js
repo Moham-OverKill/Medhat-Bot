@@ -5950,12 +5950,12 @@ export async function handleShopPostGate(interaction) {
           .setCustomId(`shop_post_edit_layout:${sessionId}`)
           .setLabel('Edit Post')
           .setEmoji('📝')
-          .setStyle(ButtonStyle.Primary),
+          .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(`shop_post_new_layout:${sessionId}`)
           .setLabel('New Post')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Success)
+          .setEmoji('✝️')
+          .setStyle(ButtonStyle.Primary)
       );
 
     await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row] });

@@ -1,7 +1,8 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getPool } from '../../storage/postgres.js';
 import { getGuildConfig } from '../../storage/config.js';
-import { COIN_EMOJI, isBackDisabled } from '../../shared.js';
+import { COIN_EMOJI, COIN_NAME, isBackDisabled } from '../../shared.js';
+import { getLootBoxCategoryName } from '../../economy/lootbox.js';
 import { sysLog } from '../../utils/logger.js';
 
 export async function handleEconomySettings(interaction) {
@@ -24,6 +25,8 @@ export async function handleEconomySettings(interaction) {
 async function showEconomyDashboard(interaction, view) {
     const guildId = interaction.guildId;
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
+    const coinName = COIN_NAME.forGuild(guildId);
+    const lootBoxName = await getLootBoxCategoryName(guildId).catch(() => 'Chests');
     
     sysLog('Economy Dashboard Opened', { user: interaction.user.id, guild: guildId, detail: `View: ${view}` });
     
@@ -213,7 +216,7 @@ async function showEconomyDashboard(interaction, view) {
             { id: 'vote_reward', aliases: [], label: 'Vote Rewards' },
             { id: 'mvp_reward', aliases: ['mvp_bonus'], label: 'MVP Rewards' },
             { id: 'battlepass_reward', aliases: [], label: 'Battlepass Rewards' },
-            { id: 'loot_box_reward', aliases: [], label: 'Chest Rewards' },
+            { id: 'loot_box_reward', aliases: [], label: `${lootBoxName} Rewards` },
             { id: 'admin_grant', aliases: ['admin_adjust'], label: 'Admin Grants' }
         ];
 
@@ -277,8 +280,8 @@ async function showEconomyDashboard(interaction, view) {
             {
                 name: `🖨️ ${periodLabel} Circulation Overview`,
                 value: [
-                    `• **Coins Printed:** +${totalPrinted.toLocaleString()} ${coinEmoji}`,
-                    `• **Coins Burned:** -${totalBurned.toLocaleString()} ${coinEmoji}`,
+                    `• **${coinName} Printed:** +${totalPrinted.toLocaleString()} ${coinEmoji}`,
+                    `• **${coinName} Burned:** -${totalBurned.toLocaleString()} ${coinEmoji}`,
                     `• **Net Flow:** **${flowSign}${netFlow.toLocaleString()}** ${coinEmoji} _(${flowLabel})_`
                 ].join('\n'),
                 inline: false
@@ -292,7 +295,7 @@ async function showEconomyDashboard(interaction, view) {
 
         // 4. Append Sink Breakdown field (consistently displayed across all timeframe views)
         const sinkLines = [
-            `• **Shop & Chest Buys:** ${shopBurn.toLocaleString()} ${coinEmoji}`,
+            `• **Shop & ${lootBoxName} Buys:** ${shopBurn.toLocaleString()} ${coinEmoji}`,
             `• **Trade Taxes:** ${tradeFees.toLocaleString()} ${coinEmoji}`,
             `• **Admin Deductions:** ${adminBurns.toLocaleString()} ${coinEmoji}`
         ];

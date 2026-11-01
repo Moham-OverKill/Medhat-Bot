@@ -1,22 +1,20 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
+import { getCurrencyName, getCurrencyEmoji } from '../../shared.js';
 
-export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = '🎁') {
+export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = '🎁', coinName = 'Coins', coinEmoji = '🪙') {
   const boxTag = `**[${lootBoxEmoji} ${lootBoxName}]**`;
-  const singularName = lootBoxName.toLowerCase().endsWith('boxes')
-    ? lootBoxName.toLowerCase().slice(0, -2)
-    : lootBoxName.toLowerCase().replace(/s$/, '');
   const hints = {
     coins: {
-      title: 'HINT: Coins',
+      title: `HINT: ${coinName}`,
       description:
-        'Choose how members get coins in your server.\n\n' +
-        '📅 **Daily:** Free coins members can claim every day. Claiming multiple days in a row gives bigger streak bonuses.\n\n' +
-        '🎯 **Quests:** Simple tasks (like chatting or voice) that give coins when finished. Members check tasks with `/quest`.\n\n' +
-        '🏷️ **Tag:** Gives daily coins to members who put your server tag on their profile.\n\n' +
-        '🗳️ **Vote:** Gives daily coins to members who vote for Medhat on Top.gg using `/vote`.\n\n' +
-        '🖼️ **Appearance:** Change the coin name and emoji for your server.\n\n' +
-        '💸 **Give Coins:** Give free coins to any member right now.'
+        `Choose how members get ${coinName.toLowerCase()} in your server.\n\n` +
+        `📅 **Daily:** Free ${coinName.toLowerCase()} members can claim every day. Claiming multiple days in a row gives bigger streak bonuses.\n\n` +
+        `🎯 **Quests:** Simple tasks (like chatting or voice) that give ${coinName.toLowerCase()} when finished. Members check tasks with \`/quest\`.\n\n` +
+        `🏷️ **Tag:** Gives daily ${coinName.toLowerCase()} to members who put your server tag on their profile.\n\n` +
+        `🗳️ **Vote:** Gives daily ${coinName.toLowerCase()} to members who vote for Medhat on Top.gg using \`/vote\`.\n\n` +
+        `🖼️ **Appearance:** Change the ${coinName.toLowerCase()} name and emoji for your server.\n\n` +
+        `💸 **Give ${coinName}:** Give free ${coinName.toLowerCase()} to any member right now.`
     },
     items: {
       title: 'HINT: Items',
@@ -35,13 +33,13 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
     chests: {
       title: `HINT: ${lootBoxName}`,
       description:
-        `Create ${lootBoxName.toLowerCase()} that give random rewards and coins when opened.\n\n` +
+        `Create ${lootBoxName.toLowerCase()} that give random rewards and ${coinName.toLowerCase()} when opened.\n\n` +
         `⚠️ **Note:** Items must be created in **[🏷️ Items]** first and set to \`Tradable\`\n` +
         `so they can be won as prizes here.\n\n` +
-        `⚙️ **Config:** Set min and max coin rewards, and drop chances for each item rarity.\n\n` +
+        `⚙️ **Config:** Set min and max ${coinName.toLowerCase()} rewards, and drop chances for each item rarity.\n\n` +
         `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji.\n` +
         `You can also set custom closed and opened images for each one.\n\n` +
-        `✏️ **Edit:** Select any ${singularName} from the menu above anytime to edit it later.\n\n` +
+        `✏️ **Edit:** Select from the menu above anytime to edit it later.\n\n` +
         `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\`\n` +
         `or trade them with \`/trade\`.\n\n` +
         `✅ **What's Next?:** Go to **[📢 Post]** to sell ${lootBoxName.toLowerCase()}\n` +
@@ -52,19 +50,19 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
       description:
         `Put items, packs, and ${lootBoxName.toLowerCase()} into chat channels so members can buy them.\n\n` +
         `⚠️ **Note:** Anything created in **[🏷️ Items]** or ${boxTag} stays in storage until you post it to a channel here.\n\n` +
-        `➕ **New Post:** Pick an item, pack, or ${singularName}, select the channel, set the price and stock, and publish it into chat.\n\n` +
-        `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like a daily free ${singularName}) or limit purchases per member.\n\n` +
+        `✝️ **New Post:** Pick an item, pack, or ${lootBoxName.toLowerCase()}, select the channel, set the price and stock, and publish it into chat.\n\n` +
+        `⚙️ **Config:** Set price, stock, restock timer, and per-user limits. You can make free items with timers (like a daily free ${lootBoxName.toLowerCase()}) or limit purchases per member.\n\n` +
         '📝 **Edit Post:** Paste the message link of any shop post you already made to edit it.\n\n' +
         '🛒 **Buying:** Members click the Buy button directly on the post in chat. They can also use `/items` to browse everything currently available in your shop.'
     },
     economy: {
       title: 'HINT: Economy',
       description:
-        'Track and monitor all coins moving across your server.\n\n' +
-        '💰 **Total Wealth:** The total sum of all coins currently held by all members in your server combined.\n\n' +
-        '🖨️ **Printed (New Coins):** Coins created and given out from chatting in text channels, spending time in voice, daily claims, quests, and votes.\n\n' +
-        `🔥 **Burned (Spent Coins):** Coins removed from the server when members buy shop items, purchase ${lootBoxName.toLowerCase()}, or pay trade taxes.\n\n` +
-        '🏷️ **Prices:** View and adjust the coin prices across all your shop items in one place.\n\n' +
+        `Track and monitor all ${coinName.toLowerCase()} moving across your server.\n\n` +
+        `💰 **Total Wealth:** The total sum of all ${coinName.toLowerCase()} currently held by all members in your server combined.\n\n` +
+        `🖨️ **Printed (New ${coinName}):** ${coinName} created and given out from chatting in text channels, spending time in voice, daily claims, quests, and votes.\n\n` +
+        `🔥 **Burned (Spent ${coinName}):** ${coinName} removed from the server when members buy shop items, purchase ${lootBoxName.toLowerCase()}, or pay trade taxes.\n\n` +
+        `🏷️ **Prices:** View and adjust the ${coinName.toLowerCase()} prices across all your shop items in one place.\n\n` +
         '📅 **Time Filters:** Click **Per Day**, **Per Week**, or **Per Month** to see your server economy stats over different time periods.'
     }
   };
@@ -83,9 +81,13 @@ export const SETTINGS_HINTS = new Proxy({}, {
 export async function handleSettingsHint(interaction) {
   const parts = interaction.customId.split('_');
   const pageKey = parts[2]; // e.g. 'coins', 'items', 'chests', 'post', 'economy'
-  const lootBoxName = await getLootBoxCategoryName(interaction.guildId).catch(() => 'Chests');
-  const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId).catch(() => '🎁');
-  const hint = getSettingsHint(pageKey, lootBoxName, lootBoxEmoji);
+  const [lootBoxName, lootBoxEmoji, coinName, coinEmoji] = await Promise.all([
+    getLootBoxCategoryName(interaction.guildId).catch(() => 'Chests'),
+    getLootBoxCategoryEmoji(interaction.guildId).catch(() => '🎁'),
+    getCurrencyName(interaction.guildId).catch(() => 'Coins'),
+    getCurrencyEmoji(interaction.guildId).catch(() => '🪙')
+  ]);
+  const hint = getSettingsHint(pageKey, lootBoxName, lootBoxEmoji, coinName, coinEmoji);
 
   if (!hint) {
     const payload = {

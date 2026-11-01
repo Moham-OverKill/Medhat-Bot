@@ -14,7 +14,7 @@ import { COIN_EMOJI } from '../shared.js';
 
 export const voteCommand = new SlashCommandBuilder()
   .setName('vote')
-  .setDescription('Get the link to vote for the bot and claim your coin reward.');
+  .setDescription('Get the link to vote for the bot and claim your reward.');
 
 export async function handleVoteCommand(interaction) {
   const guildId = interaction.guildId;

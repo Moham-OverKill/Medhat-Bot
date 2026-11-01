@@ -34,13 +34,14 @@ test('getSettingsHint for items generates correct title and plain English conten
 });
 
 test('getSettingsHint for other pages', () => {
-  const coinsHint = getSettingsHint('coins');
-  assert.equal(coinsHint.title, 'HINT: Coins');
+  const coinsHint = getSettingsHint('coins', 'Chests', '🎁', 'Gold', '🪙');
+  assert.equal(coinsHint.title, 'HINT: Gold');
   assert.ok(coinsHint.description.includes('📅 **Daily:**'));
-  assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily coins'));
-  assert.ok(coinsHint.description.includes('🗳️ **Vote:** Gives daily coins'));
+  assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily gold'));
+  assert.ok(coinsHint.description.includes('🗳️ **Vote:** Gives daily gold'));
+  assert.ok(coinsHint.description.includes('💸 **Give Gold:** Give free gold to any member right now.'));
 
-  const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁');
+  const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁', 'Coins', '🪙');
   assert.equal(chestsHint.title, 'HINT: Mystery Boxes');
   assert.ok(chestsHint.description.includes('⚠️ **Note:**'));
   assert.ok(chestsHint.description.includes('`Tradable`'));
@@ -49,7 +50,7 @@ test('getSettingsHint for other pages', () => {
   assert.ok(chestsHint.description.includes('🖼️ **Appearance:**'));
   assert.ok(chestsHint.description.includes('custom closed and opened images'));
   assert.ok(chestsHint.description.includes('✏️ **Edit:**'));
-  assert.ok(chestsHint.description.includes('Select any mystery box from the menu above anytime to edit it later.'));
+  assert.ok(chestsHint.description.includes('Select from the menu above anytime to edit it later.'));
   assert.ok(chestsHint.description.includes('📦 **Opening:**'));
   assert.ok(chestsHint.description.includes("✅ **What's Next?:**"));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
@@ -58,25 +59,26 @@ test('getSettingsHint for other pages', () => {
   const defaultChestsHint = getSettingsHint('chests');
   assert.equal(defaultChestsHint.title, 'HINT: Chests');
   assert.ok(defaultChestsHint.description.includes('custom closed and opened images'));
-  assert.ok(defaultChestsHint.description.includes('Select any chest from the menu above anytime to edit it later.'));
+  assert.ok(defaultChestsHint.description.includes('Select from the menu above anytime to edit it later.'));
 
   const postHint = getSettingsHint('post', 'Chests', '🎁');
   assert.equal(postHint.title, 'HINT: Post');
   assert.ok(postHint.description.includes('⚠️ **Note:**'));
-  assert.ok(postHint.description.includes('➕ **New Post:**'));
-  assert.ok(postHint.description.includes('Pick an item, pack, or chest'));
+  assert.ok(postHint.description.includes('✝️ **New Post:**'));
+  assert.ok(postHint.description.includes('Pick an item, pack, or chests'));
   assert.ok(postHint.description.includes('⚙️ **Config:**'));
-  assert.ok(postHint.description.includes('daily free chest'));
+  assert.ok(postHint.description.includes('daily free chests'));
   assert.ok(postHint.description.includes('📝 **Edit Post:**'));
   assert.ok(postHint.description.includes('to edit it'));
   assert.ok(postHint.description.includes('🛒 **Buying:**'));
   assert.ok(postHint.description.includes('**[🏷️ Items]**'));
 
-  const ecoHint = getSettingsHint('economy', 'Chests', '🎁');
+  const ecoHint = getSettingsHint('economy', 'Chests', '🎁', 'Diamonds', '💎');
   assert.equal(ecoHint.title, 'HINT: Economy');
   assert.ok(ecoHint.description.includes('💰 **Total Wealth:**'));
-  assert.ok(ecoHint.description.includes('🖨️ **Printed (New Coins):**'));
-  assert.ok(ecoHint.description.includes('🔥 **Burned (Spent Coins):**'));
+  assert.ok(ecoHint.description.includes('🖨️ **Printed (New Diamonds):**'));
+  assert.ok(ecoHint.description.includes('🔥 **Burned (Spent Diamonds):**'));
+  assert.ok(ecoHint.description.includes('Track and monitor all diamonds moving across your server.'));
 });
 
 test('validateRoleDeletable enforces strict security and integrity invariants', async () => {

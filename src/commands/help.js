@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { handleInteractionError } from '../utils/errors.js';
 import { getGuildConfig } from '../storage/config.js';
+import { COIN_NAME } from '../shared.js';
 
 export const helpCommand = new SlashCommandBuilder()
   .setName('help')
@@ -32,6 +33,8 @@ export async function handleHelpCommand(interaction) {
       } catch {}
     }
 
+    const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'Coins';
+
     const embed = new EmbedBuilder()
       .setTitle(`${botName} Command Directory`)
       .setColor(0x5865F2)
@@ -40,10 +43,10 @@ export async function handleHelpCommand(interaction) {
         { name: '🏦 `/bank`', value: 'Access personal balance and transaction history', inline: false },
         { name: '🎒 `/inventory`', value: 'View, equip, and manage your items', inline: false },
         { name: '📦 `/items`', value: `Browse server items and available ${lootBoxCatName}`, inline: false },
-        { name: '🤝 `/trade`', value: 'Trade coins and items with other server members', inline: false },
+        { name: '🤝 `/trade`', value: `Trade ${coinName.toLowerCase()} and items with other server members`, inline: false },
         { name: '👤 `/profile`', value: 'View user profile, card, rank, and stats', inline: false },
         { name: '🔔 `/notifications`', value: 'Configure DM notifications for this server', inline: false },
-        { name: '🗳️ `/vote`', value: 'Vote for the bot to earn bonus coins', inline: false },
+        { name: '🗳️ `/vote`', value: `Vote for the bot to earn ${coinName.toLowerCase()}`, inline: false },
         { name: '⚙️ `/settings`', value: 'Administrative server configuration (Admin only)', inline: false }
       );
 
@@ -74,6 +77,8 @@ export async function handleHelpSelect(interaction) {
     };
 
     const title = topicTitles[selectedTopic] || 'Help Topic';
+
+    const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'Coins';
 
     const embed = new EmbedBuilder()
       .setTitle(title)
@@ -146,6 +151,8 @@ export async function handleHelpStepNavigation(interaction) {
     };
 
     const title = topicTitles[topicKey] || 'Help Topic';
+
+    const coinName = guildId ? COIN_NAME.forGuild(guildId) : 'Coins';
 
     const embed = new EmbedBuilder()
       .setTitle(`${title} — Step ${stepNum}`)
