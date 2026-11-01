@@ -13,6 +13,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `🎯 **Quests:** Simple tasks (like chatting or voice) that give ${coinName.toLowerCase()} when finished. Members check tasks with \`/quest\`.\n\n` +
         `🏷️ **Tag:** Gives daily ${coinName.toLowerCase()} to members who put your server tag on their profile.\n\n` +
         `🗳️ **Vote:** Gives daily ${coinName.toLowerCase()} to members who vote for Medhat on Top.gg using \`/vote\`.\n\n` +
+        `👑 **MVP:** A king of the hill hourly reward in **[🎭 Roles]** that pays out ${coinName.toLowerCase()} to the most active members.\n\n` +
         `🖼️ **Appearance:** Change the ${coinName.toLowerCase()} name and emoji for your server.\n\n` +
         `💸 **Give ${coinName}:** Give free ${coinName.toLowerCase()} to any member right now.`
     },

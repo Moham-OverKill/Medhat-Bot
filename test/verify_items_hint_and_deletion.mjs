@@ -39,6 +39,7 @@ test('getSettingsHint for other pages', () => {
   assert.ok(coinsHint.description.includes('📅 **Daily:**'));
   assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily gold'));
   assert.ok(coinsHint.description.includes('🗳️ **Vote:** Gives daily gold'));
+  assert.ok(coinsHint.description.includes('👑 **MVP:** A king of the hill hourly reward in **[🎭 Roles]** that pays out gold to the most active members.'));
   assert.ok(coinsHint.description.includes('💸 **Give Gold:** Give free gold to any member right now.'));
 
   const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁', 'Coins', '🪙');
