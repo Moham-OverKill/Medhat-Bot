@@ -40,7 +40,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `so they can be won as prizes here.\n\n` +
         `⚙️ **Config:** Set min and max coin rewards, and drop chances for each item rarity.\n\n` +
         `🖼️ **Appearance:** Customize what ${lootBoxName.toLowerCase()} are called and their emoji.\n` +
-        `You can also set custom closed and opened pictures for each one.\n\n` +
+        `You can also set custom closed and opened images for each one.\n\n` +
         `✏️ **Edit:** Select any ${singularName} from the menu above anytime to edit it later.\n\n` +
         `📦 **Opening:** Members open their ${lootBoxName.toLowerCase()} in \`/inventory\`\n` +
         `or trade them with \`/trade\`.\n\n` +
