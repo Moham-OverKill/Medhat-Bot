@@ -15,7 +15,7 @@ export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = 
         `🗳️ **Vote:** Gives daily ${coinName.toLowerCase()} to members who vote for Medhat on Top.gg using \`/vote\`.\n\n` +
         `🖼️ **Appearance:** Change the ${coinName.toLowerCase()} name and emoji for your server.\n\n` +
         `💸 **Give ${coinName}:** Give free ${coinName.toLowerCase()} to any member right now.\n\n` +
-        `⚠️ **Note:** There is another way for members to earn ${coinName.toLowerCase()} by setting an MVP role in **[🎭 Roles]** as an hourly king of the hill reward for active chat and voice.`
+        `⚠️ **Note:** There is another way for members to earn ${coinName.toLowerCase()}, by setting an MVP role in **[🎭 Roles]** as an hourly king of the hill reward for active members.`
     },
     items: {
       title: 'HINT: Items',
