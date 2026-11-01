@@ -302,7 +302,7 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     assert.equal(updateBtn.data.disabled, false, 'Update button must be enabled in editing mode');
   });
 
-  it('8. Embed status description matches new 3-line format without bullets', async () => {
+  it('8. Embed status description matches updated 4-line format with dashes and ampersand', async () => {
     let editReplyPayload = null;
     const sessionId = 'test-session-2';
 
@@ -355,18 +355,13 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     assert.ok(desc, 'Must have description');
 
     // Expected format:
-    // Post **Normal Chest** In <#987654321098765432>
-    // for `Free` with `Unlimited` Stocks
-    // `No Restock` Timer - `No limit` per user
+    // - Post **Normal Chest** In <#987654321098765432>
+    // - for `Free` with `Unlimited` Stocks
+    // - `No Restock` Timer & `No limit` per user
     const lines = desc.split('\n');
-    assert.equal(lines[0], `Post **Normal Chest** In <#${validChannelId}>`);
-    assert.equal(lines[1], 'for `Free` with `Unlimited` Stocks');
-    assert.equal(lines[2], '`No Restock` Timer - `No limit` per user');
-
-    // Verify no line starts with bullet '•'
-    for (const line of lines) {
-      assert.ok(!line.startsWith('•'), `Line must not start with bullet: "${line}"`);
-    }
+    assert.equal(lines[0], `- Post **Normal Chest** In <#${validChannelId}>`);
+    assert.equal(lines[1], '- for `Free` with `Unlimited` Stocks');
+    assert.equal(lines[2], '- `No Restock` Timer & `No limit` per user');
   });
 
   it('9. handleShopPostNewLayout initializes channel to null across all origins to ensure progressive warnings', async () => {

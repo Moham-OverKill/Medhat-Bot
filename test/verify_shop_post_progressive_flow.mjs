@@ -192,8 +192,8 @@ describe('Shop Post Progressive Disclosure & Dynamic Seller Payout Suite', () =>
 
     const desc = payload.embeds[0].data.description;
     assert.ok(!desc.includes('⚠️'), 'All warnings must be gone');
-    assert.ok(desc.includes(`Post **Dragon Blade** In <#${channelId}>`), 'Must show item target');
-    assert.ok(desc.includes('for `1,500` Coins 🪙 with `Unlimited` Stocks'), 'Must show price and stock');
+    assert.ok(desc.includes(`- Post **Dragon Blade** In <#${channelId}>`), 'Must show item target');
+    assert.ok(desc.includes('for `1,500` 🪙 with `Unlimited` Stocks'), 'Must show price and stock');
 
     // Without payout configured, Seller Menu is HIDDEN -> 4 rows total
     assert.equal(payload.components.length, 4, 'Must show 4 rows (Item, Channel, Param buttons, Action buttons)');

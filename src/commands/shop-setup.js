@@ -1615,7 +1615,7 @@ export async function handleShopPostStart(interaction) {
       ? Number(state.overridePrice)
       : (selectedItem?.price ?? 0);
     const priceDisplay = priceVal > 0
-      ? `\`${priceVal.toLocaleString()}\` ${coinName} ${coinEmoji}`
+      ? `\`${priceVal.toLocaleString()}\` ${coinEmoji}`
       : '`Free`';
 
     const stockStr = (state.stock !== null && state.stock !== undefined && state.stock > 0)
@@ -1630,17 +1630,17 @@ export async function handleShopPostStart(interaction) {
       ? `\`${state.claimLimit.toLocaleString()}\` Per User`
       : '`No limit` per user';
 
-    const line1 = `Post ${targetMention} In ${channelMention}`;
-    const line2 = `for ${priceDisplay} with ${stockStr}`;
-    const line3 = `${timerStr} - ${claimLimitStr}`;
+    const line1 = `- Post ${targetMention} In ${channelMention}`;
+    const line2 = `- for ${priceDisplay} with ${stockStr}`;
+    const line3 = `- ${timerStr} & ${claimLimitStr}`;
 
     const lines = [line1, line2, line3];
     if (state.sellerId && !isPack) {
       const payoutVal = (state.payout !== null && state.payout !== undefined && state.payout > 0) ? Number(state.payout) : 0;
       const payoutStr = payoutVal > 0 ? `\`${payoutVal.toLocaleString()}\`` : '`None`';
-      lines.push(`<@${state.sellerId}> will get ${payoutStr} per sale`);
+      lines.push(`- <@${state.sellerId}> will get ${payoutStr} per sale`);
     } else if (state.payout !== null && state.payout !== undefined && state.payout > 0 && !isPack) {
-      lines.push(`⚠️ Select a seller to receive \`${Number(state.payout).toLocaleString()}\` per sale`);
+      lines.push(`- ⚠️ Select a seller to receive \`${Number(state.payout).toLocaleString()}\` per sale`);
     }
 
     statusDesc = lines.join('\n');
