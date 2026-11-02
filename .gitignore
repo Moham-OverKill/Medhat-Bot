@@ -10,6 +10,7 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+scratch/
 
 # Database files (local only)
 data/
