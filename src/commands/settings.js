@@ -38,6 +38,7 @@ import { showUserSelector, handleAdminUserComponent } from './admin-users.js';
 import { showRolesMenu, showSelfRolesDashboard, showRoleRewardsMenu, handleRoleRewardsComponent } from './settings/role-rewards.js';
 import { handleLogsSettings, handleLogMenuAction, handleLogCategorySelect, handleLogChannelSelect, handleLogDisable } from './settings/logs.js';
 import { handleEconomySettings } from './settings/economy.js';
+import { handleSettingsHint } from './settings/hints.js';
 import { handleOrganizeComponent, handleOrganizeSettings } from './settings/organize.js';
 import { handleQuestsComponent } from './quests-dashboard.js';
 import { handleInteractionError } from '../utils/errors.js';
@@ -392,7 +393,6 @@ export async function handleSettingsComponent(interaction) {
         }
 
         if (customId.startsWith('settings_hint_')) {
-            const { handleSettingsHint } = await import('./settings/hints.js');
             await handleSettingsHint(interaction);
             return;
         }

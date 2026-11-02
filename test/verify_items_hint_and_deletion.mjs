@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PermissionFlagsBits } from 'discord.js';
-import { getSettingsHint } from '../src/commands/settings/hints.js';
+import { getSettingsHint, handleSettingsHint } from '../src/commands/settings/hints.js';
 import {
   handleDeleteItemSelect,
   handleDeleteItemConfirmOnly,
@@ -490,4 +490,37 @@ test('deleteShopItem executes self-healing cleanups across levels, loot boxes, a
   // Check 6: Inventories & item record deleted
   assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM user_inventory')), 'Must delete user inventory');
   assert.ok(queriesRun.some(q => q.sql.includes('DELETE FROM shop_items WHERE id = $1')), 'Must delete shop item');
+});
+
+test('handleSettingsHint immediately defers with Ephemeral flag to prevent 3s timeout', async () => {
+  let deferredEphemeral = false;
+  let replyPayload = null;
+
+  const mockInteraction = {
+    customId: 'settings_hint_coins',
+    guildId: '123456789',
+    deferred: false,
+    replied: false,
+    ephemeral: false,
+    deferReply: async (opts) => {
+      mockInteraction.deferred = true;
+      mockInteraction.ephemeral = opts?.flags === 64; // MessageFlags.Ephemeral
+      deferredEphemeral = true;
+    },
+    editReply: async (payload) => {
+      replyPayload = payload;
+      return payload;
+    },
+    followUp: async (payload) => {
+      replyPayload = payload;
+      return payload;
+    }
+  };
+
+  await handleSettingsHint(mockInteraction);
+
+  assert.equal(deferredEphemeral, true, 'Must call deferReply with Ephemeral flag before resolving hint');
+  assert.ok(replyPayload, 'editReply must be called with hint embed');
+  assert.equal(replyPayload.embeds.length, 1);
+  assert.match(replyPayload.embeds[0].data.title, /HINT:/);
 });

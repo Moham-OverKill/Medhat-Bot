@@ -299,7 +299,11 @@ export function setupComponentHandlers(client) {
               guildId: interaction.guildId,
               detail
             });
-            const isPublicCardShortcut = customId && (customId.startsWith('hub_btn_') || customId.startsWith('admin_hub_'));
+            const isPublicCardShortcut = customId && (
+              customId.startsWith('hub_btn_') ||
+              customId.startsWith('admin_hub_') ||
+              customId.startsWith('settings_hint_')
+            );
             if (isPublicCardShortcut) {
               await safeDeferReply(interaction, { flags: MessageFlags.Ephemeral });
             } else {

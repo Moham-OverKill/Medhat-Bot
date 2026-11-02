@@ -4715,48 +4715,154 @@ export async function handleRevokeItemConfirm(interaction) {
     if (!item) return interaction.followUp({ content: '❌ Item not found.', flags: MessageFlags.Ephemeral });
 
     const itemName = item.name;
+    const roleIds = item.role_id ? item.role_id.split(/[,\s]+/).filter(Boolean) : [];
 
-    // 1. Fetch all holders from inventory (including expired records — strip everything)
+    // Pre-flight check: Verify bot permissions and hierarchy before entering loading state
+    if (roleIds.length > 0 && interaction.guild) {
+      const botMember = interaction.guild.members?.me || await interaction.guild.members?.fetchMe().catch(() => null);
+      if (!botMember || !botMember.permissions?.has(PermissionFlagsBits.ManageRoles)) {
+        const errorEmbed = new EmbedBuilder()
+          .setTitle('Cannot Revoke Item')
+          .setDescription(`❌ Cannot revoke roles for **${itemName}**: The bot lacks the **Manage Roles** permission in server settings.\n\nPlease grant the bot Manage Roles permission and try again.`)
+          .setColor('#E74C3C');
+        const backBtn = new ButtonBuilder()
+          .setCustomId(`shop_item_tab_users_${itemId}`)
+          .setLabel('Back')
+          .setEmoji('⬅️')
+          .setStyle(ButtonStyle.Secondary);
+        return interaction.editReply({ files: [], attachments: [], content: null, embeds: [errorEmbed], components: [new ActionRowBuilder().addComponents(backBtn)] });
+      }
+
+      for (const rid of roleIds) {
+        const role = interaction.guild.roles.cache.get(rid) || await interaction.guild.roles.fetch(rid).catch(() => null);
+        if (role) {
+          if (botMember.roles?.highest && botMember.roles.highest.position <= role.position) {
+            const errorEmbed = new EmbedBuilder()
+              .setTitle('Cannot Revoke Item')
+              .setDescription(`❌ Cannot revoke roles for **${itemName}**: The role <@&${role.id}> is higher than or equal to the bot's highest role in the server hierarchy.\n\nPlease move the bot's role above <@&${role.id}> in server settings and try again.`)
+              .setColor('#E74C3C');
+            const backBtn = new ButtonBuilder()
+              .setCustomId(`shop_item_tab_users_${itemId}`)
+              .setLabel('Back')
+              .setEmoji('⬅️')
+              .setStyle(ButtonStyle.Secondary);
+            return interaction.editReply({ files: [], attachments: [], content: null, embeds: [errorEmbed], components: [new ActionRowBuilder().addComponents(backBtn)] });
+          }
+          if (!role.editable) {
+            const errorEmbed = new EmbedBuilder()
+              .setTitle('Cannot Revoke Item')
+              .setDescription(`❌ Cannot revoke roles for **${itemName}**: The role <@&${role.id}> is managed by an integration or not editable.\n\nPlease check server role settings and try again.`)
+              .setColor('#E74C3C');
+            const backBtn = new ButtonBuilder()
+              .setCustomId(`shop_item_tab_users_${itemId}`)
+              .setLabel('Back')
+              .setEmoji('⬅️')
+              .setStyle(ButtonStyle.Secondary);
+            return interaction.editReply({ files: [], attachments: [], content: null, embeds: [errorEmbed], components: [new ActionRowBuilder().addComponents(backBtn)] });
+          }
+        }
+      }
+    }
+
+    // 1. Fetch all holders from inventory (including expired records)
     const holders = await query(
       `SELECT DISTINCT user_id FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
       [itemId, interaction.guildId]
     );
+    const inventoryHoldersCount = holders.rows.length;
 
-    // 2. Strip Discord role from every holder still in the server
-    if (item.role_id && holders.rows.length > 0) {
-      const roleIds = item.role_id.split(/[,\s]+/).filter(Boolean);
-      const holderIds = holders.rows.map(r => r.user_id);
-      try {
-        const fetchedMembers = await interaction.guild.members.fetch({ user: holderIds });
-        const stripPromises = [];
-        for (const member of fetchedMembers.values()) {
-          for (const rid of roleIds) {
-            if (member.roles.cache.has(rid)) {
-              stripPromises.push(
-                member.roles.remove(rid, `Item Revoked: ${itemName}`).catch(() => null)
-              );
-            }
+    // 2. Discover all role holders in Discord (including manual assignments outside DB)
+    const targetMembersMap = new Map();
+    const roleMembersSet = new Set();
+
+    if (roleIds.length > 0 && interaction.guild) {
+      for (const rid of roleIds) {
+        const role = interaction.guild.roles.cache.get(rid);
+        if (role) {
+          for (const [mid, member] of role.members) {
+            roleMembersSet.add(mid);
+            targetMembersMap.set(mid, member);
           }
         }
-        await Promise.allSettled(stripPromises);
-      } catch (err) {
-        sysError('Revoke Role Strip Failed', err, { guild: interaction.guildId, item: itemId });
+      }
+
+      // Include all DB inventory holders in the role count
+      for (const r of holders.rows) {
+        roleMembersSet.add(r.user_id);
+      }
+    }
+    const roleHoldersCount = roleMembersSet.size;
+
+    // 3. Immediately transition to State 2 (Loading) and hide action buttons
+    const roleMentions = roleIds.map(rid => `<@&${rid}>`).join(', ');
+    const loadingEmbed = new EmbedBuilder()
+      .setTitle('Revoking in Progress...')
+      .setDescription(
+        `Revoking **${itemName}** across the server...\n\n` +
+        (roleIds.length > 0
+          ? `• Removing ${roleMentions} from **${roleHoldersCount}** member${roleHoldersCount === 1 ? '' : 's'} (including manual assignments)...\n`
+          : '') +
+        `• Removing \`${itemName}\` from **${inventoryHoldersCount}** user ${inventoryHoldersCount === 1 ? 'inventory' : 'inventories'}...\n\n` +
+        `Please wait while records and role assignments are processed.`
+      )
+      .setColor('#F39C12');
+
+    await interaction.editReply({ files: [], attachments: [], content: null, embeds: [loadingEmbed], components: [] });
+
+    // 4. Fetch any uncached DB holders using targeted snowflake fetch (zero unbounded fetches)
+    if (roleIds.length > 0 && interaction.guild) {
+      const holderIds = holders.rows.map(r => r.user_id);
+      const uncachedIds = holderIds.filter(id => !targetMembersMap.has(id));
+      if (uncachedIds.length > 0) {
+        try {
+          const fetched = await interaction.guild.members.fetch({ user: uncachedIds });
+          for (const [mid, member] of fetched) {
+            targetMembersMap.set(mid, member);
+          }
+        } catch (_) {}
       }
     }
 
-    // 3. Clear inventory records for this item (keeps the item in shop_items)
+    // 5. Strip Discord roles sequentially with a throttle delay to prevent Discord REST rate limits
+    if (roleIds.length > 0 && targetMembersMap.size > 0) {
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+      for (const member of targetMembersMap.values()) {
+        for (const rid of roleIds) {
+          if (member.roles.cache.has(rid)) {
+            try {
+              await member.roles.remove(rid, `Item Revoked: ${itemName}`);
+              await sleep(150);
+            } catch (err) {
+              sysWarn('Revoke Role Strip Member Warning', { guild: interaction.guildId, item: itemId, user: member.id, error: err?.message });
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Clear inventory records for this item (keeps the item definition in shop_items)
     await query(
       `DELETE FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
       [itemId, interaction.guildId]
     );
 
-    // 4. Audit log
+    // Verification check
+    const verifyRes = await query(
+      `SELECT COUNT(*)::int as count FROM user_inventory WHERE shop_item_id = $1 AND guild_id = $2`,
+      [itemId, interaction.guildId]
+    );
+    const remainingCount = verifyRes.rows[0]?.count || 0;
+    if (remainingCount > 0) {
+      sysWarn('Revoke Verification Inconsistency', { guild: interaction.guildId, item: itemId, remainingCount });
+    }
+
+    // 6. Audit log
     sendLog(
       interaction.guild, 'shop', 'red', '⚠️ Item Revoked from Users',
-      `Admin **<@${interaction.user.id}>** revoked item **${itemName}** — removed from all user inventories (item remains in shop).`
+      `Admin **<@${interaction.user.id}>** revoked item **${itemName}** — removed from all user inventories and stripped associated roles.`
     );
 
-    // 5. Show success with a back button leading back to the item's edit view
+    // 7. Show success with the restored back button leading back to the item's edit view
     const successEmbed = new EmbedBuilder()
       .setDescription(`✅ **${itemName}** has been revoked from all users. All inventory records and role assignments have been cleared.`)
       .setColor('#2ECC71');

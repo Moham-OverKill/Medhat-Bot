@@ -80,6 +80,10 @@ export const SETTINGS_HINTS = new Proxy({}, {
  * @param {import('discord.js').ButtonInteraction} interaction
  */
 export async function handleSettingsHint(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
+
   const parts = interaction.customId.split('_');
   const pageKey = parts[2]; // e.g. 'coins', 'items', 'chests', 'post', 'economy'
   const [lootBoxName, lootBoxEmoji, coinName, coinEmoji] = await Promise.all([
@@ -92,12 +96,14 @@ export async function handleSettingsHint(interaction) {
 
   if (!hint) {
     const payload = {
-      content: 'No hint available for this page.',
-      flags: MessageFlags.Ephemeral
+      content: 'No hint available for this page.'
     };
-    return (interaction.deferred || interaction.replied)
-      ? interaction.followUp(payload)
-      : interaction.reply(payload);
+    if (interaction.deferred || interaction.replied) {
+      return interaction.ephemeral
+        ? interaction.editReply(payload)
+        : interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
+    }
+    return interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
   }
 
   const embed = new EmbedBuilder()
@@ -106,11 +112,13 @@ export async function handleSettingsHint(interaction) {
     .setColor(0xF1C40F);
 
   const payload = {
-    embeds: [embed],
-    flags: MessageFlags.Ephemeral
+    embeds: [embed]
   };
 
-  return (interaction.deferred || interaction.replied)
-    ? interaction.followUp(payload)
-    : interaction.reply(payload);
+  if (interaction.deferred || interaction.replied) {
+    return interaction.ephemeral
+      ? interaction.editReply(payload)
+      : interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
+  }
+  return interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
 }
