@@ -447,6 +447,22 @@ client.once(Events.ClientReady, async () => {
     await initializeDatabase();
     emitPhase('deps', 'Database ready');
 
+    // Fix 4: Non-blocking startup audit — log any guilds left in active lockdown state after a restart.
+    // Admins can restore their server normally by clicking Unpause from the Lockdown panel.
+    import('./storage/pause.js').then(async ({ query: pauseQuery }) => {
+      try {
+        const res = await pauseQuery(
+          `SELECT guild_id FROM server_pause_states WHERE is_paused = TRUE`
+        );
+        if (res?.rows?.length > 0) {
+          sysWarn('Startup Pause Audit', {
+            detail: `${res.rows.length} guild(s) remain in active lockdown state after restart — admins can unpause from the Lockdown panel`,
+            guilds: res.rows.map(r => r.guild_id)
+          });
+        }
+      } catch (_) { /* non-fatal */ }
+    }).catch(() => {});
+
     // Initialize cached configs
     await initializeGuildConfigs();
 

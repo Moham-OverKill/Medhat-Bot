@@ -284,65 +284,49 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
   });
 
   it('6. executeServerLockdown excludes whitelisted channels and sets non-whitelisted to deny', async () => {
-    const editedOverwrites = [];
+    const setCallsPerChannel = {};
+    const VIEW_CHANNEL = 1024n;
 
-    const mockChannel1 = {
-      id: 'c1',
-      name: 'general',
-      type: ChannelType.GuildText,
-      permissionOverwrites: {
-        cache: new Map([
-          [guildA, {
-            id: guildA,
-            type: OverwriteType.Role,
-            allow: new PermissionsBitField(1024n), // ViewChannel allowed
-            deny: new PermissionsBitField(0n)
-          }],
-          ['role_member', {
-            id: 'role_member',
-            type: OverwriteType.Role,
-            allow: new PermissionsBitField(1024n), // ViewChannel allowed
-            deny: new PermissionsBitField(0n)
-          }],
-          ['role_muted', {
-            id: 'role_muted',
-            type: OverwriteType.Role,
-            allow: new PermissionsBitField(0n),
-            deny: new PermissionsBitField(1024n) // Already denied
-          }]
-        ]),
-        edit: async (targetId, options) => {
-          editedOverwrites.push({ channelId: 'c1', targetId, options });
+    const makeTestChannel = (id, overwrites) => {
+      setCallsPerChannel[id] = [];
+      return {
+        id,
+        type: ChannelType.GuildText,
+        permissionOverwrites: {
+          cache: new Map(overwrites),
+          set: async (arr) => { setCallsPerChannel[id].push(arr); }
         }
-      }
+      };
     };
 
-    const mockChannelWhitelist = {
-      id: 'c_white',
-      name: 'announcements',
-      type: ChannelType.GuildAnnouncement,
-      permissionOverwrites: {
-        cache: new Map(),
-        edit: async (targetId, options) => {
-          editedOverwrites.push({ channelId: 'c_white', targetId, options });
-        }
-      }
-    };
+    // c1: @everyone (ViewChannel allowed), role_member (ViewChannel allowed), role_muted (ViewChannel denied)
+    const mockChannel1 = makeTestChannel('c1', [
+      [guildA, {
+        id: guildA, type: OverwriteType.Role,
+        allow: { bitfield: VIEW_CHANNEL }, deny: { bitfield: 0n },
+        has: (bit) => (BigInt(bit) & VIEW_CHANNEL) === VIEW_CHANNEL
+      }],
+      ['role_member', {
+        id: 'role_member', type: OverwriteType.Role,
+        allow: { bitfield: VIEW_CHANNEL }, deny: { bitfield: 0n },
+        has: (bit) => (BigInt(bit) & VIEW_CHANNEL) === VIEW_CHANNEL
+      }],
+      ['role_muted', {
+        id: 'role_muted', type: OverwriteType.Role,
+        allow: { bitfield: 0n }, deny: { bitfield: VIEW_CHANNEL },
+        has: () => false
+      }]
+    ]);
+
+    // c_white: whitelisted — must not be touched
+    const mockChannelWhitelist = makeTestChannel('c_white', []);
+    mockChannelWhitelist.type = ChannelType.GuildAnnouncement;
 
     const mockGuild = {
-      id: guildA,
-      name: 'Lockdown Guild',
-      members: {
-        me: {
-          permissions: { has: () => true }
-        }
-      },
-      channels: {
-        cache: new Map([
-          ['c1', mockChannel1],
-          ['c_white', mockChannelWhitelist]
-        ])
-      }
+      id: guildA, name: 'Lockdown Guild',
+      members: { me: { permissions: { has: () => true } } },
+      channels: { cache: new Map([['c1', mockChannel1], ['c_white', mockChannelWhitelist]]) },
+      systemChannelFlags: null, verificationLevel: 0
     };
 
     const result = await executeServerLockdown(mockGuild, adminUser, ['c_white']);
@@ -351,17 +335,29 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(result.lockedCount, 1);
     assert.equal(result.whitelistedCount, 1);
 
-    // Verify whitelisted channel was NOT touched
-    const touchedWhitelist = editedOverwrites.filter(o => o.channelId === 'c_white');
-    assert.equal(touchedWhitelist.length, 0, 'Whitelisted channels must be completely untouched');
+    // Whitelisted channel must be completely untouched
+    assert.equal((setCallsPerChannel['c_white'] || []).length, 0, 'Whitelisted channel must never have set() called');
 
-    // Verify c1 overwrites: @everyone set to ViewChannel: false, role_member set to ViewChannel: false, role_muted ignored!
-    const c1Edits = editedOverwrites.filter(o => o.channelId === 'c1');
-    assert.equal(c1Edits.length, 2, 'Must only edit @everyone and allowed role_member');
+    // c1 must have had set() called exactly once
+    assert.equal(setCallsPerChannel['c1'].length, 1, 'c1: set() must be called exactly once');
+    const c1Overwrites = setCallsPerChannel['c1'][0];
 
-    assert.ok(c1Edits.some(e => e.targetId === guildA && e.options.ViewChannel === false));
-    assert.ok(c1Edits.some(e => e.targetId === 'role_member' && e.options.ViewChannel === false));
-    assert.ok(!c1Edits.some(e => e.targetId === 'role_muted'), 'role_muted must be ignored');
+    // @everyone: ViewChannel must be in deny
+    const everyoneEntry = c1Overwrites.find(o => String(o.id) === String(guildA));
+    assert.ok(everyoneEntry, '@everyone entry must be present');
+    assert.equal(BigInt(everyoneEntry.deny) & VIEW_CHANNEL, VIEW_CHANNEL, '@everyone ViewChannel must be denied');
+    assert.equal(BigInt(everyoneEntry.allow) & VIEW_CHANNEL, 0n, '@everyone ViewChannel must NOT be in allow');
+
+    // role_member: was ALLOW — must be flipped to DENY
+    const memberEntry = c1Overwrites.find(o => String(o.id) === 'role_member');
+    assert.ok(memberEntry, 'role_member entry must be present');
+    assert.equal(BigInt(memberEntry.deny) & VIEW_CHANNEL, VIEW_CHANNEL, 'role_member ViewChannel must be denied');
+    assert.equal(BigInt(memberEntry.allow) & VIEW_CHANNEL, 0n, 'role_member ViewChannel must NOT remain in allow');
+
+    // role_muted: was already DENY — must still be DENY (unchanged)
+    const mutedEntry = c1Overwrites.find(o => String(o.id) === 'role_muted');
+    assert.ok(mutedEntry, 'role_muted entry must be present');
+    assert.equal(BigInt(mutedEntry.deny) & VIEW_CHANNEL, VIEW_CHANNEL, 'role_muted ViewChannel must remain denied');
   });
 
   it('7. executeServerUnpause restores bitfields, deletes synthesized overwrites, and handles deleted channels safely', async () => {
@@ -826,6 +822,256 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(restPuts[0].data.body.id, testGuildId);
     assert.equal(restPuts[0].data.body.allow, '0');
     assert.equal(restPuts[0].data.body.deny, '2048');
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Test 12 — Double-lockdown guard (Fix 1)
+  // ─────────────────────────────────────────────────────────────
+  it('should reject lockdown when server is already paused (double-lockdown guard)', async () => {
+    const guildId = 'guild_double_lock';
+
+    // Seed the mock DB: is_paused = TRUE to simulate an already-active lockdown
+    mockDb.pause_states.set(guildId, {
+      guild_id: guildId,
+      is_paused: true,
+      paused_at: new Date(),
+      whitelist_channel_ids: [],
+      server_settings_backup: {}
+    });
+
+    const mockGuild = {
+      id: guildId,
+      name: 'Double Lock Guild',
+      channels: { cache: new Map() },
+      members: { me: { permissions: { has: () => true } } },
+      roles: { cache: new Map() },
+      systemChannelFlags: null,
+      verificationLevel: 0
+    };
+
+    const result = await executeServerLockdown(mockGuild, adminUser, []);
+
+    assert.equal(result.success, false);
+    assert.ok(
+      result.error.toLowerCase().includes('already') || result.error.toLowerCase().includes('active'),
+      `Expected error to mention 'already' or 'active', got: "${result.error}"`
+    );
+
+    // The snapshot must NOT have been overwritten — is_paused stays TRUE with original backup
+    const state = mockDb.pause_states.get(guildId);
+    assert.equal(state.is_paused, true, 'Snapshot must not have been mutated by the rejected lockdown attempt');
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Test 13 — missingRoles deduplication (Fix 3)
+  // ─────────────────────────────────────────────────────────────
+  it('should deduplicate deleted role IDs in missingRoles across multiple channels', async () => {
+    const guildId = 'guild_role_dedup';
+    const deletedRoleId = 'role_deleted_001';
+
+    // Seed: is_paused = TRUE
+    mockDb.pause_states.set(guildId, {
+      guild_id: guildId,
+      is_paused: true,
+      paused_at: new Date(),
+      whitelist_channel_ids: [],
+      server_settings_backup: {}
+    });
+
+    // The same deleted role appears in backups for 3 different channels
+    for (const channelId of ['ch_a', 'ch_b', 'ch_c']) {
+      mockDb.permission_backups.push({
+        guild_id: guildId,
+        channel_id: channelId,
+        target_id: deletedRoleId,
+        target_type: 'role',
+        original_allow_bits: '0',
+        original_deny_bits: '0',
+        was_synthesized: false
+      });
+    }
+
+    const makeChannel = (id) => ({
+      id,
+      type: 0,
+      permissionOverwrites: { cache: new Map() }
+    });
+
+    const channelMap = new Map([
+      ['ch_a', makeChannel('ch_a')],
+      ['ch_b', makeChannel('ch_b')],
+      ['ch_c', makeChannel('ch_c')]
+    ]);
+
+    const mockGuild = {
+      id: guildId,
+      name: 'Role Dedup Guild',
+      channels: {
+        cache: channelMap,
+        // batch fetch (Optimization 3) — returns the same populated map
+        fetch: async () => channelMap
+      },
+      members: { me: { permissions: { has: () => true } } },
+      roles: { cache: new Map() }  // deletedRoleId intentionally NOT present
+    };
+
+    const inspection = await inspectServerUnpauseState(mockGuild);
+
+    assert.ok(inspection.valid);
+    assert.equal(
+      inspection.missingRoles.length,
+      1,
+      `Expected exactly 1 unique deleted role entry, got ${inspection.missingRoles.length}`
+    );
+    assert.equal(inspection.missingRoles[0].id, deletedRoleId);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Test 14 — set([]) clears lockdown overwrite for a synthesized-only channel
+  // ─────────────────────────────────────────────────────────────
+  it('should call permissionOverwrites.set([]) for a channel that had no pre-pause overwrites', async () => {
+    const guildId = 'guild_set_empty';
+
+    // Seed: is_paused = TRUE with only a synthesized @everyone entry
+    mockDb.pause_states.set(guildId, {
+      guild_id: guildId,
+      is_paused: true,
+      paused_at: new Date(),
+      whitelist_channel_ids: [],
+      server_settings_backup: {}
+    });
+    mockDb.permission_backups.push({
+      guild_id: guildId,
+      channel_id: 'ch_synth',
+      target_id: guildId,
+      target_type: 'role',
+      original_allow_bits: '0',
+      original_deny_bits: '0',
+      was_synthesized: true
+    });
+
+    const setCallArgs = [];
+    const mockChannel = {
+      id: 'ch_synth',
+      type: 0,
+      permissionOverwrites: {
+        // Live cache: @everyone ViewChannel DENY left by lockdown
+        cache: new Map([[guildId, { id: guildId, allow: { bitfield: 0n }, deny: { bitfield: 1024n } }]]),
+        set: async (arr) => { setCallArgs.push(arr); }
+      },
+      client: { rest: { put: async () => {}, delete: async () => {} } }
+    };
+
+    const mockGuild = {
+      id: guildId,
+      name: 'Set Empty Guild',
+      channels: {
+        cache: new Map([['ch_synth', mockChannel]]),
+        fetch: async (id) => (id ? mockGuild.channels.cache.get(id) ?? null : mockGuild.channels.cache)
+      },
+      members: { me: { permissions: { has: () => true } } },
+      roles: { cache: new Map([[guildId, { id: guildId }]]) }
+    };
+
+    const result = await executeServerUnpause(mockGuild, adminUser);
+
+    assert.equal(result.success, true);
+    assert.equal(result.restoredChannelsCount, 1);
+    assert.equal(setCallArgs.length, 1, 'permissionOverwrites.set() must be called exactly once');
+    assert.equal(
+      setCallArgs[0].length,
+      0,
+      'set() must be called with an empty array to remove the lockdown-added @everyone overwrite'
+    );
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Test 15 — Lockdown set() approach: one call per channel, correct bitmask carry-forward (Optimization 1)
+  // ─────────────────────────────────────────────────────────────
+  it('should call permissionOverwrites.set() once per channel with correct bitmasks during lockdown', async () => {
+    const guildId = 'guild_lockdown_set';
+    const VIEW_CHANNEL = 1024n;
+    const SEND_MESSAGES = 2048n;
+    const roleId = 'role_view_allowed';
+
+    const setCallsPerChannel = {};
+
+    const makeChannel = (id, overwrites) => {
+      setCallsPerChannel[id] = [];
+      return {
+        id,
+        type: 0,
+        permissionOverwrites: {
+          cache: new Map(overwrites),
+          set: async (arr) => { setCallsPerChannel[id].push(arr); }
+        }
+      };
+    };
+
+    // ch_set_1: @everyone has SendMessages allowed; ViewChannel not set.
+    // After lockdown: @everyone must have ViewChannel DENY added, SendMessages allow preserved.
+    const ch1 = makeChannel('ch_set_1', [
+      [guildId, {
+        id: guildId,
+        type: 0,
+        allow: { bitfield: SEND_MESSAGES },
+        deny: { bitfield: 0n },
+        has: () => false
+      }]
+    ]);
+
+    // ch_set_2: @everyone neutral + role with ViewChannel|SendMessages allowed.
+    // After lockdown: role ViewChannel must flip to DENY; SendMessages allow must be preserved.
+    const ch2 = makeChannel('ch_set_2', [
+      [guildId, {
+        id: guildId,
+        type: 0,
+        allow: { bitfield: 0n },
+        deny: { bitfield: 0n },
+        has: () => false
+      }],
+      [roleId, {
+        id: roleId,
+        type: 0,
+        allow: { bitfield: VIEW_CHANNEL | SEND_MESSAGES },
+        deny: { bitfield: 0n },
+        has: (bit) => (BigInt(bit) & VIEW_CHANNEL) === VIEW_CHANNEL
+      }]
+    ]);
+
+    const mockGuild = {
+      id: guildId,
+      name: 'Lockdown Set Guild',
+      channels: { cache: new Map([['ch_set_1', ch1], ['ch_set_2', ch2]]) },
+      members: { me: { permissions: { has: () => true } } },
+      roles: { cache: new Map([[guildId, { id: guildId }], [roleId, { id: roleId }]]) },
+      systemChannelFlags: null,
+      verificationLevel: 0
+    };
+
+    const result = await executeServerLockdown(mockGuild, adminUser, []);
+
+    assert.equal(result.success, true);
+    assert.equal(result.lockedCount, 2, 'Both channels must report as locked');
+
+    // Each channel must have had set() called exactly once (single REST call per channel)
+    assert.equal(setCallsPerChannel['ch_set_1'].length, 1, 'ch_set_1: set() must be called exactly once');
+    assert.equal(setCallsPerChannel['ch_set_2'].length, 1, 'ch_set_2: set() must be called exactly once');
+
+    // ch_set_1: @everyone entry — ViewChannel forced to DENY, SendMessages allow preserved
+    const ch1Sets = setCallsPerChannel['ch_set_1'][0];
+    const ch1Everyone = ch1Sets.find(o => String(o.id) === String(guildId));
+    assert.ok(ch1Everyone, '@everyone entry must be present in ch_set_1 lockdown set() call');
+    assert.equal(BigInt(ch1Everyone.deny) & VIEW_CHANNEL, VIEW_CHANNEL, 'ch_set_1 @everyone: ViewChannel must be in deny');
+    assert.equal(BigInt(ch1Everyone.allow) & SEND_MESSAGES, SEND_MESSAGES, 'ch_set_1 @everyone: SendMessages allow must be preserved');
+
+    // ch_set_2: role entry — ViewChannel flipped from ALLOW to DENY, SendMessages allow preserved
+    const ch2Sets = setCallsPerChannel['ch_set_2'][0];
+    const ch2Role = ch2Sets.find(o => String(o.id) === String(roleId));
+    assert.ok(ch2Role, 'Role entry must be present in ch_set_2 lockdown set() call');
+    assert.equal(BigInt(ch2Role.deny) & VIEW_CHANNEL, VIEW_CHANNEL, 'ch_set_2 role: ViewChannel must be in deny after lockdown');
+    assert.equal(BigInt(ch2Role.allow) & VIEW_CHANNEL, 0n, 'ch_set_2 role: ViewChannel must NOT remain in allow');
+    assert.equal(BigInt(ch2Role.allow) & SEND_MESSAGES, SEND_MESSAGES, 'ch_set_2 role: SendMessages allow bit must be preserved');
   });
 
   after(async () => {

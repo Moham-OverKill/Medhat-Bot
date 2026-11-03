@@ -3,6 +3,7 @@ import {
   ChannelType,
   OverwriteType,
   PermissionsBitField,
+  Collection,
   SystemChannelFlagsBitField,
   Routes
 } from 'discord.js';
@@ -113,6 +114,16 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
     return { success: false, error: prereq.error };
   }
 
+  // Fix 1: Guard against double-lockdown — prevent snapshotting an already-locked server,
+  // which would overwrite the valid pre-pause state with a snapshot of denied channels.
+  const currentPauseState = await getServerPauseState(guild.id);
+  if (currentPauseState.is_paused) {
+    return {
+      success: false,
+      error: 'This server already has an active lockdown. Use Unpause to restore it first.'
+    };
+  }
+
   activeLockdownGuilds.add(guild.id);
 
   try {
@@ -128,8 +139,9 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
     const allRecordedOverwrites = [];
 
     for (const channel of nonWhitelistedChannels) {
-      const overwritesCache = channel.permissionOverwrites?.cache;
-      if (!overwritesCache) continue;
+      // Fix 2: Guard only on permissionOverwrites being absent (cache is always a Collection, even if empty)
+      if (!channel.permissionOverwrites) continue;
+      const overwritesCache = channel.permissionOverwrites.cache ?? new Collection();
 
       let hasEveryoneOverwrite = false;
 
@@ -163,49 +175,60 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
     // Phase 2: Commit snapshot atomically to PostgreSQL before touching Discord permissions
     await recordServerPauseSnapshot(guild.id, settingsBackup, allRecordedOverwrites);
 
-    // Phase 3: Minimal Lockdown Execution
-    // For each non-whitelisted channel:
-    // 1. @everyone -> ViewChannel: DENY
-    // 2. Roles/members with ViewChannel: ALLOW -> ViewChannel: DENY
-    // 3. Roles/members with default (/) or already-denied -> IGNORE
+    // Phase 3: Batch Lockdown Execution via permissionOverwrites.set()
+    // For each non-whitelisted channel, build the full target overwrite array:
+    //   - @everyone  → ViewChannel: DENY (forced, whether or not it existed before)
+    //   - All other existing overwrites → carry all bits forward; flip only ViewChannel bit to DENY
+    // A single set() call replaces all overwrites atomically (1 REST call per channel).
     let lockedCount = 0;
     let skippedCount = 0;
 
     for (const channel of nonWhitelistedChannels) {
       try {
-        const overwritesCache = channel.permissionOverwrites?.cache;
-        if (!overwritesCache) {
+        // Fix 2 (Phase 3 symmetry): guard only on permissionOverwrites object being absent
+        if (!channel.permissionOverwrites) {
           skippedCount++;
           continue;
         }
+        const overwritesCache = channel.permissionOverwrites.cache ?? new Collection();
 
-        // Apply @everyone: deny ViewChannel (explicitly pass type to prevent redundant member REST fetch)
-        await channel.permissionOverwrites.edit(guild.id, {
-          ViewChannel: false
-        }, {
-          type: OverwriteType.Role,
-          reason: 'Server lockdown initiated by administrator'
-        });
+        // Build the lockdown overwrite array, preserving all existing bits except ViewChannel
+        const lockdownOverwrites = [];
+        let everyoneIncluded = false;
 
-        // Apply explicit deny to any other existing overwrite that had ViewChannel allowed
-        for (const overwrite of overwritesCache.values()) {
-          if (String(overwrite.id) === String(guild.id)) continue;
+        for (const ow of overwritesCache.values()) {
+          const isEveryone = String(ow.id) === String(guild.id);
+          if (isEveryone) everyoneIncluded = true;
 
-          if (overwrite.allow.has(VIEW_CHANNEL_BIT)) {
-            await channel.permissionOverwrites.edit(overwrite.id, {
-              ViewChannel: false
-            }, {
-              type: overwrite.type,
-              reason: 'Server lockdown: override allowed view permission'
-            }).catch(err => {
-              sysWarn(`Failed to edit overwrite for target ${overwrite.id} on channel ${channel.id}`, err);
-            });
-          }
+          // Carry all existing allow/deny bits; strip ViewChannel from allow, force it into deny
+          const newAllow = ow.allow.bitfield & ~VIEW_CHANNEL_BIT;
+          const newDeny  = ow.deny.bitfield  | VIEW_CHANNEL_BIT;
+          lockdownOverwrites.push({
+            id: ow.id,
+            type: ow.type,
+            allow: newAllow,
+            deny: newDeny
+          });
         }
 
+        // If @everyone had no existing overwrite, add it now with ViewChannel: DENY
+        if (!everyoneIncluded) {
+          lockdownOverwrites.push({
+            id: guild.id,
+            type: OverwriteType.Role,
+            allow: 0n,
+            deny: VIEW_CHANNEL_BIT
+          });
+        }
+
+        await channel.permissionOverwrites.set(
+          lockdownOverwrites,
+          'Server lockdown initiated by administrator'
+        );
+
         lockedCount++;
-        // Paced micro-sleep between channels to protect rate limit headroom
-        await sleep(100);
+        // Optimization 2: reduced to 50ms now that each channel is a single REST call
+        await sleep(50);
       } catch (channelErr) {
         sysWarn(`Channel ${channel.id} skipped during lockdown execution`, channelErr);
         skippedCount++;
@@ -289,15 +312,23 @@ export async function inspectServerUnpauseState(guild) {
     backupsByChannel.get(b.channel_id).push(b);
   }
 
+  // Optimization 3: Single batch REST call to populate channel cache before any lookups.
+  // Replaces N serial guild.channels.fetch(id) calls with one guild.channels.fetch().
+  // Guard: only call if fetch is available (may not be present in test mocks or unusual guild states).
+  if (typeof guild.channels?.fetch === 'function') {
+    await guild.channels.fetch().catch(() => {});
+  }
+
   const missingChannels = [];
   const missingRoles = [];
   let driftedChannelsCount = 0;
 
+  // Fix 3: deduplicate deleted roles by role ID across all channels
+  const seenMissingRoleIds = new Set();
+
   for (const [channelId, channelBackups] of backupsByChannel.entries()) {
-    let channel = guild.channels?.cache?.get(channelId);
-    if (!channel && typeof guild.channels?.fetch === 'function') {
-      channel = await guild.channels.fetch(channelId).catch(() => null);
-    }
+    // Optimization 3: cache is fully populated from the batch fetch above; no serial REST needed
+    const channel = guild.channels?.cache?.get(channelId) ?? null;
 
     if (!channel || !channel.permissionOverwrites) {
       missingChannels.push({ id: channelId });
@@ -307,7 +338,11 @@ export async function inspectServerUnpauseState(guild) {
     let channelHasDrift = false;
     for (const backup of channelBackups) {
       if (backup.target_type === 'role' && guild.roles?.cache && !guild.roles.cache.has(backup.target_id)) {
-        missingRoles.push({ id: backup.target_id, channelId });
+        // Fix 3: deduplicate — only record each deleted role ID once across all channels
+        if (!seenMissingRoleIds.has(backup.target_id)) {
+          seenMissingRoleIds.add(backup.target_id);
+          missingRoles.push({ id: backup.target_id, channelId });
+        }
       }
 
       if (!backup.was_synthesized) {
@@ -482,7 +517,8 @@ export async function executeServerUnpause(guild, adminUser) {
         }
 
         restoredChannelsCount++;
-        await sleep(100);
+        // Optimization 2: reduced to 50ms — unpause already uses set() (one REST call per channel)
+        await sleep(50);
       } catch (channelErr) {
         sysWarn(`Primary batch restore failed for channel ${channelId}, attempting granular REST fallback`, channelErr);
 
