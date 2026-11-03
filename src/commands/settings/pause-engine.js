@@ -2,7 +2,8 @@ import {
   PermissionFlagsBits,
   ChannelType,
   OverwriteType,
-  PermissionsBitField
+  PermissionsBitField,
+  SystemChannelFlagsBitField
 } from 'discord.js';
 import {
   getServerPauseState,
@@ -177,10 +178,13 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
           continue;
         }
 
-        // Apply @everyone: deny ViewChannel
+        // Apply @everyone: deny ViewChannel (explicitly pass type to prevent redundant member REST fetch)
         await channel.permissionOverwrites.edit(guild.id, {
           ViewChannel: false
-        }, { reason: 'Server lockdown initiated by administrator' });
+        }, {
+          type: OverwriteType.Role,
+          reason: 'Server lockdown initiated by administrator'
+        });
 
         // Apply explicit deny to any other existing overwrite that had ViewChannel allowed
         for (const overwrite of overwritesCache.values()) {
@@ -189,7 +193,10 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
           if (overwrite.allow.has(VIEW_CHANNEL_BIT)) {
             await channel.permissionOverwrites.edit(overwrite.id, {
               ViewChannel: false
-            }, { reason: 'Server lockdown: override allowed view permission' }).catch(err => {
+            }, {
+              type: overwrite.type,
+              reason: 'Server lockdown: override allowed view permission'
+            }).catch(err => {
               sysWarn(`Failed to edit overwrite for target ${overwrite.id} on channel ${channel.id}`, err);
             });
           }
@@ -439,11 +446,14 @@ export async function executeServerUnpause(guild, adminUser) {
                 }
               }
 
-              // Restore exact original bitfields
+              // Restore exact original bitfields (explicitly pass type to prevent redundant member REST fetch)
               await channel.permissionOverwrites.edit(backup.target_id, {
                 allow: targetAllow,
                 deny: targetDeny
-              }, { reason: 'Server unpause: restore pre-pause channel permissions' });
+              }, {
+                type: backup.target_type === 'role' ? OverwriteType.Role : OverwriteType.Member,
+                reason: 'Server unpause: restore pre-pause channel permissions'
+              });
             }
           } catch (overwriteErr) {
             sysWarn(`Failed to restore overwrite for target ${backup.target_id} on channel ${channelId}`, overwriteErr);
@@ -458,21 +468,33 @@ export async function executeServerUnpause(guild, adminUser) {
       }
     }
 
-    // Restore guild configuration settings if available
+    // Restore guild configuration settings if available (only apply if mutated)
     if (pauseState.server_settings_backup && typeof pauseState.server_settings_backup === 'object') {
       try {
         const sb = pauseState.server_settings_backup;
         const editPayload = {};
 
         if (sb.name && sb.name !== guild.name) editPayload.name = sb.name;
-        if (sb.verificationLevel !== null && sb.verificationLevel !== undefined) editPayload.verificationLevel = sb.verificationLevel;
-        if (sb.defaultMessageNotifications !== null && sb.defaultMessageNotifications !== undefined) editPayload.defaultMessageNotifications = sb.defaultMessageNotifications;
-        if (sb.explicitContentFilter !== null && sb.explicitContentFilter !== undefined) editPayload.explicitContentFilter = sb.explicitContentFilter;
-        if (sb.afkChannelId !== undefined) editPayload.afkChannel = sb.afkChannelId;
-        if (sb.afkTimeout !== undefined) editPayload.afkTimeout = sb.afkTimeout;
-        if (sb.systemChannelId !== undefined) editPayload.systemChannel = sb.systemChannelId;
-        if (sb.systemChannelFlags !== undefined && sb.systemChannelFlags !== null) {
-          editPayload.systemChannelFlags = BigInt(sb.systemChannelFlags);
+        if (sb.verificationLevel !== null && sb.verificationLevel !== undefined && sb.verificationLevel !== guild.verificationLevel) {
+          editPayload.verificationLevel = sb.verificationLevel;
+        }
+        if (sb.defaultMessageNotifications !== null && sb.defaultMessageNotifications !== undefined && sb.defaultMessageNotifications !== guild.defaultMessageNotifications) {
+          editPayload.defaultMessageNotifications = sb.defaultMessageNotifications;
+        }
+        if (sb.explicitContentFilter !== null && sb.explicitContentFilter !== undefined && sb.explicitContentFilter !== guild.explicitContentFilter) {
+          editPayload.explicitContentFilter = sb.explicitContentFilter;
+        }
+        if (sb.afkChannelId !== undefined && sb.afkChannelId !== guild.afkChannelId) {
+          editPayload.afkChannel = sb.afkChannelId;
+        }
+        if (sb.afkTimeout !== undefined && sb.afkTimeout !== guild.afkTimeout) {
+          editPayload.afkTimeout = sb.afkTimeout;
+        }
+        if (sb.systemChannelId !== undefined && sb.systemChannelId !== guild.systemChannelId) {
+          editPayload.systemChannel = sb.systemChannelId;
+        }
+        if (sb.systemChannelFlags !== undefined && sb.systemChannelFlags !== null && guild.systemChannelFlags && guild.systemChannelFlags.bitfield.toString() !== String(sb.systemChannelFlags)) {
+          editPayload.systemChannelFlags = new SystemChannelFlagsBitField(BigInt(sb.systemChannelFlags));
         }
 
         if (Object.keys(editPayload).length > 0) {
