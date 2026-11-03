@@ -427,7 +427,7 @@ export async function sendLog(guild, category, colorKey, title, description) {
       config = res.rows[0]?.config || {};
       if (logChannelCache.size >= LOG_CACHE_MAX_SIZE) logChannelCache.clear();
       logChannelCache.set(guild.id, config);
-      setTimeout(() => logChannelCache.delete(guild.id), 60000);
+      setTimeout(() => logChannelCache.delete(guild.id), 60000).unref();
     }
 
     const categoryMap = {

@@ -337,6 +337,9 @@ function startHealthCheck() {
       // Pool will auto-reconnect on next query
     }
   }, 60000); // Every 60 seconds
+  if (healthCheckInterval.unref) {
+    healthCheckInterval.unref();
+  }
 }
 
 /**
@@ -1712,6 +1715,32 @@ async function createTables() {
       );
     `);
 
+    // Server Pause States Table — Global Lockdown State & Settings Backup
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_pause_states (
+        guild_id VARCHAR(32) PRIMARY KEY,
+        is_paused BOOLEAN NOT NULL DEFAULT FALSE,
+        paused_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        whitelist_channel_ids TEXT[] DEFAULT '{}',
+        server_settings_backup JSONB DEFAULT '{}'::jsonb
+      );
+    `);
+
+    // Server Channel Permission Backups Table — Granular Overwrite Bitfield Snapshots
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS server_channel_permission_backups (
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        target_id VARCHAR(32) NOT NULL,
+        target_type VARCHAR(10) NOT NULL,
+        original_allow_bits BIGINT NOT NULL,
+        original_deny_bits BIGINT NOT NULL,
+        was_synthesized BOOLEAN NOT NULL DEFAULT FALSE,
+        PRIMARY KEY (guild_id, channel_id, target_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pause_guild ON server_channel_permission_backups(guild_id);
+    `);
+
     // Self-healing migration: Populate server_interface_config from existing guild_configs (run once)
     const ifaceMigrated = await pool.query(
       `SELECT 1 FROM bot_migrations WHERE migration_name = 'populate_server_interface_config_v1'`
@@ -1911,6 +1940,10 @@ export function getPool() {
  * Set a mock pool for testing environments
  */
 export function setMockPool(mock) {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
   pool = mock ? attachPoolTelemetry(mock) : null;
 }
 
@@ -1918,8 +1951,12 @@ export function setMockPool(mock) {
  * Close the database connection pool
  */
 export async function closeDatabase() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
   if (pool) {
-    await pool.end();
+    if (typeof pool.end === 'function') await pool.end();
     pool = null;
     sysLog('Database Closed', { detail: 'Link terminated' });
   }

@@ -296,6 +296,14 @@ export const ADMIN_SHORTCUT_REGISTRY = {
     emoji: '📜',
     buttonCustomId: 'admin_hub_logs'
   },
+  pause: {
+    id: 'pause',
+    name: 'Lockdown',
+    label: 'LOCKDOWN',
+    description: 'Instant zero-loss server lockdown and pause',
+    emoji: '🛑',
+    buttonCustomId: 'admin_hub_pause'
+  },
   dashboard: {
     id: 'dashboard',
     name: 'Dashboard',
@@ -1752,6 +1760,11 @@ export async function handleAdminHubComponent(interaction) {
     case 'admin_hub_logs': {
       const { handleLogsSettings } = await import('./settings/logs.js');
       return handleLogsSettings(interaction);
+    }
+    case 'admin_hub_pause':
+    case 'admin_hub_lockdown': {
+      const { showServerLockdownPanel } = await import('./settings/pause.js');
+      return showServerLockdownPanel(interaction);
     }
     case 'admin_hub_economy': {
       const { handleEconomySettings } = await import('./settings/economy.js');

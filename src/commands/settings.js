@@ -139,7 +139,8 @@ export async function showMainMenu(interaction) {
     }
 
     moderateOptions.push(
-        { label: 'Logs', value: 'mod_logs', emoji: '📜' }
+        { label: 'Logs', value: 'mod_logs', emoji: '📜' },
+        { label: 'Lock Down', value: 'mod_pause', emoji: '🛑' }
     );
 
     const moderateSelect = new StringSelectMenuBuilder()
@@ -478,6 +479,10 @@ export async function handleSettingsComponent(interaction) {
                 }
                 case 'mod_logs':
                     return handleLogsSettings(interaction);
+                case 'mod_pause': {
+                    const { showServerLockdownPanel } = await import('./settings/pause.js');
+                    return showServerLockdownPanel(interaction);
+                }
 
                 // 4. OTHER
                 case 'other_customize':

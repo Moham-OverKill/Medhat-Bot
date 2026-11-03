@@ -65,6 +65,15 @@ export function getSettingsHint(pageKey, lootBoxName = 'Rewards', lootBoxEmoji =
         `🔥 **Burned (Spent ${coinName}):** ${coinName} removed from the server when members buy shop items, purchase ${lootBoxName.toLowerCase()}, or pay trade taxes.\n\n` +
         `🏷️ **Prices:** View estimated member income benchmarks based on your server reward settings to help you price shop items fairly.\n\n` +
         '📅 **Time Filters:** Click **Per Day**, **Per Week**, or **Per Month** to see your server economy stats over different time periods.'
+    },
+    pause: {
+      title: 'HINT: Server Lockdown',
+      description:
+        'Temporarily close and hide your server during emergencies, raids, or maintenance.\n\n' +
+        '🛑 **What it does:** Instantly hides all channels from regular members so they see 0 channels. Only administrators can see the server while locked down.\n\n' +
+        '📋 **Whitelisted Channels:** Pick channels in the dropdown that should stay visible (such as an announcements or rules channel) while the rest of the server is hidden.\n\n' +
+        '🟢 **1-Click Restore:** When the emergency is over, clicking **Unpause Server** restores every channel permission back to normal with zero data loss.\n\n' +
+        '🛡️ **Safe & Reversible:** Your server roles, members, and settings are never deleted or modified.'
     }
   };
 

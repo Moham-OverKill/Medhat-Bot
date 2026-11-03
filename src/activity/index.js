@@ -470,7 +470,7 @@ setInterval(() => {
   for (const [key, timestamp] of questMessageCooldowns.entries()) {
     if (now - timestamp > 30000) questMessageCooldowns.delete(key);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 // Discord ChannelType values for Post channels
 const POST_CHANNEL_TYPES = new Set([15, 16]); // GuildForum = 15, GuildMedia = 16

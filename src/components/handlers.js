@@ -559,6 +559,33 @@ export function setupComponentHandlers(client) {
         return;
       }
 
+      // SERVER LOCKDOWN / PAUSE
+      if (customId.startsWith('pause_')) {
+        const {
+          handlePauseWhitelistSelect,
+          showPauseConfirmScreen,
+          showServerLockdownPanel,
+          handlePauseExecute,
+          showUnpauseConfirmScreen,
+          handleUnpauseExecute
+        } = await import('../commands/settings/pause.js');
+
+        if (customId === 'pause_whitelist_select') {
+          await handlePauseWhitelistSelect(interaction);
+        } else if (customId === 'pause_prompt_confirm') {
+          await showPauseConfirmScreen(interaction);
+        } else if (customId === 'pause_cancel_prompt' || customId === 'pause_cancel_unpause_prompt') {
+          await showServerLockdownPanel(interaction);
+        } else if (customId === 'pause_execute_lockdown') {
+          await handlePauseExecute(interaction);
+        } else if (customId === 'pause_unpause_prompt') {
+          await showUnpauseConfirmScreen(interaction);
+        } else if (customId === 'pause_execute_unpause') {
+          await handleUnpauseExecute(interaction);
+        }
+        return;
+      }
+
       // ECONOMY DASHBOARD
       if (customId.startsWith('economy_') || customId.startsWith('eco_')) {
         await handleEconomySettings(interaction);
