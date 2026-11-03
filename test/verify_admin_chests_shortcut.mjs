@@ -25,8 +25,8 @@ describe('Admin Interface Chests/Lootboxes Shortcut Suite', () => {
     const entry = ADMIN_SHORTCUT_REGISTRY.chests;
     assert.ok(entry, 'chests shortcut must be registered in ADMIN_SHORTCUT_REGISTRY');
     assert.equal(entry.id, 'chests');
-    assert.equal(entry.name, 'Chests');
-    assert.equal(entry.label, 'CHESTS');
+    assert.equal(entry.name, 'Rewards');
+    assert.equal(entry.label, 'REWARDS');
     assert.equal(entry.emoji, '🎁');
     assert.equal(entry.buttonCustomId, 'admin_hub_chests');
     assert.ok(entry.description && entry.description.length > 0, 'Must have description');

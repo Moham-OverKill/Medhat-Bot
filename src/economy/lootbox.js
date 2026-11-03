@@ -5,16 +5,16 @@ import { sysLog, sysError } from '../utils/logger.js';
 import { RARITY_COLORS, RARITY_EMOJIS, RARITY_DISPLAY } from '../shared.js';
 
 /**
- * Get the custom category name for loot boxes (default: 'Chests')
+ * Get the custom category name for loot boxes (default: 'Rewards')
  */
 export async function getLootBoxCategoryName(guildId) {
-  if (!guildId) return 'Chests';
+  if (!guildId) return 'Rewards';
   try {
     const config = await getGuildConfig(guildId);
     const customName = config?.loot_box_category_name?.trim();
-    return customName && customName.length > 0 ? customName.slice(0, 32) : 'Chests';
+    return customName && customName.length > 0 ? customName.slice(0, 32) : 'Rewards';
   } catch {
-    return 'Chests';
+    return 'Rewards';
   }
 }
 
@@ -171,7 +171,7 @@ export async function createLootBox(guildId, { name, imageUrl = null, openedImag
   try {
     await client.query('BEGIN');
 
-    const cleanName = (name || 'Mystery Chest').trim().slice(0, 100);
+    const cleanName = (name || 'Mystery Reward').trim().slice(0, 100);
     const cleanImage = imageUrl ? imageUrl.trim() : null;
     const cleanOpened = openedImageUrl ? openedImageUrl.trim() : null;
 
@@ -360,7 +360,7 @@ export async function updateLootBoxPrizeCount(boxId, guildId, { minPrizes, maxPr
  */
 export async function toggleLootBoxFeature(boxId, guildId, featureType) {
   const box = await getLootBox(boxId, guildId);
-  if (!box) throw new Error('Loot box not found.');
+  if (!box) throw new Error('Item not found.');
 
   const currentItems = box.items_enabled !== false;
   const currentCoins = box.coins_enabled !== false;
@@ -371,12 +371,12 @@ export async function toggleLootBoxFeature(boxId, guildId, featureType) {
   if (featureType === 'items' || featureType === 'rarity' || featureType === 'prizes') {
     newItems = !currentItems;
     if (!newItems && !newCoins) {
-      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this loot box.' };
+      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this item.' };
     }
   } else if (featureType === 'coins') {
     newCoins = !currentCoins;
     if (!newItems && !newCoins) {
-      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this loot box.' };
+      return { success: false, error: 'You must have at least one reward type (Items or Coins) enabled for this item.' };
     }
   }
 
@@ -480,30 +480,30 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
 
     if (invRes.rows.length === 0) {
       await client.query('ROLLBACK');
-      return { success: false, error: 'Loot box not found in your inventory.' };
+      return { success: false, error: 'Item not found in your inventory.' };
     }
 
     const invRow = invRes.rows[0];
     const currentQty = parseInt(invRow.quantity) || 1;
     if (currentQty < 1) {
       await client.query('ROLLBACK');
-      return { success: false, error: 'You do not own any copies of this loot box.' };
+      return { success: false, error: 'You do not own any copies of this item.' };
     }
 
     const lootBoxId = invRow.loot_box_id;
     if (!lootBoxId) {
       await client.query('ROLLBACK');
-      return { success: false, error: 'This item is not a valid loot box.' };
+      return { success: false, error: 'This item is not valid for opening.' };
     }
 
-    // 2. Fetch master loot box configuration
+    // 2. Fetch master configuration
     const boxRes = await client.query(
       `SELECT * FROM loot_boxes WHERE id = $1`,
       [lootBoxId]
     );
     if (boxRes.rows.length === 0) {
       await client.query('ROLLBACK');
-      return { success: false, error: 'Master loot box configuration no longer exists.' };
+      return { success: false, error: 'Item configuration no longer exists.' };
     }
     const box = boxRes.rows[0];
 
@@ -531,7 +531,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
     // Safeguard: must have either active item pool or coins enabled
     if (itemsEnabled && totalItemWeight <= 0 && (!coinsEnabled || chanceCoins <= 0)) {
       await client.query('ROLLBACK');
-      return { success: false, error: '⚠️ This loot box has all drop chances set to 0%. Please contact an admin.' };
+      return { success: false, error: '⚠️ All drop chances are set to 0%. Please contact an admin.' };
     }
 
     const minCoins = parseInt(box.min_coins, 10) || 100;
@@ -595,7 +595,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       await client.query('ROLLBACK');
       return { 
         success: false, 
-        error: '⚠️ This chest cannot be opened right now because there are no available rewards configured. Please contact a server administrator.' 
+        error: '⚠️ This item cannot be opened right now because there are no available rewards configured. Please contact a server administrator.' 
       };
     }
 
@@ -757,7 +757,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
       }
     }
 
-    sysLog('Chest Opened', { 
+    sysLog('Reward Item Opened', { 
       tag: 'LOOTBOX',
       user: userId, 
       guild: guildId, 
@@ -781,7 +781,7 @@ export async function openLootBox(userId, guildId, inventoryRowId, member = null
   } catch (error) {
     await client.query('ROLLBACK');
     sysError('LootBox Open Failed', error, { user: userId, guild: guildId, item: inventoryRowId });
-    return { success: false, error: 'Failed to open loot box. Please try again.' };
+    return { success: false, error: 'Failed to open item. Please try again.' };
   } finally {
     client.release();
   }

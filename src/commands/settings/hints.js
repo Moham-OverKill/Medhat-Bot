@@ -2,7 +2,7 @@ import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { getLootBoxCategoryName, getLootBoxCategoryEmoji } from '../../economy/lootbox.js';
 import { getCurrencyName, getCurrencyEmoji } from '../../shared.js';
 
-export function getSettingsHint(pageKey, lootBoxName = 'Chests', lootBoxEmoji = '🎁', coinName = 'Coins', coinEmoji = '🪙') {
+export function getSettingsHint(pageKey, lootBoxName = 'Rewards', lootBoxEmoji = '🎁', coinName = 'Coins', coinEmoji = '🪙') {
   const boxTag = `**[${lootBoxEmoji} ${lootBoxName}]**`;
   const hints = {
     coins: {
@@ -87,7 +87,7 @@ export async function handleSettingsHint(interaction) {
   const parts = interaction.customId.split('_');
   const pageKey = parts[2]; // e.g. 'coins', 'items', 'chests', 'post', 'economy'
   const [lootBoxName, lootBoxEmoji, coinName, coinEmoji] = await Promise.all([
-    getLootBoxCategoryName(interaction.guildId).catch(() => 'Chests'),
+    getLootBoxCategoryName(interaction.guildId).catch(() => 'Rewards'),
     getLootBoxCategoryEmoji(interaction.guildId).catch(() => '🎁'),
     getCurrencyName(interaction.guildId).catch(() => 'Coins'),
     getCurrencyEmoji(interaction.guildId).catch(() => '🪙')

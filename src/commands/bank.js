@@ -2300,7 +2300,7 @@ export async function handleInventoryAction(interaction) {
         return interaction.editReply({ content: `❌ ${result.error}`, embeds: [], components: [] });
       }
 
-      const boxName = result.box?.name || 'Loot Box';
+      const boxName = result.box?.name || 'Reward';
       const prizeLines = [];
       let totalCoins = 0;
       const itemCounts = new Map();
@@ -2335,7 +2335,7 @@ export async function handleInventoryAction(interaction) {
       }
 
       const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId) || '🎁';
-      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId) || 'Chests';
+      const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId) || 'Rewards';
       const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
         ? lootBoxCatName.slice(0, -1) 
         : lootBoxCatName;
@@ -2395,8 +2395,8 @@ export async function handleInventoryAction(interaction) {
         interaction.guild,
         'inventory',
         'gold',
-        `${lootBoxEmoji} ${singularName} Opened`,
-        `Player **<@${interaction.user.id}>** opened ${singularName.toLowerCase()} **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
+        `${lootBoxEmoji} **${boxName}** Opened`,
+        `Player **<@${interaction.user.id}>** opened **${boxName}**\n**Prizes Won:**\n${prizeLines.length > 0 ? prizeLines.join('\n') : '• No rewards'}`
       );
 
       return;

@@ -239,8 +239,8 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
     });
   });
 
-  describe('4. Custom Chest Category Appearance Modal', () => {
-    it('should render empty when category name and emoji are default (Chests / 🎁)', async () => {
+  describe('4. Custom Reward Category Appearance Modal', () => {
+    it('should render empty when category name and emoji are default (Rewards / 🎁)', async () => {
       configCache.set(guildId, {});
 
       let modalShown = null;
@@ -274,7 +274,7 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
       assert.equal(emojiInput.value, '💎');
     });
 
-    it('should default to "Chests" and "🎁" on empty submission', async () => {
+    it('should default to "Rewards" and "🎁" on empty submission', async () => {
       const interaction = createMockInteraction(`shop_lb_rename_cat_modal_${Date.now()}`, {
         isModalSubmit: () => true,
         fields: { getTextInputValue: () => '' }
@@ -282,7 +282,7 @@ describe('Modal Placeholder and Auto-Fill Invariants Suite', () => {
 
       await handleLootBoxRenameCatSubmit(interaction);
       const cfg = configCache.get(guildId);
-      assert.equal(cfg.loot_box_category_name, 'Chests');
+      assert.equal(cfg.loot_box_category_name, 'Rewards');
       assert.equal(cfg.loot_box_category_emoji, '🎁');
     });
   });

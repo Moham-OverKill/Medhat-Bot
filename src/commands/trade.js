@@ -1892,7 +1892,7 @@ export async function handleTradeFinalConfirmation(interaction, tradeData = null
                 } else {
                     unactRows = await client.query(`
                         SELECT i.id, i.shop_item_id, COALESCE(i.quantity, 1) as quantity, i.expires_at,
-                               COALESCE(s.name, lb.name, 'Chest') as name,
+                               COALESCE(s.name, lb.name, 'Item') as name,
                                COALESCE(s.is_tradable, true) as is_tradable,
                                COALESCE(i.role_id, s.role_id) as role_id
                         FROM user_inventory i

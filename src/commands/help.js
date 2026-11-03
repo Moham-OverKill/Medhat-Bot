@@ -25,7 +25,7 @@ export async function handleHelpCommand(interaction) {
     const guildId = interaction.guildId;
     const config = guildId ? await getGuildConfig(guildId) : null;
     const botName = config?.bot_name || interaction.client.user?.username || 'Medhat';
-    let lootBoxCatName = 'chests';
+    let lootBoxCatName = 'rewards';
     if (guildId) {
       try {
         const { getLootBoxCategoryName } = await import('../economy/lootbox.js');

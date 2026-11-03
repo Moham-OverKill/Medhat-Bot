@@ -355,7 +355,7 @@ export async function runLevelBugRollback(client) {
               'economy',
               'red',
               'System Rollback Complete',
-              `Self-healing corrected **${guildUsersAffected} accounts** affected by the level calculation bug. Total unearned coins reversed: **${guildCoinsReversed.toLocaleString()}** ${coinEmoji}. All unearned milestone roles, items, chests, and level claims have been restored to their exact pre-bug values.`
+              `Self-healing corrected **${guildUsersAffected} accounts** affected by the level calculation bug. Total unearned coins reversed: **${guildCoinsReversed.toLocaleString()}** ${coinEmoji}. All unearned milestone roles, items, rewards, and level claims have been restored to their exact pre-bug values.`
             );
           }
         } catch (logErr) {

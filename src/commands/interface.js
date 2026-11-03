@@ -226,9 +226,9 @@ export const ADMIN_SHORTCUT_REGISTRY = {
   },
   chests: {
     id: 'chests',
-    name: 'Chests',
-    label: 'CHESTS',
-    description: 'Configure lootboxes, prize rates, and drops',
+    name: 'Rewards',
+    label: 'REWARDS',
+    description: 'Configure prize rates, items, and drops',
     emoji: '🎁',
     buttonCustomId: 'admin_hub_chests'
   },
@@ -1417,7 +1417,7 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
         if (!lootBoxEmoji) lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
       } catch {}
     }
-    if (!lootBoxName) lootBoxName = 'Chests';
+    if (!lootBoxName) lootBoxName = 'Rewards';
     if (!lootBoxEmoji) lootBoxEmoji = '🎁';
   }
 
@@ -1496,7 +1496,7 @@ export async function generateAdminInterfaceBanner(shortcutOrder = null, options
           itemMeta.label = (coinName || 'Coins').toUpperCase();
           itemMeta.emoji = coinEmoji || '🪙';
         } else if (item.id === 'chests' || item.id === 'lootboxes') {
-          itemMeta.label = (lootBoxName || 'Chests').toUpperCase();
+          itemMeta.label = (lootBoxName || 'REWARDS').toUpperCase();
           itemMeta.emoji = lootBoxEmoji || '🎁';
         }
         await drawShortcutCard(ctx, x, y, cardW, cardH, itemMeta, bgColor);
@@ -2151,7 +2151,7 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
   const currentMeta = ADMIN_SHORTCUT_REGISTRY[currentId];
   const coinName = await getCurrencyName(guildId);
   const coinEmoji = await getCurrencyEmoji(guildId);
-  let lootBoxName = 'Chests';
+  let lootBoxName = 'Rewards';
   let lootBoxEmoji = '🎁';
   try {
     const { getLootBoxCategoryName, getLootBoxCategoryEmoji } = await import('../economy/lootbox.js');
@@ -2177,7 +2177,7 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
 
   const desc = [
     `• **Current Module:** ${currentLabel}`,
-    `• **Box Color:** ${currentColorLabel}`,
+    `• **Tile Color:** ${currentColorLabel}`,
     `• **Button Color:** ${currentBtnColorLabel}`
   ].join('\n');
 
@@ -2223,7 +2223,7 @@ export async function showAdminInterfaceSlotAssign(interaction, slotIndex) {
 
   const colorSelect = new StringSelectMenuBuilder()
     .setCustomId(`admin_interface_set_color_${slotIndex}`)
-    .setPlaceholder(`Choose a box color for Slot ${slotIndex + 1}...`)
+    .setPlaceholder(`Choose a button color for Slot ${slotIndex + 1}...`)
     .addOptions(colorOptions);
 
   const buttonColorOptions = DISCORD_BUTTON_COLORS.map(c => ({
@@ -2365,7 +2365,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
 
   const desc = [
     `• **Current Feature:** ${currentLabel}`,
-    `• **Box Color:** ${currentColorLabel}`,
+    `• **Tile Color:** ${currentColorLabel}`,
     `• **Button Color:** ${currentBtnColorLabel}`
   ].join('\n');
 
@@ -2408,7 +2408,7 @@ export async function showInterfaceSlotAssign(interaction, slotIndex) {
 
   const colorSelect = new StringSelectMenuBuilder()
     .setCustomId(`interface_set_color_${slotIndex}`)
-    .setPlaceholder(`Choose a box color for Slot ${slotIndex + 1}...`)
+    .setPlaceholder(`Choose a button color for Slot ${slotIndex + 1}...`)
     .addOptions(colorOptions);
 
   const buttonColorOptions = DISCORD_BUTTON_COLORS.map(c => ({

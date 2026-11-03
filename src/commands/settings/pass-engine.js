@@ -626,7 +626,7 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
           }
           grantedRewards.push({
             type: 'chest',
-            name: reward.chest_name || 'Chest',
+            name: reward.chest_name || 'Reward',
             quantity: qty
           });
 
@@ -671,13 +671,9 @@ export async function dispatchLevelReward(pool, guildId, userId, username, level
           if (gr.type === 'item') {
             sendLog(guild, 'inventory', 'green', '🏷️ Level Item Reward', `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
           } else if (gr.type === 'chest') {
-            const { getLootBoxCategoryEmoji, getLootBoxCategoryName } = await import('../../economy/lootbox.js');
+            const { getLootBoxCategoryEmoji } = await import('../../economy/lootbox.js');
             const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
-            const lootBoxCatName = await getLootBoxCategoryName(guildId);
-            const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
-              ? lootBoxCatName.slice(0, -1) 
-              : lootBoxCatName;
-            sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level ${singularName} Reward`, `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
+            sendLog(guild, 'inventory', 'green', `${lootBoxEmoji} Level Reward: ${gr.name}`, `<@${userId}> reached **Level ${levelRow.level}** and received **${countStr}${gr.name}**!`);
           }
         }
       }
@@ -1305,7 +1301,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
              WHERE user_id = $1 AND guild_id = $2
                AND type = 'loot_box_reward'
                AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
-            [uid, guildId, br.loot_box_id, br.chest_name || 'Chest']
+            [uid, guildId, br.loot_box_id, br.chest_name || 'Reward']
           );
           const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
 
@@ -1335,7 +1331,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
               sysLog('Self-Healing: Stacked Missing Level Chest', {
                 user: uid,
                 guild: guildId,
-                detail: `Level ${br.level} | +${deficit}x ${br.chest_name || 'Chest'} (Deficit filled)`
+                detail: `Level ${br.level} | +${deficit}x ${br.chest_name || 'Reward'} (Deficit filled)`
               });
             } else {
               await pool.query(
@@ -1346,7 +1342,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
               sysLog('Self-Healing: Granted Missing Level Chest', {
                 user: uid,
                 guild: guildId,
-                detail: `Level ${br.level} | ${deficit}x ${br.chest_name || 'Chest'} (Deficit filled)`
+                detail: `Level ${br.level} | ${deficit}x ${br.chest_name || 'Reward'} (Deficit filled)`
               });
             }
             missingReconciledCount++;
@@ -1434,7 +1430,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
            WHERE user_id = $1 AND guild_id = $2
              AND type = 'loot_box_reward'
              AND (reference_id = $3::text OR LOWER(description) = LOWER('Opened ' || $4))`,
-          [uid, guildId, bc.reward_chest_id, bc.chest_name || 'Chest']
+          [uid, guildId, bc.reward_chest_id, bc.chest_name || 'Reward']
         );
         const openedQty = parseInt(openedRes.rows[0]?.count || 0, 10);
 
@@ -1464,7 +1460,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             sysLog('Self-Healing: Stacked Legacy Config Level Chest', {
               user: uid,
               guild: guildId,
-              detail: `Level ${bc.level} | +${deficit}x ${bc.chest_name || 'Chest'} (Deficit filled)`
+              detail: `Level ${bc.level} | +${deficit}x ${bc.chest_name || 'Reward'} (Deficit filled)`
             });
           } else {
             await pool.query(
@@ -1475,7 +1471,7 @@ export async function reconcileMissingLevelRewards(guildId, userId = null) {
             sysLog('Self-Healing: Granted Legacy Config Level Chest', {
               user: uid,
               guild: guildId,
-              detail: `Level ${bc.level} | ${deficit}x ${bc.chest_name || 'Chest'} (Deficit filled)`
+              detail: `Level ${bc.level} | ${deficit}x ${bc.chest_name || 'Reward'} (Deficit filled)`
             });
           }
           missingReconciledCount++;

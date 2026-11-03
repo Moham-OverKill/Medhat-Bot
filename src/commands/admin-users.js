@@ -796,7 +796,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
             });
         }
         if (hasLootBoxes) {
-            const lbLabel = safeTruncate(lootBoxCatName || 'Loot Boxes', 50);
+            const lbLabel = safeTruncate(lootBoxCatName || 'Rewards', 50);
             const lbEmoji = parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁';
             folderOptions.push({
                 label: lbLabel,
@@ -850,7 +850,7 @@ export async function buildAdminRemoveSelectMenu(guildId, targetUserId, currentF
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxItems;
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
-        const boxName = lootBoxCatName || 'Loot Boxes';
+        const boxName = lootBoxCatName || 'Rewards';
         placeholder = safeTruncate(`🗑️ Remove Items (${boxName})`, 100);
         backValue = 'rem_back_root';
     } else if (currentFolder.startsWith('cat_')) {
@@ -1287,7 +1287,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
             });
         }
         if (hasLootBoxes) {
-            const lbLabel = safeTruncate(lootBoxCatName || 'Loot Boxes', 50);
+            const lbLabel = safeTruncate(lootBoxCatName || 'Rewards', 50);
             const lbEmoji = parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁';
             folderOptions.push({
                 label: lbLabel,
@@ -1341,7 +1341,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
     } else if (currentFolder === 'lootboxes') {
         folderItems = lootBoxes.map(b => ({ ...b, isChest: true }));
         folderItems.sort((a, b) => (parseInt(a.id) || 0) - (parseInt(b.id) || 0));
-        const boxName = lootBoxCatName || 'Loot Boxes';
+        const boxName = lootBoxCatName || 'Rewards';
         placeholder = safeTruncate(`🎁 Give Items (${boxName})`, 100);
         backValue = 'give_back_root';
     } else if (currentFolder.startsWith('cat_')) {
@@ -1372,7 +1372,7 @@ export async function buildAdminGiveSelectMenu(guildId, targetUserId, currentFol
             const emoji = isChest
                 ? (parseSelectEmoji(lootBoxEmoji, guild, '🎁') || '🎁')
                 : getItemRarityEmoji(i);
-            const desc = isChest ? (lootBoxCatName || 'Chests') : (i.role_id ? 'Role Item' : 'Inventory Item');
+            const desc = isChest ? (lootBoxCatName || 'Rewards') : (i.role_id ? 'Role Item' : 'Inventory Item');
             return {
                 label: safeTruncate(i.name || (isChest ? `${singularName} #${i.id}` : `Item #${i.id}`), 100),
                 value: isChest ? `give_chest_${i.id}` : `give_item_${i.id}`,
@@ -1541,7 +1541,9 @@ export async function handleAdminGiveModal(interaction) {
             );
             if (boxRes.rows.length === 0) {
                 await client.query('ROLLBACK');
-                return interaction.followUp({ content: '❌ Loot box not found.', flags: MessageFlags.Ephemeral });
+                const lootBoxCatName = await getLootBoxCategoryName(guildId);
+                const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
+                return interaction.followUp({ content: `❌ ${singularName} not found.`, flags: MessageFlags.Ephemeral });
             }
             const box = boxRes.rows[0];
             itemName = box.name;

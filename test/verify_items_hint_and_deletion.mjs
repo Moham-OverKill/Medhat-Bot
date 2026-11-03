@@ -30,11 +30,11 @@ test('getSettingsHint for items generates correct title and plain English conten
   assert.ok(customHint.description.includes('🗑️ **Editing & Deleting:**'), 'Should contain deletion explanation');
 
   const defaultHint = getSettingsHint('items');
-  assert.ok(defaultHint.description.includes('**[🎁 Chests]**'), 'Should default to Chests');
+  assert.ok(defaultHint.description.includes('**[🎁 Rewards]**'), 'Should default to Rewards');
 });
 
 test('getSettingsHint for other pages', () => {
-  const coinsHint = getSettingsHint('coins', 'Chests', '🎁', 'Gold', '🪙');
+  const coinsHint = getSettingsHint('coins', 'Rewards', '🎁', 'Gold', '🪙');
   assert.equal(coinsHint.title, 'HINT: Gold');
   assert.ok(coinsHint.description.includes('📅 **Daily:**'));
   assert.ok(coinsHint.description.includes('🏷️ **Tag:** Gives daily gold'));
@@ -42,8 +42,8 @@ test('getSettingsHint for other pages', () => {
   assert.ok(coinsHint.description.includes('💸 **Give Gold:** Give free gold to any member right now.'));
   assert.ok(coinsHint.description.includes("⚠️ **Note:** There is another way for members to earn gold, by setting an MVP role in **[🎭 Roles]** as an hourly king of the hill reward for active members."));
 
-  const chestsHint = getSettingsHint('chests', 'Mystery Boxes', '🎁', 'Coins', '🪙');
-  assert.equal(chestsHint.title, 'HINT: Mystery Boxes');
+  const chestsHint = getSettingsHint('chests', 'Mystery Crates', '🎁', 'Coins', '🪙');
+  assert.equal(chestsHint.title, 'HINT: Mystery Crates');
   assert.ok(chestsHint.description.includes('⚠️ **Note:**'));
   assert.ok(chestsHint.description.includes('`Tradable`'));
   assert.ok(chestsHint.description.includes('**[🏷️ Items]**'));
@@ -51,25 +51,25 @@ test('getSettingsHint for other pages', () => {
   assert.ok(chestsHint.description.includes('🖼️ **Appearance:**'));
   assert.ok(chestsHint.description.includes('custom closed and opened images'));
   assert.ok(chestsHint.description.includes('✏️ **Edit:**'));
-  assert.ok(chestsHint.description.includes('Select from the menu above to edit or delete any mystery boxes.'));
+  assert.ok(chestsHint.description.includes('Select from the menu above to edit or delete any mystery crates.'));
   assert.ok(chestsHint.description.includes('📦 **Opening:**'));
   assert.ok(chestsHint.description.includes("✅ **What's Next?:**"));
   assert.ok(chestsHint.description.includes('**[📢 Post]**'));
   assert.ok(chestsHint.description.includes('**[⭐ Levels]**'));
 
   const defaultChestsHint = getSettingsHint('chests');
-  assert.equal(defaultChestsHint.title, 'HINT: Chests');
+  assert.equal(defaultChestsHint.title, 'HINT: Rewards');
   assert.ok(defaultChestsHint.description.includes('custom closed and opened images'));
-  assert.ok(defaultChestsHint.description.includes('Select from the menu above to edit or delete any chests.'));
+  assert.ok(defaultChestsHint.description.includes('Select from the menu above to edit or delete any rewards.'));
 
-  const postHint = getSettingsHint('post', 'Chests', '🎁');
+  const postHint = getSettingsHint('post', 'Rewards', '🎁');
   assert.equal(postHint.title, 'HINT: Post');
   assert.ok(postHint.description.includes('⚠️ **Note:**'));
   assert.ok(postHint.description.includes('or add them as level rewards in **[⭐ Levels]**'));
   assert.ok(postHint.description.includes('➕ **New Post:**'));
-  assert.ok(postHint.description.includes('Pick an item, pack, or chests, select the channel, configure it, and publish it into chat.'));
+  assert.ok(postHint.description.includes('Pick an item, pack, or rewards, select the channel, configure it, and publish it into chat.'));
   assert.ok(postHint.description.includes('⚙️ **Config:**'));
-  assert.ok(postHint.description.includes('daily free chests'));
+  assert.ok(postHint.description.includes('daily free rewards'));
   assert.ok(postHint.description.includes('📝 **Edit Post:**'));
   assert.ok(postHint.description.includes('Copy and paste the message link of an already posted item so you can edit its settings later.'));
   assert.ok(postHint.description.includes('🛒 **Buying:** Members click the Buy button directly on the post in chat.'));

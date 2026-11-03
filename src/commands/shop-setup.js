@@ -389,6 +389,9 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
   try {
     const guildId = interaction.guildId;
     const lootBoxCatName = await getLootBoxCategoryName(guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
     const lootBoxEmoji = await getLootBoxCategoryEmoji(guildId);
     const config = await getGuildConfig(guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
@@ -411,7 +414,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
         .setCustomId('shop_lb_select_box')
         .setPlaceholder(`Select ${lootBoxCatName}`)
         .addOptions(lootBoxes.slice(0, 25).map(b => ({
-          label: (b.name || `Unnamed Box #${b.id}`).slice(0, 80),
+          label: (b.name || `Unnamed ${singularName} #${b.id}`).slice(0, 80),
           value: `lb_${b.id}`,
           emoji: parseSelectEmoji(lootBoxEmoji, interaction.guild, '🎁')
         })));
@@ -461,7 +464,7 @@ export async function handleLootBoxesPage(interaction, statusMessage = null) {
     });
 
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot boxes page');
+    await handleInteractionError(interaction, error, 'reward management page');
   }
 }
 
@@ -1435,8 +1438,8 @@ export async function handleAssignCategorySelect(interaction) {
 // NEW ITEM ATTRIBUTE HANDLERS (Item Created panel - no auto-save)
 // ============================================================
 
-export function getTradableOptions(lootBoxName = 'loot boxes') {
-  const name = (lootBoxName && lootBoxName.trim().length > 0) ? lootBoxName.trim() : 'Loot Boxes';
+export function getTradableOptions(lootBoxName = 'Rewards') {
+  const name = (lootBoxName && lootBoxName.trim().length > 0) ? lootBoxName.trim() : 'Rewards';
   return [
     { label: 'Unlocked', value: 'tradable',   emoji: '🔓', description: `Can be traded, dropped, or found in ${name.toLowerCase()}` },
     { label: 'Locked',   value: 'untradable', emoji: '🔒', description: `Cannot be traded, dropped, or found in ${name.toLowerCase()}` }
@@ -2695,8 +2698,10 @@ export async function handleShopPostPublish(interaction) {
     if (item.item_type === 'loot_box' && item.loot_box_id) {
       const box = await getLootBox(item.loot_box_id, interaction.guildId);
       if (!box) {
+        const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+        const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
         return interaction.followUp({
-          content: '❌ Loot box configuration not found.',
+          content: `❌ ${singularName} configuration not found.`,
           flags: MessageFlags.Ephemeral
         });
       }
@@ -3437,7 +3442,7 @@ export async function handleDeleteLootBoxStart(interaction) {
     pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'shop delete lootbox start');
+    await handleInteractionError(interaction, error, 'shop delete item start');
   }
 }
 
@@ -4333,6 +4338,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
     if (isLootBox) {
       const lootBoxes = await getLootBoxes(interaction.guildId);
       const catName = await getLootBoxCategoryName(interaction.guildId);
+      const singularName = (catName.endsWith('s') || catName.endsWith('S')) ? catName.slice(0, -1) : catName;
       const catEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
       if (lootBoxes.length === 0) {
@@ -4349,7 +4355,7 @@ export async function renderAdminBrowser(interaction, contextMap) {
         pageNavPrefix: 'admin_browser_page_',
         pageSize: 20,
         mapOption: b => ({
-          label: (b.name || `Unnamed Box #${b.id}`).slice(0, 100),
+          label: (b.name || `Unnamed ${singularName} #${b.id}`).slice(0, 100),
           value: `lb_${b.id}`,
           emoji: parseSelectEmoji(catEmoji)
         })
@@ -5567,7 +5573,7 @@ export async function handleEditLootBoxStart(interaction) {
     pendingAdminBrowser.set(getAdminBrowserKey(interaction), context);
     await renderAdminBrowser(interaction, context);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'shop edit lootbox start');
+    await handleInteractionError(interaction, error, 'shop edit item start');
   }
 }
 
@@ -6706,7 +6712,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
   const nameInput = new TextInputBuilder()
     .setCustomId('name')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Golden Chest')
+    .setPlaceholder('e.g. Mystery Crate')
     .setRequired(true)
     .setMaxLength(100);
 
@@ -6719,7 +6725,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setRequired(false);
 
   const closedLabel = new LabelBuilder()
-    .setLabel('Closed Box Image')
+    .setLabel('Closed Image')
     .setDescription('Current: None')
     .setFileUploadComponent(closedUpload);
 
@@ -6728,7 +6734,7 @@ export async function handleLootBoxCreateModalStart(interaction) {
     .setRequired(false);
 
   const openedLabel = new LabelBuilder()
-    .setLabel('Opened Box Image')
+    .setLabel('Opened Image')
     .setDescription('Current: None')
     .setFileUploadComponent(openedUpload);
 
@@ -6747,10 +6753,14 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
 
     if (!name || name.length === 0) {
       return interaction.followUp({
-        content: '❌ **Invalid Box Name**: Box name cannot be empty.',
+        content: '❌ **Invalid Name**: Name cannot be empty.',
         flags: MessageFlags.Ephemeral
       });
     }
+
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
+    const catEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
 
     let imageUrl = null;
     let openedImageUrl = null;
@@ -6761,7 +6771,7 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     if (closedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
         filename: closedFile.name,
-        label: `📦 Loot Box (Closed): **${name}**`
+        label: `${catEmoji} ${singularName} (Closed): **${name}**`
       });
       imageUrl = uploadRes.url;
     } else {
@@ -6778,7 +6788,7 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     if (openedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
         filename: openedFile.name,
-        label: `📦 Loot Box (Opened): **${name}**`
+        label: `${catEmoji} ${singularName} (Opened): **${name}**`
       });
       openedImageUrl = uploadRes.url;
     } else {
@@ -6799,23 +6809,18 @@ export async function handleLootBoxCreateModalSubmit(interaction) {
     }
 
     const newBox = await createLootBox(interaction.guildId, { name, imageUrl, openedImageUrl });
-    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-    const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
-    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
-      ? lootBoxCatName.slice(0, -1) 
-      : lootBoxCatName;
 
     sendLog(
       interaction.guild,
       'shop',
       'green',
-      `${lootBoxEmoji || '🎁'} ${singularName} Created`,
+      `${catEmoji || '🎁'} ${singularName} Created`,
       `Admin **<@${interaction.user.id}>** created ${singularName.toLowerCase()} **${newBox.name}**`
     );
 
     await showLootBoxEditorPanel(interaction, newBox.id, `✅ Created ${singularName.toLowerCase()} **${newBox.name}**! Adjust drop chances below:`);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box create submit');
+    await handleInteractionError(interaction, error, 'item create submit');
   }
 }
 
@@ -6834,11 +6839,11 @@ export async function handleLootBoxRenameCatStart(interaction) {
     .setCustomId('cat_name')
     .setLabel('Category Display Name')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g. Chests, Gifts, Loot Boxes')
+    .setPlaceholder('e.g. Crates, Gifts, Packs')
     .setRequired(false)
     .setMaxLength(32);
 
-  if (currentCat && currentCat !== 'Chests') {
+  if (currentCat && currentCat !== 'Rewards') {
     catInput.setValue(currentCat);
   }
 
@@ -6867,8 +6872,9 @@ export async function handleLootBoxRenameCatStart(interaction) {
 export async function handleLootBoxRenameCatSubmit(interaction) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const rawName = interaction.fields.getTextInputValue('cat_name')?.trim();
-    const newName = (rawName || 'Chests').slice(0, 32);
+    const newName = (rawName || lootBoxCatName || 'Rewards').slice(0, 32);
     let rawEmoji = (interaction.fields.getTextInputValue('cat_emoji') || '🎁').trim();
     if (!rawEmoji) rawEmoji = '🎁';
 
@@ -6959,14 +6965,14 @@ export async function handleLootBoxRenameCatSubmit(interaction) {
 
     await handleLootBoxesPage(interaction);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'rename lootbox category');
+    await handleInteractionError(interaction, error, 'rename category');
   }
 }
 
 export function getLootBoxActiveImages(box) {
   const list = [];
-  if (box.image_url) list.push({ key: 'image_url', label: 'Closed Box Image', value: 'clear_closed' });
-  if (box.opened_image_url) list.push({ key: 'opened_image_url', label: 'Opened Box Image', value: 'clear_opened' });
+  if (box.image_url) list.push({ key: 'image_url', label: 'Closed Image', value: 'clear_closed' });
+  if (box.opened_image_url) list.push({ key: 'opened_image_url', label: 'Opened Image', value: 'clear_opened' });
   return list;
 }
 
@@ -7002,13 +7008,14 @@ export function buildLootBoxImageActionMenu(box) {
 export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) {
-      return interaction.editReply({ files: [], attachments: [], content: '❌ Loot box not found.', embeds: [], components: [] });
+      return interaction.editReply({ files: [], attachments: [], content: `❌ ${singularName} not found.`, embeds: [], components: [] });
     }
 
     const lootBoxEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
-    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const config = await getGuildConfig(interaction.guildId);
     const serverCoinEmoji = config?.coin_emoji || DEFAULT_COIN_EMOJI || '🪙';
     const coinName = await getCurrencyName(interaction.guildId);
@@ -7166,7 +7173,7 @@ export async function showLootBoxEditorPanel(interaction, boxId, options = {}) {
       components
     });
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box editor panel');
+    await handleInteractionError(interaction, error, 'item editor panel');
   }
 }
 
@@ -7183,7 +7190,7 @@ export async function showLootBoxImagesModal(interaction, boxId) {
     .setRequired(false);
 
   const closedLabel = new LabelBuilder()
-    .setLabel('Closed Box Image')
+    .setLabel('Closed Image')
     .setDescription(formatCurrentImageDescription(box.image_url))
     .setFileUploadComponent(closedUpload);
 
@@ -7192,7 +7199,7 @@ export async function showLootBoxImagesModal(interaction, boxId) {
     .setRequired(false);
 
   const openedLabel = new LabelBuilder()
-    .setLabel('Opened Box Image')
+    .setLabel('Opened Image')
     .setDescription(formatCurrentImageDescription(box.opened_image_url))
     .setFileUploadComponent(openedUpload);
 
@@ -7242,6 +7249,10 @@ export async function handleLootBoxImagesSubmit(interaction, boxId) {
     const box = await getLootBox(boxId, interaction.guildId);
     if (!box) return;
 
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) ? lootBoxCatName.slice(0, -1) : lootBoxCatName;
+    const catEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+
     let imageUrl = box.image_url || null;
     let openedImageUrl = box.opened_image_url || null;
 
@@ -7251,7 +7262,7 @@ export async function handleLootBoxImagesSubmit(interaction, boxId) {
     if (closedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
         filename: closedFile.name,
-        label: `📦 Loot Box (Closed): **${box.name}**`
+        label: `${catEmoji} ${singularName} (Closed): **${box.name}**`
       });
       imageUrl = uploadRes.url;
     }
@@ -7262,7 +7273,7 @@ export async function handleLootBoxImagesSubmit(interaction, boxId) {
     if (openedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
         filename: openedFile.name,
-        label: `📦 Loot Box (Opened): **${box.name}**`
+        label: `${catEmoji} ${singularName} (Opened): **${box.name}**`
       });
       openedImageUrl = uploadRes.url;
     }
@@ -7270,7 +7281,7 @@ export async function handleLootBoxImagesSubmit(interaction, boxId) {
     await updateLootBox(boxId, interaction.guildId, { imageUrl, openedImageUrl });
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box images submit');
+    await handleInteractionError(interaction, error, 'item images submit');
   }
 }
 
@@ -7313,7 +7324,7 @@ export async function handleLootBoxToggleFeature(interaction, boxId, featureType
 
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'toggle loot box feature');
+    await handleInteractionError(interaction, error, 'toggle item feature');
   }
 }
 
@@ -7336,7 +7347,7 @@ export async function handleLootBoxConfigMenuSelect(interaction) {
       return handleLootBoxCoinsConfigModal(interaction, boxId);
     }
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box config menu');
+    await handleInteractionError(interaction, error, 'item config menu');
   }
 }
 
@@ -7471,7 +7482,7 @@ export async function handleLootBoxRarityRatesSubmit(interaction, boxId) {
 
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box rarity rates submit');
+    await handleInteractionError(interaction, error, 'item rarity rates submit');
   }
 }
 
@@ -7596,7 +7607,7 @@ export async function handleLootBoxCoinsConfigSubmit(interaction, boxId) {
 
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box coins config submit');
+    await handleInteractionError(interaction, error, 'item coins config submit');
   }
 }
 
@@ -7654,9 +7665,14 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
     const minPrizes = parseInt(minPrizesVal, 10);
     const maxPrizes = parseInt(maxPrizesVal, 10);
 
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+
     if (minPrizes < 1) {
       return interaction.followUp({
-        content: '❌ **Invalid Minimum Prizes**: A loot box must award at least 1 prize (Minimum Prizes cannot be 0).',
+        content: `❌ **Invalid Minimum Prizes**: A ${singularName.toLowerCase()} must award at least 1 prize (Minimum Prizes cannot be 0).`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -7670,7 +7686,7 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
 
     if (maxPrizes > 50) {
       return interaction.followUp({
-        content: '❌ **Maximum Prize Limit**: A loot box cannot award more than 50 prizes per open.',
+        content: `❌ **Maximum Prize Limit**: A ${singularName.toLowerCase()} cannot award more than 50 prizes per open.`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -7681,10 +7697,6 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
     });
 
     const box = await getLootBox(boxId, interaction.guildId);
-    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
-      ? lootBoxCatName.slice(0, -1) 
-      : lootBoxCatName;
 
     sendLog(
       interaction.guild,
@@ -7697,7 +7709,7 @@ export async function handleLootBoxPrizeCountSubmit(interaction, boxId) {
 
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box prize count submit');
+    await handleInteractionError(interaction, error, 'item prize count submit');
   }
 }
 
@@ -7716,7 +7728,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setCustomId('name')
     .setStyle(TextInputStyle.Short)
     .setValue(box.name)
-    .setPlaceholder('Golden Chest')
+    .setPlaceholder('e.g. Mystery Crate')
     .setRequired(true)
     .setMaxLength(100);
 
@@ -7729,7 +7741,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const closedLabel = new LabelBuilder()
-    .setLabel('Closed Box Image')
+    .setLabel('Closed Image')
     .setDescription(formatCurrentImageDescription(box.image_url))
     .setFileUploadComponent(closedUpload);
 
@@ -7738,7 +7750,7 @@ export async function handleLootBoxRenameModal(interaction, boxId) {
     .setRequired(false);
 
   const openedLabel = new LabelBuilder()
-    .setLabel('Opened Box Image')
+    .setLabel('Opened Image')
     .setDescription(formatCurrentImageDescription(box.opened_image_url))
     .setFileUploadComponent(openedUpload);
 
@@ -7757,7 +7769,7 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
 
     if (!name || name.length === 0) {
       return interaction.followUp({
-        content: '❌ **Invalid Box Name**: Name cannot be empty.',
+        content: '❌ **Invalid Name**: Name cannot be empty.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -7766,13 +7778,19 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     let imageUrl = oldBox?.image_url || null;
     let openedImageUrl = oldBox?.opened_image_url || null;
 
+    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
+    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
+      ? lootBoxCatName.slice(0, -1) 
+      : lootBoxCatName;
+    const catEmoji = await getLootBoxCategoryEmoji(interaction.guildId);
+
     // 1. Process Closed Image (Upload or text fallback)
     const closedFiles = interaction.fields.getUploadedFiles?.('image_closed_file');
     const closedFile = closedFiles?.first?.() || (Array.isArray(closedFiles) ? closedFiles[0] : null);
     if (closedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, closedFile, {
         filename: closedFile.name,
-        label: `📦 Loot Box (Closed): **${name}**`
+        label: `${catEmoji} ${singularName} (Closed): **${name}**`
       });
       imageUrl = uploadRes.url;
     } else {
@@ -7789,7 +7807,7 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
     if (openedFile) {
       const uploadRes = await uploadHostAsset(interaction.client, 'boxes', interaction.guild, openedFile, {
         filename: openedFile.name,
-        label: `📦 Loot Box (Opened): **${name}**`
+        label: `${catEmoji} ${singularName} (Opened): **${name}**`
       });
       openedImageUrl = uploadRes.url;
     } else {
@@ -7802,11 +7820,6 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
 
     // Mutual fallback: If only one is entered, use for both
     await updateLootBox(boxId, interaction.guildId, { name, imageUrl, openedImageUrl });
-
-    const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
-    const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
-      ? lootBoxCatName.slice(0, -1) 
-      : lootBoxCatName;
 
     const diff = [];
     if (oldBox && oldBox.name !== name) diff.push(`• **Name:** ${oldBox.name} ➡️ ${name}`);
@@ -7823,7 +7836,7 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
 
     await showLootBoxEditorPanel(interaction, boxId);
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box rename submit');
+    await handleInteractionError(interaction, error, 'item rename submit');
   }
 }
 
@@ -7833,15 +7846,14 @@ export async function handleLootBoxRenameSubmit(interaction, boxId) {
 export async function showLootBoxDeleteConfirm(interaction, boxId) {
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   try {
-    const box = await getLootBox(boxId, interaction.guildId);
-    if (!box) {
-      return interaction.editReply({ files: [], attachments: [], content: '❌ Loot box not found.', embeds: [], components: [] });
-    }
-
     const lootBoxCatName = await getLootBoxCategoryName(interaction.guildId);
     const singularName = (lootBoxCatName.endsWith('s') || lootBoxCatName.endsWith('S')) 
       ? lootBoxCatName.slice(0, -1) 
       : lootBoxCatName;
+    const box = await getLootBox(boxId, interaction.guildId);
+    if (!box) {
+      return interaction.editReply({ files: [], attachments: [], content: `❌ ${singularName} not found.`, embeds: [], components: [] });
+    }
 
     const embed = new EmbedBuilder()
       .setColor('#E74C3C')
@@ -7868,7 +7880,7 @@ export async function showLootBoxDeleteConfirm(interaction, boxId) {
 
     await interaction.editReply({ files: [], attachments: [], content: null, embeds: [embed], components: [row] });
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box delete confirm view');
+    await handleInteractionError(interaction, error, 'item delete confirm view');
   }
 }
 
@@ -7901,7 +7913,7 @@ export async function handleLootBoxDeleteConfirm(interaction, boxId) {
       flags: MessageFlags.Ephemeral 
     }).catch(() => {});
   } catch (error) {
-    await handleInteractionError(interaction, error, 'loot box delete execute');
+    await handleInteractionError(interaction, error, 'item delete execute');
   }
 }
 

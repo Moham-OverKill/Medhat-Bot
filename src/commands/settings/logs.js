@@ -33,7 +33,7 @@ export const LOG_CATEGORIES = {
         name: 'Shop',
         emoji: '🛒',
         dbId: 'log_shop_channel_id',
-        desc: 'Logs shop purchases and box openings'
+        desc: 'Logs shop purchases and reward item openings'
     },
     audit: {
         id: 'audit',

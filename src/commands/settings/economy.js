@@ -26,7 +26,7 @@ async function showEconomyDashboard(interaction, view) {
     const guildId = interaction.guildId;
     const coinEmoji = COIN_EMOJI.forGuild(guildId);
     const coinName = COIN_NAME.forGuild(guildId);
-    const lootBoxName = await getLootBoxCategoryName(guildId).catch(() => 'Chests');
+    const lootBoxName = await getLootBoxCategoryName(guildId).catch(() => 'Rewards');
     
     sysLog('Economy Dashboard Opened', { user: interaction.user.id, guild: guildId, detail: `View: ${view}` });
     

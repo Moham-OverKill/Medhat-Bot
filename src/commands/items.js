@@ -52,7 +52,7 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
   const allChests = (lootBoxes || []).map(box => {
     const paired = nonPackItems.find(i => (i.item_type === 'loot_box' || i.loot_box_id) && (String(i.loot_box_id) === String(box.id) || String(i.id) === String(box.shop_item_id)));
     return {
-      id: paired ? paired.id : `box_${box.id}`,
+      id: paired ? paired.id : `lb_${box.id}`,
       loot_box_id: box.id,
       name: box.name,
       description: box.description || paired?.description || null,
@@ -109,7 +109,7 @@ async function buildItemsViewData(guild, targetCatId = null, targetPage = 1) {
   if (allChests.length > 0) {
     availableCategories.push({
       id: 'lootboxes',
-      name: lootBoxCatName || 'Chests',
+      name: lootBoxCatName || 'Rewards',
       emoji: lootBoxEmoji || '🎁',
       items: allChests,
       isLootBox: true

@@ -1042,7 +1042,7 @@ export async function handlePassComponent(interaction) {
         const chestId = parseInt(selectedValue.replace('add_chest_', ''), 10);
         const pool = getPool();
         const chestRes = await pool.query('SELECT name FROM loot_boxes WHERE id = $1 AND guild_id = $2', [chestId, guildId]);
-        const chestName = chestRes.rows[0]?.name || 'Chest';
+        const chestName = chestRes.rows[0]?.name || 'Reward';
         const existRes = await pool.query(
           'SELECT quantity FROM battlepass_rewards WHERE guild_id = $1 AND level = $2 AND reward_type = $3 AND loot_box_id = $4',
           [guildId, level, 'chest', chestId]

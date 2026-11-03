@@ -38,7 +38,7 @@ export const IMAGE_HOST_CHANNELS = {
 export const CATEGORY_THEMES = {
   items: { name: 'Items', color: '#5865F2', hexNumber: 0x5865F2 },
   avatars: { name: 'Avatars', color: '#57F287', hexNumber: 0x57F287 },
-  boxes: { name: 'Loot Boxes', color: '#FEE75C', hexNumber: 0xFEE75C },
+  boxes: { name: 'Rewards', color: '#FEE75C', hexNumber: 0xFEE75C },
   embeds: { name: 'Embeds', color: '#EB459E', hexNumber: 0xEB459E }
 };
 
