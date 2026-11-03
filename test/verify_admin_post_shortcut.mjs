@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { MessageFlags, ChannelType } from 'discord.js';
+import { MessageFlags, ChannelType, ButtonStyle } from 'discord.js';
 import {
   ADMIN_SHORTCUT_REGISTRY,
   getAdminShortcutMeta,
@@ -193,8 +193,16 @@ describe('Admin Interface Post Shortcut & Channel Selection Suite', () => {
     assert.ok(editReplyPayload, 'Must render post gate');
     const buttonRow = editReplyPayload.components[0];
     const backBtn = buttonRow.components[0];
+    const hintBtn = buttonRow.components[1];
+    const editBtn = buttonRow.components[2];
+    const newBtn = buttonRow.components[3];
+
     assert.equal(backBtn.data.custom_id, 'settings_back');
     assert.equal(backBtn.data.disabled, false, 'Back button must be enabled when accessed from /settings');
+    assert.equal(backBtn.data.style, ButtonStyle.Secondary, 'Back button must be gray (Secondary)');
+    assert.equal(hintBtn.data.style, ButtonStyle.Secondary, 'Hint button must be gray (Secondary)');
+    assert.equal(editBtn.data.style, ButtonStyle.Primary, 'Edit Post button must be blue (Primary)');
+    assert.equal(newBtn.data.style, ButtonStyle.Success, 'New Post button must be green (Success)');
   });
 
   it('7. handleShopPostStart includes ChannelSelectMenu and respects editing disable state', async () => {
