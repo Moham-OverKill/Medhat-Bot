@@ -22,6 +22,7 @@ import {
   captureGuildSettings,
   executeServerLockdown,
   executeServerUnpause,
+  inspectServerUnpauseState,
   ELIGIBLE_CHANNEL_TYPES
 } from '../src/commands/settings/pause-engine.js';
 
@@ -475,7 +476,14 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
       guildId: guildA,
       guild: {
         id: guildA,
-        channels: { cache: new Map() }
+        channels: { cache: new Map() },
+        members: {
+          me: {
+            permissions: {
+              has: (flag) => flag === PermissionFlagsBits.Administrator
+            }
+          }
+        }
       },
       deferred: true,
       editReply: async (payload) => {
@@ -509,20 +517,69 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(buttons[1].data.custom_id, 'pause_execute_lockdown');
     assert.equal(buttons[1].data.style, ButtonStyle.Danger);
 
+    // Setup active paused state in database with a backed-up channel
+    mockDb.pause_states.set(guildA, {
+      guild_id: guildA,
+      is_paused: true,
+      paused_at: new Date(),
+      whitelist_channel_ids: []
+    });
+    mockDb.permission_backups.push({
+      guild_id: guildA,
+      channel_id: 'chan_inspect_1',
+      target_id: 'role_test',
+      target_type: 'role',
+      original_allow_bits: '1024',
+      original_deny_bits: '0',
+      was_synthesized: false
+    });
+
     mockInteraction.editReply = async (payload) => {
       unpausePayload = payload;
       return payload;
     };
 
+    // Case 1: chan_inspect_1 is missing from guild channels cache (deleted during pause)
+    // Preflight inspection detects missing channel and renders inspection warnings
     await showUnpauseConfirmScreen(mockInteraction);
 
     assert.ok(unpausePayload);
-    assert.equal(unpausePayload.embeds[0].data.title, '🟢 Confirm Server Unpause');
-    const unpauseButtons = unpausePayload.components[0].components;
-    assert.equal(unpauseButtons[0].data.custom_id, 'pause_cancel_unpause_prompt');
-    assert.equal(unpauseButtons[0].data.style, ButtonStyle.Secondary);
-    assert.equal(unpauseButtons[1].data.custom_id, 'pause_execute_unpause');
-    assert.equal(unpauseButtons[1].data.style, ButtonStyle.Success);
+    assert.equal(unpausePayload.embeds[0].data.title, '⚠️ Unpause Inspection Warnings');
+    assert.ok(unpausePayload.embeds[0].data.description.includes('Missing / Deleted Channels (1)'));
+    const warningButtons = unpausePayload.components[0].components;
+    assert.equal(warningButtons[0].data.custom_id, 'pause_cancel_unpause_prompt');
+    assert.equal(warningButtons[0].data.label, 'Cancel');
+    assert.equal(warningButtons[1].data.custom_id, 'pause_unpause_recheck');
+    assert.equal(warningButtons[1].data.label, 'Try Again');
+    assert.equal(warningButtons[2].data.custom_id, 'pause_execute_unpause_skip');
+    assert.equal(warningButtons[2].data.label, 'Skip & Unpause');
+
+    // Case 2: Channel is restored/present in guild, no missing permissions -> clean confirm
+    const mockChannel = {
+      id: 'chan_inspect_1',
+      name: 'general',
+      type: ChannelType.GuildText,
+      permissionOverwrites: {
+        cache: new Map([
+          ['role_test', {
+            id: 'role_test',
+            allow: { bitfield: 1024n },
+            deny: { bitfield: 0n }
+          }]
+        ])
+      }
+    };
+    mockInteraction.guild.channels.cache.set('chan_inspect_1', mockChannel);
+
+    await showUnpauseConfirmScreen(mockInteraction);
+
+    assert.ok(unpausePayload);
+    assert.equal(unpausePayload.embeds[0].data.title, 'Confirm Server Unpause');
+    const cleanButtons = unpausePayload.components[0].components;
+    assert.equal(cleanButtons[0].data.custom_id, 'pause_cancel_unpause_prompt');
+    assert.equal(cleanButtons[0].data.style, ButtonStyle.Secondary);
+    assert.equal(cleanButtons[1].data.custom_id, 'pause_execute_unpause');
+    assert.equal(cleanButtons[1].data.style, ButtonStyle.Success);
   });
 
   it('9. showMainMenu includes Lock Down as the very last option in Moderate select menu', async () => {
@@ -560,6 +617,136 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(lastOption.data.value, 'mod_pause');
     assert.equal(lastOption.data.label, 'Lock Down');
     assert.equal(lastOption.data.emoji.name, '🛑');
+  });
+
+  it('10. inspectServerUnpauseState accurately detects missing channels, new channels, and missing bot permissions', async () => {
+    const testGuildId = '333333333333333333';
+    mockDb.pause_states.set(testGuildId, {
+      guild_id: testGuildId,
+      is_paused: true,
+      paused_at: new Date(),
+      whitelist_channel_ids: ['whitelisted_chan']
+    });
+
+    mockDb.permission_backups.push(
+      {
+        guild_id: testGuildId,
+        channel_id: 'chan_missing',
+        target_id: 'role_everyone',
+        target_type: 'role',
+        original_allow_bits: '0',
+        original_deny_bits: '1024',
+        was_synthesized: false
+      },
+      {
+        guild_id: testGuildId,
+        channel_id: 'chan_backed_up',
+        target_id: 'role_backed_up',
+        target_type: 'role',
+        original_allow_bits: '1024',
+        original_deny_bits: '0',
+        was_synthesized: false
+      }
+    );
+
+    // Mock guild where bot is missing Administrator, chan_missing is gone, chan_backed_up exists but role is deleted, and chan_new exists
+    const mockGuildWithIssues = {
+      id: testGuildId,
+      members: {
+        me: {
+          permissions: {
+            has: () => false // Missing Administrator
+          }
+        }
+      },
+      roles: { cache: new Map() }, // role_backed_up is missing
+      channels: {
+        cache: new Map([
+          ['chan_backed_up', {
+            id: 'chan_backed_up',
+            name: 'general',
+            type: ChannelType.GuildText,
+            permissionOverwrites: { cache: new Map() }
+          }],
+          ['chan_new', {
+            id: 'chan_new',
+            name: 'new-announcements',
+            type: ChannelType.GuildText
+          }]
+        ])
+      }
+    };
+
+    const inspection = await inspectServerUnpauseState(mockGuildWithIssues);
+
+    assert.equal(inspection.valid, true);
+    assert.equal(inspection.hasIssues, true);
+    assert.deepEqual(inspection.missingPermissions, ['Administrator']);
+    assert.equal(inspection.missingChannels.length, 1);
+    assert.equal(inspection.missingChannels[0].id, 'chan_missing');
+    assert.equal(inspection.newChannels.length, 1);
+    assert.equal(inspection.newChannels[0].id, 'chan_new');
+    assert.equal(inspection.missingRoles.length, 1);
+
+    // Now resolve all issues: grant Administrator, add missing channel, add role
+    const mockRole = { id: 'role_backed_up', name: 'Member' };
+    const mockCleanGuild = {
+      id: testGuildId,
+      members: {
+        me: {
+          permissions: {
+            has: (flag) => flag === PermissionFlagsBits.Administrator
+          }
+        }
+      },
+      roles: {
+        cache: new Map([
+          ['role_backed_up', mockRole],
+          ['role_everyone', { id: 'role_everyone', name: '@everyone' }]
+        ])
+      },
+      channels: {
+        cache: new Map([
+          ['chan_missing', {
+            id: 'chan_missing',
+            name: 'rules',
+            type: ChannelType.GuildText,
+            permissionOverwrites: {
+              cache: new Map([
+                ['role_everyone', {
+                  id: 'role_everyone',
+                  allow: { bitfield: 0n },
+                  deny: { bitfield: 1024n }
+                }]
+              ])
+            }
+          }],
+          ['chan_backed_up', {
+            id: 'chan_backed_up',
+            name: 'general',
+            type: ChannelType.GuildText,
+            permissionOverwrites: {
+              cache: new Map([
+                ['role_backed_up', {
+                  id: 'role_backed_up',
+                  allow: { bitfield: 1024n },
+                  deny: { bitfield: 0n }
+                }]
+              ])
+            }
+          }]
+        ])
+      }
+    };
+
+    const cleanInspection = await inspectServerUnpauseState(mockCleanGuild);
+
+    assert.equal(cleanInspection.valid, true);
+    assert.equal(cleanInspection.hasIssues, false);
+    assert.equal(cleanInspection.missingPermissions.length, 0);
+    assert.equal(cleanInspection.missingChannels.length, 0);
+    assert.equal(cleanInspection.newChannels.length, 0);
+    assert.equal(cleanInspection.missingRoles.length, 0);
   });
 
   after(async () => {

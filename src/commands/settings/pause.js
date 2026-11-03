@@ -13,7 +13,8 @@ import {
 } from '../../storage/pause.js';
 import {
   executeServerLockdown,
-  executeServerUnpause
+  executeServerUnpause,
+  inspectServerUnpauseState
 } from './pause-engine.js';
 import { isBackDisabled } from '../../shared.js';
 import { handleInteractionError } from '../../utils/errors.js';
@@ -196,6 +197,9 @@ export async function showPauseConfirmScreen(interaction) {
 
 /**
  * Show the unpause confirmation screen.
+ * Conducts a preflight inspection of the server state vs the pre-pause snapshot.
+ * If discrepancies are found (missing channels, new channels, missing permissions, deleted roles),
+ * presents an interactive warning screen with Try Again, Skip & Unpause, and Cancel options.
  * 
  * @param {import('discord.js').Interaction} interaction
  */
@@ -205,11 +209,80 @@ export async function showUnpauseConfirmScreen(interaction) {
       await interaction.deferUpdate().catch(() => {});
     }
 
+    const inspection = await inspectServerUnpauseState(interaction.guild);
+
+    if (!inspection.valid) {
+      return showServerLockdownPanel(interaction);
+    }
+
+    if (inspection.hasIssues) {
+      const bullets = [];
+
+      if (inspection.missingChannels.length > 0) {
+        const count = inspection.missingChannels.length;
+        const list = inspection.missingChannels.slice(0, 5).map(c => `<#${c.id}>`).join(', ') +
+          (count > 5 ? ` and ${count - 5} more` : '');
+        bullets.push(`• **Missing / Deleted Channels (${count}):** ${list}\n↳ _These channels were deleted or are inaccessible; they will be skipped during unpause._`);
+      }
+
+      if (inspection.newChannels.length > 0) {
+        const count = inspection.newChannels.length;
+        const list = inspection.newChannels.slice(0, 5).map(c => `<#${c.id}>`).join(', ') +
+          (count > 5 ? ` and ${count - 5} more` : '');
+        bullets.push(`• **New Channels (${count}):** ${list}\n↳ _Created during lockdown; their current permissions will remain untouched._`);
+      }
+
+      if (inspection.missingPermissions.length > 0) {
+        bullets.push(`• **Missing Bot Permissions:** ${inspection.missingPermissions.join(', ')}\n↳ _Medhat requires Administrator permissions to restore all channels._`);
+      }
+
+      if (inspection.missingRoles.length > 0) {
+        const count = inspection.missingRoles.length;
+        bullets.push(`• **Deleted Roles (${count}):**\n↳ _Roles from the pre-pause snapshot were deleted from the server and will be skipped._`);
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('⚠️ Unpause Inspection Warnings')
+        .setColor(0xE67E22)
+        .setDescription(
+          `Changes were detected on your server since the lockdown started:\n\n` +
+          bullets.join('\n\n') + '\n\n' +
+          `You can click **Try Again** after fixing issues, **Skip & Unpause** to restore remaining channels, or **Cancel**.`
+        );
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('pause_cancel_unpause_prompt')
+          .setLabel('Cancel')
+          .setEmoji('❌')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('pause_unpause_recheck')
+          .setLabel('Try Again')
+          .setEmoji('🔄')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('pause_execute_unpause_skip')
+          .setLabel('Skip & Unpause')
+          .setEmoji('⏩')
+          .setStyle(ButtonStyle.Success)
+      );
+
+      return interaction.editReply({
+        files: [],
+        attachments: [],
+        content: null,
+        embeds: [embed],
+        components: [row]
+      });
+    }
+
+    // Clean Confirmation Screen when no issues are detected
     const embed = new EmbedBuilder()
-      .setTitle('🟢 Confirm Server Unpause')
+      .setTitle('Confirm Server Unpause')
       .setColor(0x2ECC71)
       .setDescription(
-        `Are you sure you want to unpause the server?\n\n` +
+        `All channels and permissions are verified and ready to restore.\n\n` +
         `• All channel permissions will be restored back to their exact original pre-pause state.\n` +
         `• Regular members will regain normal access to their channels.\n` +
         `• Backups will be safely verified and cleaned up.`

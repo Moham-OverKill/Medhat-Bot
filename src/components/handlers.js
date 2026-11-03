@@ -578,9 +578,9 @@ export function setupComponentHandlers(client) {
           await showServerLockdownPanel(interaction);
         } else if (customId === 'pause_execute_lockdown') {
           await handlePauseExecute(interaction);
-        } else if (customId === 'pause_unpause_prompt') {
+        } else if (customId === 'pause_unpause_prompt' || customId === 'pause_unpause_recheck') {
           await showUnpauseConfirmScreen(interaction);
-        } else if (customId === 'pause_execute_unpause') {
+        } else if (customId === 'pause_execute_unpause' || customId === 'pause_execute_unpause_skip') {
           await handleUnpauseExecute(interaction);
         }
         return;

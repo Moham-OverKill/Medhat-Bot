@@ -234,6 +234,130 @@ export async function executeServerLockdown(guild, adminUser, whitelistChannelId
 }
 
 /**
+ * Perform a pre-unpause preflight inspection.
+ * Compares current live server state against the pre-pause snapshot.
+ * Detects missing channels, newly created channels, modified permissions, and missing bot permissions.
+ * 
+ * @param {import('discord.js').Guild} guild
+ * @returns {Promise<{
+ *   valid: boolean,
+ *   isPaused: boolean,
+ *   hasIssues: boolean,
+ *   missingChannels: Array<{ id: string }>,
+ *   newChannels: Array<{ id: string, name?: string }>,
+ *   missingPermissions: string[],
+ *   missingRoles: Array<{ id: string, channelId: string }>,
+ *   driftedChannelsCount: number,
+ *   totalBackedUpChannels: number,
+ *   error?: string
+ * }>}
+ */
+export async function inspectServerUnpauseState(guild) {
+  if (!guild || !guild.id) {
+    return { valid: false, isPaused: false, hasIssues: true, error: 'Guild is required.' };
+  }
+
+  const pauseState = await getServerPauseState(guild.id);
+  const backups = await getServerChannelPermissionBackups(guild.id);
+
+  if (!pauseState.is_paused && backups.length === 0) {
+    return { valid: false, isPaused: false, hasIssues: false, error: 'This server is not currently paused.' };
+  }
+
+  // 1. Verify Bot Permissions
+  const missingPermissions = [];
+  const me = guild.members?.me;
+  if (!me || !me.permissions?.has(PermissionFlagsBits.Administrator)) {
+    missingPermissions.push('Administrator');
+  }
+
+  // 2. Identify Backed-Up Channels and Map Overwrites
+  const backedUpChannelIds = new Set(backups.map(b => b.channel_id));
+  const backupsByChannel = new Map();
+  for (const b of backups) {
+    if (!backupsByChannel.has(b.channel_id)) {
+      backupsByChannel.set(b.channel_id, []);
+    }
+    backupsByChannel.get(b.channel_id).push(b);
+  }
+
+  const missingChannels = [];
+  const missingRoles = [];
+  let driftedChannelsCount = 0;
+
+  for (const [channelId, channelBackups] of backupsByChannel.entries()) {
+    let channel = guild.channels?.cache?.get(channelId);
+    if (!channel && typeof guild.channels?.fetch === 'function') {
+      channel = await guild.channels.fetch(channelId).catch(() => null);
+    }
+
+    if (!channel || !channel.permissionOverwrites) {
+      missingChannels.push({ id: channelId });
+      continue;
+    }
+
+    let channelHasDrift = false;
+    for (const backup of channelBackups) {
+      if (backup.target_type === 'role' && guild.roles?.cache && !guild.roles.cache.has(backup.target_id)) {
+        missingRoles.push({ id: backup.target_id, channelId });
+      }
+
+      if (!backup.was_synthesized) {
+        const liveOverwrite = channel.permissionOverwrites.cache?.get(backup.target_id);
+        const targetAllow = BigInt(backup.original_allow_bits);
+        const targetDeny = BigInt(backup.original_deny_bits);
+
+        if (!liveOverwrite) {
+          channelHasDrift = true;
+        } else if (
+          liveOverwrite.allow.bitfield !== targetAllow ||
+          liveOverwrite.deny.bitfield !== targetDeny
+        ) {
+          channelHasDrift = true;
+        }
+      }
+    }
+
+    if (channelHasDrift) {
+      driftedChannelsCount++;
+    }
+  }
+
+  // 3. Identify New Channels created during the pause
+  const whitelistSet = new Set(pauseState.whitelist_channel_ids || []);
+  const newChannels = [];
+
+  if (guild.channels?.cache) {
+    for (const channel of guild.channels.cache.values()) {
+      if (
+        ELIGIBLE_CHANNEL_TYPES.has(channel.type) &&
+        !whitelistSet.has(channel.id) &&
+        !backedUpChannelIds.has(channel.id)
+      ) {
+        newChannels.push({ id: channel.id, name: channel.name });
+      }
+    }
+  }
+
+  const hasIssues = missingChannels.length > 0 ||
+    newChannels.length > 0 ||
+    missingPermissions.length > 0 ||
+    missingRoles.length > 0;
+
+  return {
+    valid: true,
+    isPaused: pauseState.is_paused,
+    hasIssues,
+    missingChannels,
+    newChannels,
+    missingPermissions,
+    missingRoles,
+    driftedChannelsCount,
+    totalBackedUpChannels: backupsByChannel.size
+  };
+}
+
+/**
  * Execute an unpause operation, perfectly restoring channel overwrites and server settings.
  * 
  * @param {import('discord.js').Guild} guild
@@ -291,6 +415,11 @@ export async function executeServerUnpause(guild, adminUser) {
 
         for (const backup of channelBackups) {
           try {
+            if (backup.target_type === 'role' && guild.roles?.cache && !guild.roles.cache.has(backup.target_id)) {
+              sysLog(`Role ${backup.target_id} was deleted during pause; skipping overwrite restoration on channel ${channelId}`);
+              continue;
+            }
+
             if (backup.was_synthesized) {
               // Synthesized @everyone overwrite was added solely for lockdown: delete it
               await channel.permissionOverwrites.delete(backup.target_id, 'Server unpause: remove temporary lockdown overwrite').catch(() => {});
