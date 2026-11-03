@@ -203,11 +203,12 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
   it('2. getSettingsHint resolves straightforward pause hint', () => {
     const hint = getSettingsHint('pause');
     assert.ok(hint, 'Must resolve pause hint');
-    assert.equal(hint.title, 'HINT: Server Lockdown');
+    assert.equal(hint.title, 'HINT: Lockdown');
     assert.ok(hint.description.includes('What it does:'));
     assert.ok(hint.description.includes('Whitelisted Channels:'));
     assert.ok(hint.description.includes('1-Click Restore:'));
     assert.ok(hint.description.includes('Safe & Reversible:'));
+    assert.ok(hint.description.includes('Only channel view permissions are temporarily changed'));
   });
 
   it('3. Strict Multi-Tenant Database Isolation: Server A and Server B do not interfere', async () => {
@@ -465,17 +466,37 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(postState.is_paused, false);
   });
 
-  it('8. UI Panels: showPauseConfirmScreen and showUnpauseConfirmScreen render confirmation controls', async () => {
+  it('8. UI Panels: showPauseConfirmScreen, showUnpauseConfirmScreen, and showServerLockdownPanel render correctly', async () => {
     let confirmPayload = null;
     let unpausePayload = null;
+    let panelPayload = null;
 
     const mockInteraction = {
       guildId: guildA,
+      guild: {
+        id: guildA,
+        channels: { cache: new Map() }
+      },
       deferred: true,
       editReply: async (payload) => {
-        confirmPayload = payload;
+        panelPayload = payload;
         return payload;
       }
+    };
+
+    // Test unpaused panel state
+    await showServerLockdownPanel(mockInteraction);
+    assert.ok(panelPayload);
+    assert.equal(panelPayload.embeds[0].data.title, 'Lockdown');
+    assert.ok(panelPayload.embeds[0].data.description.includes('**Status:** 🟢 **Unpaused**'));
+    assert.ok(panelPayload.embeds[0].data.description.includes('**Whitelisted Channels:**'));
+    assert.ok(!panelPayload.embeds[0].data.description.includes('Normal (Active)'));
+    assert.ok(!panelPayload.embeds[0].data.description.includes('Temporarily hide your server'));
+    assert.ok(!panelPayload.embeds[0].data.description.includes('Select channels below'));
+
+    mockInteraction.editReply = async (payload) => {
+      confirmPayload = payload;
+      return payload;
     };
 
     await showPauseConfirmScreen(mockInteraction);

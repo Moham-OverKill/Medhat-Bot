@@ -38,25 +38,18 @@ export async function showServerLockdownPanel(interaction) {
     const state = await getServerPauseState(guildId);
     const fromAdminHub = isBackDisabled(interaction);
 
+    const whitelistSummary = state.whitelist_channel_ids.length > 0
+      ? state.whitelist_channel_ids.map(id => `<#${id}>`).join(', ')
+      : '_None_';
+
     if (state.is_paused) {
       // --- ACTIVE LOCKDOWN VIEW ---
-      const pausedTimeStr = state.paused_at
-        ? `<t:${Math.floor(state.paused_at.getTime() / 1000)}:R>`
-        : '_Active_';
-
-      const whitelistSummary = state.whitelist_channel_ids.length > 0
-        ? state.whitelist_channel_ids.map(id => `<#${id}>`).join(', ')
-        : '_None (All channels hidden)_';
-
       const embed = new EmbedBuilder()
-        .setTitle('⚠️ SERVER LOCKED DOWN (PAUSED)')
+        .setTitle('Lockdown')
         .setColor(0xE74C3C)
         .setDescription(
-          `**Status:** 🛑 **Locked Down**\n` +
-          `**Active Since:** ${pausedTimeStr}\n\n` +
-          `**Whitelisted Channels (Visible):**\n↳ ${whitelistSummary}\n\n` +
-          `All non-whitelisted channels are currently hidden from non-admin members.\n` +
-          `Existing permissions are securely stored in the database. Click **Unpause Server** below to restore everything.`
+          `**Status:** 🔴 **Paused**\n\n` +
+          `**Whitelisted Channels:**\n↳ ${whitelistSummary}`
         );
 
       const actionRow = new ActionRowBuilder().addComponents(
@@ -87,18 +80,12 @@ export async function showServerLockdownPanel(interaction) {
     }
 
     // --- PRE-PAUSE CONFIGURATION VIEW ---
-    const whitelistSummary = state.whitelist_channel_ids.length > 0
-      ? state.whitelist_channel_ids.map(id => `<#${id}>`).join(', ')
-      : '_None (All channels will be hidden)_';
-
     const embed = new EmbedBuilder()
-      .setTitle('Server Lockdown (Pause)')
+      .setTitle('Lockdown')
       .setColor(0x3498DB)
       .setDescription(
-        `Temporarily hide your server from regular members during emergencies, raids, or maintenance.\n\n` +
-        `**Current Status:** 🟢 **Normal (Active)**\n` +
-        `**Whitelisted Channels (Will Stay Visible):**\n↳ ${whitelistSummary}\n\n` +
-        `*Select channels below that should remain visible to members during the lockdown.*`
+        `**Status:** 🟢 **Unpaused**\n\n` +
+        `**Whitelisted Channels:**\n↳ ${whitelistSummary}`
       );
 
     const channelSelect = new ChannelSelectMenuBuilder()

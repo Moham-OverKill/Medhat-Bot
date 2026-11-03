@@ -67,13 +67,13 @@ export function getSettingsHint(pageKey, lootBoxName = 'Rewards', lootBoxEmoji =
         '📅 **Time Filters:** Click **Per Day**, **Per Week**, or **Per Month** to see your server economy stats over different time periods.'
     },
     pause: {
-      title: 'HINT: Server Lockdown',
+      title: 'HINT: Lockdown',
       description:
         'Temporarily close and hide your server during emergencies, raids, or maintenance.\n\n' +
         '🛑 **What it does:** Instantly hides all channels from regular members so they see 0 channels. Only administrators can see the server while locked down.\n\n' +
         '📋 **Whitelisted Channels:** Pick channels in the dropdown that should stay visible (such as an announcements or rules channel) while the rest of the server is hidden.\n\n' +
         '🟢 **1-Click Restore:** When the emergency is over, clicking **Unpause Server** restores every channel permission back to normal with zero data loss.\n\n' +
-        '🛡️ **Safe & Reversible:** Your server roles, members, and settings are never deleted or modified.'
+        '🛡️ **Safe & Reversible:** Server roles and members are never modified. Only channel view permissions are temporarily changed during lockdown and fully restored when unpaused.'
     }
   };
 
