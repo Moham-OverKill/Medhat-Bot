@@ -247,7 +247,7 @@ export async function showUnpauseConfirmScreen(interaction) {
         .setDescription(
           `Changes were detected on your server since the lockdown started:\n\n` +
           bullets.join('\n\n') + '\n\n' +
-          `You can click **Try Again** after fixing issues, **Skip & Unpause** to restore remaining channels, or **Cancel**.`
+          `You can click **Recheck** after fixing issues, **Skip** to restore remaining channels, or **Cancel**.`
         );
 
       const row = new ActionRowBuilder().addComponents(
@@ -258,12 +258,12 @@ export async function showUnpauseConfirmScreen(interaction) {
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('pause_unpause_recheck')
-          .setLabel('Try Again')
+          .setLabel('Recheck')
           .setEmoji('🔄')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('pause_execute_unpause_skip')
-          .setLabel('Skip & Unpause')
+          .setLabel('Skip')
           .setEmoji('⏩')
           .setStyle(ButtonStyle.Success)
       );

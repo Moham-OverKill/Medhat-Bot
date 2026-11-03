@@ -550,9 +550,9 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(warningButtons[0].data.custom_id, 'pause_cancel_unpause_prompt');
     assert.equal(warningButtons[0].data.label, 'Cancel');
     assert.equal(warningButtons[1].data.custom_id, 'pause_unpause_recheck');
-    assert.equal(warningButtons[1].data.label, 'Try Again');
+    assert.equal(warningButtons[1].data.label, 'Recheck');
     assert.equal(warningButtons[2].data.custom_id, 'pause_execute_unpause_skip');
-    assert.equal(warningButtons[2].data.label, 'Skip & Unpause');
+    assert.equal(warningButtons[2].data.label, 'Skip');
 
     // Case 2: Channel is restored/present in guild, no missing permissions -> clean confirm
     const mockChannel = {
