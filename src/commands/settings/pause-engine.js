@@ -576,13 +576,19 @@ export async function executeServerUnpause(guild, adminUser) {
           editPayload.explicitContentFilter = sb.explicitContentFilter;
         }
         if (sb.afkChannelId !== undefined && sb.afkChannelId !== guild.afkChannelId) {
-          editPayload.afkChannel = sb.afkChannelId;
+          // If the AFK channel was deleted during a long lockdown, omit it so Discord doesn't reject the edit
+          if (!sb.afkChannelId || guild.channels.cache.has(sb.afkChannelId)) {
+            editPayload.afkChannel = sb.afkChannelId;
+          }
         }
         if (sb.afkTimeout !== undefined && sb.afkTimeout !== guild.afkTimeout) {
           editPayload.afkTimeout = sb.afkTimeout;
         }
         if (sb.systemChannelId !== undefined && sb.systemChannelId !== guild.systemChannelId) {
-          editPayload.systemChannel = sb.systemChannelId;
+          // If the system channel was deleted during a long lockdown, omit it
+          if (!sb.systemChannelId || guild.channels.cache.has(sb.systemChannelId)) {
+            editPayload.systemChannel = sb.systemChannelId;
+          }
         }
         if (sb.systemChannelFlags !== undefined && sb.systemChannelFlags !== null && guild.systemChannelFlags && guild.systemChannelFlags.bitfield.toString() !== String(sb.systemChannelFlags)) {
           editPayload.systemChannelFlags = new SystemChannelFlagsBitField(BigInt(sb.systemChannelFlags));
