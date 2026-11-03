@@ -412,6 +412,9 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
             deny: new PermissionsBitField(1024n)
           }]
         ]),
+        set: async (overwrites) => {
+          restoredOverwrites.push({ channelId: 'c1', overwrites });
+        },
         delete: async (targetId) => {
           deletedOverwrites.push({ channelId: 'c1', targetId });
         },
@@ -445,15 +448,14 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(unpauseResult.restoredChannelsCount, 1);
     assert.equal(unpauseResult.skippedChannelsCount, 1, 'Must record 1 deleted channel as safely skipped');
 
-    // Verify synthesized overwrite was deleted
-    assert.equal(deletedOverwrites.length, 1);
-    assert.equal(deletedOverwrites[0].targetId, 'synth_role');
-
-    // Verify pre-existing @everyone overwrite was restored to allow: 1024, deny: 0
+    // Verify pre-existing @everyone overwrite was restored via batch set with allow: '1024', deny: '0'
+    // and synthesized overwrite was cleanly omitted
     assert.equal(restoredOverwrites.length, 1);
-    assert.equal(restoredOverwrites[0].targetId, guildA);
-    assert.equal(restoredOverwrites[0].options.allow, 1024n);
-    assert.equal(restoredOverwrites[0].options.deny, 0n);
+    const setOverwrites = restoredOverwrites[0].overwrites;
+    assert.equal(setOverwrites.length, 1, 'Only pre-existing overwrite must be passed, synthesized must be omitted');
+    assert.equal(setOverwrites[0].id, guildA);
+    assert.equal(setOverwrites[0].allow, '1024');
+    assert.equal(setOverwrites[0].deny, '0');
 
     // Verify guild settings were restored
     assert.ok(editedGuildSettings);
@@ -747,6 +749,83 @@ describe('Server Pause / Lockdown Engine Test Suite', () => {
     assert.equal(cleanInspection.missingChannels.length, 0);
     assert.equal(cleanInspection.newChannels.length, 0);
     assert.equal(cleanInspection.missingRoles.length, 0);
+  });
+
+  it('11. Granular REST Fallback: Restores exact bitfields via rest.put and rest.delete when batch set throws', async () => {
+    const adminUser = { id: '999999999999999999', tag: 'Admin#0001' };
+    const testGuildId = '888888888888888888';
+
+    await recordServerPauseSnapshot(testGuildId, {}, [
+      {
+        channel_id: 'c_fail',
+        target_id: testGuildId,
+        target_type: 'role',
+        original_allow_bits: '0',
+        original_deny_bits: '2048', // E.g., SendMessages denied, ViewChannel neutral
+        was_synthesized: false
+      },
+      {
+        channel_id: 'c_fail',
+        target_id: 'synth_target',
+        target_type: 'role',
+        original_allow_bits: '0',
+        original_deny_bits: '0',
+        was_synthesized: true
+      }
+    ]);
+
+    const restPuts = [];
+    const restDeletes = [];
+
+    const mockChannelFail = {
+      id: 'c_fail',
+      name: 'announcements',
+      permissionOverwrites: {
+        cache: new Map([
+          [testGuildId, {
+            id: testGuildId,
+            allow: new PermissionsBitField(0n),
+            deny: new PermissionsBitField(3072n) // ViewChannel + SendMessages denied
+          }]
+        ]),
+        set: async () => {
+          throw new Error('Simulated batch set network error');
+        }
+      },
+      client: {
+        rest: {
+          put: async (route, data) => {
+            restPuts.push({ route, data });
+          },
+          delete: async (route, options) => {
+            restDeletes.push({ route, options });
+          }
+        }
+      }
+    };
+
+    const mockGuildFail = {
+      id: testGuildId,
+      name: 'Fallback Guild',
+      channels: {
+        cache: new Map([['c_fail', mockChannelFail]])
+      }
+    };
+
+    const result = await executeServerUnpause(mockGuildFail, adminUser);
+
+    assert.equal(result.success, true);
+    assert.equal(result.restoredChannelsCount, 1);
+
+    // Verify REST delete was called for synthesized overwrite
+    assert.equal(restDeletes.length, 1);
+    assert.ok(restDeletes[0].route.includes('synth_target'));
+
+    // Verify REST put was called with exact pre-pause allow/deny bits (SendMessages: 2048 denied, ViewChannel restored)
+    assert.equal(restPuts.length, 1);
+    assert.equal(restPuts[0].data.body.id, testGuildId);
+    assert.equal(restPuts[0].data.body.allow, '0');
+    assert.equal(restPuts[0].data.body.deny, '2048');
   });
 
   after(async () => {

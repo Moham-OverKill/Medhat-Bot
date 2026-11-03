@@ -3,7 +3,8 @@ import {
   ChannelType,
   OverwriteType,
   PermissionsBitField,
-  SystemChannelFlagsBitField
+  SystemChannelFlagsBitField,
+  Routes
 } from 'discord.js';
 import {
   getServerPauseState,
@@ -409,9 +410,10 @@ export async function executeServerUnpause(guild, adminUser) {
     let skippedChannelsCount = 0;
 
     for (const [channelId, channelBackups] of backupsByChannel.entries()) {
+      let channel = null;
       try {
         // Safe channel resolution: check cache or fetch, catch missing/deleted channel
-        const channel = guild.channels.cache.get(channelId) ||
+        channel = guild.channels.cache.get(channelId) ||
           await guild.channels.fetch(channelId).catch(() => null);
 
         if (!channel || !channel.permissionOverwrites) {
@@ -420,51 +422,104 @@ export async function executeServerUnpause(guild, adminUser) {
           continue;
         }
 
+        const targetOverwrites = [];
+
         for (const backup of channelBackups) {
-          try {
-            if (backup.target_type === 'role' && guild.roles?.cache && !guild.roles.cache.has(backup.target_id)) {
-              sysLog(`Role ${backup.target_id} was deleted during pause; skipping overwrite restoration on channel ${channelId}`);
+          // If it was synthesized (@everyone had no overwrite before pause), omission from targetOverwrites deletes it
+          if (backup.was_synthesized) continue;
+
+          // If target is a role, ensure it wasn't deleted from the guild during the pause
+          if (backup.target_type === 'role' && String(backup.target_id) !== String(guild.id)) {
+            if (guild.roles?.cache && !guild.roles.cache.has(backup.target_id)) {
+              sysLog(`Role ${backup.target_id} was deleted during pause; skipping from channel ${channelId}`);
               continue;
             }
+          }
 
-            if (backup.was_synthesized) {
-              // Synthesized @everyone overwrite was added solely for lockdown: delete it
-              await channel.permissionOverwrites.delete(backup.target_id, 'Server unpause: remove temporary lockdown overwrite').catch(() => {});
-            } else {
-              // Pre-existing overwrite: compare live bitfields against pre-pause snapshot
-              const liveOverwrite = channel.permissionOverwrites.cache.get(backup.target_id);
-              const targetAllow = BigInt(backup.original_allow_bits);
-              const targetDeny = BigInt(backup.original_deny_bits);
+          targetOverwrites.push({
+            id: backup.target_id,
+            type: backup.target_type === 'role' ? OverwriteType.Role : OverwriteType.Member,
+            allow: backup.original_allow_bits,
+            deny: backup.original_deny_bits
+          });
+        }
 
-              if (liveOverwrite) {
-                const liveAllow = liveOverwrite.allow.bitfield;
-                const liveDeny = liveOverwrite.deny.bitfield;
+        // Self-healing check: verify if live overwrites already match targetOverwrites to avoid redundant REST calls
+        let needsUpdate = false;
+        const liveCache = channel.permissionOverwrites.cache;
 
-                // Self-healing check: if live overwrite bitfields match snapshot, skip REST edit
-                if (liveAllow === targetAllow && liveDeny === targetDeny) {
-                  continue;
-                }
-              }
-
-              // Restore exact original bitfields (explicitly pass type to prevent redundant member REST fetch)
-              await channel.permissionOverwrites.edit(backup.target_id, {
-                allow: targetAllow,
-                deny: targetDeny
-              }, {
-                type: backup.target_type === 'role' ? OverwriteType.Role : OverwriteType.Member,
-                reason: 'Server unpause: restore pre-pause channel permissions'
-              });
+        if (!liveCache || liveCache.size !== targetOverwrites.length) {
+          needsUpdate = true;
+        } else {
+          for (const target of targetOverwrites) {
+            const live = liveCache.get(target.id);
+            if (!live) {
+              needsUpdate = true;
+              break;
             }
-          } catch (overwriteErr) {
-            sysWarn(`Failed to restore overwrite for target ${backup.target_id} on channel ${channelId}`, overwriteErr);
+            if (
+              live.allow.bitfield.toString() !== String(target.allow) ||
+              live.deny.bitfield.toString() !== String(target.deny)
+            ) {
+              needsUpdate = true;
+              break;
+            }
+          }
+        }
+
+        if (needsUpdate) {
+          if (typeof channel.permissionOverwrites.set === 'function') {
+            await channel.permissionOverwrites.set(
+              targetOverwrites,
+              'Server unpause: restore pre-pause channel permissions'
+            );
+          } else {
+            await channel.edit({
+              permissionOverwrites: targetOverwrites,
+              reason: 'Server unpause: restore pre-pause channel permissions'
+            });
           }
         }
 
         restoredChannelsCount++;
         await sleep(100);
       } catch (channelErr) {
-        sysWarn(`Error restoring channel ${channelId}`, channelErr);
-        skippedChannelsCount++;
+        sysWarn(`Primary batch restore failed for channel ${channelId}, attempting granular REST fallback`, channelErr);
+
+        try {
+          if (channel?.client?.rest) {
+            for (const backup of channelBackups) {
+              if (backup.was_synthesized) {
+                await channel.client.rest.delete(
+                  Routes.channelPermission(channel.id, backup.target_id),
+                  { reason: 'Server unpause: remove temporary lockdown overwrite' }
+                ).catch(() => {});
+              } else {
+                const type = backup.target_type === 'role' ? OverwriteType.Role : OverwriteType.Member;
+                await channel.client.rest.put(
+                  Routes.channelPermission(channel.id, backup.target_id),
+                  {
+                    body: {
+                      id: backup.target_id,
+                      type,
+                      allow: String(backup.original_allow_bits),
+                      deny: String(backup.original_deny_bits)
+                    },
+                    reason: 'Server unpause: restore pre-pause channel permissions'
+                  }
+                ).catch(err => {
+                  sysWarn(`Fallback REST put failed for overwrite ${backup.target_id} on channel ${channelId}`, err);
+                });
+              }
+            }
+            restoredChannelsCount++;
+          } else {
+            skippedChannelsCount++;
+          }
+        } catch (fallbackErr) {
+          sysWarn(`Granular fallback restore failed for channel ${channelId}`, fallbackErr);
+          skippedChannelsCount++;
+        }
       }
     }
 
