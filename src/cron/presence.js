@@ -4,46 +4,44 @@ import { sysLog, sysError } from '../utils/logger.js';
 
 /**
  * Cat-themed status list
- * XX will be replaced with client.guilds.cache.size
  */
 const CAT_STATUSES = [
-  "XX Servers | Meow Meow?",
-  "XX Servers | I smell catnip!",
-  "XX Servers | Under your bed",
-  "XX Servers | Looking for dry food",
-  "XX Servers | Searching your trash can",
-  "XX Servers | Watching you sleep...",
-  "XX Servers | Chasing a mouse!",
-  "XX Servers | Chewing your cables",
-  "XX Servers | Catching red dots!",
-  "XX Servers | Zzz . . .",
-  "XX Servers | Unrolling toilet paper",
-  "XX Servers | Scratching new sofa",
-  "XX Servers | Knocking cups off tables",
-  "XX Servers | Walking across keyboards",
-  "XX Servers | Staring at empty corners",
-  "XX Servers | Hissing at the vacuum cleaner",
-  "XX Servers | Sitting in a cardboard box",
-  "XX Servers | Plotting world domination",
-  "XX Servers | Spying from high shelves...",
-  "XX Servers | Watching birds through window...",
-  "XX Servers | Loaf mode activated!",
-  "XX Servers | Purring like an engine!",
-  "XX Servers | Demanding attention!!",
-  "XX Servers | Judging your life choices..."
+  "Meow Meow?",
+  "I smell catnip!",
+  "Under your bed",
+  "Looking for dry food",
+  "Searching your trash can",
+  "Watching you sleep...",
+  "Chasing a mouse!",
+  "Chewing your cables",
+  "Catching red dots!",
+  "Zzz . . .",
+  "Unrolling toilet paper",
+  "Scratching new sofa",
+  "Knocking cups off tables",
+  "Walking across keyboards",
+  "Staring at empty corners",
+  "Hissing at the vacuum cleaner",
+  "Sitting in a cardboard box",
+  "Plotting world domination",
+  "Spying from high shelves...",
+  "Watching birds through window...",
+  "Loaf mode activated!",
+  "Purring like an engine!",
+  "Demanding attention!!",
+  "Judging your life choices..."
 ];
 
 let lastStatusIndex = -1;
-let presenceDebounceTimeout = null;
 
 /**
- * Updates the bot's rich presence with a random cat status or updates the count for the active phrase
+ * Updates the bot's rich presence with a random cat status
  * @param {import('discord.js').Client} client 
- * @param {boolean} [preservePhrase=false] If true, retains current phrase and updates server count only
+ * @param {boolean} [preservePhrase=false] If true, retains current phrase
  */
 export function updateBotPresence(client, preservePhrase = false) {
   if (!client?.user) return;
-  let statusText = `${client.guilds.cache.size} Servers`;
+  let statusText = 'Medhat';
   try {
     let selectedIndex = lastStatusIndex;
 
@@ -63,8 +61,7 @@ export function updateBotPresence(client, preservePhrase = false) {
       lastStatusIndex = selectedIndex;
     }
 
-    const rawStatus = CAT_STATUSES[selectedIndex];
-    statusText = rawStatus.replace('XX', client.guilds.cache.size);
+    statusText = CAT_STATUSES[selectedIndex] || 'Medhat';
 
     client.user.setPresence({
       status: 'online',
@@ -100,22 +97,12 @@ export function startPresenceRotation(client) {
     timezone: "Africa/Cairo"
   });
 
-  // Debounced live update handler for guild join/leave events
-  const queueRealtimeSync = () => {
-    if (presenceDebounceTimeout) clearTimeout(presenceDebounceTimeout);
-    presenceDebounceTimeout = setTimeout(() => {
-      updateBotPresence(client, true);
-    }, 2000);
-  };
-
   client.on(Events.GuildCreate, (guild) => {
     sysLog('Infrastructure Audit', { detail: `Bot added to server: "${guild.name}" (${guild.id}). Live count: ${client.guilds.cache.size}` });
-    queueRealtimeSync();
   });
 
   client.on(Events.GuildDelete, (guild) => {
     sysLog('Infrastructure Audit', { detail: `Bot removed from server: "${guild.name || 'Unknown'}" (${guild.id}). Live count: ${client.guilds.cache.size}` });
-    queueRealtimeSync();
   });
 
   sysLog('Infrastructure Audit', { detail: 'Hourly Presence Rotator & Live Guild Listeners initialized (Timezone: Africa/Cairo)' });
