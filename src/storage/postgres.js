@@ -407,6 +407,7 @@ async function createTables() {
         daily_streak INTEGER NOT NULL DEFAULT 0,
         last_daily TIMESTAMP WITH TIME ZONE,
         last_lost_streak INTEGER DEFAULT 0,
+        highest_streak INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, guild_id)
@@ -420,11 +421,18 @@ async function createTables() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_balances' AND column_name='last_lost_streak') THEN 
           ALTER TABLE user_balances ADD COLUMN last_lost_streak INTEGER DEFAULT 0; 
         END IF; 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_balances' AND column_name='highest_streak') THEN 
+          ALTER TABLE user_balances ADD COLUMN highest_streak INTEGER NOT NULL DEFAULT 0; 
+        END IF; 
       END $$;
     `);
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_user_balances_guild_id ON user_balances(guild_id);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_balances_highest_streak ON user_balances(guild_id, highest_streak DESC);
     `);
 
     // Ensure composite unique index exists to safely support both (user_id, guild_id) and (guild_id, user_id) conflict targets
@@ -1854,6 +1862,85 @@ async function createTables() {
       }
     } catch (e) {
       sysError('Downtime Streak Protection Migration Error', e);
+    }
+
+    // Self-healing migration: Backfill all-time highest streaks from DB baseline and transactions
+    try {
+      const checkBackfill = await pool.query(
+        "SELECT 1 FROM bot_migrations WHERE migration_name = 'backfill_highest_streaks_v1'"
+      );
+      if (checkBackfill.rows.length === 0) {
+        // Phase 1: Database Baseline Backfill (GREATEST of daily_streak and last_lost_streak)
+        const baselineRes = await pool.query(`
+          UPDATE user_balances
+          SET highest_streak = GREATEST(daily_streak, last_lost_streak, COALESCE(highest_streak, 0))
+          WHERE highest_streak < GREATEST(daily_streak, last_lost_streak)
+        `);
+
+        // Phase 2: Transaction History Analysis (Gaps-and-islands over the past 6 months)
+        let txUpdatedCount = 0;
+        try {
+          const txRes = await pool.query(`
+            WITH daily_claims AS (
+              SELECT DISTINCT 
+                user_id, 
+                guild_id, 
+                (created_at AT TIME ZONE 'Africa/Cairo')::date AS claim_date
+              FROM transactions
+              WHERE type = 'daily'
+            ),
+            ranked_claims AS (
+              SELECT 
+                user_id,
+                guild_id,
+                claim_date,
+                claim_date - (DENSE_RANK() OVER (PARTITION BY user_id, guild_id ORDER BY claim_date))::int AS grp
+              FROM daily_claims
+            ),
+            streak_groups AS (
+              SELECT 
+                user_id,
+                guild_id,
+                COUNT(*) AS streak_len
+              FROM ranked_claims
+              GROUP BY user_id, guild_id, grp
+            ),
+            max_streaks AS (
+              SELECT 
+                user_id,
+                guild_id,
+                MAX(streak_len) AS max_streak
+              FROM streak_groups
+              GROUP BY user_id, guild_id
+            )
+            UPDATE user_balances ub
+            SET highest_streak = GREATEST(ub.highest_streak, ms.max_streak)
+            FROM max_streaks ms
+            WHERE ub.user_id = ms.user_id 
+              AND ub.guild_id = ms.guild_id
+              AND ub.highest_streak < ms.max_streak
+          `);
+          txUpdatedCount = txRes.rowCount || 0;
+        } catch (txErr) {
+          sysWarn('Transaction Streak Analysis Warning', txErr);
+        }
+
+        await pool.query(
+          `INSERT INTO bot_migrations (migration_name, details)
+           VALUES ('backfill_highest_streaks_v1', jsonb_build_object(
+             'baseline_updated', $1::int,
+             'transactions_updated', $2::int
+           ))
+           ON CONFLICT DO NOTHING`,
+          [baselineRes.rowCount || 0, txUpdatedCount]
+        );
+
+        sysLog('Highest Streaks Backfill Complete', {
+          detail: `Baseline accounts updated: ${baselineRes.rowCount || 0} | Transaction chains promoted: ${txUpdatedCount}`
+        });
+      }
+    } catch (backfillErr) {
+      sysError('Highest Streak Backfill Migration Error', backfillErr);
     }
 
     try {

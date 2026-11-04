@@ -539,6 +539,11 @@ client.once(Events.ClientReady, async () => {
       initializeImageHostStartupTest(client).catch(err => sysError('Image Host Startup Init Failed', err));
     }).catch(() => {});
 
+    // Historical streak backfill sweep from Discord log channels (runs non-blocking in background)
+    import('./cron/streak-log-scanner.js').then(({ runDiscordStreakLogSweep }) => {
+      runDiscordStreakLogSweep(client).catch(err => sysError('Startup Streak Sweep Failed', err));
+    }).catch(() => {});
+
     emitPhase('ready', `Startup complete in ${Math.round(performance.now() - startupContext.startedAt)}ms`);
     const totalBootMs = Math.round(performance.now() - startupContext.startedAt);
     logger.info('STARTUP', `Bot fully booted and operational in ${totalBootMs}ms`, {

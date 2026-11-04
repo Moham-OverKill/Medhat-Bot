@@ -139,8 +139,8 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     if (userResult.rows.length === 0) {
       // Create new user atomically
       const createResult = await client.query(
-        `INSERT INTO user_balances (user_id, guild_id, balance, daily_streak)
-         VALUES ($1, $2, 0, 0)
+        `INSERT INTO user_balances (user_id, guild_id, balance, daily_streak, highest_streak)
+         VALUES ($1, $2, 0, 0, 0)
          ON CONFLICT (user_id, guild_id) DO UPDATE SET updated_at = NOW()
          RETURNING *`,
         [userId, guildId]
@@ -152,7 +152,7 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     }
 
     if (!userData) {
-      userData = { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0 };
+      userData = { balance: 0, daily_streak: 0, last_daily: null, last_lost_streak: 0, highest_streak: 0 };
     }
 
     // ========== STATIC CAIRO MIDNIGHT RESET LOGIC ==========
@@ -235,12 +235,13 @@ export async function claimDaily(userId, guildId, username, isBooster = false) {
     // --- 3. Increment Streak (AFTER Calculation) ---
     const newStreak = currentStreak + 1;
 
-    // Atomic Update balance and streak
+    // Atomic Update balance and streak (promoting highest_streak if beat)
     const updateResult = await client.query(
       `UPDATE user_balances 
        SET balance = balance + $1,
            last_daily = NOW(),
            daily_streak = $2,
+           highest_streak = GREATEST(COALESCE(highest_streak, 0), $2),
            total_earned = total_earned + $1,
            updated_at = NOW()
        WHERE user_id = $3 AND guild_id = $4

@@ -371,10 +371,15 @@ export async function handleStreakModal(interaction) {
             targetLastDaily = new Date(yesterdayStr + 'T12:00:00Z');
         }
 
-        // Upsert database entry
+        // Upsert database entry (promoting highest_streak if new streak exceeds it)
         await pool.query(
-            `INSERT INTO user_balances (user_id, guild_id, daily_streak, last_daily, balance) VALUES ($1, $2, $3, $4, 0)
-             ON CONFLICT (user_id, guild_id) DO UPDATE SET daily_streak = $3, last_daily = $4, updated_at = NOW()`,
+            `INSERT INTO user_balances (user_id, guild_id, daily_streak, last_daily, balance, highest_streak) 
+             VALUES ($1, $2, $3, $4, 0, $3)
+             ON CONFLICT (user_id, guild_id) DO UPDATE SET 
+                daily_streak = $3, 
+                last_daily = $4, 
+                highest_streak = GREATEST(COALESCE(user_balances.highest_streak, 0), $3),
+                updated_at = NOW()`,
             [targetUserId, guildId, newStreak, targetLastDaily]
         );
 
