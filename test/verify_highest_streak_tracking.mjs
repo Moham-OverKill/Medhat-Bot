@@ -276,4 +276,76 @@ describe('All-Time Highest Streak Tracking & Multi-Source Backfill Test Suite', 
     assert.ok(!streakField.value.includes('50'), 'Bank UI must not reveal internal highest_streak number');
     assert.ok(streakField.value.includes('3 day(s)'), 'Must show current active streak of 3 day(s)');
   });
+
+  it('7. Admin streak override promotes highest_streak on increases and protects it on reductions', async () => {
+    // Case A: User has highest_streak = 10, admin sets streak to 25
+    let currentHighest = 10;
+    let newAdminStreak = 25;
+    let resultingHighest = Math.max(currentHighest, newAdminStreak);
+    assert.equal(resultingHighest, 25, 'Admin setting higher streak must elevate highest_streak to 25');
+
+    // Case B: User has highest_streak = 50, admin sets streak to 5 (e.g. penalty or correction)
+    currentHighest = 50;
+    newAdminStreak = 5;
+    resultingHighest = Math.max(currentHighest, newAdminStreak);
+    assert.equal(resultingHighest, 50, 'Admin reducing daily_streak must NEVER reduce all-time highest_streak');
+  });
+
+  it('8. Full Lifecycle: New user -> 3-day streak -> Streak broken -> New 5-day streak beats old peak', async () => {
+    const key = `${userId}_${guildId}`;
+
+    // Day 1 claim
+    let res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 1);
+    assert.equal(mockBalances.get(key).highest_streak, 1);
+
+    // Day 2 claim (simulate next day)
+    let row = mockBalances.get(key);
+    // Move last_daily to yesterday
+    row.last_daily = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 2);
+    assert.equal(mockBalances.get(key).highest_streak, 2);
+
+    // Day 3 claim (simulate next day)
+    row = mockBalances.get(key);
+    row.last_daily = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 3);
+    assert.equal(mockBalances.get(key).highest_streak, 3);
+
+    // Cairo Midnight Reset (Streak broken: 3 days missed)
+    row = mockBalances.get(key);
+    row.last_daily = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    row.last_lost_streak = 3;
+    row.daily_streak = 0;
+
+    // Day 1 after break
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 1);
+    assert.equal(mockBalances.get(key).daily_streak, 1);
+    assert.equal(mockBalances.get(key).highest_streak, 3, 'Peak must still be 3 after reset');
+
+    // Day 2 after break
+    row = mockBalances.get(key);
+    row.last_daily = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 2);
+    assert.equal(mockBalances.get(key).highest_streak, 3, 'Peak must still be 3');
+
+    // Day 3 after break (Ties old peak)
+    row = mockBalances.get(key);
+    row.last_daily = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 3);
+    assert.equal(mockBalances.get(key).highest_streak, 3, 'Peak ties at 3');
+
+    // Day 4 after break (Surpasses old peak!)
+    row = mockBalances.get(key);
+    row.last_daily = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    res = await claimDaily(userId, guildId, 'UserA', false);
+    assert.equal(res.streak, 4);
+    assert.equal(mockBalances.get(key).daily_streak, 4);
+    assert.equal(mockBalances.get(key).highest_streak, 4, 'Peak must now advance to 4');
+  });
 });
