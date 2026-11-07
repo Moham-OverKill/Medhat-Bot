@@ -636,50 +636,143 @@ export async function buildColorPanelPayload(guild, type = 'normal', panelIndex 
 }
 
 /**
+ * Validate that the bot has Manage Roles permission and sits strictly higher than
+ * all color roles currently configured in the list to be published.
+ * 
+ * @param {import('discord.js').Guild} guild 
+ * @param {boolean} isBooster 
+ * @returns {Promise<{ valid: boolean, hasManageRoles: boolean, higherRolesCount: number, botHighestRole: import('discord.js').Role | null, emptyList: boolean, error?: string }>}
+ */
+export async function validateColorRolesPrerequisites(guild, isBooster) {
+  const botMember = guild.members?.me || await guild.members.fetchMe().catch(() => null);
+  if (!botMember) {
+    return {
+      valid: false,
+      hasManageRoles: false,
+      higherRolesCount: 0,
+      botHighestRole: null,
+      emptyList: false,
+      error: 'Unable to fetch bot member.'
+    };
+  }
+
+  // 1. Check Manage Roles permission
+  const hasManageRoles = botMember.permissions.has(PermissionFlagsBits.ManageRoles);
+
+  // 2. Fetch color roles from database and guild roles
+  const colors = await getColorRoles(guild.id, isBooster);
+  if (!colors || colors.length === 0) {
+    return {
+      valid: false,
+      hasManageRoles,
+      higherRolesCount: 0,
+      botHighestRole: botMember.roles.highest,
+      emptyList: true
+    };
+  }
+
+  const allRoles = await guild.roles.fetch();
+  let higherRolesCount = 0;
+
+  for (const c of colors) {
+    const role = allRoles.get(c.roleId);
+    if (!role) continue; // Deleted or missing roles are skipped
+    if (role.position >= botMember.roles.highest.position) {
+      higherRolesCount++;
+    }
+  }
+
+  const valid = hasManageRoles && higherRolesCount === 0;
+
+  return {
+    valid,
+    hasManageRoles,
+    higherRolesCount,
+    botHighestRole: botMember.roles.highest,
+    emptyList: false
+  };
+}
+
+/**
+ * Build the private warning embed when color roles cannot be published
+ * 
+ * @param {Awaited<ReturnType<typeof validateColorRolesPrerequisites>>} prereq 
+ * @param {boolean} isBooster 
+ * @returns {EmbedBuilder}
+ */
+export function buildColorRolesWarningEmbed(prereq, isBooster) {
+  const embed = new EmbedBuilder()
+    .setTitle('⚠️ Cannot Create Color Panel')
+    .setColor(0xE67E22);
+
+  const bullets = [];
+  const botRoleMention = prereq.botHighestRole ? `<@&${prereq.botHighestRole.id}>` : 'the bot role';
+
+  if (!prereq.hasManageRoles) {
+    bullets.push(
+      `• **Missing Permission:** Medhat lacks the **Manage Roles** permission.\n↳ **Solution:** Go to **Server Settings → Roles**, edit Medhat's role, and enable **Manage Roles**.`
+    );
+  }
+
+  if (prereq.higherRolesCount > 0) {
+    bullets.push(
+      `• **Role Hierarchy Conflict:** **${prereq.higherRolesCount}** color role(s) are positioned above or equal to Medhat's highest role (${botRoleMention}).\n↳ **Solution:** In **Server Settings → Roles**, drag the ${botRoleMention} role ABOVE all color roles.`
+    );
+  }
+
+  embed.setDescription(
+    `Medhat cannot publish the color panels because it is unable to assign the configured color roles to members:\n\n` +
+    bullets.join('\n\n') + '\n\n' +
+    `_Resolve the issue(s) above, dismiss this message, and click **Create Panel** again._`
+  );
+
+  return embed;
+}
+
+/**
  * Deploy generated color panels to the selected target channel
  */
 async function deployColorPanels(interaction, type, channelId) {
   const guildId = interaction.guildId;
   const isBooster = type === 'booster';
   const guild = interaction.guild || await interaction.client.guilds.fetch(guildId);
+
+  // 1. Preflight Validation: Manage Roles permission & Role Hierarchy
+  const prereqCheck = await validateColorRolesPrerequisites(guild, isBooster);
+
+  if (prereqCheck.emptyList) {
+    return await interaction.followUp({
+      content: `❌ Add ${isBooster ? 'Booster ' : ''}color roles first before creating a panel!`,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (!prereqCheck.valid) {
+    const warningEmbed = buildColorRolesWarningEmbed(prereqCheck, isBooster);
+    return await interaction.followUp({
+      embeds: [warningEmbed],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
   const targetChannel = (channelId && channelId === interaction.channelId && interaction.channel)
     ? interaction.channel
     : await guild.channels.fetch(channelId).catch(() => null);
 
   if (!targetChannel || !targetChannel.isTextBased()) {
-    return interaction.editReply({
+    return await interaction.followUp({
       content: '❌ Invalid target channel. Please select an active text channel.',
-      embeds: [],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-        )
-      ],
-      files: [], attachments: []
+      flags: MessageFlags.Ephemeral
     });
   }
 
-  // Permission verification
+  // Permission verification for target channel
   const botMember = await guild.members.fetchMe().catch(() => null);
   const perms = targetChannel.permissionsFor(botMember);
   if (!perms?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles])) {
-    return interaction.editReply({
-      content: `❌ **Missing Permissions:** I need permissions to **View Channel**, **Send Messages**, and **Attach Files** in <#${channelId}>.`,
-      embeds: [],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-        )
-      ],
-      files: [], attachments: []
+    return await interaction.followUp({
+      content: `❌ **Missing Channel Permissions:** I need permissions to **View Channel**, **Send Messages**, and **Attach Files** in <#${channelId}>.`,
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -701,19 +794,9 @@ async function deployColorPanels(interaction, type, channelId) {
     .sort((a, b) => b.position - a.position);
 
   if (sortedColors.length === 0) {
-    return interaction.editReply({
+    return await interaction.followUp({
       content: '❌ No valid color roles available to post.',
-      embeds: [],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`colors_preview_back_${type}`)
-            .setLabel('Back')
-            .setEmoji('⬅️')
-            .setStyle(ButtonStyle.Secondary)
-        )
-      ],
-      files: [], attachments: []
+      flags: MessageFlags.Ephemeral
     });
   }
 
