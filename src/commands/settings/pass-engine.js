@@ -182,23 +182,35 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
     if (!Number.isFinite(finalXp) || finalXp <= 0) return;
 
     // Atomically increment battlepass_xp
-    await pool.query(
+    const updateResult = await pool.query(
       `INSERT INTO user_activity (user_id, guild_id, username, battlepass_xp)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (user_id, guild_id)
        DO UPDATE SET
          battlepass_xp = user_activity.battlepass_xp + $4,
-         username = COALESCE($3, user_activity.username)`,
+         username = COALESCE($3, user_activity.username)
+       RETURNING user_activity.battlepass_xp`,
       [userId, guildId, username, finalXp]
     );
+
+    const newXp = parseFloat(updateResult.rows[0]?.battlepass_xp || 0);
+    const prevXp = Math.max(0, newXp - finalXp);
+
+    const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+    const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
+
+    const { level: oldLevel } = calculateLevelFromXp(prevXp, baseXp, incrementXp);
+    const { level: newLevel } = calculateLevelFromXp(newXp, baseXp, incrementXp);
 
     // Record toward weekly activity summary
     import('../../cron/weeklySummary.js')
       .then(({ recordWeeklyXp }) => recordWeeklyXp(guildId, userId, username, finalXp))
       .catch(() => {});
 
-    // Dispatch any newly qualified level rewards
-    await syncUserLevelRewards(guildId, userId, username, client);
+    // Only dispatch rewards when the user's level actually increases!
+    if (newLevel > oldLevel) {
+      await syncUserLevelRewards(guildId, userId, username, client, newLevel, newXp);
+    }
   } catch (err) {
     sysError('Level XP Engine Failed', err, { guild: guildId, user: userId });
   }
@@ -207,7 +219,7 @@ export async function awardBattlepassXp(guildId, userId, username, xpToAdd, clie
 /**
  * Check a user's current XP and dispatch rewards for any newly qualified unclaimed levels.
  */
-export async function syncUserLevelRewards(guildId, userId, username, client = null) {
+export async function syncUserLevelRewards(guildId, userId, username, client = null, precomputedLevel = null, precomputedXp = null) {
   if (!guildId || !userId) return;
 
   try {
@@ -222,16 +234,23 @@ export async function syncUserLevelRewards(guildId, userId, username, client = n
 
     const pool = getPool();
 
-    const xpResult = await pool.query(
-      `SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
-      [guildId, userId]
-    );
-    const totalXp = parseFloat(xpResult.rows[0]?.battlepass_xp || 0);
-    if (totalXp <= 0) return;
+    let totalXp = precomputedXp;
+    let currentLevel = precomputedLevel;
 
-    const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
-    const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
-    const { level: currentLevel } = calculateLevelFromXp(totalXp, baseXp, incrementXp);
+    if (totalXp === null || currentLevel === null) {
+      const xpResult = await pool.query(
+        `SELECT battlepass_xp FROM user_activity WHERE guild_id = $1 AND user_id = $2`,
+        [guildId, userId]
+      );
+      totalXp = parseFloat(xpResult.rows[0]?.battlepass_xp || 0);
+      if (totalXp <= 0) return;
+
+      const baseXp = Math.max(1, parseInt(config.battlepass_base_xp ?? config.battlepass_xp_per_level, 10) || 100);
+      const incrementXp = Math.max(1, parseInt(config.battlepass_xp_increment, 10) > 0 ? parseInt(config.battlepass_xp_increment, 10) : 50);
+      const levelCalc = calculateLevelFromXp(totalXp, baseXp, incrementXp);
+      currentLevel = levelCalc.level;
+    }
+
     if (currentLevel <= 0) return;
 
     const levelsResult = await pool.query(

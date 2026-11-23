@@ -188,69 +188,76 @@ export async function flushWeeklyActivityBatch() {
   try {
     await ensureWeeklyActivityTable();
     const pool = getPool();
-    const client = await pool.connect();
 
-    try {
-      await client.query('BEGIN');
-      for (const entry of entriesToFlush) {
-        await client.query(
-          `INSERT INTO user_weekly_activity (
-             guild_id, user_id, username,
-             messages_count, voice_minutes, voice_calls_count,
-             media_count, reactions_count, reactions_received_count,
-             total_xp_gained, updated_at
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, GREATEST(0, $8), GREATEST(0, $9), $10, NOW())
-           ON CONFLICT (guild_id, user_id)
-           DO UPDATE SET
-             messages_count = user_weekly_activity.messages_count + $4,
-             voice_minutes = user_weekly_activity.voice_minutes + $5,
-             voice_calls_count = user_weekly_activity.voice_calls_count + $6,
-             media_count = user_weekly_activity.media_count + $7,
-             reactions_count = GREATEST(0, user_weekly_activity.reactions_count + $8),
-             reactions_received_count = GREATEST(0, user_weekly_activity.reactions_received_count + $9),
-             total_xp_gained = user_weekly_activity.total_xp_gained + $10,
-             username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
-             updated_at = NOW()`,
-          [
-            entry.guildId,
-            entry.userId,
-            entry.username,
-            entry.messages,
-            entry.voiceMinutes,
-            entry.voiceCalls,
-            entry.media,
-            entry.reactions,
-            entry.reactionsReceived,
-            entry.xp
-          ]
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      // Re-queue entries on failure
-      for (const entry of entriesToFlush) {
-        const key = `${entry.guildId}:${entry.userId}`;
-        const existing = pendingWeeklyBatch.get(key);
-        if (existing) {
-          existing.messages += entry.messages;
-          existing.voiceMinutes += entry.voiceMinutes;
-          existing.voiceCalls += entry.voiceCalls;
-          existing.media += entry.media;
-          existing.reactions += entry.reactions;
-          existing.reactionsReceived += entry.reactionsReceived;
-          existing.xp += entry.xp;
-        } else {
-          pendingWeeklyBatch.set(key, entry);
-        }
-      }
-      sysError('Weekly Activity Batch Flush Failed', err);
-    } finally {
-      client.release();
-    }
+    const guildIds = entriesToFlush.map(e => e.guildId);
+    const userIds = entriesToFlush.map(e => e.userId);
+    const usernames = entriesToFlush.map(e => e.username);
+    const messages = entriesToFlush.map(e => e.messages || 0);
+    const voiceMinutes = entriesToFlush.map(e => e.voiceMinutes || 0);
+    const voiceCalls = entriesToFlush.map(e => e.voiceCalls || 0);
+    const media = entriesToFlush.map(e => e.media || 0);
+    const reactions = entriesToFlush.map(e => Math.max(0, e.reactions || 0));
+    const reactionsReceived = entriesToFlush.map(e => Math.max(0, e.reactionsReceived || 0));
+    const xps = entriesToFlush.map(e => Number((e.xp || 0).toFixed(2)));
+
+    await pool.query(
+      `INSERT INTO user_weekly_activity (
+         guild_id, user_id, username,
+         messages_count, voice_minutes, voice_calls_count,
+         media_count, reactions_count, reactions_received_count,
+         total_xp_gained, updated_at
+       )
+       SELECT 
+         u.guild_id, u.user_id, u.username,
+         u.messages_count, u.voice_minutes, u.voice_calls_count,
+         u.media_count, u.reactions_count, u.reactions_received_count,
+         u.total_xp_gained, NOW()
+       FROM UNNEST(
+         $1::text[], $2::text[], $3::text[],
+         $4::int[], $5::int[], $6::int[],
+         $7::int[], $8::int[], $9::int[],
+         $10::numeric[]
+       ) AS u(
+         guild_id, user_id, username,
+         messages_count, voice_minutes, voice_calls_count,
+         media_count, reactions_count, reactions_received_count,
+         total_xp_gained
+       )
+       ON CONFLICT (guild_id, user_id)
+       DO UPDATE SET
+         messages_count = user_weekly_activity.messages_count + EXCLUDED.messages_count,
+         voice_minutes = user_weekly_activity.voice_minutes + EXCLUDED.voice_minutes,
+         voice_calls_count = user_weekly_activity.voice_calls_count + EXCLUDED.voice_calls_count,
+         media_count = user_weekly_activity.media_count + EXCLUDED.media_count,
+         reactions_count = GREATEST(0, user_weekly_activity.reactions_count + EXCLUDED.reactions_count),
+         reactions_received_count = GREATEST(0, user_weekly_activity.reactions_received_count + EXCLUDED.reactions_received_count),
+         total_xp_gained = user_weekly_activity.total_xp_gained + EXCLUDED.total_xp_gained,
+         username = COALESCE(EXCLUDED.username, user_weekly_activity.username),
+         updated_at = NOW()`,
+      [guildIds, userIds, usernames, messages, voiceMinutes, voiceCalls, media, reactions, reactionsReceived, xps]
+    );
+
+    logger.info('CRON:WEEKLY', `Weekly activity batch flushed via UNNEST for ${entriesToFlush.length} user(s)`, {
+      userCount: entriesToFlush.length
+    });
   } catch (err) {
-    sysError('Weekly Activity Pool Error', err);
+    // Re-queue entries on failure
+    for (const entry of entriesToFlush) {
+      const key = `${entry.guildId}:${entry.userId}`;
+      const existing = pendingWeeklyBatch.get(key);
+      if (existing) {
+        existing.messages += entry.messages;
+        existing.voiceMinutes += entry.voiceMinutes;
+        existing.voiceCalls += entry.voiceCalls;
+        existing.media += entry.media;
+        existing.reactions += entry.reactions;
+        existing.reactionsReceived += entry.reactionsReceived;
+        existing.xp += entry.xp;
+      } else {
+        pendingWeeklyBatch.set(key, entry);
+      }
+    }
+    sysError('Weekly Activity Batch Flush Failed', err);
   } finally {
     isFlushingWeeklyBatch = false;
   }

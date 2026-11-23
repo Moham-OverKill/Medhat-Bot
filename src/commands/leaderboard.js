@@ -6,6 +6,7 @@ import {
     ChannelType,
     AttachmentBuilder
 } from 'discord.js';
+import crypto from 'node:crypto';
 import { getPool } from '../storage/postgres.js';
 import { sanitizeError, getUserDisplayName, getUserLogName, COIN_EMOJI, COIN_NAME, getCurrencyName } from '../shared.js';
 import { logger, sendLog, sysWarn, sysError, sysLog, checkLeaderboardPermissions } from '../utils/logger.js';
@@ -202,6 +203,11 @@ export async function setLeaderboardConfig(guildId, config) {
 export async function deleteLeaderboardConfig(guildId) {
     if (!guildId) return;
     leaderboardConfigCache.delete(guildId);
+    for (const key of lastRenderedLeaderboardHashes.keys()) {
+        if (key.startsWith(`${guildId}:`)) {
+            lastRenderedLeaderboardHashes.delete(key);
+        }
+    }
     try {
         const pool = getPool();
         await pool.query('DELETE FROM leaderboard_config WHERE guild_id = $1', [guildId]);
@@ -1167,8 +1173,11 @@ const leaderboardUpdateLocks = new Set();
  * @param {string} guildId - Guild ID
  * @param {Array} activityData - Explicit activity data for YESTERDAY's MVP. If null, fetches LIVE today data.
  * @param {Array} mvpRecipients - List of MVP user IDs
+ * @param {boolean} force - Force re-render even if data hash hasn't changed
  */
-export async function updateLeaderboards(client, guildId, activityData = null, mvpRecipients = []) {
+export const lastRenderedLeaderboardHashes = new Map();
+
+export async function updateLeaderboards(client, guildId, activityData = null, mvpRecipients = [], force = false) {
     if (leaderboardUpdateLocks.has(guildId)) {
         sysLog('Leaderboard Update Skipped', { guildId, detail: 'Update already in progress for this guild.' });
         return;
@@ -1269,8 +1278,17 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                     break;
                 }
 
-                const titleMsg = channel.messages.cache?.get?.(titleId) || await channel.messages.fetch(titleId).catch(() => null);
-                const cardMsg = channel.messages.cache?.get?.(cardId) || await channel.messages.fetch(cardId).catch(() => null);
+                let titleMsg = channel.messages.cache?.get?.(titleId);
+                if (!titleMsg) {
+                    await new Promise(r => setTimeout(r, 200));
+                    titleMsg = await channel.messages.fetch(titleId).catch(() => null);
+                }
+
+                let cardMsg = channel.messages.cache?.get?.(cardId);
+                if (!cardMsg) {
+                    await new Promise(r => setTimeout(r, 200));
+                    cardMsg = await channel.messages.fetch(cardId).catch(() => null);
+                }
 
                 if (!titleMsg || !cardMsg) {
                     messagesIntact = false;
@@ -1343,13 +1361,56 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
             // STEP 5: Build payloads and dispatch or edit messages in strict category sequence
             for (const t of typesForChannel) {
                 try {
-                    let cardPayload;
+                    let rawData = [];
+                    let enrichedData = [];
+                    let liveMvpRecipients = [];
+
                     if (t.type === 'daily_coins') {
                         const { getTopActiveUsers } = await import('../activity/tracker.js');
-                        const rawData = activityData || await getTopActiveUsers(guildId, 50, guild);
-                        const enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
+                        rawData = activityData || await getTopActiveUsers(guildId, 50, guild);
+                        enrichedData = await enrichUserData(client, guildId, rawData, 'userId');
                         const winnersCount = Math.min(Math.max(1, guildConfig?.winnersCount || 1), 5);
-                        const liveMvpRecipients = (mvpRecipients && mvpRecipients.length > 0) ? mvpRecipients : rawData.slice(0, winnersCount).map(u => u.userId);
+                        liveMvpRecipients = (mvpRecipients && mvpRecipients.length > 0) ? mvpRecipients : rawData.slice(0, winnersCount).map(u => u.userId);
+                    } else if (t.type === 'coins') {
+                        rawData = await getTopCoinUsers(guildId);
+                        enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+                    } else if (t.type === 'streak') {
+                        rawData = await getTopStreakUsers(guildId);
+                        enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+                    } else if (t.type === 'level') {
+                        rawData = await getTopLevelUsers(guildId);
+                        enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
+                    }
+
+                    // Content Hashing Guard: Skip heavy Canvas render & Discord edit if data hasn't changed
+                    const fingerprint = [
+                        t.type,
+                        customCoinUrl || '',
+                        (liveMvpRecipients || []).join(','),
+                        (enrichedData || []).slice(0, 10).map(u => {
+                            const uid = u.userId || u.user_id || '';
+                            const name = u.displayName || u.username || '';
+                            const score = u.score ?? u.balance ?? u.coins ?? u.level ?? u.streak ?? 0;
+                            const avatar = u.avatarUrl || '';
+                            const roleColor = u.roleColor || '';
+                            return `${uid}:${name}:${score}:${avatar}:${roleColor}`;
+                        }).join(';')
+                    ].join('|');
+
+                    const categoryHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
+                    const hashKey = `${guildId}:${t.type}`;
+                    const previousHash = lastRenderedLeaderboardHashes.get(hashKey);
+
+                    if (!force && messagesIntact && cardMsgMap.get(t.type) && previousHash === categoryHash) {
+                        logger.info('LEADERBOARD', `Data unchanged for ${t.type} in guild ${guildId}; skipped canvas render and Discord edit`, {
+                            guildId,
+                            category: t.type
+                        });
+                        continue;
+                    }
+
+                    let cardPayload;
+                    if (t.type === 'daily_coins') {
                         cardPayload = await buildLeaderboardMessagePayload({
                             category: 'daily_coins',
                             data: enrichedData,
@@ -1358,8 +1419,6 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                             guildId
                         });
                     } else if (t.type === 'coins') {
-                        const rawData = await getTopCoinUsers(guildId);
-                        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
                         cardPayload = await buildLeaderboardMessagePayload({
                             category: 'coins',
                             data: enrichedData,
@@ -1368,8 +1427,6 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                             customCoinUrl
                         });
                     } else if (t.type === 'streak') {
-                        const rawData = await getTopStreakUsers(guildId);
-                        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
                         cardPayload = await buildLeaderboardMessagePayload({
                             category: 'streak',
                             data: enrichedData,
@@ -1377,8 +1434,6 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                             guildId
                         });
                     } else if (t.type === 'level') {
-                        const rawData = await getTopLevelUsers(guildId);
-                        const enrichedData = await enrichUserData(client, guildId, rawData, 'user_id');
                         cardPayload = await buildLeaderboardMessagePayload({
                             category: 'level',
                             data: enrichedData,
@@ -1395,6 +1450,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                         const existingCardMsg = cardMsgMap.get(t.type);
                         try {
                             await existingCardMsg.edit(cardPayload);
+                            lastRenderedLeaderboardHashes.set(hashKey, categoryHash);
                         } catch {
                             // In-place edit failed; clean up old title message and re-dispatch atomically
                             const existingTitleMsg = titleMsgMap.get(t.type);
@@ -1407,6 +1463,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                                 config[t.configMsg] = newCardMsg.id;
                                 configChangedOverall = true;
                                 await setLeaderboardConfig(guildId, config);
+                                lastRenderedLeaderboardHashes.set(hashKey, categoryHash);
                             } catch (dispatchErr) {
                                 if (newTitleMsg) await newTitleMsg.delete().catch(() => {});
                                 throw dispatchErr;
@@ -1423,6 +1480,7 @@ export async function updateLeaderboards(client, guildId, activityData = null, m
                             config[t.configMsg] = newCardMsg.id;
                             configChangedOverall = true;
                             await setLeaderboardConfig(guildId, config);
+                            lastRenderedLeaderboardHashes.set(hashKey, categoryHash);
                         } catch (dispatchErr) {
                             if (newTitleMsg) await newTitleMsg.delete().catch(() => {});
                             throw dispatchErr;

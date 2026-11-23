@@ -8,12 +8,12 @@ let isSweepRunning = false;
  * @param {import('discord.js').Client} client
  */
 export function startExpirationScheduler(client) {
-  // Run background sweep every 60 seconds
+  // Run background sweep every 120 seconds (2 minutes)
   setInterval(() => {
     processGlobalExpiredItems(client).catch(err => {
       sysError('Expiration Scheduler Interval Error', err);
     });
-  }, 60000);
+  }, 120000);
 
   // Run immediate sweep on startup after a brief delay for Discord cache readiness
   setTimeout(() => {
@@ -22,7 +22,7 @@ export function startExpirationScheduler(client) {
     });
   }, 5000);
 
-  sysLog('Expiration Scheduler Initialized', { detail: 'Periodic 60s sweeper active' });
+  sysLog('Expiration Scheduler Initialized', { detail: 'Periodic 120s sweeper active' });
 }
 
 /**

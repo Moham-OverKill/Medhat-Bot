@@ -7,7 +7,8 @@ import {
   handleVoiceStateChange,
   voicePointsTick,
   clearStaleVoiceTracking,
-  isTrackingRequiredForGuild
+  isTrackingRequiredForGuild,
+  VOICE_TICK_INTERVAL_MS
 } from './tracker.js';
 import { sanitizeError, runInGuildContext } from '../shared.js';
 import { getGuildConfig } from '../storage/config.js';
@@ -65,14 +66,14 @@ export async function initializeActivityTracking(discordClient) {
   // Set up voice state tracking (event-based stopwatch)
   client.on('voiceStateUpdate', handleVoiceStateUpdate);
 
-  // Voice points tick every 30 seconds (awards +1 per 60s of valid time)
+  // Voice points tick every 60 seconds (awards +1 per 60s of valid time)
   tickInterval = setInterval(async () => {
     try {
       await voicePointsTick(client);
     } catch (error) {
       sysError('Activity Heart-Beat Sync Error', error, { detail: 'Voice points tick' });
     }
-  }, 30000);
+  }, VOICE_TICK_INTERVAL_MS);
 
   // Pre-populate quest cache on startup
   try {

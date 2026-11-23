@@ -9,12 +9,12 @@ let isRestockRunning = false;
  * @param {import('discord.js').Client} client
  */
 export function startShopRestockScheduler(client) {
-  // Run background check every 60 seconds
+  // Run background check every 120 seconds (2 minutes)
   setInterval(() => {
     processAutoRestocks(client).catch(err => {
       sysError('Shop Restock Interval Error', err);
     });
-  }, 60000);
+  }, 120000);
 
   // Initial run 10 seconds after startup
   setTimeout(() => {
@@ -23,7 +23,7 @@ export function startShopRestockScheduler(client) {
     });
   }, 10000);
 
-  sysLog('Shop Restock Scheduler Initialized', { detail: 'Periodic 60s sweeper active' });
+  sysLog('Shop Restock Scheduler Initialized', { detail: 'Periodic 120s sweeper active' });
 }
 
 /**

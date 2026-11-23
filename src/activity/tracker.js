@@ -102,6 +102,22 @@ export async function flushMessageBatch() {
          username = COALESCE(EXCLUDED.username, user_activity.username)`,
       [userIds, guildIds, usernames, counts, lastTimes, lastActives]
     );
+
+    // 3. Dispatch batched Battlepass XP (1 call per active user per 15s instead of on every single message)
+    let dispatchedXpCount = 0;
+    for (const entry of entriesToFlush) {
+      if (entry.passXp && entry.passXp > 0) {
+        dispatchedXpCount++;
+        import('../commands/settings/pass-engine.js')
+          .then(({ awardBattlepassXp }) => awardBattlepassXp(entry.guildId, entry.userId, entry.username, entry.passXp, null, entry.member))
+          .catch(err => sysError('Batched Battlepass XP Award Error', err));
+      }
+    }
+    if (dispatchedXpCount > 0) {
+      logger.info('ACTIVITY', `Batched Battlepass XP dispatched for ${dispatchedXpCount} user(s)`, {
+        userCount: dispatchedXpCount
+      });
+    }
   } catch (err) {
     // Re-queue entries on failure so no data is lost
     for (const entry of entriesToFlush) {
@@ -111,6 +127,8 @@ export async function flushMessageBatch() {
         existing.count += entry.count;
         existing.messageCount = (existing.messageCount || 0) + (entry.messageCount || 1);
         existing.lastTime = Math.max(existing.lastTime, entry.lastTime);
+        existing.passXp = (existing.passXp || 0) + (entry.passXp || 0);
+        if (entry.member && !existing.member) existing.member = entry.member;
       } else {
         pendingMessageBatch.set(key, entry);
       }
@@ -132,7 +150,7 @@ if (autoFlushTimer.unref) autoFlushTimer.unref();
 // ============================================
 const VOICE_POINTS_THRESHOLD_SECONDS = 60; // 1 minute = 1 point
 const VOICE_POINTS_REWARD = 1; // Points per threshold
-const VOICE_TICK_INTERVAL_MS = 30000; // Check every 30 seconds
+export const VOICE_TICK_INTERVAL_MS = 60000; // Check every 60 seconds
 
 /**
  * Guild config cache to reduce disk I/O
@@ -341,12 +359,22 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   userMessageCooldownCache.set(userKey, now);
 
   // 6. Buffer into pending batch (scaled by length points for activity, discrete count for weekly summary)
+  let rawMsgXp = 0;
+  if (config?.battlepass_enabled) {
+    const parsedRate = parseInt(config?.battlepass_msg_xp ?? 1, 10);
+    if (Number.isFinite(parsedRate) && parsedRate > 0) {
+      rawMsgXp = Math.min(1000, parsedRate) * pointsEarned;
+    }
+  }
+
   const existingBatch = pendingMessageBatch.get(userKey);
   if (existingBatch) {
     existingBatch.count += pointsEarned;
     existingBatch.messageCount = (existingBatch.messageCount || 0) + 1;
     existingBatch.lastTime = now;
     existingBatch.username = username;
+    if (rawMsgXp > 0) existingBatch.passXp = (existingBatch.passXp || 0) + rawMsgXp;
+    if (member) existingBatch.member = member;
   } else {
     pendingMessageBatch.set(userKey, {
       guildId,
@@ -354,7 +382,9 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
       username,
       count: pointsEarned,
       messageCount: 1,
-      lastTime: now
+      lastTime: now,
+      passXp: rawMsgXp,
+      member: member || null
     });
   }
 
@@ -362,21 +392,6 @@ export async function addMessagePoint(guild, userId, username, messageContent = 
   if (pendingMessageBatch.size >= 50) {
     flushMessageBatch().catch(() => {});
   }
-
-  // 7. Battlepass XP hook — reads msg XP rate from guild config (default: 1) and scales by pointsEarned
-  import('../storage/config.js')
-    .then(({ getGuildConfig }) => getGuildConfig(guildId))
-    .then(cfg => {
-      const rawMsgXp = parseInt(cfg?.battlepass_msg_xp ?? 1, 10);
-      const msgXp = Number.isFinite(rawMsgXp) && rawMsgXp > 0 ? Math.min(1000, rawMsgXp) : 0;
-      if (msgXp <= 0) return;
-      const totalMsgXp = pointsEarned * msgXp;
-      return import('../commands/settings/pass-engine.js')
-        .then(({ awardBattlepassXp }) => awardBattlepassXp(guildId, userId, username, totalMsgXp, null, member));
-    })
-    .catch(err => {
-      import('../utils/logger.js').then(({ sysError }) => sysError('Battlepass Msg XP Hook Error', err));
-    });
 
   return true;
 }
@@ -735,6 +750,21 @@ export async function voicePointsTick(client) {
 
   // Flush pending message batch to keep activity in sync
   await flushMessageBatch().catch(() => {});
+
+  // 0. FAST IN-MEMORY IDLE PRE-CHECK:
+  // If zero non-bot users are connected to voice channels across all cached guilds,
+  // AND there are no active voice tracking sessions in memory, bypass channel sweeps and DB queries.
+  let hasVoiceUsers = false;
+  for (const guild of client.guilds.cache.values()) {
+    if (guild.voiceStates?.cache?.some?.(vs => vs.channelId && !vs.member?.user?.bot)) {
+      hasVoiceUsers = true;
+      break;
+    }
+  }
+
+  if (!hasVoiceUsers && activeVoiceTrackingUsers.size === 0) {
+    return;
+  }
 
   const pool = getPool();
   const now = Date.now();
