@@ -51,7 +51,37 @@ export const LOG_CATEGORIES = {
 export async function handleLogsSettings(interaction, selectedId = null, configOverride = null, warningMessage = null) {
     try {
         const guildId = interaction.guildId;
-        const config = configOverride || (await getGuildConfig(guildId)) || {};
+        let config = configOverride || (await getGuildConfig(guildId)) || {};
+
+        // Verify uncached configured log channels so offline-deleted channels auto-disable cleanly
+        if (interaction.guild?.channels && !configOverride) {
+            const uncachedCats = Object.values(LOG_CATEGORIES).filter(cat => {
+                const chanId = config[cat.dbId];
+                return chanId && !interaction.guild.channels.cache?.get?.(chanId);
+            });
+            if (uncachedCats.length > 0 && typeof interaction.guild.channels.fetch === 'function') {
+                if (!interaction.deferred && !interaction.replied && (interaction.isButton?.() || interaction.isAnySelectMenu?.()) && typeof interaction.deferUpdate === 'function') {
+                    await interaction.deferUpdate().catch(() => {});
+                }
+                const staleUpdates = {};
+                await Promise.all(uncachedCats.map(async (cat) => {
+                    const chanId = config[cat.dbId];
+                    try {
+                        const fetched = await interaction.guild.channels.fetch(chanId);
+                        if (!fetched || (typeof fetched.isTextBased === 'function' && !fetched.isTextBased())) {
+                            staleUpdates[cat.dbId] = null;
+                        }
+                    } catch (err) {
+                        if (err?.code === 10003 || err?.status === 404) {
+                            staleUpdates[cat.dbId] = null;
+                        }
+                    }
+                }));
+                if (Object.keys(staleUpdates).length > 0) {
+                    config = (await setGuildConfig(guildId, staleUpdates)) || { ...config, ...staleUpdates };
+                }
+            }
+        }
 
         let desc = '';
         if (warningMessage) {
@@ -62,7 +92,7 @@ export async function handleLogsSettings(interaction, selectedId = null, configO
             const chanId = config[cat.dbId];
             let statusLabel = '*Disabled*';
             if (chanId) {
-                const targetChan = interaction.guild?.channels?.cache?.get(chanId);
+                const targetChan = interaction.guild?.channels?.cache?.get?.(chanId);
                 if (targetChan) {
                     const perm = checkChannelPermissions(targetChan);
                     if (!perm.valid) {
@@ -188,13 +218,36 @@ export async function handleLogMenuAction(interaction) {
             const chanId = config[cat.dbId];
 
             if (!chanId) {
-                return handleLogsSettings(interaction, cat.id, null, `Please assign a channel for **${cat.name}** logs first before sending a test log.`);
+                return handleLogsSettings(interaction, cat.id, config, `Please assign a channel for **${cat.name}** logs first before sending a test log.`);
             }
 
-            const targetChan = interaction.guild?.channels?.cache?.get(chanId) || await interaction.guild?.channels?.fetch(chanId).catch(() => null);
+            let targetChan = interaction.guild?.channels?.cache?.get?.(chanId) || null;
+            let channelDeleted = false;
+            if (!targetChan && typeof interaction.guild?.channels?.fetch === 'function') {
+                try {
+                    targetChan = await interaction.guild.channels.fetch(chanId);
+                    if (!targetChan || (typeof targetChan.isTextBased === 'function' && !targetChan.isTextBased())) {
+                        channelDeleted = true;
+                    }
+                } catch (fetchErr) {
+                    if (fetchErr?.code === 10003 || fetchErr?.status === 404) {
+                        channelDeleted = true;
+                    } else {
+                        return handleLogsSettings(interaction, cat.id, config, `Could not reach <#${chanId}> right now. Please try again.`);
+                    }
+                }
+            } else if (!targetChan) {
+                channelDeleted = true;
+            }
+
+            if (channelDeleted || !targetChan) {
+                const updatedConfig = (await setGuildConfig(guildId, { [cat.dbId]: null })) || { ...config, [cat.dbId]: null };
+                return handleLogsSettings(interaction, cat.id, updatedConfig, `The previously configured channel for **${cat.name}** logs was deleted, so **${cat.name}** logging has been disabled. Select a new channel below.`);
+            }
+
             const perm = checkChannelPermissions(targetChan);
             if (!perm.valid) {
-                return handleLogsSettings(interaction, cat.id, null, `Cannot send test log to <#${chanId}>: ${perm.error}`);
+                return handleLogsSettings(interaction, cat.id, config, `Cannot send test log to <#${chanId}>: ${perm.error}`);
             }
 
             const logName = getUserLogName(interaction);
@@ -204,7 +257,18 @@ export async function handleLogMenuAction(interaction) {
                 .setColor(0x3498DB)
                 .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleString()}` });
 
-            await targetChan.send({ embeds: [testEmbed] }).catch(() => {});
+            try {
+                await targetChan.send({ embeds: [testEmbed] });
+            } catch (sendErr) {
+                if (sendErr?.code === 10003 || sendErr?.status === 404) {
+                    const updatedConfig = (await setGuildConfig(guildId, { [cat.dbId]: null })) || { ...config, [cat.dbId]: null };
+                    return handleLogsSettings(interaction, cat.id, updatedConfig, `The previously configured channel for **${cat.name}** logs was deleted, so **${cat.name}** logging has been disabled. Select a new channel below.`);
+                }
+                if (sendErr?.code === 50001 || sendErr?.code === 50013) {
+                    return handleLogsSettings(interaction, cat.id, config, `Cannot send test log to <#${chanId}>: missing permissions to send embeds there.`);
+                }
+                throw sendErr;
+            }
             return handleLogsSettings(interaction, null, config);
         }
 

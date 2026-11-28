@@ -2,9 +2,18 @@ import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { getPool } from '../storage/postgres.js';
 import { stripLog } from '../shared.js';
 
-// Cache log channel IDs to avoid DB hits on every log (1 min cache, max 500 entries)
+// Cache log channel configs per guild to avoid DB hits on every log (60s TTL, max 500 entries)
 const logChannelCache = new Map();
 const LOG_CACHE_MAX_SIZE = 500;
+const LOG_CACHE_TTL_MS = 60000;
+
+export function invalidateLogChannelCache(guildId = null) {
+  if (guildId) {
+    logChannelCache.delete(guildId);
+  } else {
+    logChannelCache.clear();
+  }
+}
 
 /**
  * Standardized Log Levels and Severity Weights
@@ -255,7 +264,7 @@ export const logger = {
 };
 
 /**
- * Auto-heals stale or deleted log channels by pruning the configuration key from the database and cache.
+ * Auto-heals stale or deleted log channels by pruning the configuration key from database and caches.
  */
 async function pruneStaleLogChannel(guildId, configKey, channelId) {
   if (!guildId) return;
@@ -267,7 +276,7 @@ async function pruneStaleLogChannel(guildId, configKey, channelId) {
     if (pool) {
       await pool.query(
         `UPDATE guild_configs 
-         SET config = config - $1 
+         SET config = config - $1, updated_at = NOW() 
          WHERE guild_id = $2`,
         [configKey, guildId]
       ).catch(() => {});
@@ -277,54 +286,80 @@ async function pruneStaleLogChannel(guildId, configKey, channelId) {
         channelId
       });
     }
+
+    // Keep config.js configCache and activity tracker cache synchronized
+    try {
+      const { configCache } = await import('../storage/config.js');
+      const cached = configCache.get(guildId);
+      if (cached && typeof cached === 'object') {
+        delete cached[configKey];
+      }
+    } catch (_) {}
+
+    try {
+      const { invalidateConfigCache } = await import('../activity/index.js');
+      invalidateConfigCache(guildId);
+    } catch (_) {}
   } catch (err) {
     logger.error('CONFIG', 'Failed to prune stale log channel', { guildId, configKey }, err);
   }
 }
 
 /**
- * Fallback dispatcher to ensure critical audit logs are delivered to guild.systemChannel if configured channel is dead.
- */
-async function fallbackDispatch(guild, embed, excludeChannelId) {
-  if (!guild || !embed) return;
-  try {
-    const systemChannel = guild.systemChannel;
-    if (systemChannel && systemChannel.id !== excludeChannelId) {
-      const me = guild.members?.me;
-      if (me) {
-        const perms = systemChannel.permissionsFor(me);
-        if (perms && perms.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
-          await systemChannel.send({ embeds: [embed] }).catch(() => {});
-        }
-      }
-    }
-  } catch (_) {}
-}
-
-/**
- * Failsafe wrapper to send messages only if channel is accessible.
- * Automatically cleans up broken configs and falls back to system channel.
+ * Failsafe wrapper to send log embeds strictly to the configured log channel.
+ * Automatically disables deleted/unknown channels (10003/404) without falling back to unconfigured channels.
  */
 async function safeSend(guild, channelId, embed, configKey) {
-  if (!guild || !channelId) return;
+  if (!guild || !guild.id || !channelId || !guild.channels) return;
 
   try {
-    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+    let channel = guild.channels.cache?.get?.(channelId) || null;
+    if (!channel && typeof guild.channels.fetch === 'function') {
+      try {
+        channel = await guild.channels.fetch(channelId);
+      } catch (fetchErr) {
+        if (fetchErr?.code === 10003 || fetchErr?.status === 404) {
+          await pruneStaleLogChannel(guild.id, configKey, channelId);
+          return;
+        }
+        if (fetchErr?.code === 50001 || fetchErr?.code === 50013) {
+          logger.warn('VERIFY', 'Channel access missing during log fetch', {
+            guildId: guild.id,
+            channelId,
+            detail: `Missing access for ${configKey || 'log channel'}`
+          });
+          return;
+        }
+        logger.warn('DISCORD-REST', 'Transient failure fetching log channel; skipping dispatch', {
+          guildId: guild.id,
+          channelId,
+          error: fetchErr?.message
+        });
+        return;
+      }
+    }
 
-    if (!channel) {
+    if (!channel || (typeof channel.isTextBased === 'function' && !channel.isTextBased())) {
       await pruneStaleLogChannel(guild.id, configKey, channelId);
-      await fallbackDispatch(guild, embed, channelId);
       return;
     }
 
-    const permissions = channel.permissionsFor(guild.members.me);
+    const me = guild.members?.me || (typeof guild.members?.fetchMe === 'function' ? await guild.members.fetchMe().catch(() => null) : null);
+    if (!me) {
+      logger.warn('VERIFY', 'Bot guild member unavailable for permission check; skipping log dispatch', {
+        guildId: guild.id,
+        channelId
+      });
+      return;
+    }
+
+    const permissions = typeof channel.permissionsFor === 'function' ? channel.permissionsFor(me) : null;
     if (!permissions || !permissions.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
       logger.warn('VERIFY', 'Channel permission missing for log dispatch', {
         guildId: guild.id,
         channelId,
         detail: `Missing ViewChannel or SendMessages for ${configKey || 'log channel'}`
       });
-      await fallbackDispatch(guild, embed, channelId);
       return;
     }
 
@@ -334,22 +369,32 @@ async function safeSend(guild, channelId, embed, configKey) {
         channelId,
         detail: `Cannot post embeds to ${configKey || 'log channel'}`
       });
-      await fallbackDispatch(guild, embed, channelId);
       return;
     }
 
     await channel.send({ embeds: [embed] }).catch(async (err) => {
-      if (err?.code === 10003 || err?.code === 50001) {
+      if (err?.code === 10003 || err?.status === 404) {
         await pruneStaleLogChannel(guild.id, configKey, channelId);
-        await fallbackDispatch(guild, embed, channelId);
+      } else if (err?.code === 50001 || err?.code === 50013) {
+        logger.warn('VERIFY', 'Channel permission missing on log send', {
+          guildId: guild.id,
+          channelId,
+          code: err.code,
+          detail: `Cannot send to ${configKey || 'log channel'}`
+        });
       } else {
         logger.error('DISCORD-REST', 'safeSend Failure', { guildId: guild.id, channelId }, err);
       }
     });
   } catch (err) {
-    if (err?.code === 10003 || err?.code === 50001) {
+    if (err?.code === 10003 || err?.status === 404) {
       await pruneStaleLogChannel(guild.id, configKey, channelId);
-      await fallbackDispatch(guild, embed, channelId);
+    } else if (err?.code === 50001 || err?.code === 50013) {
+      logger.warn('VERIFY', 'Channel permission missing on log dispatch', {
+        guildId: guild.id,
+        channelId,
+        code: err.code
+      });
     } else {
       logger.error('DISCORD-REST', 'safeSend Critical', { guildId: guild.id, channelId }, err);
     }
@@ -421,14 +466,16 @@ export async function sendLog(guild, category, colorKey, title, description) {
     const pool = getPool();
     if (!pool) return;
 
-    let config = logChannelCache.get(guild.id);
-    if (!config) {
+    const now = Date.now();
+    let cachedEntry = logChannelCache.get(guild.id);
+    if (!cachedEntry || cachedEntry.expiresAt <= now) {
       const res = await pool.query('SELECT config FROM guild_configs WHERE guild_id = $1', [guild.id]);
-      config = res.rows[0]?.config || {};
+      const loadedConfig = res.rows[0]?.config || {};
       if (logChannelCache.size >= LOG_CACHE_MAX_SIZE) logChannelCache.clear();
-      logChannelCache.set(guild.id, config);
-      setTimeout(() => logChannelCache.delete(guild.id), 60000).unref();
+      cachedEntry = { config: loadedConfig, expiresAt: now + LOG_CACHE_TTL_MS };
+      logChannelCache.set(guild.id, cachedEntry);
     }
+    const config = cachedEntry.config;
 
     const categoryMap = {
       economy: 'log_eco_channel_id',
@@ -438,12 +485,10 @@ export async function sendLog(guild, category, colorKey, title, description) {
       system: 'log_audit_channel_id'
     };
 
-    const configKey = categoryMap[category.toLowerCase()];
-    let channelId = config[configKey];
+    const configKey = categoryMap[String(category || '').toLowerCase()];
+    if (!configKey) return;
 
-    if (!channelId && configKey !== 'log_audit_channel_id') {
-      channelId = config['log_audit_channel_id'];
-    }
+    const channelId = config[configKey];
 
     if (channelId) {
       const colors = {

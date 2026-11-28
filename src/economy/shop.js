@@ -2744,7 +2744,7 @@ export async function purgeUserInventory(userId, guildId, member = null) {
       try {
         const remainingNotice = currentQty > 1 ? ` (1 copy consumed, ${currentQty - 1} remaining in inventory)` : '';
         sendLog(
-          { id: guildId, name: member?.guild?.name || 'Server' }, 
+          member?.guild || { id: guildId, name: 'Server' }, 
           'inventory', 
           'red', 
           '⏳ Item Expired', 

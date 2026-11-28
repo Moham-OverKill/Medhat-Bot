@@ -885,6 +885,7 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       if (!config) return;
 
       let updated = false;
+      const updates = {};
 
       const channelKeys = [
         { key: 'log_eco_channel_id', name: 'Economy Log' },
@@ -897,7 +898,7 @@ client.on(Events.GuildChannelDelete, async (channel) => {
 
       for (const field of channelKeys) {
         if (config[field.key] === channel.id) {
-          config[field.key] = null;
+          updates[field.key] = null;
           updated = true;
         }
       }
@@ -905,19 +906,25 @@ client.on(Events.GuildChannelDelete, async (channel) => {
       // Also clean up Organize channel filters
       if (config.channel_filters) {
         const filterKeys = ['links_only', 'images_only', 'media_only', 'cmd_only'];
+        const filterUpdates = {};
+        let filtersModified = false;
         for (const key of filterKeys) {
           if (Array.isArray(config.channel_filters[key])) {
-            const originalLength = config.channel_filters[key].length;
-            config.channel_filters[key] = config.channel_filters[key].filter(id => id !== channel.id);
-            if (config.channel_filters[key].length < originalLength) {
+            const filtered = config.channel_filters[key].filter(id => id !== channel.id);
+            if (filtered.length < config.channel_filters[key].length) {
+              filterUpdates[key] = filtered;
+              filtersModified = true;
               updated = true;
             }
           }
         }
+        if (filtersModified) {
+          updates.channel_filters = filterUpdates;
+        }
       }
 
       if (updated) {
-        await setGuildConfig(guild.id, config);
+        await setGuildConfig(guild.id, updates);
         const { invalidateFilterCache } = await import('./middleware/organize.js');
         invalidateFilterCache(guild.id);
         sysLog('Config Updated', { guild: guild.id, detail: 'Deleted linked channel resource' });

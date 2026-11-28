@@ -1,6 +1,6 @@
 import { getPool, query } from './postgres.js';
 import { isValidSnowflake, sanitizeError as formatError } from '../shared.js';
-import { sysLog, sysWarn, sysError } from '../utils/logger.js';
+import { sysLog, sysWarn, sysError, invalidateLogChannelCache } from '../utils/logger.js';
 
 // Config schema validation
 const CONFIG_SCHEMA = {
@@ -261,6 +261,7 @@ export async function loadGuildConfigs() {
   try {
     const pool = getPool();
     const result = await pool.query('SELECT guild_id, config FROM guild_configs');
+    invalidateLogChannelCache();
     
     const validConfigs = {};
     for (const row of result.rows) {
@@ -312,6 +313,7 @@ export async function saveGuildConfigs(configs) {
           );
           const fullConfig = applyConfigDefaults(validateConfig(res.rows[0]?.config || {}));
           configCache.set(guildId, fullConfig);
+          invalidateLogChannelCache(guildId);
         }
       }
       
@@ -398,6 +400,7 @@ export async function setGuildConfig(guildId, config) {
     
     const fullConfig = applyConfigDefaults(validateConfig(result.rows[0]?.config || {}));
     configCache.set(guildId, fullConfig);
+    invalidateLogChannelCache(guildId);
 
     // Sync explicit database columns on guild_configs
     await pool.query(
@@ -429,6 +432,7 @@ export async function deleteGuildConfig(guildId) {
   
   try {
     configCache.delete(guildId);
+    invalidateLogChannelCache(guildId);
     await query('DELETE FROM guild_configs WHERE guild_id = $1', [guildId]);
   } catch (error) {
     sysError('Infrastructure Audit Failed', error, { guild: guildId, detail: 'Deleting guild config' });
